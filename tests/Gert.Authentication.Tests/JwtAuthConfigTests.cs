@@ -1,4 +1,3 @@
-using System.Security.Claims;
 using FluentAssertions;
 using Gert.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -8,9 +7,9 @@ using Xunit;
 namespace Gert.Authentication.Tests;
 
 /// <summary>
-/// JwtBearer configuration: the RS256 algorithm pin (security F11) and the
-/// <c>sub</c>-denylist revocation hook (decisions §4), both verified without
-/// booting a server.
+/// JwtBearer configuration: the RS256 algorithm pin (security F11), verified without
+/// booting a server. Revocation is stateless (token expiry + IdP deactivation), so
+/// there is no denylist to test (decisions §4).
 /// </summary>
 public sealed class JwtAuthConfigTests
 {
@@ -52,47 +51,4 @@ public sealed class JwtAuthConfigTests
         options.Authority.Should().Be("https://id.test.local");
         options.Audience.Should().Be("gert-api");
     }
-
-    [Fact]
-    public void Denylisted_sub_fails_authentication()
-    {
-        var denylist = new InMemorySubDenylist();
-        denylist.Deny("revoked-user");
-
-        var principal = PrincipalWithSub("revoked-user");
-        string? failure = null;
-
-        GertJwtAuthExtensions.ApplyDenylist(principal, denylist, reason => failure = reason);
-
-        failure.Should().NotBeNull();
-    }
-
-    [Fact]
-    public void Allowed_sub_passes_the_denylist()
-    {
-        var denylist = new InMemorySubDenylist();
-        denylist.Deny("someone-else");
-
-        var principal = PrincipalWithSub("good-user");
-        var failed = false;
-
-        GertJwtAuthExtensions.ApplyDenylist(principal, denylist, _ => failed = true);
-
-        failed.Should().BeFalse();
-    }
-
-    [Fact]
-    public void InMemory_denylist_deny_then_allow_round_trips()
-    {
-        var denylist = new InMemorySubDenylist();
-
-        denylist.IsDenied("x").Should().BeFalse();
-        denylist.Deny("x");
-        denylist.IsDenied("x").Should().BeTrue();
-        denylist.Allow("x");
-        denylist.IsDenied("x").Should().BeFalse();
-    }
-
-    private static ClaimsPrincipal PrincipalWithSub(string sub) =>
-        new(new ClaimsIdentity([new Claim("sub", sub)], authenticationType: "Test"));
 }

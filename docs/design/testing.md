@@ -95,7 +95,7 @@ tests/
   Gert.Service.Tests/           # whitebox — chat orchestrator/tool loop, conversations,
                                 #   documents, ingestion pipeline, tools, validation
   Gert.Database.Sqlite.Tests/   # repositories vs real temp SQLite (vec0 + FTS5); migrations; isolation
-  Gert.Authentication.Tests/    # JWT claims → IUserContext; sub→key (sha256); denylist
+  Gert.Authentication.Tests/    # JWT claims → IUserContext; sub→key (sha256); RS256 pin
   Gert.Api.Tests/               # integration via GertApiFactory — controllers, SSE, auth, IDOR, admin, SPA fallback
   Gert.Console.Tests/           # drive the Console host with fakes; assert rendered ChatEvent stream
   web/
@@ -275,7 +275,7 @@ derivation and the **anti-reuse** guarantees ([decisions §3](decisions.md#3-fol
 [security F12](security.md#3-findings--remediations)): the provisioning gate rejects a malformed/
 unexpected-issuer identity **before** any folder is created, and a `meta.json` `(iss, sub)` binding
 that mismatches the token is **refused** (a recreated/reassigned identity can't inherit a folder).
-Plus the admin policy and the `sub`-denylist fast cut-off ([decisions §4](decisions.md)).
+Plus the admin policy. (No denylist — revocation is stateless via token expiry, [decisions §4](decisions.md#4-token-lifetime--revocation).)
 
 ### Validation — the input-security boundary
 Validation is where untrusted user **content** first meets the system, so we test it as a
@@ -342,7 +342,7 @@ that only exist once you add HTTP:
   payload never reaching a repository (the integration half of [§5 Validation](#validation--the-input-security-boundary)).
 - **SSE**: `POST` a message, read the response stream, parse `data:` frames back into
   `ChatEvent`s, and snapshot the sequence — the framing the service tests deliberately skip.
-- **Auth middleware**: no token → 401; valid token → 200; denylisted `sub` → 401.
+- **Auth middleware**: no token → 401; valid token → 200; expired/wrong-issuer/wrong-alg → 401.
 - **Isolation / IDOR** (the headline test): user A uploads a doc into a project; user B requests
   it → 404, and B's project `rag.db` never contains A's chunks. The user key comes only from the
   token. The **one** request-supplied selector is `{pid}` — so a dedicated test tampers with it:

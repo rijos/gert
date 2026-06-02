@@ -136,7 +136,7 @@ Gert.sln
 │  ├─ Gert.Testing/           #   shared infra: fakes (vLLM/SearXNG/sandbox), GertApiFactory, JWT mint
 │  ├─ Gert.Service.Tests/     #   whitebox: tool loop, ingestion, tools, validation
 │  ├─ Gert.Database.Sqlite.Tests/ # repositories vs real temp SQLite (vec0 + FTS5); isolation
-│  ├─ Gert.Authentication.Tests/  # JWT claims → IUserContext; sub→key; denylist
+│  ├─ Gert.Authentication.Tests/  # JWT claims → IUserContext; sub→key; RS256 pin
 │  ├─ Gert.Api.Tests/         #   integration (WebApplicationFactory): SSE, auth, IDOR, admin, SPA fallback
 │  └─ Gert.Console.Tests/     #   drive the Console host with fakes; assert rendered stream
 │

@@ -1,17 +1,16 @@
-using System.Security.Claims;
 using Gert.Service;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
-using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.IdentityModel.Tokens;
 
 namespace Gert.Authentication;
 
 /// <summary>
 /// DI wiring for Gert's JWT bearer authentication (auth.md § ASP.NET Core wiring,
-/// security F11 alg-pin, decisions §4 sub-denylist).
+/// security F11 alg-pin). Revocation is stateless: it relies on Pocket ID's ~1h
+/// access-token lifetime + IdP deactivation, so GERT carries no shared auth state
+/// and scales horizontally (decisions §4).
 /// </summary>
 public static class GertJwtAuthExtensions
 {
@@ -24,10 +23,9 @@ public static class GertJwtAuthExtensions
     /// <summary>
     /// Register JWT bearer auth pinned to Pocket ID: Authority/Audience from config,
     /// full validation with <c>ValidAlgorithms = ["RS256"]</c> (F11), the Gert claim
-    /// mappings, a 30s clock skew, and the <see cref="ISubDenylist"/> revocation check
-    /// in <c>OnTokenValidated</c>. Also registers <see cref="IHttpContextAccessor"/> and
-    /// <see cref="HttpUserContext"/> as the scoped <see cref="IUserContext"/>, plus an
-    /// in-memory denylist if none is already registered.
+    /// mappings, and a 30s clock skew. Also registers <c>IHttpContextAccessor</c> and
+    /// <see cref="HttpUserContext"/> as the scoped <see cref="IUserContext"/>. Revocation
+    /// is stateless (token expiry + IdP deactivation) — no denylist, no shared state.
     /// </summary>
     public static IServiceCollection AddGertJwtAuth(
         this IServiceCollection services,
@@ -38,7 +36,6 @@ public static class GertJwtAuthExtensions
 
         services.AddHttpContextAccessor();
         services.AddScoped<IUserContext, HttpUserContext>();
-        services.TryAddSingleton<ISubDenylist, InMemorySubDenylist>();
 
         services
             .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
@@ -75,36 +72,5 @@ public static class GertJwtAuthExtensions
             RoleClaimType = "groups",
             ClockSkew = TimeSpan.FromSeconds(30),
         };
-
-        options.Events = new JwtBearerEvents
-        {
-            OnTokenValidated = context =>
-            {
-                var denylist = context.HttpContext.RequestServices
-                    .GetRequiredService<ISubDenylist>();
-                ApplyDenylist(context.Principal, denylist, context.Fail);
-                return Task.CompletedTask;
-            },
-        };
-    }
-
-    /// <summary>
-    /// The denylist decision, factored out so it is unit-testable without an HTTP server
-    /// (decisions §4). If the validated principal's <c>sub</c> is denied, invoke
-    /// <paramref name="fail"/> with a fixed reason; otherwise do nothing.
-    /// </summary>
-    public static void ApplyDenylist(
-        ClaimsPrincipal? principal,
-        ISubDenylist denylist,
-        Action<string> fail)
-    {
-        ArgumentNullException.ThrowIfNull(denylist);
-        ArgumentNullException.ThrowIfNull(fail);
-
-        var sub = principal?.FindFirstValue("sub");
-        if (!string.IsNullOrEmpty(sub) && denylist.IsDenied(sub))
-        {
-            fail("sub is denied");
-        }
     }
 }

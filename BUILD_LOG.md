@@ -29,6 +29,23 @@ Status: ⬜ not started · 🟡 in progress · ✅ done · 🔴 blocked
 | U14 | Release pipeline + ops | ⬜ | logging, NUglify |
 | U15 | CI | ⬜ | |
 
+## M1.5 — review pass (user feedback before M2)
+Decisions: storage = **interface seam + LocalFS only** (no S3 yet); test pyramid = **lean on Python**
+(drop .NET fakes/minting — but DEFERRED until U10 real adapters + U13 python E2E exist, else coverage
+hole; production .NET already verified fake-free); ChatService = **step-based redesign, stateless**
+(StartTurn prep + RunTurn stream in ONE request, no turnId/cross-request state — the turnId/GetEvents
+shape would break multi-instance #10).
+
+Order (semantic first, file-split enforcement last):
+1. ✅ Drop ISubDenylist (#10) — stateless revocation (expiry + IdP deactivation). Code done; docs pending in this commit.
+2. ⬜ Generic tool toggles (#1) + canonical gert_tools parse, no JSON-array branch (#9) + ChatEventType enum (#2)
+3. ⬜ IStorage seam + LocalFsStorage (#3); GetThread ordering audit+test (#8); kill token_count inline casts (#7); ThrowingChatModel pragma (#12)
+4. ⬜ ChatService step-based redesign (#13, stateless) + custom Gert error responses 401/403/404 (#15)
+5. ⬜ Config: nullable→error explicit (#4); coverage (coverlet+ReportGenerator) (#5); Makefile test/run/coverage/e2e (#6)
+6. ⬜ Enforce one-type-per-file via StyleCop SA1402/SA1649 as error (#11) — LAST, then split files
+7. ⬜ DEFERRED to U10+U13 boundary: remove .NET fakes/minting + .NET HTTP test tier → Python E2E (#14)
+8. ⬜ Re-green full suite; resume M2 (U4b RAG → U6 → U7b-d → U9b)
+
 ## Milestones
 - **M0** skeleton compiles — U0–U3
 - **M1** walking skeleton — U4a,U5,U7a,U8,U9a

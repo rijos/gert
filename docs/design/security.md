@@ -56,7 +56,7 @@ Four boundaries matter:
 | Ingestion worker / host | XXE · zip-bomb · **memory-corruption in parsers** | Extraction in an **isolated unprivileged subprocess** (dropped privs, no net, `RLIMIT_*` + timeout); DTD/external-entities **off**; decompressed-size & entry caps | [§3 / F7](#3-findings--remediations), [tech-stack](tech-stack.md) |
 | Upload storage | Path traversal / overwrite via filename | Store under server-generated `{doc-id}.{ext}`; reject separators/`..`; extension allowlist | [operations](operations.md#cross-cutting-concerns), [testing §5](testing.md#validation--the-input-security-boundary) |
 | Any service input | Malformed/abusive payload | Fail-closed `IValidationProvider` in the service layer (API + Console); reflection meta-test | [principle #6](principles.md), [testing §5](testing.md#validation--the-input-security-boundary) |
-| Session | Stolen/leaked token replay | HTTPS/HSTS; ~1h token lifetime; `sub`-denylist for fast cut-off; `RS256`-pinned validation | [§3 / F9,F11](#3-findings--remediations), [decisions §4](decisions.md#4-token-lifetime--revocation) |
+| Session | Stolen/leaked token replay | HTTPS/HSTS; ~1h token lifetime (+ IdP deactivation); `RS256`-pinned validation. No denylist — stateless, multi-instance-safe | [§3 / F9,F11](#3-findings--remediations), [decisions §4](decisions.md#4-token-lifetime--revocation) |
 | Provider keys / secrets | Leak via committed config | Secrets from env / `dotnet user-secrets` / secret store — never committed | [§3 / F8](#3-findings--remediations), [tech-stack](tech-stack.md) |
 | The box | Resource exhaustion (GPU, embeddings, exec) | Per-user concurrency/rate caps on chat, ingestion, sandbox | [§3 / F10](#3-findings--remediations) |
 
@@ -194,7 +194,7 @@ The user folder is the root of all isolation, so its derivation is itself a cont
   ([configuration §9](configuration.md#9-open-decisions)) — `auto` waits for a review/undo UI.
 - **~1-hour revocation window.** Pocket ID's access-token lifetime isn't shortenable
   ([decisions §4](decisions.md#4-token-lifetime--revocation)); routine off-boarding is effective
-  within ~1h, and the `sub`-denylist is the lever for immediate cut-off.
+  within ~1h. There is no denylist (it would break multi-instance); sub-hour revocation means a shorter IdP token lifetime.
 - **No load/perf or pixel-diff testing** — out of scope at ~20 users ([testing §12](testing.md#12-non-goals)).
 - **Trusted-operator admin.** The admin surface is two endpoints (enumerate, `rm -rf`) gated by the
   group claim; we trust the operator and rely on F6 to keep even a fat-fingered/forged `{key}` from

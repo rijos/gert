@@ -157,12 +157,12 @@ real-SQLite isolation, lazy provisioning) into one proven thread before any feat
 ## Phase 3 — Auth & API host (M1 slice → M2 breadth)
 
 ### U8 — `Gert.Authentication` adapter *(M1)*
-- **Goal:** `HttpUserContext` (claims → `IUserContext` incl. `Iss`, `AllowedTools` normalization), `JwtBearer` config (Authority/JWKS, `NameClaimType`/`RoleClaimType`, **`ValidAlgorithms=["RS256"]`**), `Policies` (Admin + fallback), `sub`-denylist.
+- **Goal:** `HttpUserContext` (claims → `IUserContext` incl. `Iss`, `AllowedTools` normalization), `JwtBearer` config (Authority/JWKS, `NameClaimType`/`RoleClaimType`, **`ValidAlgorithms=["RS256"]`**), `Policies` (Admin + fallback). **No denylist** — stateless revocation (decisions §4).
 - **Depends:** U2
 - **Touches:** `Gert.Authentication/`, `tests/Gert.Authentication.Tests/`.
 - **Design:** [auth](auth.md), [decisions §4](decisions.md#4-token-lifetime--revocation).
 - **Hardens:** **F11** (alg pin); supports F12 (`iss`/`sub` surfaced and validated).
-- **Acceptance:** claim→context mapping incl. `iss`; `sha256(iss+sub)` key; denylisted `sub` rejected; `gert_tools` parsing (`*`/array/delimited/absent→default).
+- **Acceptance:** claim→context mapping incl. `iss`; `sha256(iss+sub)` key; expired/wrong-issuer/wrong-alg rejected; `gert_tools` parsing (canonical scope string / `*` / absent→default).
 
 ### U9a — API walking skeleton *(M1)*
 - **Goal:** `Program.cs` DI wiring, `GertApiFactory` completed (`AddGertFakes`, temp `DataRoot`, test JWT), and the **one vertical path**: Models + Conversations(create/list) + Messages(SSE) controllers + SPA-fallback. SSE renderer for `ChatEvent`.
