@@ -12,6 +12,14 @@ indent_size = 4
 indent_size = 4
 # C# defaults; analyzers use built-in defaults
 dotnet_sort_system_directives_first = true
+
+# Analyzer policy (#11): silence all analyzer-provided diagnostics, then opt IN to the
+# two structural StyleCop rules we want enforced as ERRORS. Compiler/nullable (CS*)
+# warnings are unaffected (they stay errors via TreatWarningsAsErrors + WarningsAsErrors).
+dotnet_analyzer_diagnostic.severity = none
+dotnet_diagnostic.SA0001.severity = none    # XML-doc analysis off (project-level; not wanted)
+dotnet_diagnostic.SA1402.severity = error   # one top-level type per file
+dotnet_diagnostic.SA1649.severity = error   # file name must match the type
 csharp_new_line_before_open_brace = all
 csharp_new_line_before_else = true
 csharp_new_line_before_catch = true

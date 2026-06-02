@@ -14,14 +14,3 @@ public interface IWebSearch
         int maxResults,
         CancellationToken cancellationToken = default);
 }
-
-/// <summary>One web result — becomes a web-type citation.</summary>
-public sealed record WebSearchResult
-{
-    public required string Title { get; init; }
-
-    public required string Url { get; init; }
-
-    /// <summary>Snippet / summary, if fetched.</summary>
-    public string? Snippet { get; init; }
-}

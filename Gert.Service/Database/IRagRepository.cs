@@ -40,37 +40,3 @@ public interface IRagRepository : IAsyncDisposable
         int k,
         CancellationToken cancellationToken = default);
 }
-
-/// <summary>
-/// A chunk plus its embedding vector, written together into <c>chunks</c> +
-/// <c>vec_chunks</c> + <c>fts_chunks</c> (the three share an integer rowid).
-/// </summary>
-public sealed record ChunkInsert
-{
-    public required string DocumentId { get; init; }
-
-    public required int Ordinal { get; init; }
-
-    public required string Content { get; init; }
-
-    public string? Page { get; init; }
-
-    public int? TokenCount { get; init; }
-
-    /// <summary>Embedding vector; dimension must match the index (bge-m3 = 1024).</summary>
-    public required IReadOnlyList<float> Embedding { get; init; }
-}
-
-/// <summary>
-/// A fused hybrid-search hit — the <see cref="Chunk"/> joined back to its
-/// <see cref="Document"/>, with the RRF score that seeds a citation.
-/// </summary>
-public sealed record RetrievedChunk
-{
-    public required Chunk Chunk { get; init; }
-
-    public required Document Document { get; init; }
-
-    /// <summary>The fused RRF score (the 0.89 / 0.81 the mockup shows).</summary>
-    public required double Score { get; init; }
-}

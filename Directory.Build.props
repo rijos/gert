@@ -21,4 +21,13 @@
     <JwtBearerVersion>10.0.0</JwtBearerVersion>
   </PropertyGroup>
 
+  <!-- One-type-per-file enforcement (#11). Only SA1402/SA1649 are on (see .editorconfig);
+       all other StyleCop rules are silenced. analyzers-only, not a runtime dependency. -->
+  <ItemGroup>
+    <PackageReference Include="StyleCop.Analyzers" Version="1.2.0-beta.556">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+
 </Project>

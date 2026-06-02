@@ -1,5 +1,3 @@
-using Gert.Model.Chat;
-
 namespace Gert.Service.Tools;
 
 /// <summary>
@@ -35,35 +33,4 @@ public interface ITool
     Task<ToolResult> ExecuteAsync(
         ToolInvocation invocation,
         CancellationToken cancellationToken = default);
-}
-
-/// <summary>
-/// One tool call from the model — the active project and the raw JSON arguments
-/// (e.g. <c>{"query":"…","k":8}</c>).
-/// </summary>
-public sealed record ToolInvocation
-{
-    public required string Pid { get; init; }
-
-    /// <summary>Raw tool arguments as a JSON string.</summary>
-    public required string ArgumentsJson { get; init; }
-}
-
-/// <summary>
-/// A tool's outcome — what the orchestrator feeds back to the model and renders
-/// as a <c>tool_result</c>. <see cref="ResultJson"/> is the opaque payload;
-/// <see cref="Citations"/> seeds the message footnotes (RAG / web hits).
-/// </summary>
-public sealed record ToolResult
-{
-    public required bool Success { get; init; }
-
-    /// <summary>Result payload as JSON (hits / results / stdout).</summary>
-    public string? ResultJson { get; init; }
-
-    /// <summary>Citations derived from this result, if any.</summary>
-    public IReadOnlyList<Citation> Citations { get; init; } = [];
-
-    /// <summary>Error message when <see cref="Success"/> is false.</summary>
-    public string? Error { get; init; }
 }
