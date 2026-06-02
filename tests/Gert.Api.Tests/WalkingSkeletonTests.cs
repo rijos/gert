@@ -207,7 +207,7 @@ public sealed class WalkingSkeletonTests : IClassFixture<GertApiFactory>
 
             var evt = JsonSerializer.Deserialize<ChatEvent>(data.ToString(), Json);
             evt.Should().NotBeNull();
-            evt!.EventName.Should().Be(eventName);
+            evt!.Type.ToWireName().Should().Be(eventName);
             events.Add(evt);
         }
 

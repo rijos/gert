@@ -8,7 +8,7 @@ namespace Gert.Api.Sse;
 /// <summary>
 /// Renders a stream of <see cref="ChatEvent"/>s as Server-Sent Events on an HTTP
 /// response (rest-api.md § sending a message). Each event is written as a single
-/// <c>event: &lt;EventName&gt;\ndata: &lt;json&gt;\n\n</c> frame and the response is
+/// <c>event: &lt;type&gt;\ndata: &lt;json&gt;\n\n</c> frame and the response is
 /// flushed per event so the client gets the typewriter effect in real time.
 /// <para>
 /// The <c>data:</c> payload is the polymorphic <see cref="ChatEvent"/> serialized
@@ -47,7 +47,7 @@ public static class SseWriter
         {
             var json = JsonSerializer.Serialize(evt, JsonOptions);
             var frame = new StringBuilder()
-                .Append("event: ").Append(evt.EventName).Append('\n')
+                .Append("event: ").Append(evt.Type.ToWireName()).Append('\n')
                 .Append("data: ").Append(json).Append('\n')
                 .Append('\n')
                 .ToString();

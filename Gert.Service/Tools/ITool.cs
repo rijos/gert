@@ -1,4 +1,3 @@
-using Gert.Model;
 using Gert.Model.Chat;
 
 namespace Gert.Service.Tools;
@@ -13,14 +12,15 @@ namespace Gert.Service.Tools;
 /// </summary>
 public interface ITool
 {
-    /// <summary>Capability id used by the registry and the <c>gert_tools</c> entitlement (e.g. <c>rag</c>).</summary>
+    /// <summary>
+    /// Capability id used by the registry, the <c>gert_tools</c> entitlement, and the
+    /// recorded <c>tool_calls.kind</c> (e.g. <c>rag</c>). This is the single identity
+    /// of the tool — there is no separate enum.
+    /// </summary>
     string Id { get; }
 
     /// <summary>Model-facing function name (e.g. <c>search_documents</c>).</summary>
     string Name { get; }
-
-    /// <summary>Which <see cref="ToolKind"/> this tool records as.</summary>
-    ToolKind Kind { get; }
 
     /// <summary>Human/model-readable description advertised to the model.</summary>
     string Description { get; }

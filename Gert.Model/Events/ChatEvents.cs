@@ -7,7 +7,7 @@ public sealed record MessageStartEvent : ChatEvent
 {
     public required string MessageId { get; init; }
 
-    public override string EventName => "message_start";
+    public override ChatEventType Type => ChatEventType.MessageStart;
 }
 
 /// <summary>
@@ -18,14 +18,15 @@ public sealed record ToolCallEvent : ChatEvent
 {
     public required string Id { get; init; }
 
-    public required ToolKind Kind { get; init; }
+    /// <summary>The capability id of the tool being called (e.g. <c>rag</c>).</summary>
+    public required string Kind { get; init; }
 
     public required ToolCallStatus Status { get; init; }
 
     /// <summary>The tool's request payload (e.g. the search query / code).</summary>
     public IReadOnlyDictionary<string, object?>? Request { get; init; }
 
-    public override string EventName => "tool_call";
+    public override ChatEventType Type => ChatEventType.ToolCall;
 }
 
 /// <summary>
@@ -35,7 +36,8 @@ public sealed record ToolResultEvent : ChatEvent
 {
     public required string Id { get; init; }
 
-    public required ToolKind Kind { get; init; }
+    /// <summary>The capability id of the tool that ran (e.g. <c>rag</c>).</summary>
+    public required string Kind { get; init; }
 
     public required ToolCallStatus Status { get; init; }
 
@@ -44,7 +46,7 @@ public sealed record ToolResultEvent : ChatEvent
     /// <summary>Result hits/rows (e.g. doc-hit rows for a RAG call).</summary>
     public IReadOnlyList<ToolResultHit>? Hits { get; init; }
 
-    public override string EventName => "tool_result";
+    public override ChatEventType Type => ChatEventType.ToolResult;
 }
 
 /// <summary>
@@ -72,7 +74,7 @@ public sealed record DeltaEvent : ChatEvent
 {
     public required string Text { get; init; }
 
-    public override string EventName => "delta";
+    public override ChatEventType Type => ChatEventType.Delta;
 }
 
 /// <summary>
@@ -86,7 +88,7 @@ public sealed record CitationEvent : ChatEvent
 
     public string? DocId { get; init; }
 
-    public override string EventName => "citation";
+    public override ChatEventType Type => ChatEventType.Citation;
 }
 
 /// <summary>
@@ -102,7 +104,7 @@ public sealed record ArtifactEvent : ChatEvent
 
     public required string Content { get; init; }
 
-    public override string EventName => "artifact";
+    public override ChatEventType Type => ChatEventType.Artifact;
 }
 
 /// <summary>
@@ -113,7 +115,7 @@ public sealed record MessageEndEvent : ChatEvent
 {
     public int? TokenCount { get; init; }
 
-    public override string EventName => "message_end";
+    public override ChatEventType Type => ChatEventType.MessageEnd;
 }
 
 /// <summary>
@@ -123,5 +125,5 @@ public sealed record ErrorEvent : ChatEvent
 {
     public required string Message { get; init; }
 
-    public override string EventName => "error";
+    public override ChatEventType Type => ChatEventType.Error;
 }

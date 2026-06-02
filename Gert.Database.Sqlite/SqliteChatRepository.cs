@@ -225,7 +225,7 @@ public sealed class SqliteChatRepository(SqliteConnection connection) : IChatRep
         {
             toolCall.Id,
             toolCall.MessageId,
-            Kind = ToolKindToString(toolCall.Kind),
+            toolCall.Kind,
             Status = ToolStatusToString(toolCall.Status),
             toolCall.RequestJson,
             toolCall.ResponseJson,
@@ -368,7 +368,7 @@ public sealed class SqliteChatRepository(SqliteConnection connection) : IChatRep
     {
         Id = row.id,
         MessageId = row.message_id,
-        Kind = ToolKindFromString(row.kind),
+        Kind = row.kind,
         Status = ToolStatusFromString(row.status),
         RequestJson = row.request_json,
         ResponseJson = row.response_json,
@@ -427,22 +427,6 @@ public sealed class SqliteChatRepository(SqliteConnection connection) : IChatRep
         "system" => MessageRole.System,
         "tool" => MessageRole.Tool,
         _ => throw new InvalidOperationException($"Unknown message role '{value}'."),
-    };
-
-    private static string ToolKindToString(ToolKind kind) => kind switch
-    {
-        ToolKind.Rag => "rag",
-        ToolKind.WebSearch => "web_search",
-        ToolKind.Sandbox => "sandbox",
-        _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, null),
-    };
-
-    private static ToolKind ToolKindFromString(string value) => value switch
-    {
-        "rag" => ToolKind.Rag,
-        "web_search" => ToolKind.WebSearch,
-        "sandbox" => ToolKind.Sandbox,
-        _ => throw new InvalidOperationException($"Unknown tool kind '{value}'."),
     };
 
     private static string ToolStatusToString(ToolCallStatus status) => status switch

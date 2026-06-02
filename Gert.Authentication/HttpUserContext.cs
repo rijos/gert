@@ -1,5 +1,4 @@
 using System.Security.Claims;
-using System.Text.Json;
 using Gert.Service;
 using Gert.Service.Tools;
 using Microsoft.AspNetCore.Http;
@@ -58,44 +57,13 @@ public sealed class HttpUserContext(
                 return registry.AllIds;
             }
 
-            // JSON array (["rag","search"]) or space/comma/tab-delimited string; either
-            // way Normalize intersects with the registry and drops unknown ids.
-            return registry.Normalize(ParseToolIds(raw));
+            // Canonical format: a single space/comma-delimited scope string
+            // (OAuth-scope style). Normalize splits it and intersects with the
+            // registry, dropping any id the system doesn't have.
+            return registry.Normalize(raw);
         }
     }
 
     /// <inheritdoc />
     public bool CanUseTool(string id) => AllowedTools.Contains(id);
-
-    /// <summary>
-    /// Split a raw <c>gert_tools</c> value into candidate ids. A value that parses as a
-    /// JSON string array is read element-wise; anything else is treated as a
-    /// space/comma/tab-delimited list (handled by <see cref="ToolRegistry.Normalize(string)"/>).
-    /// </summary>
-    private static IEnumerable<string> ParseToolIds(string raw)
-    {
-        var trimmed = raw.TrimStart();
-        if (trimmed.StartsWith('['))
-        {
-            string[]? parsed = null;
-            try
-            {
-                parsed = JsonSerializer.Deserialize<string[]>(raw);
-            }
-            catch (JsonException)
-            {
-                // Not valid JSON after all — fall through to delimited parsing.
-            }
-
-            if (parsed is not null)
-            {
-                return parsed.Where(id => !string.IsNullOrWhiteSpace(id))
-                    .Select(id => id.Trim());
-            }
-        }
-
-        return raw.Split(
-            [' ', ',', '\t'],
-            StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-    }
 }

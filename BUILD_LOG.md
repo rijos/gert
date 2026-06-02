@@ -38,7 +38,7 @@ shape would break multi-instance #10).
 
 Order (semantic first, file-split enforcement last):
 1. ✅ Drop ISubDenylist (#10) — stateless revocation (expiry + IdP deactivation). Code done; docs pending in this commit.
-2. ⬜ Generic tool toggles (#1) + canonical gert_tools parse, no JSON-array branch (#9) + ChatEventType enum (#2)
+2. ✅ Generic tool toggles (#1: ToolToggles=dict map, ToolKind deleted, id strings) + canonical gert_tools (#9: dropped JSON branch) + ChatEventType enum (#2: discriminator renamed $type to avoid collision)
 3. ⬜ IStorage seam + LocalFsStorage (#3); GetThread ordering audit+test (#8); kill token_count inline casts (#7); ThrowingChatModel pragma (#12)
 4. ⬜ ChatService step-based redesign (#13, stateless) + custom Gert error responses 401/403/404 (#15)
 5. ⬜ Config: nullable→error explicit (#4); coverage (coverlet+ReportGenerator) (#5); Makefile test/run/coverage/e2e (#6)

@@ -15,7 +15,7 @@ namespace Gert.Model.Events;
 /// <c>type</c> field and the union round-trips through STJ.
 /// </para>
 /// </summary>
-[JsonPolymorphic(TypeDiscriminatorPropertyName = "type")]
+[JsonPolymorphic(TypeDiscriminatorPropertyName = "$type")]
 [JsonDerivedType(typeof(MessageStartEvent), "message_start")]
 [JsonDerivedType(typeof(ToolCallEvent), "tool_call")]
 [JsonDerivedType(typeof(ToolResultEvent), "tool_result")]
@@ -26,7 +26,11 @@ namespace Gert.Model.Events;
 [JsonDerivedType(typeof(ErrorEvent), "error")]
 public abstract record ChatEvent
 {
-    /// <summary>The SSE <c>event:</c> name for this event (e.g. <c>delta</c>).</summary>
+    /// <summary>
+    /// The kind of this event. Map it to the SSE <c>event:</c> name via
+    /// <see cref="ChatEventTypeNames.ToWireName"/>; the JSON <c>type</c>
+    /// discriminator above carries the same string.
+    /// </summary>
     [JsonIgnore]
-    public abstract string EventName { get; }
+    public abstract ChatEventType Type { get; }
 }

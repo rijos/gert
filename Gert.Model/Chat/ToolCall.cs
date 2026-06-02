@@ -13,7 +13,8 @@ public sealed record ToolCall
 
     public required string MessageId { get; init; }
 
-    public required ToolKind Kind { get; init; }
+    /// <summary>Capability id of the tool that ran (e.g. <c>rag</c>) — the <c>tool_calls.kind</c> column.</summary>
+    public required string Kind { get; init; }
 
     public required ToolCallStatus Status { get; init; }
 

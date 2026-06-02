@@ -23,7 +23,12 @@ public class SqliteChatRepositoryTests
 
         var conversation = NewConversation() with
         {
-            Tools = new ToolToggles { Rag = true, Search = true, Sandbox = false },
+            Tools = new ToolToggles(new Dictionary<string, bool>
+            {
+                ["rag"] = true,
+                ["search"] = true,
+                ["sandbox"] = false,
+            }),
             Params = new GenerationParams { Temperature = 0.7, MaxTokens = 512 },
         };
 
@@ -87,7 +92,7 @@ public class SqliteChatRepositoryTests
         {
             Id = Guid.NewGuid().ToString("D"),
             MessageId = message.Id,
-            Kind = ToolKind.WebSearch,
+            Kind = "web_search",
             Status = ToolCallStatus.Done,
             RequestJson = "{\"q\":\"x\"}",
             ResponseJson = "{\"hits\":1}",
@@ -124,7 +129,7 @@ public class SqliteChatRepositoryTests
         thread.Should().NotBeNull();
         thread!.Messages.Should().ContainSingle();
         thread.ToolCalls.Should().ContainSingle()
-            .Which.Kind.Should().Be(ToolKind.WebSearch);
+            .Which.Kind.Should().Be("web_search");
         thread.Citations.Should().ContainSingle()
             .Which.Score.Should().Be(0.89);
         thread.Artifacts.Should().ContainSingle()
@@ -149,7 +154,7 @@ public class SqliteChatRepositoryTests
         {
             Id = Guid.NewGuid().ToString("D"),
             MessageId = message.Id,
-            Kind = ToolKind.Rag,
+            Kind = "rag",
             Status = ToolCallStatus.Done,
             CreatedAt = now,
         });

@@ -1,7 +1,6 @@
 using System.Security.Claims;
 using FluentAssertions;
 using Gert.Authentication;
-using Gert.Model;
 using Gert.Service.Tools;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Options;
@@ -137,11 +136,13 @@ public sealed class HttpUserContextTests
     }
 
     [Fact]
-    public void Json_array_gert_tools_is_parsed()
+    public void Json_array_gert_tools_is_not_parsed_and_yields_nothing()
     {
+        // The dirty JSON-array format is gone: a JSON literal is just a scope
+        // string whose tokens ("[\"rag\"", "\"search\"]") match no registered id.
         var user = Build(Principal(gertTools: """["rag","search"]"""));
 
-        user.AllowedTools.Should().BeEquivalentTo("rag", "search");
+        user.AllowedTools.Should().BeEmpty();
     }
 
     [Fact]
@@ -209,7 +210,6 @@ public sealed class HttpUserContextTests
     {
         public string Id { get; } = id;
         public string Name => Id;
-        public ToolKind Kind => ToolKind.Rag;
         public string Description => Id;
         public string ParametersSchema => "{}";
 
