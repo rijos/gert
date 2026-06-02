@@ -19,7 +19,7 @@ Status: ⬜ not started · 🟡 in progress · ✅ done · 🔴 blocked
 | U7b | Full tool-loop orchestrator | ⬜ | |
 | U7c | Tools (rag/search/sandbox) | ⬜ | |
 | U7d | Ingestion pipeline | ⬜ | |
-| U8 | Gert.Authentication | ⬜ | F11 |
+| U8 | Gert.Authentication | ✅ | F11: HttpUserContext (3-role claim mapping), RS256-pinned JwtBearer, Admin/fallback policies, sub-denylist; 19 tests |
 | U9a | API walking skeleton | ⬜ | **M1 gate** |
 | U9b | API breadth + RBAC/IDOR + headers | ⬜ | F1,F6,F10,F9 |
 | U10 | Gert.External real adapters | ⬜ | F5,F7,F8 |
@@ -48,3 +48,4 @@ with the sandbox disabled, iterates against compiler output, and checkpoint-comm
 - U3 ✅ — **M0 COMPLETE.** Test infra authored by agent; orchestrator: fixed span-across-`yield` in FakeChatModel echo tokenizer; pinned packages (Microsoft.Data Identity 8.x, AspNetCore.Mvc.Testing 10.0) — restored clean; generated `embeddings_golden.json` from the real `FakeEmbeddings.Embed` via a .NET-10 file-based app (Utf8JsonWriter, bit-exact). Conformance theory green on all 6 vectors. Packages confirmed valid: IdentityModel 8.3.0, Mvc.Testing 10.0.0.
 - Process: golden generation needs the compiled fake → orchestrator-only step (agents can't run code). Documented for future regen.
 - U4a+U5 ✅ — SQLite storage core authored by agent; orchestrator fixes: (1) suppressed xUnit1051 suite-wide in tests/Directory.Build.props (responsiveness nicety, not correctness); (2) Dapper Int64 binding — widened MessageRow.token_count / CitationRow.ordinal / ArtifactRow.version to `long` (SQLite returns Int64) and cast to model `int` at mappers. 27/27 storage tests green, 38 total. Pinned: Microsoft.Data.Sqlite 9.0.0, Dapper 2.1.66, Microsoft.Extensions.Options 9.0.0, FluentAssertions 7.0.0 (free). rag.db/vec0 deferred to U4b (TODOs in SqliteRagRepository/OpenRagAsync/EnsureProjectAsync).
+- U8 ✅ — Gert.Authentication authored by agent; built clean first try (JwtBearer 10.0.0, NSubstitute 5.3.0 valid). 19 auth tests green, 56 total. ToolOptions(DefaultGrant) added in Gert.Service/Tools. Denylist + RS256-pin tested via extracted pure statics (no server needed). Note: GertApiFactory still has the U9a TODO (TestTokens JWKS + TempDataRoot wiring).

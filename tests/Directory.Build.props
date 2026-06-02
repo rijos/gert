@@ -22,6 +22,8 @@
     <IdentityModelVersion>8.3.0</IdentityModelVersion>
     <!-- U4a/U5 storage tests. NOTE: orchestrator pins to a free 7.x. -->
     <FluentAssertionsVersion>7.0.0</FluentAssertionsVersion>
+    <!-- U8 auth tests. Orchestrator pins a valid 5.x. -->
+    <NSubstituteVersion>5.3.0</NSubstituteVersion>
   </PropertyGroup>
 
 </Project>

@@ -13,6 +13,8 @@
     <MicrosoftDataSqliteVersion>9.0.0</MicrosoftDataSqliteVersion>
     <DapperVersion>2.1.66</DapperVersion>
     <MicrosoftExtensionsOptionsVersion>9.0.0</MicrosoftExtensionsOptionsVersion>
+    <!-- U8 auth: orchestrator pins a valid net10.0 version. -->
+    <JwtBearerVersion>10.0.0</JwtBearerVersion>
   </PropertyGroup>
 
 </Project>
