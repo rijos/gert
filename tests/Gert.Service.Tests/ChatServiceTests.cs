@@ -56,7 +56,7 @@ public sealed class ChatServiceTests
         var request = new SendMessageRequest { Content = "should I use Qdrant or sqlite-vec?" };
         var sut = NewService(new FakeChatModel());
 
-        var events = await Collect(sut.SendMessageAsync("default", "conv-1", request));
+        var events = await Run(sut, "default", "conv-1", request);
 
         events.Should().HaveCountGreaterThan(2);
         events.First().Should().BeOfType<MessageStartEvent>();
@@ -83,7 +83,7 @@ public sealed class ChatServiceTests
         var request = new SendMessageRequest { Content = "should I use Qdrant or sqlite-vec?" };
         var sut = NewService(new FakeChatModel());
 
-        await Collect(sut.SendMessageAsync("default", "conv-1", request));
+        await Run(sut, "default", "conv-1", request);
 
         // User message persisted.
         await _repo.Received(1).InsertMessageAsync(
@@ -112,7 +112,7 @@ public sealed class ChatServiceTests
         var request = new SendMessageRequest { Content = "hello" };
         var sut = NewService(new FakeChatModel());
 
-        var events = await Collect(sut.SendMessageAsync("default", "conv-1", request));
+        var events = await Run(sut, "default", "conv-1", request);
         var startId = events.OfType<MessageStartEvent>().Single().MessageId;
 
         await _repo.Received(1).InsertMessageAsync(
@@ -125,11 +125,15 @@ public sealed class ChatServiceTests
     {
         var sut = NewService(new FakeChatModel());
 
-        await Collect(sut.SendMessageAsync(
-            "proj-9", "conv-1", new SendMessageRequest { Content = "hello" }));
+        await Run(sut, "proj-9", "conv-1", new SendMessageRequest { Content = "hello" });
 
-        await _provider.Received(1).OpenChatAsync(
+        // Both phases open chat.db for the same (iss, sub, pid) — start (persist user)
+        // and run (persist assistant) — never an arbitrary/caller-supplied identity.
+        await _provider.Received().OpenChatAsync(
             _user.Iss, _user.Sub, "proj-9", Arg.Any<CancellationToken>());
+        await _provider.DidNotReceive().OpenChatAsync(
+            Arg.Is<string>(s => s != _user.Iss),
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -137,8 +141,7 @@ public sealed class ChatServiceTests
     {
         var sut = NewService(new ThrowingChatModel("upstream exploded"));
 
-        var events = await Collect(sut.SendMessageAsync(
-            "default", "conv-1", new SendMessageRequest { Content = "boom" }));
+        var events = await Run(sut, "default", "conv-1", new SendMessageRequest { Content = "boom" });
 
         events.First().Should().BeOfType<MessageStartEvent>();
         events.OfType<ErrorEvent>().Single().Message.Should().Be("upstream exploded");
@@ -152,7 +155,7 @@ public sealed class ChatServiceTests
     }
 
     [Fact]
-    public async Task Invalid_request_yields_only_an_error_event()
+    public async Task Invalid_request_throws_validation_exception_before_any_disk_touch()
     {
         var failing = Substitute.For<IValidationProvider>();
         failing.Validate(Arg.Any<SendMessageRequest>()).Returns(
@@ -163,15 +166,28 @@ public sealed class ChatServiceTests
 
         var sut = new ChatService(_provider, new FakeChatModel(), _user, failing);
 
-        var events = await Collect(sut.SendMessageAsync(
-            "default", "conv-1", new SendMessageRequest { Content = "" }));
+        // Phase 1 throws ValidationException (the host maps it to a 400 ProblemDetails)
+        // — it is no longer an in-stream ErrorEvent.
+        var act = async () => await sut.StartTurnAsync(
+            "default", "conv-1", new SendMessageRequest { Content = "" });
 
-        events.Should().ContainSingle().Which.Should().BeOfType<ErrorEvent>();
-        // Fail-closed before any disk/model touch.
+        var thrown = (await act.Should().ThrowAsync<ValidationException>()).Which;
+        thrown.Result.Errors.Should().ContainSingle()
+            .Which.Property.Should().Be("Content");
+
+        // Fail-closed: no chat.db opened and nothing persisted (before disk).
         await _provider.DidNotReceive().OpenChatAsync(
             Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
         await _repo.DidNotReceive().InsertMessageAsync(
             Arg.Any<Message>(), Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>Drive both stateless phases (StartTurn → Run) and collect the events.</summary>
+    private static async Task<IReadOnlyList<ChatEvent>> Run(
+        ChatService sut, string pid, string conversationId, SendMessageRequest request)
+    {
+        var turn = await sut.StartTurnAsync(pid, conversationId, request);
+        return await Collect(sut.RunAsync(turn));
     }
 
     private static async Task<IReadOnlyList<ChatEvent>> Collect(IAsyncEnumerable<ChatEvent> source)

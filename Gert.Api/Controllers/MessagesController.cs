@@ -22,7 +22,14 @@ public sealed class MessagesController : ControllerBase
     public MessagesController(IGertServices services) =>
         _services = services ?? throw new ArgumentNullException(nameof(services));
 
-    /// <summary>Stream the assistant turn as <c>text/event-stream</c>.</summary>
+    /// <summary>
+    /// Stream the assistant turn as <c>text/event-stream</c>, driving the two
+    /// stateless service phases within this one request: phase 1
+    /// (<c>StartTurnAsync</c>) validates + persists the user message + builds the
+    /// in-memory turn — a thrown <see cref="Gert.Service.Validation.ValidationException"/> becomes
+    /// a 400 ProblemDetails (via the exception handler) <b>before</b> the stream
+    /// opens; phase 2 (<c>RunAsync</c>) streams the prepared turn to SSE.
+    /// </summary>
     [HttpPost]
     public async Task Post(
         string pid,
@@ -30,7 +37,13 @@ public sealed class MessagesController : ControllerBase
         [FromBody] SendMessageRequest request,
         CancellationToken cancellationToken)
     {
-        var events = _services.Chat.SendMessageAsync(pid, id, request, cancellationToken);
+        // Phase 1 runs before any SSE bytes — invalid input throws and is mapped to
+        // 400 by the exception handler, never an in-stream error frame.
+        var turn = await _services.Chat.StartTurnAsync(pid, id, request, cancellationToken)
+            .ConfigureAwait(false);
+
+        // Phase 2: stream the prepared turn.
+        var events = _services.Chat.RunAsync(turn, cancellationToken);
         await SseWriter.WriteAsync(Response, events, cancellationToken).ConfigureAwait(false);
     }
 }
