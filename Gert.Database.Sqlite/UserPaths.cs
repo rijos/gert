@@ -90,7 +90,7 @@ public sealed class UserPaths(IOptions<StorageOptions> options)
     public string ChatDb(string iss, string sub, string pid) =>
         Path.Combine(ProjectRoot(iss, sub, pid), "chat.db");
 
-    /// <summary>The RAG database <c>projects/{pid}/rag.db</c> (opened in U4b).</summary>
+    /// <summary>The RAG database <c>projects/{pid}/rag.db</c> (sqlite-vec + FTS5).</summary>
     public string RagDb(string iss, string sub, string pid) =>
         Path.Combine(ProjectRoot(iss, sub, pid), "rag.db");
 

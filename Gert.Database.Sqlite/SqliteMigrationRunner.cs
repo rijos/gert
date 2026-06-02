@@ -11,9 +11,10 @@ namespace Gert.Database.Sqlite;
 /// embedded resources named <c>Migrations/{family}/NNN_*.sql</c>.
 ///
 /// <para>
-/// SCOPE NOTE (U4a): only the <c>chat</c> family is applied. The <c>rag</c> family
-/// (vec0 / fts5) is authored but not run here — see <see cref="SqliteRagRepository"/>.
-/// TODO U4b: apply rag migrations once the sqlite-vec native extension is loaded.
+/// Both the <c>chat</c> and <c>rag</c> families are applied (per-DB). The <c>rag</c>
+/// family creates <c>vec0</c> / FTS5 virtual tables, so the connection it runs on
+/// must already have the native <b>sqlite-vec</b> extension loaded — the provider
+/// loads it in <c>OpenRagConnectionAsync</c> before calling here.
 /// </para>
 /// </summary>
 public static class SqliteMigrationRunner

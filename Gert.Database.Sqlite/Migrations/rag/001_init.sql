@@ -1,10 +1,16 @@
 -- rag.db schema v1 (storage-and-data.md § rag.db).
 --
--- SCOPE NOTE (U4a): this file is authored for completeness but is NOT applied in
--- this unit. The vec0 / fts5 virtual tables below require the native sqlite-vec
--- extension, which is wired in U4b. The migration runner is never pointed at this
--- file yet, and rag.db is never opened. See SqliteRagRepository / OpenRagAsync.
--- TODO U4b: requires sqlite-vec native extension before this can be applied.
+-- The vec0 / fts5 virtual tables below require the native sqlite-vec extension,
+-- which the provider loads on every rag.db connection (OpenRagAsync) before this
+-- migration runs. The three indexes share an integer rowid (chunks.id ==
+-- vec_chunks.chunk_id == fts_chunks rowid), so they join cheaply.
+--
+-- fts_chunks is an *external-content* FTS5 table (content='chunks'): it stores no
+-- copy of the text, only the inverted index keyed by chunks.id. There are no
+-- INSERT/DELETE triggers — the repository writes the fts rows explicitly (with
+-- the matching rowid) on insert and issues the fts5 'delete' command on removal,
+-- and deletes vec_chunks rows explicitly, since FK ON DELETE CASCADE does not
+-- reach virtual tables.
 
 CREATE TABLE documents (
     id          TEXT PRIMARY KEY,

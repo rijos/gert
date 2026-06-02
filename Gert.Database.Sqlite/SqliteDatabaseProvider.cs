@@ -23,10 +23,10 @@ namespace Gert.Database.Sqlite;
 /// </para>
 ///
 /// <para>
-/// SCOPE NOTE (U4a): only <c>chat.db</c> is provisioned/migrated/opened here.
-/// rag.db needs the sqlite-vec native extension (U4b), so rag provisioning is not
-/// applied and <see cref="OpenRagAsync"/> returns the stub
-/// <see cref="SqliteRagRepository"/> (whose members throw with a TODO U4b note).
+/// Both <c>chat.db</c> and <c>rag.db</c> are provisioned/migrated/opened here.
+/// <c>rag.db</c> connections additionally load the native <b>sqlite-vec</b>
+/// extension (<see cref="OpenRagConnectionAsync"/>) so the <c>vec0</c> / FTS5
+/// virtual tables in the rag migration family can be created and queried.
 /// </para>
 /// </summary>
 public sealed partial class SqliteDatabaseProvider : IDatabaseProvider
@@ -148,12 +148,17 @@ public sealed partial class SqliteDatabaseProvider : IDatabaseProvider
         }
 
         // chat.db: open + apply chat migrations by PRAGMA user_version.
-        await using var connection = await OpenConnectionAsync(_paths.ChatDb(iss, sub, pid), cancellationToken)
-            .ConfigureAwait(false);
-        await SqliteMigrationRunner.ApplyAsync(connection, "chat", cancellationToken).ConfigureAwait(false);
+        await using (var chat = await OpenConnectionAsync(_paths.ChatDb(iss, sub, pid), cancellationToken)
+            .ConfigureAwait(false))
+        {
+            await SqliteMigrationRunner.ApplyAsync(chat, "chat", cancellationToken).ConfigureAwait(false);
+        }
 
-        // TODO U4b: open rag.db here and apply the "rag" migration family once the
-        // sqlite-vec native extension is loaded. Not done in U4a (scope note).
+        // rag.db: open with the sqlite-vec extension loaded, then apply the "rag"
+        // migration family (vec0 + fts5 virtual tables need the extension present).
+        await using var rag = await OpenRagConnectionAsync(_paths.RagDb(iss, sub, pid), cancellationToken)
+            .ConfigureAwait(false);
+        await SqliteMigrationRunner.ApplyAsync(rag, "rag", cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc />
@@ -175,17 +180,20 @@ public sealed partial class SqliteDatabaseProvider : IDatabaseProvider
     }
 
     /// <inheritdoc />
-    public Task<IRagRepository> OpenRagAsync(
+    public async Task<IRagRepository> OpenRagAsync(
         string iss,
         string sub,
         string pid,
         CancellationToken cancellationToken = default)
     {
-        // TODO U4b: requires sqlite-vec native extension. For now return the stub so
-        // the project compiles; provisioning does not create/open rag.db (scope note).
-        ValidateIdentity(iss, sub);
-        UserPaths.ValidatePid(pid);
-        return Task.FromResult<IRagRepository>(new SqliteRagRepository());
+        // Ensure the user + project (incl. rag.db migration), per the interface
+        // contract. Idempotent, so the already-provisioned path is cheap.
+        await EnsureProvisionedAsync(iss, sub, cancellationToken).ConfigureAwait(false);
+        await EnsureProjectAsync(iss, sub, pid, cancellationToken).ConfigureAwait(false);
+
+        var connection = await OpenRagConnectionAsync(_paths.RagDb(iss, sub, pid), cancellationToken)
+            .ConfigureAwait(false);
+        return new SqliteRagRepository(connection);
     }
 
     /// <summary>The folder key for a validated identity (exposed for diagnostics/tests).</summary>
@@ -282,6 +290,40 @@ public sealed partial class SqliteDatabaseProvider : IDatabaseProvider
             throw;
         }
     }
+
+    /// <summary>
+    /// Open a <c>rag.db</c> connection: the same pragmas as
+    /// <see cref="OpenConnectionAsync"/>, then enable + load the native
+    /// <b>sqlite-vec</b> extension so the <c>vec0</c> / FTS5 virtual tables are
+    /// usable (chat-and-tools.md § "Loading sqlite-vec in .NET").
+    /// </summary>
+    private async Task<SqliteConnection> OpenRagConnectionAsync(
+        string dbPath,
+        CancellationToken cancellationToken)
+    {
+        var connection = await OpenConnectionAsync(dbPath, cancellationToken).ConfigureAwait(false);
+        try
+        {
+            connection.EnableExtensions(true);
+            connection.LoadExtension(ResolveVecExtensionPath());
+            return connection;
+        }
+        catch
+        {
+            await connection.DisposeAsync().ConfigureAwait(false);
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// The configured <see cref="StorageOptions.VecExtensionPath"/>, or
+    /// <c>vec0.so</c> beside the running assembly (the csproj copies the vendored
+    /// extension into every consumer's output).
+    /// </summary>
+    private string ResolveVecExtensionPath() =>
+        string.IsNullOrWhiteSpace(_options.VecExtensionPath)
+            ? Path.Combine(AppContext.BaseDirectory, "vec0.so")
+            : _options.VecExtensionPath;
 
     private static async Task WriteJsonAsync<T>(string path, T value, CancellationToken cancellationToken)
     {

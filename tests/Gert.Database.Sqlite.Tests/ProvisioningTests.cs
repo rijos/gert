@@ -62,8 +62,8 @@ public class ProvisioningTests
         Directory.Exists(paths.FilesDir(ProviderFixture.ExpectedIssuer, "alice", "default")).Should().BeTrue();
         Directory.Exists(paths.MemoryDir(ProviderFixture.ExpectedIssuer, "alice", "default")).Should().BeTrue();
 
-        // rag.db is NOT provisioned in U4a (scope note).
-        File.Exists(paths.RagDb(ProviderFixture.ExpectedIssuer, "alice", "default")).Should().BeFalse();
+        // rag.db is provisioned alongside chat.db (U4b — vec0 + FTS5 migrated).
+        File.Exists(paths.RagDb(ProviderFixture.ExpectedIssuer, "alice", "default")).Should().BeTrue();
     }
 
     [Fact]

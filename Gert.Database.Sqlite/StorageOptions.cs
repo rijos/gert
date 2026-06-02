@@ -10,6 +10,16 @@ public sealed class StorageOptions
     public const string SectionName = "Storage";
 
     /// <summary>
+    /// Filesystem path to the native <b>sqlite-vec</b> loadable extension
+    /// (<c>vec0.so</c> / <c>vec0.dll</c>), loaded on every <c>rag.db</c>
+    /// connection (chat-and-tools.md § "Loading sqlite-vec in .NET"). When null,
+    /// the provider falls back to <c>vec0.so</c> beside the running assembly
+    /// (<c>AppContext.BaseDirectory</c>) — the csproj copies the vendored
+    /// extension there, and it flows transitively into every consumer's output.
+    /// </summary>
+    public string? VecExtensionPath { get; set; }
+
+    /// <summary>
     /// Filesystem root that contains the <c>users/</c> tree
     /// (storage-and-data.md § layout). Every per-user folder lives under
     /// <c>{DataRoot}/users/{key}</c>.
