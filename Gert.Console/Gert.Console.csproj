@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Gert.Service\Gert.Service.csproj" />
+    <ProjectReference Include="..\Gert.Database.Sqlite\Gert.Database.Sqlite.csproj" />
+    <ProjectReference Include="..\Gert.External\Gert.External.csproj" />
+  </ItemGroup>
+
+</Project>

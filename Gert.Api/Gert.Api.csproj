@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <ItemGroup>
+    <ProjectReference Include="..\Gert.Service\Gert.Service.csproj" />
+    <ProjectReference Include="..\Gert.Authentication\Gert.Authentication.csproj" />
+    <ProjectReference Include="..\Gert.Database.Sqlite\Gert.Database.Sqlite.csproj" />
+    <ProjectReference Include="..\Gert.External\Gert.External.csproj" />
+  </ItemGroup>
+
+</Project>

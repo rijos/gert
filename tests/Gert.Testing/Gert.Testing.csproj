@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\Gert.Service\Gert.Service.csproj" />
+    <ProjectReference Include="..\..\Gert.Model\Gert.Model.csproj" />
+  </ItemGroup>
+
+</Project>

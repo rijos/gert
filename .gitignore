@@ -1,0 +1,20 @@
+# Build output
+bin/
+obj/
+
+# Dev-only secrets (JWT signing keys etc.) — never commit
+.dev/
+
+# User-specific / IDE
+*.user
+.vs/
+
+# Local config overrides (may contain secrets)
+appsettings.*.local.json
+
+# Test output
+TestResults/
+
+# Python
+.venv/
+__pycache__/
