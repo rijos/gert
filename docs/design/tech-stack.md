@@ -13,8 +13,8 @@
 | Model API | OpenAI-compatible client → **vLLM** | Streaming + function calling out of the box. |
 | HTTP | `IHttpClientFactory` + **Polly** | vLLM / SearXNG calls with resilience. |
 | Background work | `System.Threading.Channels` + `BackgroundService` (Gert.Api) | Ingestion queue — an **Api hosting** concern wrapping `IIngestionService`; the Console ingests inline. |
-| Extraction | **PdfPig** (PDF), **OpenXML** (DOCX) | Text extraction for chunking. |
-| Sandbox | **gVisor (`runsc`)** containers | Isolated Python execution; the Console can wire a null/stub sandbox. |
+| Extraction | **PdfPig** (PDF), **OpenXML** (DOCX) | Text extraction for chunking. Parses **untrusted** bytes, so it runs in an **isolated, unprivileged subprocess** (dropped privs, no net, `RLIMIT_AS`/`CPU`/`NPROC` + timeout) with DTD/external-entity **off** (XXE) and decompressed-size/zip-entry caps (bombs) — may reuse gVisor ([security F7](security.md#3-findings--remediations)). |
+| Sandbox | **gVisor (`runsc`)** containers | Isolated Python execution, **outbound egress off by default**; the Console can wire a null/stub sandbox. |
 
 ## Architecture
 
@@ -107,7 +107,9 @@ Gert.sln
 │
 ├─ Gert.Api/                  # HTTP host — references Service, Authentication, Database.Sqlite
 │  ├─ Program.cs              # DI, JwtBearer, static files + SPA fallback, SSE, BackgroundService
-│  ├─ appsettings.json        # vLLM URLs, SearXNG, embedding dim, DataRoot, Auth, Tools:DefaultGrant
+│  ├─ appsettings.json        # NON-secret defaults only: vLLM/SearXNG URLs, embedding dim, DataRoot,
+│  │                          #   Auth, Tools:DefaultGrant. Keys/secrets come from env / user-secrets
+│  │                          #   / a secret store — never committed (security F8).
 │  ├─ Controllers/            # thin — Models, Conversations, Messages(SSE), Documents, Artifacts, Admin
 │  ├─ Ingestion/              # Channel queue + IngestionWorker (BackgroundService) → IIngestionService
 │  └─ wwwroot/                # SPA assets from Gert.Web (raw in dev, minified on publish)

@@ -2,6 +2,8 @@
 
 All endpoints require a valid bearer token except `GET /healthz`. JSON in/out unless noted. The user is always implicit (from the token) — there is **no** `userId` in any path.
 
+Most data is **project-scoped**, so conversations, messages, documents, and artifacts live under `/api/projects/{pid}/…`, where `pid` is a project UUID or the literal `default`. Unlike the user (which comes only from the token), `pid` comes from the path — but it is validated and only ever resolved *inside* the token-derived user folder, so it selects among *this* user's projects and can never reach another user's data ([configuration.md §2.5](configuration.md#25-path-resolution--why-a-request-supplied-project-id-is-still-idor-safe)). The model catalog, user settings, and admin are **not** project-scoped.
+
 ## Models
 
 ```
@@ -20,20 +22,41 @@ Returns the configured vLLM models for the picker (id, display name, endpoint, c
 ]
 ```
 
-## Conversations
+## Settings (user-level)
+
+| Method | Path | Notes |
+|--------|------|-------|
+| `GET` | `/api/settings` | The user's preferences from `settings.json`: theme, UI language, default reply language, default model, default tools, memory mode ([configuration §3](configuration.md#3-user-settings)). |
+| `PUT` | `/api/settings` | Update any subset. |
+
+## Projects
 
 | Method | Path | Body / notes |
 |--------|------|--------------|
-| `GET` | `/api/conversations` | List (id, title, model, updated_at, archived). Client groups into Today/Yesterday/Earlier. |
-| `POST` | `/api/conversations` | `{ title?, model_id, tools }` → new conversation. |
-| `GET` | `/api/conversations/{id}` | Full thread: messages + tool_calls + citations + artifacts. |
-| `PATCH` | `/api/conversations/{id}` | `{ title?, model_id?, tools?, archived? }` (rename / switch model / toggle tools). |
-| `DELETE` | `/api/conversations/{id}` | Cascade-deletes messages, tool calls, citations, artifacts. |
+| `GET` | `/api/projects` | List the user's projects (reads `projects/*/meta.json`): id, name, counts, updated_at. |
+| `POST` | `/api/projects` | `{ name, description?, instructions?, defaults? }` → a new isolated project folder. |
+| `GET` | `/api/projects/{pid}` | Project config + counts (conversations, documents, memory). |
+| `PATCH` | `/api/projects/{pid}` | `{ name?, description?, instructions?, defaults? }` (rename / edit instructions / defaults). |
+| `DELETE` | `/api/projects/{pid}` | **`rm -rf projects/{pid}`** — its chats *and* documents. `default` is emptied, not removed ([configuration §5](configuration.md#5-data-lifecycle-user-facing)). |
+
+`defaults` = `{ model_id?, tools?, params?, reply_language? }` — the project-level entries in the [configuration cascade](configuration.md#1-the-configuration-cascade).
+
+## Conversations
+
+Scoped to a project. `pid` may be `default`.
+
+| Method | Path | Body / notes |
+|--------|------|--------------|
+| `GET` | `/api/projects/{pid}/conversations` | List (id, title, model, updated_at, archived). Client groups into Today/Yesterday/Earlier. |
+| `POST` | `/api/projects/{pid}/conversations` | `{ title?, model_id?, tools?, params? }` → new conversation (unset fields inherit the project/user defaults). |
+| `GET` | `/api/projects/{pid}/conversations/{id}` | Full thread: messages + tool_calls + citations + artifacts. |
+| `PATCH` | `/api/projects/{pid}/conversations/{id}` | `{ title?, model_id?, tools?, params?, archived? }` (rename / switch model / toggle tools). |
+| `DELETE` | `/api/projects/{pid}/conversations/{id}` | Cascade-deletes messages, tool calls, citations, artifacts. |
 
 ## Sending a message (streaming)
 
 ```
-POST /api/conversations/{id}/messages
+POST /api/projects/{pid}/conversations/{id}/messages
 Accept: text/event-stream
 ```
 Body:
@@ -62,29 +85,61 @@ Everything emitted is also persisted to `chat.db` as the stream completes, so re
 
 ## Documents (knowledge panel)
 
+Scoped to a project — a document belongs to exactly one project's `rag.db`.
+
 | Method | Path | Notes |
 |--------|------|-------|
-| `GET` | `/api/documents` | List for the doclist: name, size, chunk_count, status, error. |
-| `POST` | `/api/documents` | `multipart/form-data` upload. Stores the file, inserts `documents` row with `status='processing'`, enqueues ingestion, returns immediately. |
-| `GET` | `/api/documents/{id}` | **Polled** by the client while processing → drives `processing → ready/failed` pills and "embedding 12 / 19 chunks…". Returns `status` and a progress field (e.g. `chunk_count` / chunks embedded). |
-| `DELETE` | `/api/documents/{id}` | Deletes chunks + vec rows + fts rows + the original file. |
-| `GET` | `/api/documents/events` | *(deferred — see [decisions.md §6](decisions.md#6-live-ingestion-progress))* SSE stream of ingestion progress; additive future upgrade over polling. |
+| `GET` | `/api/projects/{pid}/documents` | List for the doclist: name, size, chunk_count, status, error. |
+| `POST` | `/api/projects/{pid}/documents` | `multipart/form-data` upload. Stores the file, inserts `documents` row with `status='processing'`, enqueues ingestion, returns immediately. |
+| `GET` | `/api/projects/{pid}/documents/{id}` | **Polled** by the client while processing → drives `processing → ready/failed` pills and "embedding 12 / 19 chunks…". Returns `status` and a progress field (e.g. `chunk_count` / chunks embedded). |
+| `DELETE` | `/api/projects/{pid}/documents/{id}` | Deletes chunks + vec rows + fts rows + the original file. |
+| `GET` | `/api/projects/{pid}/documents/events` | *(deferred — see [decisions.md §6](decisions.md#6-live-ingestion-progress))* SSE stream of ingestion progress; additive future upgrade over polling. |
+
+## Memory (per project)
+
+Memory entries are stored as files under `projects/{pid}/memory/` and embedded into the project's `rag.db` as `kind='memory'` ([configuration §2.3](configuration.md#23-memory)).
+
+| Method | Path | Notes |
+|--------|------|-------|
+| `GET` | `/api/projects/{pid}/memory` | List entries (id, title, pinned, updated_at). |
+| `POST` | `/api/projects/{pid}/memory` | `{ title, content, pinned? }` — add/edit an entry; it is (re)embedded for retrieval. |
+| `DELETE` | `/api/projects/{pid}/memory/{id}` | Remove an entry and its chunks. |
 
 ## Artifacts
 
-Artifacts are produced during chat (see [Chat orchestration](chat-and-tools.md#chat-orchestration-the-tool-loop)) and stored in `chat.db`. They are returned inline with the thread, plus:
+Artifacts are produced during chat (see [Chat orchestration](chat-and-tools.md#chat-orchestration-the-tool-loop)) and stored in the project's `chat.db`. They are returned inline with the thread, plus:
 
 ```
-GET    /api/conversations/{id}/artifacts   # list for the canvas tab strip
-GET    /api/artifacts/{id}                 # raw content (download / "Source" view)
+GET    /api/projects/{pid}/conversations/{id}/artifacts   # list for the canvas tab strip
+GET    /api/projects/{pid}/artifacts/{id}                 # raw content (download / "Source" view)
 ```
+
+## Account & data
+
+Self-service data lifecycle ([configuration §5](configuration.md#5-data-lifecycle-user-facing)). Identity removal is Pocket ID's, not the API's.
+
+| Method | Path | Notes |
+|--------|------|-------|
+| `POST` | `/api/projects/{pid}/forget-documents` | Wipe a project's `rag.db` (+ `files/`), keep its chats. |
+| `GET` | `/api/projects/{pid}/export` | Download one project: conversations (JSON/Markdown) + original files. |
+| `GET` | `/api/account/export` | Download everything — all projects. |
+| `DELETE` | `/api/account` | **`rm -rf users/{key}`** — erases all of this user's data. Does **not** remove the Pocket ID account ([operations → user lifecycle](operations.md#user-lifecycle--remove-a-user--remove-a-folder)). |
 
 ## Admin (requires `Admin` policy)
 
 | Method | Path | Notes |
 |--------|------|-------|
 | `GET` | `/api/admin/users` | Lists user folders by reading each `meta.json`: username, key, size, doc count, last-active. The closest thing to a "user list" the API has. |
+| `GET` | `/api/admin/users/{key}` | One user's folder summary. `{key}` validated as below. |
 | `DELETE` | `/api/admin/users/{key}` | **`rm -rf /data/users/{key}`.** Removes all of that user's data (see [Operations → User lifecycle](operations.md#user-lifecycle--remove-a-user--remove-a-folder)). |
+
+> **`{key}` is the most dangerous path parameter in the API** — it feeds a `rm -rf`. Unlike `pid`
+> (whose IDOR-safety is covered in [configuration §2.5](configuration.md#25-path-resolution--why-a-request-supplied-project-id-is-still-idor-safe)),
+> `{key}` is **not** scoped under a token-derived folder, so it gets its own guard: it **must match
+> `^[0-9a-f]{64}$`** (a sha256 hex) before any path-join, and the resolved absolute path is asserted
+> to sit **under `/data/users/`** before the delete runs. A non-hex / `..` / absolute value is
+> rejected outright — never path-joined ([security F6](security.md#3-findings--remediations), tested
+> in [testing §5/§6](testing.md#validation--the-input-security-boundary)).
 
 The API **cannot create users** — Pocket ID does. Admin here is purely data lifecycle and usage visibility.
 

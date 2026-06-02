@@ -14,8 +14,10 @@ REST API backend for `gert-frontend-mockup-v2.html`.
 4. [Per-user storage & data model](storage-and-data.md) — folder layout, path resolution, connection management, `chat.db` / `rag.db` schemas.
 5. [REST API](rest-api.md) — endpoints for models, conversations, streaming messages, documents, artifacts, admin.
 6. [Chat orchestration, RAG, ingestion & tools](chat-and-tools.md) — the tool loop, hybrid retrieval, the ingestion pipeline, and tool details.
-7. [Operations](operations.md) — user lifecycle ("remove a user = remove a folder") and cross-cutting concerns.
-8. [Tech stack](tech-stack.md) — chosen libraries and suggested solution layout.
-9. [UI components & `wwwroot` layout](ui-components.md) — VanJS SPA structure, component conventions, CSS split, the no-npm dev/release pipeline.
-10. [Testing plan](testing.md) — the fake in-memory host, .NET whitebox tests, Console coverage, and the Python + headless-browser smoke launcher.
-11. [Decisions to confirm](decisions.md) — open choices we still need to lock down.
+7. [Configuration & projects](configuration.md) — what users configure (themes, language, models, data deletion) and the per-project isolation model with memory.
+8. [Operations](operations.md) — user lifecycle ("remove a user = remove a folder") and cross-cutting concerns.
+9. [Security](security.md) — trust boundaries, the asset→threat→control table, and the cross-cutting controls (CSP, SSRF, parser hardening) with residual-risk acceptances.
+10. [Tech stack](tech-stack.md) — chosen libraries and suggested solution layout.
+11. [UI components & `wwwroot` layout](ui-components.md) — VanJS SPA structure, component conventions, CSS split, the no-npm dev/release pipeline.
+12. [Testing plan](testing.md) — the fake in-memory host, .NET whitebox tests, Console coverage, and the Python + headless-browser smoke launcher.
+13. [Decisions to confirm](decisions.md) — open choices we still need to lock down.

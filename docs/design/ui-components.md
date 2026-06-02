@@ -47,7 +47,7 @@ wwwroot/
 
   state/                     # reactive stores — van.state(); NO DOM, NO fetch
     ui.js                    #   theme, nav/panel collapse, panel-wide, mobile drawers, active artifact tab
-    auth.js                  #   access token, current user identity
+    auth.js                  #   access token (in-memory only — not localStorage), user identity
     chat.js                  #   conversations, active conversation, message stream, streaming flag
     models.js                #   available models + current selection
     knowledge.js             #   documents + per-doc ingest status
@@ -101,9 +101,9 @@ wwwroot/
       artifact.js            # polymorphic dispatcher: picks a viewer by artifact.type
       artifact-head.js       # type badge + name + Rendered/Source seg toggle (shared)
       artifacts/
-        markdown-artifact.js #   render + source
+        markdown-artifact.js #   sanitized render (no raw HTML) + source
         html-artifact.js     #   sandboxed <iframe srcdoc> + source
-        svg-artifact.js      #   checkerboard stage + source
+        svg-artifact.js      #   sandboxed iframe (SVG can carry script) + source
         code-artifact.js     #   linted lines + Problems panel
       knowledge-panel.js     # kb-view: header + privacy + use-in-chat switch
       drop-zone.js
@@ -256,6 +256,28 @@ router then renders the matching page into the main region.
 `message.js`, `tool-card.js`, and `caret.js` bind to it, so the typewriter effect and
 tool-card progress are just reactive renders of incoming events — no imperative DOM poking
 like the mockup's `replay()`.
+
+### Security: token handling & rendering
+The SPA holds a bearer token **and** renders untrusted model output, so the two are kept apart by
+construction (full rationale in [security](security.md#3-findings--remediations)):
+
+- **Token in memory only.** `services/auth.js` keeps the access token in a module variable, **not
+  `localStorage`** — so an injected script has nothing persistent to read ([security F2](security.md#3-findings--remediations)).
+  If a refresh token must survive a reload, it lives in an `httpOnly; Secure; SameSite=Strict`
+  cookie, never JS-readable storage. (The Content-Security-Policy in
+  [operations](operations.md#http-security-headers--csp) is the outer wall; this is defence-in-depth
+  behind it.)
+- **Artifacts render in a sandboxed iframe.** Both `html-artifact.js` **and** `svg-artifact.js` use
+  `<iframe srcdoc sandbox="allow-scripts">` — crucially **without `allow-same-origin`** (the two
+  together would defeat the sandbox), plus a restrictive `csp` on the frame. SVG gets the same
+  treatment as HTML because inline `<svg>` can carry `<script>`/`onload` that would otherwise run in
+  the app origin and steal the token ([security F3](security.md#3-findings--remediations)). The
+  **Source** view shows raw text, never a live injected node.
+- **Markdown is sanitized.** `markdown-artifact.js` and bot-message rendering run the renderer with
+  **raw HTML disabled** (or output passed through an allow-list sanitizer), strip
+  `javascript:`/`data:` URLs, and force external links to `rel="noopener noreferrer" target="_blank"`.
+  VanJS text bindings escape by default; any "render HTML" path is the exception that needs this
+  ([security F4](security.md#3-findings--remediations)).
 
 ---
 

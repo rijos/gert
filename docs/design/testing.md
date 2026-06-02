@@ -13,7 +13,8 @@ admin and a normal user across **Chromium and Firefox**.
 
 This plan builds on the architecture in [tech-stack](tech-stack.md), the isolation rules in
 [principles](principles.md), the auth model in [auth](auth.md), the folder model in
-[storage-and-data](storage-and-data.md), and the endpoints in [rest-api](rest-api.md).
+[storage-and-data](storage-and-data.md), the endpoints in [rest-api](rest-api.md), and the threat
+model in [security](security.md).
 
 ---
 
@@ -201,7 +202,7 @@ so the dev shortcut can't hide a validation bug.
 `TempDataRoot` creates a throwaway root, points the host's `DataRoot` at it, and recursively
 deletes it on dispose. Because a user is just a folder ([principles](principles.md)), this also
 gives us the cleanest possible isolation assertion: after a two-user test, two sibling
-`sha256(sub)` directories exist and neither `rag.db` contains the other's chunks.
+`sha256(iss + sub)` directories exist and neither `rag.db` contains the other's chunks.
 
 ---
 
@@ -235,9 +236,12 @@ temp-file DB created per test by `TempDataRoot`.
   cannot see A's rows (separate connections, separate files — [principles](principles.md)).
 
 ### `Gert.Authentication.Tests`
-JWT claims (`sub`, `groups`, `gert_tools`) → `IUserContext`; `sha256(sub)` key derivation
-([decisions §3](decisions.md)); the admin policy; and the `sub`-denylist fast cut-off
-([decisions §4](decisions.md)).
+JWT claims (`iss`, `sub`, `groups`, `gert_tools`) → `IUserContext`; `sha256(iss + sub)` key
+derivation and the **anti-reuse** guarantees ([decisions §3](decisions.md#3-folder-key),
+[security F12](security.md#3-findings--remediations)): the provisioning gate rejects a malformed/
+unexpected-issuer identity **before** any folder is created, and a `meta.json` `(iss, sub)` binding
+that mismatches the token is **refused** (a recreated/reassigned identity can't inherit a folder).
+Plus the admin policy and the `sub`-denylist fast cut-off ([decisions §4](decisions.md)).
 
 ### Validation — the input-security boundary
 Validation is where untrusted user **content** first meets the system, so we test it as a
@@ -269,6 +273,8 @@ Four things get tested:
    | Model id | steering to an unintended model | must be in the **known-model allowlist** |
    | Tool name / toggles | invoking an unknown tool | must be a **registered** tool name (entitlement itself is authz — `Gert.Authentication.Tests` + [§6](#6-api-integration-tests--gertapitests)) |
    | Conversation / document id | tampered id (IDOR is structural; this is defence-in-depth) | well-formed id (e.g. GUID) **before** it reaches a repo |
+   | Admin user `{key}` | path traversal → `rm -rf` of an arbitrary dir | must match `^[0-9a-f]{64}$`; resolved path asserted **under `/data/users/`** ([security F6](security.md#3-findings--remediations)) |
+   | Web-search fetch URL | SSRF to internal services / metadata IP | scheme allowlist; private/loopback/link-local blocked; re-checked after redirects ([security F5](security.md#3-findings--remediations)) |
    | Pagination / `k` | negative/absurd values | positive, bounded |
    | RAG query text | FTS5 query-syntax abuse | carried as **data, not operators** (also a query-construction concern) |
 
@@ -303,14 +309,31 @@ that only exist once you add HTTP:
 - **SSE**: `POST` a message, read the response stream, parse `data:` frames back into
   `ChatEvent`s, and snapshot the sequence — the framing the service tests deliberately skip.
 - **Auth middleware**: no token → 401; valid token → 200; denylisted `sub` → 401.
-- **Isolation / IDOR** (the headline test): user A uploads a doc; user B requests A's document
-  id → 404, and B's `rag.db` never contains A's chunks. The key comes only from the token, so
-  there's no parameter to tamper with ([principles](principles.md)).
+- **Isolation / IDOR** (the headline test): user A uploads a doc into a project; user B requests
+  it → 404, and B's project `rag.db` never contains A's chunks. The user key comes only from the
+  token. The **one** request-supplied selector is `{pid}` — so a dedicated test tampers with it:
+  pointing at another user's project id still resolves only under B's own folder (404, never A's
+  data), and a non-UUID/`..` value is rejected by validation
+  ([configuration §2.5](configuration.md#25-path-resolution--why-a-request-supplied-project-id-is-still-idor-safe), [principles](principles.md)).
+- **Project isolation**: a query in project X cannot see project Y's rows (separate folders,
+  separate DBs — the per-project case of [principle #2](principles.md)).
 - **Admin RBAC**: non-admin → `/api/admin/users` 403; admin → 200.
-- **Lazy provisioning**: a first authenticated request creates the user's folder + schema
-  ([principles](principles.md)).
-- **Ingestion `BackgroundService`**: enqueue an upload, poll `GET /api/documents/{id}` until
-  `Ready` (mirrors the polling decision in [decisions §6](decisions.md)).
+- **Admin `{key}` traversal** ([security F6](security.md#3-findings--remediations)): `DELETE /api/admin/users/{key}`
+  with a non-hex / `..` / absolute `{key}` is rejected (400/404) and **no directory outside
+  `/data/users/{valid-key}` is touched** — asserted against a temp `DataRoot` with sentinel siblings.
+- **Security headers / CSP** ([security F1](security.md#3-findings--remediations)): an HTML response
+  carries the CSP and `X-Content-Type-Options: nosniff` / `Referrer-Policy` / `X-Frame-Options`
+  headers; `connect-src` lists only the API origin + Pocket ID.
+- **SSRF guard** ([security F5](security.md#3-findings--remediations)): the web-search fetcher,
+  pointed at a private/loopback/`file:` URL (via the `FakeWebSearch` result set), refuses it — it
+  never opens the connection.
+- **Upload parser hardening** ([security F7](security.md#3-findings--remediations)): a DOCX carrying
+  an external-entity reference (XXE) and an over-cap decompression-bomb each fail the *document*
+  (`status='failed'`) without hanging or reading host files.
+- **Lazy provisioning**: a first authenticated request creates the user's folder + the `default`
+  project + schema ([principles](principles.md)).
+- **Ingestion `BackgroundService`**: enqueue an upload, poll `GET /api/projects/{pid}/documents/{id}`
+  until `Ready` (mirrors the polling decision in [decisions §6](decisions.md)).
 - **SPA fallback**: `GET /some/client/route` → `index.html`; `GET /api/...` and `/healthz`
   are **not** swallowed by the fallback ([tech-stack](tech-stack.md)).
 

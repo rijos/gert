@@ -1,5 +1,12 @@
 # Per-user storage & data model
 
+Data is owned by the filesystem at **two** levels of isolation: each **user** is a folder, and
+within it each **project** is a folder with its own `chat.db` + `rag.db` + memory, fully isolated
+from other projects ([configuration → projects](configuration.md#2-projects)). The same
+"a connection only opens *this* folder's files" argument that isolates users
+([principle #2](principles.md)) therefore isolates projects too. The conversation/RAG schemas
+below are **per project** — there is one pair of databases per project, not per user.
+
 ## Per-user storage
 
 ### Layout
@@ -7,13 +14,17 @@
 ```
 /data/
 └── users/
-    └── {key}/                 # key = sanitized sub  (see Resolving paths)
-        ├── meta.json          # { sub, username, created_at, schema_version }
-        ├── chat.db            # conversations, messages, tool calls, artifacts
-        ├── rag.db             # sqlite-vec: documents, chunks, embeddings, FTS
-        └── files/             # original uploaded files
-            ├── {doc-id}.pdf
-            └── {doc-id}.md
+    └── {key}/                     # key = sha256(iss + sub)  (see Resolving paths)
+        ├── meta.json              # identity — { iss, sub, username, created_at, schema_version }
+        ├── settings.json          # user preferences (theme, language, defaults) — see configuration.md §3
+        └── projects/
+            ├── default/           # lazily created; always present (the landing project)
+            │   ├── meta.json      # project config — name, instructions, defaults (configuration.md §2)
+            │   ├── chat.db        # conversations, messages, tool calls, citations, artifacts
+            │   ├── rag.db         # sqlite-vec: documents, chunks, embeddings, FTS
+            │   ├── files/         # original uploaded files ({doc-id}.pdf, {doc-id}.md …)
+            │   └── memory/        # memory entries (markdown) → embedded into this project's rag.db
+            └── {project-id}/      # any further project — same shape, fully isolated
 ```
 
 ### Resolving paths
@@ -21,21 +32,36 @@
 ```csharp
 public sealed class UserPaths(IOptions<StorageOptions> opt)
 {
-    private string Key(string sub) =>
-        // sub is opaque; keep the folder name filesystem-safe and traversal-proof
-        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(sub))).ToLowerInvariant();
+    // Anchor on the stable (iss, sub) pair — never renamed, never recycled (decisions.md §3).
+    // sub is only unique within an issuer, so namespace by iss; the hash keeps the folder name
+    // filesystem-safe and traversal-proof for any value the IdP emits.
+    private string Key(string iss, string sub) =>
+        Convert.ToHexString(
+            SHA256.HashData(Encoding.UTF8.GetBytes($"{iss}\n{sub}"))).ToLowerInvariant();
 
-    public string Root(string sub)    => Path.Combine(opt.Value.DataRoot, "users", Key(sub));
-    public string ChatDb(string sub)  => Path.Combine(Root(sub), "chat.db");
-    public string RagDb(string sub)   => Path.Combine(Root(sub), "rag.db");
-    public string FilesDir(string sub)=> Path.Combine(Root(sub), "files");
-    public string MetaFile(string sub)=> Path.Combine(Root(sub), "meta.json");
+    // user-level — callers pass the validated (iss, sub) from the token (see EnsureProvisioned)
+    public string Root(string iss, string sub) => Path.Combine(opt.Value.DataRoot, "users", Key(iss, sub));
+    public string MetaFile(string iss, string sub)     => Path.Combine(Root(iss, sub), "meta.json");
+    public string SettingsFile(string iss, string sub) => Path.Combine(Root(iss, sub), "settings.json");
+
+    // project-level — pid is a UUID or the literal "default" (validated; see configuration.md §2.5)
+    public string ProjectRoot(string iss, string sub, string pid) => Path.Combine(Root(iss, sub), "projects", pid);
+    public string ProjectMeta(string iss, string sub, string pid) => Path.Combine(ProjectRoot(iss, sub, pid), "meta.json");
+    public string ChatDb(string iss, string sub, string pid)      => Path.Combine(ProjectRoot(iss, sub, pid), "chat.db");
+    public string RagDb(string iss, string sub, string pid)       => Path.Combine(ProjectRoot(iss, sub, pid), "rag.db");
+    public string FilesDir(string iss, string sub, string pid)    => Path.Combine(ProjectRoot(iss, sub, pid), "files");
+    public string MemoryDir(string iss, string sub, string pid)   => Path.Combine(ProjectRoot(iss, sub, pid), "memory");
 }
 ```
 
-Hashing `sub` gives a clean, fixed-length, path-safe folder name and avoids any traversal risk from exotic `sub` values. `meta.json` records the original `sub` and username so admins can still find a folder by username.
+> `(iss, sub)` come **only** from the validated token, never the request, and `EnsureProvisioned`
+> below checks them *before* any of these methods run — so the path is only ever derived from an
+> identity the gate already accepted. (Callers can thread the once-computed key instead of
+> recomputing the hash; the per-`sub` signatures above just keep the derivation explicit.)
 
-### Why two databases per user?
+Hashing `iss + sub` gives a clean, fixed-length, path-safe folder name and avoids any traversal risk from exotic claim values; anchoring on `sub` (stable, never recycled) rather than email/username is what closes the **identifier-reuse** class of attack ([decisions §3](decisions.md#3-folder-key)). `meta.json` records `(iss, sub)` and the username so admins can still find a folder by username **and** so the API can verify the binding on every request (below). The **`pid`** comes from the request (unlike the user key), but it is validated to a UUID or the literal `default` and is only ever joined **under** `Root(iss, sub)` — so it can select among *this* user's projects but can never escape the user's folder, keeping cross-user IDOR structurally impossible ([configuration.md §2.5](configuration.md#25-path-resolution--why-a-request-supplied-project-id-is-still-idor-safe)).
+
+### Why two databases per project?
 
 | Concern | `chat.db` | `rag.db` |
 |---------|-----------|----------|
@@ -44,7 +70,7 @@ Hashing `sub` gives a clean, fixed-length, path-safe folder name and avoids any 
 | Maintenance | rarely rebuilt | `VACUUM`/rebuild after large deletes |
 | Reset semantics | keep chats | "forget my documents" wipes RAG only |
 
-Splitting keeps a vector-index rebuild from locking chat history and lets a user clear their knowledge base without losing conversations. *Alternative:* a single `gert.db` with both schemas is simpler to back up; choose this if you never need to reset RAG independently. (The mockup's "stored in your own file" line is satisfied either way.)
+Splitting keeps a vector-index rebuild from locking chat history and lets a user clear a project's knowledge base without losing that project's conversations ([configuration → data lifecycle](configuration.md#5-data-lifecycle-user-facing)). *Alternative:* a single `gert.db` with both schemas is simpler to back up; choose this if you never need to reset RAG independently. (The mockup's "stored in your own file" line is satisfied either way.)
 
 ### Connection management & concurrency
 
@@ -61,18 +87,37 @@ Splitting keeps a vector-index rebuild from locking chat history and lets a user
 
 ### Lazy provisioning + migrations
 
-On the first authenticated request in a pipeline, an `EnsureProvisioned(sub)` step:
+On the first authenticated request, an `EnsureProvisioned(iss, sub)` step provisions the **user**.
+It is **fail-closed and runs before any path is derived or any directory is created**
+([principle #6](principles.md), [security F12](security.md#3-findings--remediations)):
 
-1. Creates `Root/`, `files/` if missing.
-2. Opens each DB and checks `PRAGMA user_version`.
+0. **Validate the identity *before touching disk*** — assert `iss` == the configured authority,
+   `aud` == `gert-api`, and `sub` is present and within a bounded charset/length (e.g.
+   `^[A-Za-z0-9._:\-]{1,128}$`). A missing/malformed identity is rejected here; **no folder is ever
+   created for an unvalidated token.**
+1. **If the folder already exists, verify the identity binding** — read `meta.json` and assert its
+   `(iss, sub)` equals the token's. A mismatch means a recreated/reassigned identity resolved onto
+   an existing folder → **refuse the request** (never serve another identity's data). On a fresh
+   folder, write `(iss, sub)` into `meta.json` as the binding.
+
+Then it creates `Root/`, `settings.json`, and the `default` **project** so the user always has a
+landing project. Provisioning a project (`EnsureProject(iss, sub, pid)`, also lazy) does:
+
+1. Creates `ProjectRoot/`, `files/`, `memory/` if missing, and writes `meta.json` (project config).
+2. Opens each project DB (`chat.db`, `rag.db`) and checks `PRAGMA user_version`.
 3. Applies any migration scripts whose version is newer, then bumps `user_version`.
-4. Writes/updates `meta.json` (username may have changed in the IdP).
+4. Writes/updates the user's `meta.json` (username may have changed in the IdP; `(iss, sub)` never does).
 
-Migrations are plain SQL files (`Migrations/chat/001_init.sql`, `Migrations/rag/001_init.sql`) applied per user. No global migration step exists because there is no global database.
+Migrations are plain SQL files (`Migrations/chat/001_init.sql`, `Migrations/rag/001_init.sql`) applied **per project DB**. No global migration step exists because there is no global database.
 
 ---
 
 ## Data model
+
+Both schemas below live **inside a project folder** (`projects/{pid}/`). There is no
+`project_id` column anywhere — the *path* is the scope, so a conversation or document simply
+cannot reference another project's rows. User- and project-level *config* lives in JSON files
+(`settings.json`, `projects/{pid}/meta.json`), not these databases ([configuration](configuration.md)).
 
 ### `chat.db`
 
@@ -82,6 +127,7 @@ CREATE TABLE conversations (
     title       TEXT NOT NULL,
     model_id    TEXT NOT NULL,              -- e.g. 'qwen3-27b-fp8-mtp'
     tools_json  TEXT NOT NULL DEFAULT '{}', -- {"rag":true,"search":true,"sandbox":false}
+    params_json TEXT NOT NULL DEFAULT '{}', -- per-chat generation overrides (temperature…) — configuration.md §4
     created_at  TEXT NOT NULL,
     updated_at  TEXT NOT NULL,
     archived    INTEGER NOT NULL DEFAULT 0
@@ -144,6 +190,8 @@ CREATE TABLE documents (
     status      TEXT NOT NULL,              -- processing | ready | failed  (the pills)
     chunk_count INTEGER NOT NULL DEFAULT 0,
     error       TEXT,                       -- "no extractable text" (old-scan.pdf)
+    kind        TEXT NOT NULL DEFAULT 'document', -- document | memory   (configuration.md §2.3)
+    pinned      INTEGER NOT NULL DEFAULT 0,       -- memory entries: always injected, not just retrieved
     created_at  TEXT NOT NULL
 );
 

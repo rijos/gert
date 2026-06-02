@@ -8,7 +8,7 @@ The API advertises three tools to the model:
 
 ```jsonc
 [
-  { "name":"search_documents", "description":"Hybrid search over the user's private docs",
+  { "name":"search_documents", "description":"Hybrid search over this project's private docs + memory",
     "parameters": { "query":"string", "k":"integer" } },
   { "name":"web_search", "description":"Search the web via SearXNG",
     "parameters": { "query":"string" } },
@@ -20,12 +20,13 @@ The API advertises three tools to the model:
 Loop:
 
 ```
-1. Append the user message; load prior turns from chat.db (trim to context window).
+0. Resolve the active project (pid); prepend its pinned instructions/memory to the system prompt.
+1. Append the user message; load prior turns from this project's chat.db (trim to context window).
 2. Call vLLM (stream).
 3. If the model emits tool_calls:
      a. emit `tool_call` SSE (card appears)
-     b. execute the tool against THIS user's resources
-        - search_documents → hybrid query (below) on this user's rag.db
+     b. execute the tool against THIS project's resources
+        - search_documents → hybrid query (below) on this project's rag.db (docs + memory)
         - web_search       → SearXNG
         - run_python       → gVisor sandbox
      c. emit `tool_result` SSE + persist a tool_calls row (with latency_ms)
@@ -67,6 +68,13 @@ The mockup labels the retrieval a **hybrid query**, so combine lexical + vector 
 
 The result becomes the `tool_result` SSE and seeds the citations.
 
+> **Memory rides the same query.** A project's memory entries are embedded into the *same*
+> `rag.db` as its documents, distinguished only by `documents.kind = 'memory'`
+> ([storage-and-data](storage-and-data.md#ragdb-sqlite-vec)). So `search_documents` retrieves
+> memory and documents together with no extra plumbing; `pinned` memory is additionally
+> prepended to the system prompt (loop step 0) rather than waiting to be retrieved
+> ([configuration → memory](configuration.md#23-memory)).
+
 > **Loading sqlite-vec in .NET.** Use a SQLite build that permits extensions (`SQLitePCLRaw.bundle_e_sqlite3`), then on each `rag.db` connection:
 > ```csharp
 > conn.EnableExtensions(true);
@@ -81,10 +89,10 @@ The result becomes the `tool_result` SSE and seeds the citations.
 Upload returns immediately; the heavy work runs in a background worker fed by an in-process queue (`System.Threading.Channels` + a `BackgroundService`).
 
 ```
-POST /api/documents
-  └─ save file to /data/users/{key}/files/{doc-id}.{ext}
-  └─ INSERT documents(status='processing')
-  └─ enqueue IngestJob{ sub, doc_id, path }
+POST /api/projects/{pid}/documents
+  └─ save file to /data/users/{key}/projects/{pid}/files/{doc-id}.{ext}
+  └─ INSERT documents(status='processing')   into this project's rag.db
+  └─ enqueue IngestJob{ sub, pid, doc_id, path }
   └─ 202 → { id, status:"processing" }
 
 IngestionWorker (per job):
@@ -97,9 +105,19 @@ IngestionWorker (per job):
   6. status='ready'
 ```
 
-Status transitions map directly to the panel pills: `processing` (amber, pulsing) → `ready` (sage) or `failed` (brick). The SPA learns about transitions by **polling `GET /api/documents/{id}`** while a doc is processing (see [decisions.md §6](decisions.md#6-live-ingestion-progress)); an SSE `GET /api/documents/events` stream is a deferred, additive upgrade.
+> **Hardened extraction (step 1) — isolated subprocess.** Uploads are untrusted bytes fed to large
+> native/managed parsers (OpenXML: DOCX = a zip of XML; PdfPig), so step 1 runs **out-of-process in
+> an unprivileged, resource-capped helper** — not the worker process. Dropped privileges, no network,
+> read-only access to the one input file, hard `RLIMIT_AS`/`RLIMIT_CPU`/`RLIMIT_NPROC` + a wall-clock
+> timeout, and in-process XML hardening inside it (**DTD/external-entity off** for XXE,
+> **decompressed-size + zip-entry caps** for bombs). A crash/OOM/timeout fails *that document*
+> (`status='failed'`), never the host — the ingestion analog of the `run_python` sandbox below. It
+> may reuse the same **gVisor (`runsc`)** lever ([security F7](security.md#3-findings--remediations),
+> [tech-stack](tech-stack.md)).
 
-`DELETE /api/documents/{id}` removes the `chunks` (cascade clears `vec_chunks`/`fts_chunks` via triggers or explicit deletes) and unlinks the original file.
+Status transitions map directly to the panel pills: `processing` (amber, pulsing) → `ready` (sage) or `failed` (brick). The SPA learns about transitions by **polling `GET /api/projects/{pid}/documents/{id}`** while a doc is processing (see [decisions.md §6](decisions.md#6-live-ingestion-progress)); an SSE `…/documents/events` stream is a deferred, additive upgrade.
+
+`DELETE /api/projects/{pid}/documents/{id}` removes the `chunks` (cascade clears `vec_chunks`/`fts_chunks` via triggers or explicit deletes) and unlinks the original file.
 
 ---
 
@@ -112,10 +130,18 @@ See [RAG: hybrid retrieval](#rag-hybrid-retrieval) above.
 ### Web search (SearXNG)
 Server-side `HttpClient` (via `IHttpClientFactory`) to the SearXNG JSON API. Take the top results, optionally fetch + summarize, keep the few that matter (the mockup shows "1 result kept"), and return titles/URLs as web-type citations.
 
+> **SSRF guard on the fetch step.** The summarize step pulls a result URL server-side, and that URL
+> is attacker-influenceable (search results, or prompt-injected document content steering the
+> model's query) — so the fetcher is hardened ([security F5](security.md#3-findings--remediations)):
+> **`http`/`https` only** (no `file:`/`gopher:`/etc.); resolve the host and **block private,
+> loopback, link-local, and unique-local ranges** (IPv4 *and* IPv6, including the cloud metadata
+> IP), **re-checking after every redirect**; and cap response size, time, and redirect count. The
+> fetcher must never reach vLLM, SearXNG, or any other internal service.
+
 ### Sandbox (gVisor) — security-critical
 Each `run_python` call executes in an **ephemeral gVisor (`runsc`) container**:
 
-- no inbound network; outbound disabled or tightly allow-listed,
+- no inbound network; **outbound disabled by default** (an allow-list is opt-in only, never the default) — the egress/exfiltration brake for arbitrary code ([security F5](security.md#3-findings--remediations)),
 - read-only rootfs, a small writable `/tmp`, **no mount of `/data`** (the sandbox must never see another user's — or this user's — DB files),
 - CPU/memory/PID limits and a hard wall-clock timeout,
 - container destroyed after the call; only captured `stdout`/`stderr` returns.

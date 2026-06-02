@@ -11,6 +11,11 @@ The SPA is a **public OIDC client** using **Authorization Code + PKCE** against 
 
 The API only ever needs Pocket ID's **JWKS endpoint** to validate signatures — it never sees credentials.
 
+> **Client-side token storage.** The SPA keeps the access token **in memory only** (not
+> `localStorage`), so injected script has nothing persistent to steal; signature validation is
+> **pinned to `RS256`** to foreclose alg-confusion. See [security F2/F11](security.md#3-findings--remediations)
+> and [ui-components](ui-components.md#security-token-handling--rendering).
+
 > **Passkey-only login.** Pocket ID authenticates users with **passkeys (WebAuthn)** — there are no passwords. Onboarding is an admin step in Pocket ID: create the user and hand them a one-time setup link, which they open to register a passkey. This is transparent to Gert.Api — it only ever sees the resulting JWT — but it means there is no password or credential-reset flow for the API to handle. (Pocket ID has no forward-auth proxy mode, so the API always validates the JWT itself.)
 
 ## Expected JWT claims
@@ -43,6 +48,7 @@ builder.Services
             ValidateAudience         = true,
             ValidateLifetime         = true,
             ValidateIssuerSigningKey = true,
+            ValidAlgorithms          = ["RS256"],   // pin: no alg-confusion / "none" (security F11)
             NameClaimType            = "preferred_username",
             RoleClaimType            = "groups",
             ClockSkew                = TimeSpan.FromSeconds(30),
@@ -66,6 +72,8 @@ public sealed class UserContext(IHttpContextAccessor http, IOptions<ToolOptions>
 
     public string Sub      => User.FindFirstValue("sub")
                               ?? throw new UnauthorizedAccessException("no sub claim");
+    public string Iss      => User.FindFirstValue("iss")
+                              ?? throw new UnauthorizedAccessException("no iss claim");
     public string Username => User.Identity?.Name ?? Sub;
     public bool   IsAdmin  => User.IsInRole("gert-admins");
 
@@ -84,7 +92,18 @@ public sealed class UserContext(IHttpContextAccessor http, IOptions<ToolOptions>
 }
 ```
 
-`Sub` is the only thing that ever decides which folder is touched.
+The validated **`(iss, sub)`** pair is the only thing that ever decides which folder is touched — and
+only after the fail-closed provisioning gate accepts it.
+
+> **Identity is validated before any disk access, and bound to the folder.** `EnsureProvisioned(iss,
+> sub)` ([storage-and-data](storage-and-data.md#lazy-provisioning--migrations)) asserts `iss` ==
+> the configured authority, `aud` == `gert-api`, and a well-formed `sub` **before** deriving a path
+> or creating a directory — no folder is ever created for an unvalidated token. The folder key is
+> `sha256(iss + sub)`, anchored on `sub` because it is the IdP's **stable, never-recycled** UUID —
+> email is mutable and *recycled* (a reassigned address would inherit the prior owner's data) and so
+> is rejected as the anchor ([decisions §3](decisions.md#3-folder-key)). Each folder's `meta.json`
+> records `(iss, sub)`; the API re-checks it on every request, so a recreated/reassigned identity can
+> never silently inherit an existing folder ([security F12](security.md#3-findings--remediations)).
 
 ## Authorization matrix
 
@@ -92,16 +111,17 @@ Three independent things decide access:
 
 - **Authentication** — is there a valid, unexpired bearer token? (anonymous vs. authenticated)
 - **Role** — the `groups` claim: `gert-users` (everyone) vs. `gert-admins` (the admin surface).
-- **Data scope** *(not a role)* — every data endpoint is structurally bound to the caller's own `sub`-folder ([principle #3](principles.md)). No API path — admin included — reads another user's conversations or documents.
+- **Data scope** *(not a role)* — every data endpoint is structurally bound to the caller's own `sub`-folder ([principle #3](principles.md)). No API path — admin included — reads another user's conversations or documents. The `{pid}` in project-scoped paths is request-supplied but resolves only *within* that `sub`-folder, so it scopes among the caller's own projects and never widens access ([configuration.md §2.5](configuration.md#25-path-resolution--why-a-request-supplied-project-id-is-still-idor-safe)).
 
 | Endpoint(s) | Anonymous | User (`gert-users`) | Admin (`gert-admins`) |
 |---|:---:|:---:|:---:|
 | `GET /healthz` | ✅ | ✅ | ✅ |
 | `GET /api/models` | ❌ | ✅ | ✅ |
-| `…/api/conversations*` (list · create · read · update · delete) | ❌ | ✅ own | ✅ own |
-| `POST /api/conversations/{id}/messages` (stream) | ❌ | ✅ own · tools gated by entitlement | ✅ own · entitlement |
-| `…/api/documents*` (list · upload · poll · delete) | ❌ | ✅ own | ✅ own |
-| `GET /api/conversations/{id}/artifacts` · `GET /api/artifacts/{id}` | ❌ | ✅ own | ✅ own |
+| `GET /api/settings` · `…/api/projects*` (list · create · read · update · delete) | ❌ | ✅ own | ✅ own |
+| `…/api/projects/{pid}/conversations*` (list · create · read · update · delete) | ❌ | ✅ own | ✅ own |
+| `POST /api/projects/{pid}/conversations/{id}/messages` (stream) | ❌ | ✅ own · tools gated by entitlement | ✅ own · entitlement |
+| `…/api/projects/{pid}/documents*` · `…/memory*` (list · upload · poll · delete) | ❌ | ✅ own | ✅ own |
+| `…/api/projects/{pid}/…/artifacts` · `…/export` · `DELETE /api/account` | ❌ | ✅ own | ✅ own |
 | `GET /api/admin/users` | ❌ | ❌ | ✅ |
 | `DELETE /api/admin/users/{key}` | ❌ | ❌ | ✅ |
 
