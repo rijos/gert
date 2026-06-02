@@ -3,6 +3,11 @@
   <!-- Inherit the repo-root Directory.Build.props (net10.0, nullable, warnings-as-errors). -->
   <Import Project="$([MSBuild]::GetPathOfFileAbove('Directory.Build.props', '$(MSBuildThisFileDirectory)../'))" />
 
+  <ItemGroup>
+    <!-- Coverage collector for `make coverage` (#5). -->
+    <PackageReference Include="coverlet.collector" Version="$(CoverletCollectorVersion)" />
+  </ItemGroup>
+
   <PropertyGroup>
     <IsPackable>false</IsPackable>
     <!-- xUnit1051: prefer TestContext.Current.CancellationToken. A responsiveness nicety, not a
@@ -24,6 +29,8 @@
     <FluentAssertionsVersion>7.0.0</FluentAssertionsVersion>
     <!-- U8 auth tests. Orchestrator pins a valid 5.x. -->
     <NSubstituteVersion>5.3.0</NSubstituteVersion>
+    <!-- Coverage (#5). -->
+    <CoverletCollectorVersion>6.0.2</CoverletCollectorVersion>
   </PropertyGroup>
 
 </Project>

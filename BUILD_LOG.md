@@ -41,7 +41,7 @@ Order (semantic first, file-split enforcement last):
 2. ✅ Generic tool toggles (#1: ToolToggles=dict map, ToolKind deleted, id strings) + canonical gert_tools (#9: dropped JSON branch) + ChatEventType enum (#2: discriminator renamed $type to avoid collision)
 3. ✅ IObjectStore seam + LocalObjectStore (#3, traversal-guarded); GetThread ordering audited (already ordered) + test (#8); Dapper MatchNamesWithUnderscores + property-record row DTOs — zero casts (#7); ThrowingChatModel reachable-yield (#12). 83 tests.
 4. ✅ ChatService step-based stateless redesign (#13: StartTurnAsync→ChatTurn→RunAsync, no turnId; invalid input throws ValidationException→400 before stream) + branded Gert ProblemDetails 400/401/403/404 (#15). 83 tests.
-5. ⬜ Config: nullable→error explicit (#4); coverage (coverlet+ReportGenerator) (#5); Makefile test/run/coverage/e2e (#6)
+5. ✅ nullable→error explicit (#4); coverage coverlet.collector 6.0.2 + reportgenerator tool, `make coverage` works — 72.6% line/60.2% branch (#5); Makefile (#6).
 6. ⬜ Enforce one-type-per-file via StyleCop SA1402/SA1649 as error (#11) — LAST, then split files
 7. ⬜ DEFERRED to U10+U13 boundary: remove .NET fakes/minting + .NET HTTP test tier → Python E2E (#14)
 8. ⬜ Re-green full suite; resume M2 (U4b RAG → U6 → U7b-d → U9b)

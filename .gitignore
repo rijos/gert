@@ -18,3 +18,6 @@ TestResults/
 # Python
 .venv/
 __pycache__/
+
+# Coverage / build artifacts
+artifacts/

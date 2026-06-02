@@ -6,6 +6,8 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <LangVersion>latest</LangVersion>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <!-- Nullable diagnostics are errors even if TreatWarningsAsErrors is ever relaxed (#4, full coverage). -->
+    <WarningsAsErrors>$(WarningsAsErrors);nullable</WarningsAsErrors>
   </PropertyGroup>
 
   <!-- Centralized library package versions (U4a). Orchestrator pins valid net10.0 versions. -->
