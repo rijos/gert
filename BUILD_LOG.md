@@ -8,8 +8,8 @@ Status: ⬜ not started · 🟡 in progress · ✅ done · 🔴 blocked
 | Unit | Title | Status | Notes |
 |------|-------|:------:|-------|
 | U0 | Solution & project skeleton | ✅ | build clean (0 warn), 6/6 test projects pass, arch test enforces ref direction |
-| U1 | Gert.Model | ⬜ | |
-| U2 | Service seams (interfaces) | ⬜ | + external-world ports |
+| U1 | Gert.Model | ✅ | POCOs (schema-mirrored), polymorphic ChatEvent (STJ), DTOs |
+| U2 | Service seams (interfaces) | ✅ | granular+aggregate services, repo/validation/tool + External ports; arch test re-anchored on IUserContext |
 | U3 | Gert.Testing + shared fake spec | ⬜ | tests/shared/ fixtures + golden |
 | U4a | SQLite provider + chat repo | ⬜ | |
 | U4b | RAG repo (vec0+FTS5+RRF) | ⬜ | |
@@ -44,3 +44,4 @@ with the sandbox disabled, iterates against compiler output, and checkpoint-comm
 ## Activity
 - Design set committed (5a189b1). Branch `feat/gert-build` off `master`.
 - U0 ✅ — skeleton hand-authored by agent; orchestrator verified `dotnet build` (0 warn/0 err) + `dotnet test` (6/6 projects pass, incl. arch test).
+- U1+U2 ✅ — Model + Service seams authored by agent; orchestrator fixed one missing `using Gert.Model;` (DocumentKind), rebuilt clean, arch test green. Accepted agent defaults: added `IAccountService`, instance `ToolRegistry`, unified `ToolResultHit`, stream-`Func` upload/export seams — refinable when consumers land.

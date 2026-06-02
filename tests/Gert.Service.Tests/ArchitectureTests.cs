@@ -13,7 +13,7 @@ namespace Gert.Service.Tests;
 public class ArchitectureTests
 {
     private static readonly System.Reflection.Assembly ServiceAssembly =
-        typeof(global::Gert.Service.AssemblyMarker).Assembly;
+        typeof(global::Gert.Service.IUserContext).Assembly;
 
     [Fact]
     public void Service_does_not_depend_on_hosts_or_adapters()
