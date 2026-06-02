@@ -1,0 +1,118 @@
+{
+  "$comment": "Single source of truth for both fake layers (testing.md Appendix A.5). The .NET fakes link this as an embedded resource; the Python mocks read the same file. Schema: A.3 (completions) / A.4 (search). Do not duplicate this data.",
+
+  "fallback": "echo",
+
+  "completions": [
+    {
+      "$comment": "Plain answer keyed to the mockup, exact match.",
+      "match": "exact",
+      "when": "should I use Qdrant or sqlite-vec?",
+      "deltas": ["Short version: ", "use ", "sqlite-vec ", "for a homelab at this scale."],
+      "finish": "stop",
+      "usage": { "completion_tokens": 14 }
+    },
+    {
+      "$comment": "Contains-match variant for the same topic.",
+      "match": "contains",
+      "when": "qdrant vs sqlite-vec",
+      "deltas": ["For ~20 users ", "sqlite-vec ", "is the simpler, ", "good-enough choice."],
+      "finish": "stop",
+      "usage": { "completion_tokens": 11 }
+    },
+    {
+      "$comment": "Doc-search tool-call fixture: first call emits the tool call; the follow-up call (messages now carry the tool result) replays the same `when` and plays after_tool.deltas.",
+      "match": "contains",
+      "when": "search my docs about qdrant",
+      "tool_call": {
+        "name": "search_documents",
+        "arguments": "{\"query\":\"qdrant\",\"k\":5}"
+      },
+      "finish": "tool_calls",
+      "after_tool": {
+        "deltas": ["Based on your docs, ", "sqlite-vec wins [1]."],
+        "finish": "stop",
+        "usage": { "completion_tokens": 9 }
+      }
+    },
+    {
+      "$comment": "Web-search tool-call fixture, exercises the search tool loop.",
+      "match": "contains",
+      "when": "search the web for sqlite-vec benchmarks",
+      "tool_call": {
+        "name": "web_search",
+        "arguments": "{\"query\":\"sqlite-vec benchmarks\",\"k\":5}"
+      },
+      "finish": "tool_calls",
+      "after_tool": {
+        "deltas": ["The benchmarks ", "show sqlite-vec ", "is competitive [1]."],
+        "finish": "stop",
+        "usage": { "completion_tokens": 10 }
+      }
+    },
+    {
+      "$comment": "Sandbox tool-call fixture, exercises run_python through the tool loop.",
+      "match": "contains",
+      "when": "run python to add two and two",
+      "tool_call": {
+        "name": "run_python",
+        "arguments": "{\"code\":\"print(2 + 2)\"}"
+      },
+      "finish": "tool_calls",
+      "after_tool": {
+        "deltas": ["The result is ", "4."],
+        "finish": "stop",
+        "usage": { "completion_tokens": 4 }
+      }
+    },
+    {
+      "$comment": "A short greeting for chrome/typewriter rendering tests.",
+      "match": "exact",
+      "when": "hello",
+      "deltas": ["Hi! ", "How can I help ", "with your homelab today?"],
+      "finish": "stop",
+      "usage": { "completion_tokens": 8 }
+    }
+  ],
+
+  "search": {
+    "qdrant vs sqlite-vec": {
+      "results": [
+        {
+          "title": "Qdrant vs sqlite-vec",
+          "url": "https://example.test/bench",
+          "content": "A benchmark comparing Qdrant and sqlite-vec for small-scale RAG."
+        },
+        {
+          "title": "Choosing a vector store",
+          "url": "https://example.test/choosing",
+          "content": "For ~20 users, sqlite-vec keeps the stack to a single file."
+        }
+      ]
+    },
+    "sqlite-vec benchmarks": {
+      "results": [
+        {
+          "title": "sqlite-vec benchmarks",
+          "url": "https://example.test/sqlite-vec-bench",
+          "content": "Throughput and recall numbers for sqlite-vec on commodity hardware."
+        }
+      ]
+    },
+    "internal metadata": {
+      "$comment": "ADVERSARIAL (A.4 / security F5): the second result url is a link-local metadata address. The real adapter's summarize/fetch step MUST refuse it, proving the SSRF guard end-to-end. This is THE SSRF-adversarial entry.",
+      "results": [
+        {
+          "title": "Public result",
+          "url": "https://example.test/public",
+          "content": "A benign public page."
+        },
+        {
+          "title": "internal",
+          "url": "http://169.254.169.254/latest/meta-data/",
+          "content": "Cloud instance metadata endpoint — must never be fetched."
+        }
+      ]
+    }
+  }
+}
