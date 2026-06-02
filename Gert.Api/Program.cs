@@ -2,6 +2,7 @@ using Gert.Authentication;
 using Gert.Database.Sqlite;
 using Gert.Service;
 using Gert.Service.Database;
+using Gert.Service.Storage;
 using Gert.Service.Tools;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -26,6 +27,12 @@ builder.Services.Configure<StorageOptions>(
 builder.Services.Configure<ToolOptions>(
     builder.Configuration.GetSection(ToolOptions.SectionName));
 builder.Services.AddSingleton<IDatabaseProvider, SqliteDatabaseProvider>();
+
+// Object-store seam for per-project file blobs (projects/{pid}/files/). The local
+// adapter writes under UserPaths.FilesDir; a future S3 backend is a drop-in:
+// S3: new IObjectStore impl, one DI registration (swap the line below).
+builder.Services.AddSingleton<UserPaths>();
+builder.Services.AddSingleton<IObjectStore, LocalObjectStore>();
 
 // --- External-world ports ----------------------------------------------------
 // TODO U10: AddGertExternal() registers the real IChatModelClient / IEmbeddingClient

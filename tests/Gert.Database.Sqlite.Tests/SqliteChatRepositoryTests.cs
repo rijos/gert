@@ -137,6 +137,36 @@ public class SqliteChatRepositoryTests
     }
 
     [Fact]
+    public async Task Thread_returns_messages_and_artifacts_in_chronological_order()
+    {
+        await using var root = new TempDataRoot();
+        var provider = ProviderFixture.ProviderFor(root);
+        await provider.EnsureProvisionedAsync(ProviderFixture.ExpectedIssuer, Sub);
+
+        var conversation = NewConversation();
+        var baseTime = DateTimeOffset.UtcNow;
+
+        await using var repo = await provider.OpenChatAsync(ProviderFixture.ExpectedIssuer, Sub, "default");
+        await repo.InsertConversationAsync(conversation);
+
+        // Insert messages out of insertion order with varying created_at.
+        await repo.InsertMessageAsync(NewMessage(conversation.Id, MessageRole.Assistant, "m-second", baseTime.AddSeconds(2)));
+        await repo.InsertMessageAsync(NewMessage(conversation.Id, MessageRole.User, "m-first", baseTime.AddSeconds(1)));
+        await repo.InsertMessageAsync(NewMessage(conversation.Id, MessageRole.User, "m-third", baseTime.AddSeconds(3)));
+
+        // Insert artifacts out of insertion order with varying created_at.
+        await repo.InsertArtifactAsync(NewArtifact(conversation.Id, "a-third", baseTime.AddSeconds(3)));
+        await repo.InsertArtifactAsync(NewArtifact(conversation.Id, "a-first", baseTime.AddSeconds(1)));
+        await repo.InsertArtifactAsync(NewArtifact(conversation.Id, "a-second", baseTime.AddSeconds(2)));
+
+        var thread = await repo.GetThreadAsync(conversation.Id);
+
+        thread.Should().NotBeNull();
+        thread!.Messages.Select(m => m.Content).Should().Equal("m-first", "m-second", "m-third");
+        thread.Artifacts.Select(a => a.Name).Should().Equal("a-first", "a-second", "a-third");
+    }
+
+    [Fact]
     public async Task Delete_conversation_cascades_to_children()
     {
         await using var root = new TempDataRoot();
@@ -199,6 +229,17 @@ public class SqliteChatRepositoryTests
         ConversationId = conversationId,
         Role = role,
         Content = content,
+        CreatedAt = at,
+    };
+
+    private static Artifact NewArtifact(string conversationId, string name, DateTimeOffset at) => new()
+    {
+        Id = Guid.NewGuid().ToString("D"),
+        ConversationId = conversationId,
+        MessageId = null,
+        Kind = ArtifactKind.Md,
+        Name = name,
+        Content = "# " + name,
         CreatedAt = at,
     };
 }

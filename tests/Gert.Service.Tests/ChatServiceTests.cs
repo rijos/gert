@@ -185,7 +185,11 @@ public sealed class ChatServiceTests
         return list;
     }
 
-    /// <summary>An <see cref="IChatModelClient"/> that throws mid-stream.</summary>
+    /// <summary>
+    /// An <see cref="IChatModelClient"/> that yields one partial chunk, then throws
+    /// — a true mid-stream failure. The reachable <c>yield return</c> means no
+    /// unreachable-code pragma is needed.
+    /// </summary>
     private sealed class ThrowingChatModel : IChatModelClient
     {
         private readonly string _message;
@@ -197,10 +201,8 @@ public sealed class ChatServiceTests
             [EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
             await Task.Yield();
+            yield return new ChatModelChunk { TextDelta = "partial" };
             throw new InvalidOperationException(_message);
-#pragma warning disable CS0162 // Unreachable — satisfies the iterator contract.
-            yield break;
-#pragma warning restore CS0162
         }
     }
 }

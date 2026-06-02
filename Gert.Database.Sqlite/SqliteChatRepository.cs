@@ -27,6 +27,14 @@ public sealed class SqliteChatRepository(SqliteConnection connection) : IChatRep
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
+    static SqliteChatRepository()
+    {
+        // Bind snake_case columns to PascalCase DTO properties once, process-wide.
+        // With property binding Dapper narrows SQLite's Int64 to the property type
+        // (int?/int) automatically — so no `long` columns and no casts in the mappers.
+        DefaultTypeMap.MatchNamesWithUnderscores = true;
+    }
+
     private readonly SqliteConnection _connection = connection;
 
     // ---- conversations -----------------------------------------------------
@@ -343,62 +351,62 @@ public sealed class SqliteChatRepository(SqliteConnection connection) : IChatRep
 
     private static Conversation MapConversation(ConversationRow row) => new()
     {
-        Id = row.id,
-        Title = row.title,
-        ModelId = row.model_id,
-        Tools = Deserialize<ToolToggles>(row.tools_json) ?? new ToolToggles(),
-        Params = Deserialize<GenerationParams>(row.params_json) ?? new GenerationParams(),
-        CreatedAt = ParseTime(row.created_at),
-        UpdatedAt = ParseTime(row.updated_at),
-        Archived = row.archived != 0,
+        Id = row.Id,
+        Title = row.Title,
+        ModelId = row.ModelId,
+        Tools = Deserialize<ToolToggles>(row.ToolsJson) ?? new ToolToggles(),
+        Params = Deserialize<GenerationParams>(row.ParamsJson) ?? new GenerationParams(),
+        CreatedAt = ParseTime(row.CreatedAt),
+        UpdatedAt = ParseTime(row.UpdatedAt),
+        Archived = row.Archived != 0,
     };
 
     private static Message MapMessage(MessageRow row) => new()
     {
-        Id = row.id,
-        ConversationId = row.conversation_id,
-        Role = RoleFromString(row.role),
-        Content = row.content,
-        ModelId = row.model_id,
-        TokenCount = (int?)row.token_count,
-        CreatedAt = ParseTime(row.created_at),
+        Id = row.Id,
+        ConversationId = row.ConversationId,
+        Role = RoleFromString(row.Role),
+        Content = row.Content,
+        ModelId = row.ModelId,
+        TokenCount = row.TokenCount,
+        CreatedAt = ParseTime(row.CreatedAt),
     };
 
     private static ToolCall MapToolCall(ToolCallRow row) => new()
     {
-        Id = row.id,
-        MessageId = row.message_id,
-        Kind = row.kind,
-        Status = ToolStatusFromString(row.status),
-        RequestJson = row.request_json,
-        ResponseJson = row.response_json,
-        LatencyMs = row.latency_ms,
-        CreatedAt = ParseTime(row.created_at),
+        Id = row.Id,
+        MessageId = row.MessageId,
+        Kind = row.Kind,
+        Status = ToolStatusFromString(row.Status),
+        RequestJson = row.RequestJson,
+        ResponseJson = row.ResponseJson,
+        LatencyMs = row.LatencyMs,
+        CreatedAt = ParseTime(row.CreatedAt),
     };
 
     private static Citation MapCitation(CitationRow row) => new()
     {
-        Id = row.id,
-        MessageId = row.message_id,
-        Ordinal = (int)row.ordinal,
-        SourceType = CitationSourceFromString(row.source_type),
-        DocId = row.doc_id,
-        Label = row.label,
-        Locator = row.locator,
-        Score = row.score,
+        Id = row.Id,
+        MessageId = row.MessageId,
+        Ordinal = row.Ordinal,
+        SourceType = CitationSourceFromString(row.SourceType),
+        DocId = row.DocId,
+        Label = row.Label,
+        Locator = row.Locator,
+        Score = row.Score,
     };
 
     private static Artifact MapArtifact(ArtifactRow row) => new()
     {
-        Id = row.id,
-        ConversationId = row.conversation_id,
-        MessageId = row.message_id,
-        Kind = ArtifactKindFromString(row.kind),
-        Name = row.name,
-        Language = row.language,
-        Content = row.content,
-        Version = (int)row.version,
-        CreatedAt = ParseTime(row.created_at),
+        Id = row.Id,
+        ConversationId = row.ConversationId,
+        MessageId = row.MessageId,
+        Kind = ArtifactKindFromString(row.Kind),
+        Name = row.Name,
+        Language = row.Language,
+        Content = row.Content,
+        Version = row.Version,
+        CreatedAt = ParseTime(row.CreatedAt),
     };
 
     private static T? Deserialize<T>(string? json) where T : class =>
@@ -477,26 +485,68 @@ public sealed class SqliteChatRepository(SqliteConnection connection) : IChatRep
         _ => throw new InvalidOperationException($"Unknown artifact kind '{value}'."),
     };
 
-    // ---- row DTOs (snake_case columns; Dapper maps by name) ----------------
-#pragma warning disable SA1300, IDE1006 // column names mirror the SQL schema
-    private sealed record ConversationRow(
-        string id, string title, string model_id, string tools_json, string params_json,
-        string created_at, string updated_at, long archived);
+    // ---- row DTOs ----------------------------------------------------------
+    // PascalCase properties; Dapper binds snake_case columns via
+    // MatchNamesWithUnderscores (set in the static ctor) and narrows SQLite's
+    // Int64 to each property's declared type — no `long` widening, no casts.
 
-    private sealed record MessageRow(
-        string id, string conversation_id, string role, string content,
-        string? model_id, long? token_count, string created_at);
+    private sealed record ConversationRow
+    {
+        public required string Id { get; init; }
+        public required string Title { get; init; }
+        public required string ModelId { get; init; }
+        public required string ToolsJson { get; init; }
+        public required string ParamsJson { get; init; }
+        public required string CreatedAt { get; init; }
+        public required string UpdatedAt { get; init; }
+        public int Archived { get; init; }
+    }
 
-    private sealed record ToolCallRow(
-        string id, string message_id, string kind, string status,
-        string? request_json, string? response_json, long? latency_ms, string created_at);
+    private sealed record MessageRow
+    {
+        public required string Id { get; init; }
+        public required string ConversationId { get; init; }
+        public required string Role { get; init; }
+        public required string Content { get; init; }
+        public string? ModelId { get; init; }
+        public int? TokenCount { get; init; }
+        public required string CreatedAt { get; init; }
+    }
 
-    private sealed record CitationRow(
-        string id, string message_id, long ordinal, string source_type,
-        string? doc_id, string label, string? locator, double? score);
+    private sealed record ToolCallRow
+    {
+        public required string Id { get; init; }
+        public required string MessageId { get; init; }
+        public required string Kind { get; init; }
+        public required string Status { get; init; }
+        public string? RequestJson { get; init; }
+        public string? ResponseJson { get; init; }
+        public long? LatencyMs { get; init; }
+        public required string CreatedAt { get; init; }
+    }
 
-    private sealed record ArtifactRow(
-        string id, string conversation_id, string? message_id, string kind,
-        string name, string? language, string content, long version, string created_at);
-#pragma warning restore SA1300, IDE1006
+    private sealed record CitationRow
+    {
+        public required string Id { get; init; }
+        public required string MessageId { get; init; }
+        public int Ordinal { get; init; }
+        public required string SourceType { get; init; }
+        public string? DocId { get; init; }
+        public required string Label { get; init; }
+        public string? Locator { get; init; }
+        public double? Score { get; init; }
+    }
+
+    private sealed record ArtifactRow
+    {
+        public required string Id { get; init; }
+        public required string ConversationId { get; init; }
+        public string? MessageId { get; init; }
+        public required string Kind { get; init; }
+        public required string Name { get; init; }
+        public string? Language { get; init; }
+        public required string Content { get; init; }
+        public int Version { get; init; }
+        public required string CreatedAt { get; init; }
+    }
 }
