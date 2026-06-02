@@ -32,7 +32,7 @@ The admin endpoint `DELETE /api/admin/users/{key}` performs the `rm -rf` (and ca
 - **Rate limits:** chat (GPU inference), ingestion (embeddings), and the sandbox (code exec) are expensive; apply per-user concurrency/rate caps (the ASP.NET rate limiter) so a single client — or a stolen token — can't saturate the box. Low-likelihood at ~20 trusted users, cheap to add ([security F10](security.md#3-findings--remediations)).
 - **Embeddings:** the embedding model and its **dimension are fixed up front** — baked into the `vec0` table (`FLOAT[1024]`). Changing models later means re-embedding every chunk. **Chosen: bge-m3 (1024-dim), served by vLLM** via `--task embed` on the OpenAI-compatible `/v1/embeddings` endpoint (see [decisions.md §1](decisions.md#1-embedding-model--dimension)).
 - **Resilience:** wrap vLLM/SearXNG calls with timeouts + retry (Polly). Surface upstream failures as `error` SSE events, not 500s mid-stream.
-- **Observability:** record per-tool `latency_ms` (the "142ms"/"searxng" tags), structured logs keyed by `sub`-hash (never log raw tokens), and `GET /healthz` checking vLLM + SearXNG reachability.
+- **Observability:** record per-tool `latency_ms` (the "142ms"/"searxng" tags), structured logs in the shared JSON format below (keyed by identity **hash**, never raw tokens/`sub`/email/content), and `GET /healthz` checking vLLM + SearXNG reachability.
 - **Backups:** because each user is a folder, backup = snapshot `/data/users/`. SQLite WAL means use `VACUUM INTO` or the SQLite backup API for consistent copies rather than `cp` on a live DB.
 - **Limits:** enforce max upload size and allowed MIME types (`pdf · docx · md · txt`) on `POST /api/documents`; reject path traversal in filenames.
 
@@ -59,3 +59,34 @@ Permissions-Policy: (minimised — camera=(), microphone=(), geolocation=() …)
   stolen by injected script has nowhere to be sent.
 - The HTML/SVG artifact iframe is `srcdoc` with its **own** restrictive CSP and a `sandbox`
   attribute that omits `allow-same-origin` ([ui-components](ui-components.md#security-token-handling--rendering)).
+
+### Logging format (shared)
+
+The **.NET app and the Python tooling/mocks** emit **one JSON object per line** (NDJSON) to
+`stdout`, with **timestamp and level first**, so a single parser handles every process in the
+deployment:
+
+```json
+{"ts":"2026-06-02T12:34:56.789Z","level":"info","msg":"chat stream complete","comp":"chat","req":"01J8…","uid":"3f9a8c…","dur_ms":142}
+```
+
+| Field | Always | Meaning |
+|-------|:------:|---------|
+| `ts` | ✓ (1st) | ISO-8601 **UTC**, millisecond precision. |
+| `level` | ✓ (2nd) | `debug` · `info` · `warn` · `error` (lowercase). |
+| `msg` | ✓ | Human-readable event. |
+| `comp` | ✓ | Component/category — `chat` · `ingest` · `auth` · `admin` · `mock.vllm` · `smoke` … |
+| `req` | — | Correlation id for one request/run. |
+| `uid` | — | **Identity hash** — a prefix of the folder key `sha256(iss+sub)`. Correlates a user without exposing identity. |
+| *(event)* | — | Anything else the event needs: `dur_ms`, `tool`, `status`, `doc_id`, … |
+
+**Never logged** (security): raw access/refresh **tokens**, raw `sub`, **email**, or message/document
+**content**. A user is only ever identified by the `uid` hash — the same key the filesystem uses, so
+logs line up with folders and the admin API without leaking identity.
+
+- **.NET** — **Serilog** with a small `ITextFormatter` (or `Microsoft.Extensions.Logging`'s
+  `AddJsonConsole` + a custom `ConsoleFormatter`) that serialises `ts`/`level` first; `comp`/`req`/`uid`
+  come from a logging scope set in middleware.
+- **Python** — the stdlib `logging` module with a custom `Formatter` that `json.dumps` an ordered
+  dict (`ts`, `level`, `msg`, … — 3.7+ preserves insertion order); used by `run.py`, `tokens.py`, and
+  `tools/smoke/mocks` so mock-upstream lines interleave cleanly with the host's.

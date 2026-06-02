@@ -20,4 +20,5 @@ REST API backend for `gert-frontend-mockup-v2.html`.
 10. [Tech stack](tech-stack.md) — chosen libraries and suggested solution layout.
 11. [UI components & `wwwroot` layout](ui-components.md) — VanJS SPA structure, component conventions, CSS split, the no-npm dev/release pipeline.
 12. [Testing plan](testing.md) — the fake in-memory host, .NET whitebox tests, Console coverage, and the Python + headless-browser smoke launcher.
-13. [Decisions to confirm](decisions.md) — open choices we still need to lock down.
+13. [Implementation plan](implementation-plan.md) — the agentic build order: dependency-ordered units, milestones (walking skeleton → hardened E2E), and the security-control → unit traceability.
+14. [Decisions to confirm](decisions.md) — open choices we still need to lock down.

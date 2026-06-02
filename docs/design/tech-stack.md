@@ -10,11 +10,12 @@
 | SQLite | `Microsoft.Data.Sqlite` + `SQLitePCLRaw.bundle_e_sqlite3` | Extension loading for sqlite-vec; WAL. |
 | Vector | **sqlite-vec** (`vec0`) + **FTS5** | Per-user KNN + lexical for hybrid search. |
 | Data access | **Dapper** (raw SQL) behind `IChatRepository` / `IRagRepository` (+ `IDatabaseProvider`) | Hand-written SQL suits `vec0`/FTS virtual tables. The **repository interfaces are the engine-portability seam** — the service layer never sees SQL, so another engine drops in as a new project (see [Engine portability](#engine-portability)). |
-| Model API | OpenAI-compatible client → **vLLM** | Streaming + function calling out of the box. |
-| HTTP | `IHttpClientFactory` + **Polly** | vLLM / SearXNG calls with resilience. |
+| Model API | OpenAI-compatible client → **vLLM** | Streaming + function calling out of the box. Lives in **`Gert.External`** behind `IChatModelClient`/`IEmbeddingClient`. |
+| HTTP | `IHttpClientFactory` + **Polly** | vLLM / SearXNG calls with resilience (in `Gert.External`); the SearXNG fetch is SSRF-guarded ([security F5](security.md#3-findings--remediations)). |
 | Background work | `System.Threading.Channels` + `BackgroundService` (Gert.Api) | Ingestion queue — an **Api hosting** concern wrapping `IIngestionService`; the Console ingests inline. |
+| Logging | **Serilog** → JSON lines (NDJSON) on stdout | `ts`/`level`-first schema **shared with the Python tooling** so one parser reads every process; never logs tokens/`sub`/content ([operations § Logging format](operations.md#logging-format-shared)). |
 | Extraction | **PdfPig** (PDF), **OpenXML** (DOCX) | Text extraction for chunking. Parses **untrusted** bytes, so it runs in an **isolated, unprivileged subprocess** (dropped privs, no net, `RLIMIT_AS`/`CPU`/`NPROC` + timeout) with DTD/external-entity **off** (XXE) and decompressed-size/zip-entry caps (bombs) — may reuse gVisor ([security F7](security.md#3-findings--remediations)). |
-| Sandbox | **gVisor (`runsc`)** containers | Isolated Python execution, **outbound egress off by default**; the Console can wire a null/stub sandbox. |
+| Sandbox | **gVisor (`runsc`)** containers | Isolated Python execution, **outbound egress off by default** (in `Gert.External` behind `ISandbox`); the Console can wire a null/stub sandbox. |
 
 ## Architecture
 
@@ -37,14 +38,16 @@ Arrows are project references. Everything points inward to `Gert.Service` → `G
 
   ── hosts ───────────────────────────────────────────────────────────────────
      Gert.Api                                          Gert.Console
-       refs: Service, Authentication, Database.Sqlite    refs: Service, Database.Sqlite
+       refs: Service, Authentication,                    refs: Service, Database.Sqlite,
+             Database.Sqlite, External                          External
        │                                                 │   (own LocalUserContext —
        │                                                 │    no Authentication ref)
        ▼                                                 ▼
   ── adapters ────────────────────────────────────────────────────────────────
-     Gert.Authentication     Gert.Database.Sqlite      Gert.Database.Postgres (future)
-     (JWT → IUserContext)     (vec0 + FTS5)             (pgvector + tsvector)
-            └───────────────────────┴────────────────────────┘
+     Gert.Authentication   Gert.Database.Sqlite   Gert.External         Gert.Database.Postgres
+     (JWT → IUserContext)   (vec0 + FTS5)          (vLLM · SearXNG ·     (future: pgvector)
+                                                    gVisor sandbox)
+            └──────────────────────┴──────────────────────┴────────────────────┘
                                     │  all ref ▼
   ── core ────────────────────────────────────────────────────────────────────
                             Gert.Service                refs: Model only
@@ -54,7 +57,7 @@ Arrows are project references. Everything points inward to `Gert.Service` → `G
                             Gert.Model                  no dependencies
 ```
 
-The compiler enforces the inward direction: `Gert.Service` cannot reference `Gert.Api`, `Gert.Authentication`, or any `Gert.Database.*` — so "the Console must not need the API" is structural, not a convention.
+The compiler enforces the inward direction: `Gert.Service` cannot reference `Gert.Api`, `Gert.Authentication`, `Gert.External`, or any `Gert.Database.*` — so "the Console must not need the API" is structural, not a convention. **`Gert.External`** is the outside-world seam, exactly parallel to the database seam: the service layer talks only to the ports (`IChatModelClient`, `IEmbeddingClient`, `IWebSearch`, `ISandbox`), and the real vLLM/SearXNG/gVisor clients live behind them — so they can be swapped (or pointed at mock upstreams for tests, see [testing](testing.md#41-the-fake-external-world)) with a single DI change.
 
 ## Engine portability
 
@@ -105,7 +108,14 @@ Gert.sln
 │  ├─ JwtBearer.cs            # JWKS/Authority config, NameClaimType/RoleClaimType
 │  └─ Policies.cs             # Admin policy, fallback authenticated-user policy
 │
-├─ Gert.Api/                  # HTTP host — references Service, Authentication, Database.Sqlite
+├─ Gert.External/             # outside-world adapters — references Service, Model
+│  ├─ Vllm/                   #   IChatModelClient + IEmbeddingClient — OpenAI-compatible (IHttpClientFactory + Polly)
+│  ├─ Search/                 #   IWebSearch — SearXNG client + SSRF-guarded fetch (security F5)
+│  ├─ Sandbox/                #   ISandbox — gVisor (runsc) exec, egress off by default
+│  ├─ Isolation/             #   IIsolatedExtractor — unprivileged subprocess for PDF/DOCX parsing (security F7)
+│  └─ ServiceCollectionExtensions.cs  # AddGertExternal(cfg): one registration; swap any provider in isolation
+│
+├─ Gert.Api/                  # HTTP host — references Service, Authentication, Database.Sqlite, External
 │  ├─ Program.cs              # DI, JwtBearer, static files + SPA fallback, SSE, BackgroundService
 │  ├─ appsettings.json        # NON-secret defaults only: vLLM/SearXNG URLs, embedding dim, DataRoot,
 │  │                          #   Auth, Tools:DefaultGrant. Keys/secrets come from env / user-secrets
@@ -114,7 +124,7 @@ Gert.sln
 │  ├─ Ingestion/              # Channel queue + IngestionWorker (BackgroundService) → IIngestionService
 │  └─ wwwroot/                # SPA assets from Gert.Web (raw in dev, minified on publish)
 │
-├─ Gert.Console/              # CLI host — references Service, Database.Sqlite (bypasses the Api)
+├─ Gert.Console/              # CLI host — references Service, Database.Sqlite, External (bypasses the Api)
 │  ├─ Program.cs              # wires LocalUserContext (single user, tools = "*"), inline ingestion
 │  └─ …                       # renders the ChatEvent stream to stdout; isolated-testing entry point
 │

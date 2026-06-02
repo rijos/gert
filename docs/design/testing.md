@@ -100,12 +100,20 @@ tests/
   Gert.Console.Tests/           # drive the Console host with fakes; assert rendered ChatEvent stream
   web/
     harness.html                # import map + __mount helper — Fake host serves it at /tests/ for component units
+  shared/                       # ONE source of truth for both fake layers (Appendix A)
+    fixtures.json               #   canned chat completions + web-search results
+    embeddings_golden.json      #   text → expected vector — the deterministic-embedding conformance check
 
 tools/
   smoke/                        # Python E2E launcher (uv-managed; no npm, no .NET) — drives the Fake host
-    run.py                      #   boot Fake host → mint tokens → Playwright matrix → report
+    run.py                      #   boot mocks + host (FakeE2E) → mint tokens → Playwright matrix → report
     tokens.py                   #   role→claims map; mint(role) RS256 via pyjwt; CLI for local dev
-    requirements.txt            #   playwright, pyjwt   (installed via `uv pip install -r`)
+    mocks/                      #   mock upstreams for E2E — the real Gert.External adapters point here
+      __main__.py               #     boots all mocks on localhost ports (one process); shared specs
+      vllm.py                   #     OpenAI-compatible: /v1/chat/completions (streaming + tool calls), /v1/embeddings
+      searxng.py                #     SearXNG JSON; can emit a private-IP result URL to test the SSRF guard
+      specs.py                  #     canned completions + deterministic hash→1024-dim embedding (matches FakeEmbeddings)
+    requirements.txt            #   playwright, pyjwt (+ a tiny ASGI server for streaming) — via `uv pip install -r`
     pages.py                    #   page objects for the SPA regions (sidebar, composer, canvas)
     tests/
       test_components.py        #   component units — mount real modules via page.evaluate (§8)
@@ -138,24 +146,38 @@ adapters do, so swapping them is a single DI registration ([tech-stack](tech-sta
   last user message (fixture map; echo fallback), and can emit a scripted **tool call** so the
   orchestrator's tool loop is exercised end to end. Streams token-by-token so SSE and the
   typewriter caret have something real to render.
-- **`FakeEmbeddings`** — maps text → a deterministic 1024-dim unit vector (hash-seeded). KNN
-  ordering is therefore **stable across runs**, which is what lets us assert exact retrieval
-  order in RAG tests instead of "something came back."
+- **`FakeEmbeddings`** — maps text → a deterministic 1024-dim unit vector (hash-seeded, per the
+  exact algorithm in [Appendix A.2](#a2-deterministic-embeddings-hash--1024-dim-unit-vector)). KNN
+  ordering is therefore **stable across runs** *and identical to the Python mock*, which is what lets
+  us assert exact retrieval order in RAG tests instead of "something came back."
 - **`FakeWebSearch`** — fixed result set for the web-search tool.
 - **`StubSandbox`** — returns scripted stdout/exit without launching a container; a "throws"
   variant covers the sandbox-failure path.
 
-### 4.2 Two faces of the same fake host
-The identical fake wiring is exposed two ways, so the browser and the .NET tests can't drift:
+### 4.2 Two ways to fake the outside world
+The external world is doubled at **two fidelities**, chosen per tier — but both speak the *same*
+scripted behaviour, so a result proven in a unit test is the result the browser sees:
 
-| Face | Transport | Used by | How |
-|------|-----------|---------|-----|
-| **TestServer** | in-process, no socket | `Gert.Api.Tests` | `GertApiFactory : WebApplicationFactory<Program>` → `HttpClient` |
-| **Fake Kestrel** | real port on localhost | the Python launcher / browser | `dotnet run --launch-profile Fake` (a launch profile that calls the same `AddGertFakes()`) |
+| Tier | External world | Transport | How |
+|------|----------------|-----------|-----|
+| **.NET unit / integration** (`Gert.Service.Tests`, `Gert.Api.Tests`) | **in-process .NET fakes** (`AddGertFakes` swaps the `Gert.External` ports) | TestServer, no socket | `GertApiFactory : WebApplicationFactory<Program>` → `HttpClient`. Fastest, fully deterministic. |
+| **Browser E2E** (the Python launcher) | **real `Gert.External` adapters → Python mock upstreams** (HTTP); sandbox stays a .NET stub | real Kestrel on localhost | `dotnet run --launch-profile FakeE2E`: the host wires its **real** vLLM/SearXNG clients but points them at the mock URLs `tools/smoke/mocks` serves. |
 
-Both resolve through one extension — `AddGertFakes(this IServiceCollection)` — which replaces
-the model/search/sandbox registrations, points `DataRoot` at a temp dir, and installs the test
-JWT validation. The only difference is whether Kestrel binds a socket.
+**Why two.** The in-process fakes give speed + determinism for the bulk of the suite. The Python
+mocks give **wire-level fidelity** for the few browser runs: pointing the *real* adapters at a fake
+upstream exercises the adapter code `AddGertFakes` skips — `IHttpClientFactory`/Polly, OpenAI request
+shaping, **streaming SSE parsing of the upstream**, and the **SSRF guard** (a mock SearXNG can return
+a private-IP result URL and assert the fetch is refused — [security F5](security.md#3-findings--remediations)).
+The **sandbox is local process-exec, not HTTP**, so it has no wire protocol to mock in Python — it
+stays a .NET `StubSandbox` for E2E; real gVisor is exercised only in the staging smoke
+([§12](#12-non-goals)).
+
+**No drift.** The Python `mocks/` and the .NET fakes share one documented spec
+([Appendix A](#appendix-a--the-shared-fake-spec)) — the same canned completions keyed by
+last-user-message, and the **same deterministic hash→1024-dim embedding algorithm** — so KNN/RRF
+order and citations assert identically in `Gert.Database.Sqlite.Tests` and in the browser. Both shortcuts also share the dev JWT key path ([§4.3](#43-jwt-minting--a-python-token-harness)),
+point `DataRoot` at a temp dir, and install the test JWT validation; the only differences are the
+socket and which fidelity of external world is wired.
 
 ### 4.3 JWT minting — a Python token harness
 No dev-only token *endpoint* on the host. **Python mints the tokens**; the host only *trusts*
@@ -167,13 +189,25 @@ so the dev shortcut can't hide a validation bug.
   so adding a privilege set is a one-line edit:
 
   ```python
+  # role → the claims that distinguish it; mint() adds iss/aud/exp/iat/nbf to match the dev authority
+  # (iss matters: the folder key is sha256(iss+sub) and the provisioning gate checks iss — §4.4 / F12).
   ROLES = {
-      "admin": {"sub": "dev-admin", "groups": ["gert-admins"], "gert_tools": "*"},
-      "user":  {"sub": "dev-user",  "groups": ["gert-users"],  "gert_tools": "rag,search"},
+      "admin":   {"sub": "dev-admin",   "groups": ["gert-admins"], "gert_tools": "*"},          # admin surface + every tool
+      "user":    {"sub": "dev-user",    "groups": ["gert-users"],  "gert_tools": "rag search"}, # standard non-admin; sandbox denied
+      "limited": {"sub": "dev-limited", "groups": ["gert-users"],  "gert_tools": "rag"},         # restricted: search + sandbox denied
   }
   # CLI: `python -m tools.smoke.tokens --role admin`  → prints a token (and a paste-ready
   #      localStorage snippet) so a dev can use the app locally with NO Pocket ID setup.
+  # mint(role, **overrides) tweaks any claim without a new role — e.g. grant sandbox to a
+  # non-admin (gert_tools="rag search sandbox") to prove the positive entitlement path.
   ```
+
+  The three roles cover the authorization axes the app actually has: **admin vs non-admin** (the
+  `/admin/*` surface) and the **tool-entitlement ceiling** ([auth](auth.md#enforcement--the-claim-is-the-ceiling)).
+  `admin` has everything; `user` is the common case that proves **sandbox is dropped** despite any UI
+  toggle; `limited` proves a tightly-scoped grant (**only `rag`** — search *and* sandbox denied). Any
+  other shape (a non-admin *with* sandbox, an absent claim falling back to the default grant) is a
+  one-line `mint()` override in the test that needs it, not a standing role.
 
 - **The key is generated on first run, never committed.** The first invocation of `tokens.py`
   (or the Fake host) creates an RSA keypair under a **git-ignored** path (e.g.
@@ -401,8 +435,10 @@ so the harness imports the real app modules on the same origin.
 npm, no .NET SDK needed beyond running the host.
 
 **What it does, in order:**
-1. **Boot the Fake host** — `dotnet run --launch-profile Fake` as a subprocess (or attach to an
-   already-running one with `--base-url`); wait for `/healthz`.
+1. **Boot the mock upstreams** — start `tools/smoke/mocks` (vLLM + SearXNG) on localhost ports, then
+   **boot the host** with `dotnet run --launch-profile FakeE2E`, whose config points the **real**
+   `Gert.External` clients at those mock URLs (sandbox = stub). Or attach to an already-running pair
+   with `--base-url`; wait for `/healthz`.
 2. **Mint tokens** — call `tokens.mint("admin")` / `tokens.mint("user")` in-process
    ([§4.3](#43-jwt-minting--a-python-token-harness)). No HTTP round-trip; the same harness a dev
    runs from the CLI for local testing.
@@ -411,9 +447,12 @@ npm, no .NET SDK needed beyond running the host.
    load the SPA, and run the scenarios.
 4. **Report** — pass/fail per scenario; screenshot + trace on failure under `tools/smoke/artifacts/`.
 
-**Matrix:** `{chromium, firefox} × {admin, user}`. Flags:
-`--browser chromium|firefox|all`, `--role admin|user|all`, `--headed`, `--keep-open`,
-`--base-url <url>`.
+**Matrix:** `{chromium, firefox} × {admin, user}` for the full click-through, plus the **`limited`**
+role in the RBAC/entitlement scenario (below). Flags:
+`--browser chromium|firefox|all`, `--role admin|user|limited|all`, `--headed`, `--keep-open`,
+`--base-url <url>`. The host and the mock upstreams emit the shared NDJSON logs
+([operations § Logging format](operations.md#logging-format-shared)), so a failed run's interleaved
+output parses with one reader.
 
 **Scenarios** (cover the mockup's interactive surface — [ui-components §7](ui-components.md#7-feature--component-map)):
 - New chat → type → send → **streaming** message appears → **tool cards** expand → citations/footnotes render.
@@ -422,8 +461,10 @@ npm, no .NET SDK needed beyond running the host.
   artifact renders in its sandboxed iframe; the code artifact shows the Problems panel.
 - **Chrome**: theme toggle persists; model picker selects a model; responsive drawers open/close
   at mobile widths.
-- **RBAC + IDOR**: as **admin**, `/admin/users` loads; as **user**, it's hidden and the API
-  returns 403; a user cannot open another user's document.
+- **RBAC + IDOR + entitlement**: as **admin**, `/admin/users` loads; as **user**, it's hidden and
+  the API returns 403; a user cannot open another user's document. As **`limited`**, the Search and
+  Sandbox tool chips are unavailable and the API drops those tools even if the request asks for them
+  (the entitlement ceiling, [auth](auth.md#enforcement--the-claim-is-the-ceiling)).
 
 **Setup** (via **[uv](https://github.com/astral-sh/uv)** — the project's Python env manager):
 `uv venv && uv pip install -r requirements.txt && uv run playwright install chromium firefox`.
@@ -445,6 +486,8 @@ Run the suite with `uv run python -m tools.smoke.run`, and mint a local token wi
 | Web tests (component units + E2E) | **Playwright (Python)** | Browser as the DOM/JS engine; Chromium + Firefox; no npm, no Node. |
 | Python env | **uv** | Manages the venv + deps for `tools/smoke` (`uv venv`, `uv run`). |
 | JWT (tests) | **RS256 key generated on first run** (git-ignored) + JWKS | Exercises the real RS256/JWKS path; no key ever committed. |
+| External world (.NET tiers) | **in-process fakes** (`AddGertFakes`) | Swap the `Gert.External` ports; fast, deterministic, no sockets. |
+| External world (E2E) | **Python mock upstreams** (`tools/smoke/mocks`) | Real adapters → mock vLLM/SearXNG; exercises adapter HTTP + SSRF guard. Sandbox stays a .NET stub. |
 
 ---
 
@@ -452,9 +495,9 @@ Run the suite with `uv run python -m tools.smoke.run`, and mint a local token wi
 
 1. **`dotnet test`** — runs `Gert.*.Tests` (unit + DB + API integration + console). Fast,
    hermetic, no network.
-2. **Web tests job** — `dotnet run --launch-profile Fake` in the background, then
-   `python tools/smoke/run.py --browser all --role all` (component units + full-app E2E).
-   Uploads Playwright traces/screenshots on failure.
+2. **Web tests job** — boot `tools/smoke/mocks` + `dotnet run --launch-profile FakeE2E` in the
+   background, then `python tools/smoke/run.py --browser all --role all` (component units + full-app
+   E2E). Uploads Playwright traces/screenshots on failure.
 
 Both gate merges. The E2E job is the only one that needs browsers installed.
 
@@ -463,9 +506,120 @@ Both gate merges. The E2E job is the only one that needs browsers installed.
 ## 12. Non-goals
 
 - **Real vLLM / GPU, real Pocket ID, real gVisor** are *not* in unit/integration/E2E — they're
-  faked. A thin, separate **staging smoke** (the same `run.py` pointed at a real deployment with
-  `--base-url`) is the place to exercise the genuine articles; it is not part of the gating CI.
+  faked (the E2E exercises the real **adapter** code against Python mock upstreams, but never a real
+  model server or sandbox). A thin, separate **staging smoke** (the same `run.py` pointed at a real
+  deployment with `--base-url`) is the place to exercise the genuine articles; it is not part of the
+  gating CI.
 - **Load/perf testing** is out of scope at ~20 users.
 - **Cross-browser pixel-diffing** — we assert behaviour and roles, not screenshots.
 - **`Gert.Model.Tests`** — dropped: the models are POCOs; any record/DTO invariant worth
   asserting rides along in the service suite.
+
+---
+
+## Appendix A — The shared fake spec
+
+The in-process .NET fakes ([§4.1](#41-the-fake-external-world)) and the Python mock upstreams
+([§4.2](#42-two-ways-to-fake-the-outside-world)) only stay drift-free if they implement **one**
+definition of behaviour. This appendix is that definition. The split:
+
+- **Algorithms are code** — each side implements A.1/A.2 from this spec, kept honest by a committed
+  **golden file** both assert against.
+- **Canned data is data** — the chat/search fixtures live **once** in `tests/shared/fixtures.json`;
+  the .NET side links it as an embedded resource, the Python side reads the same file. No second copy.
+
+```
+tests/shared/                  # one source of truth for both fake layers
+  fixtures.json                #   canned chat completions + web-search results (schema: A.3 / A.4)
+  embeddings_golden.json       #   text → expected vector samples — the A.2 conformance check
+```
+
+### A.1 Determinism contract
+Equal input ⇒ **identical** output on both sides, so KNN/RRF order and citations assert the same in
+`Gert.Database.Sqlite.Tests` and in the browser E2E. Everything below is specified to the byte so C#
+and Python agree without coordination.
+
+### A.2 Deterministic embeddings (`hash → 1024-dim unit vector`)
+The function the `FakeEmbeddings` adapter and the mock `/v1/embeddings` endpoint both compute:
+
+```
+embed(text) -> float32[1024]:
+    data = utf8_bytes(text)
+    for i in 0 .. 1023:
+        h    = SHA256( data ++ uint32_be(i) )      # 32-byte digest; index appended big-endian
+        u    = uint32_be( h[0:4] )                 # first 4 bytes as a big-endian uint32
+        x[i] = (u / 4294967296.0) * 2.0 - 1.0      # double in [-1, 1)
+    norm = sqrt( sum_i x[i]^2 )                     # L2 norm, in double
+    return [ float32( x[i] / norm ) for i in 0..1023 ]
+```
+
+- **Fixed choices** (the only way both languages match): UTF-8 in; SHA-256; the index suffix and the
+  4-byte slice are **big-endian**; arithmetic in IEEE-754 **double**, cast to **float32** only at the
+  end. `norm` is never zero in practice; if it were, return the canonical basis vector `e₀`.
+- **Why it works for tests:** distinct texts map to near-orthogonal directions in 1024-dim, so cosine
+  distances are well-separated — no fragile ties. A query embedded with the *same* function is its
+  own nearest neighbour, which is exactly what lets RAG tests assert an exact hit order.
+- **Conformance:** the .NET impl generates `embeddings_golden.json` once (a handful of texts →
+  vectors); thereafter a `Gert.Testing` test **and** a Python test both assert `embed(t)` matches the
+  golden to float32 equality. If either drifts, both go red — that's the anti-drift guarantee, made
+  executable.
+
+### A.3 Canned chat completions
+Both the `FakeChatModel` and the mock `/v1/chat/completions` resolve a reply from
+`fixtures.json` by the **last user message**, and play it as a **token-by-token stream**. The
+fixture is at the **model wire layer** — assistant content deltas and (optionally) a tool call,
+nothing higher: citations and artifacts are the *orchestrator's* job downstream, never scripted here.
+
+```jsonc
+// fixtures.json → "completions": [ … ]
+{
+  "match": "exact",                       // "exact" | "contains" against the trimmed last user message
+  "when":  "should I use Qdrant or sqlite-vec?",
+  "deltas": ["Short version: ", "use ", "sqlite-vec."],   // streamed one chunk per element
+  "finish": "stop",                       // finish_reason; "tool_calls" when tool_call is present
+  "usage":  { "completion_tokens": 12 }
+}
+```
+
+A tool-exercising fixture emits a tool call first, then — on the **follow-up** model call (whose
+messages now carry the tool result) — matches the *same* `when` and plays `after_tool.deltas`:
+
+```jsonc
+{
+  "when": "search my docs about qdrant",
+  "tool_call": { "name": "search_documents",
+                 "arguments": "{\"query\":\"qdrant\",\"k\":5}" },   // OpenAI: arguments is a JSON string
+  "finish": "tool_calls",
+  "after_tool": { "deltas": ["Based on your docs, sqlite-vec wins [1]."], "finish": "stop" }
+}
+```
+
+- **Fallback:** no match ⇒ `"fallback": "echo"` streams `Echo: <message>`, tokenised on word
+  boundaries (spaces preserved) so the typewriter caret and SSE framing have real chunks to render.
+- **One asymmetry, same data:** the **Python mock emits OpenAI-compatible SSE** (`data: {chunk}\n\n`,
+  `delta.content` / `delta.tool_calls`, terminal `[DONE]`) because the *real* `Gert.External` adapter
+  parses that wire format ([§4.2](#42-two-ways-to-fake-the-outside-world)); the **.NET fake yields the
+  `IChatModelClient` port's types directly** (no socket). Both are driven by the identical fixture
+  entry, so the resulting `ChatEvent` stream is the same.
+
+### A.4 Canned web search (SearXNG)
+`FakeWebSearch` and the mock SearXNG resolve results by query from the same file, in SearXNG's JSON
+shape. At least one fixture is **adversarial by design** for the SSRF test:
+
+```jsonc
+// fixtures.json → "search": { "<query>": { "results": [ … ] } }
+"results": [
+  { "title": "Qdrant vs sqlite-vec", "url": "https://example.test/bench", "content": "…" },
+  { "title": "internal",            "url": "http://169.254.169.254/latest/meta-data/", "content": "…" }
+]
+```
+
+The second result drives [F5](security.md#3-findings--remediations): the real adapter's summarize
+step must **refuse** that URL (private/link-local), proving the SSRF guard end-to-end. The sandbox is
+not represented here — it is process-exec, not HTTP, so it stays a .NET `StubSandbox`
+([§4.2](#42-two-ways-to-fake-the-outside-world)).
+
+### A.5 Ownership
+`tests/shared/` is the seam's contract. Changing a fixture or the embedding algorithm is a
+deliberate edit to **one** place; the golden-file conformance tests on both sides fail loudly if the
+two implementations ever diverge.
