@@ -14,7 +14,7 @@ Status: ⬜ not started · 🟡 in progress · ✅ done · 🔴 blocked
 | U4a | SQLite provider + chat repo | ✅ | provider (WAL/pragmas), Dapper chat repo, migration runner; 27 real-SQLite tests green |
 | U4b | RAG repo (vec0+FTS5+RRF) | ✅ | real vec0 KNN + FTS5 bm25 + RRF (k=60); packed float32 blobs; memory rides same query; cascade delete; project isolation; FTS-injection guard. rag.db un-deferred. 46 DB tests |
 | U5 | Paths, provisioning gate, isolation | ✅ | F12: sha256(iss+sub), validate-before-disk, meta.json identity binding, two-user isolation, pid-traversal guard |
-| U6 | Validation layer | ⬜ | F6, principle #6 |
+| U6 | Validation layer | ✅ | fail-closed FluentValidationProvider + per-DTO validators (threat-model rules) + reflection meta-test + NaughtyStrings theories; F6 route-param validators (admin {key}, pid). 344 service tests, 413 total |
 | U7a | CRUD + minimal ChatService | ✅ | ConversationService CRUD + no-tool streaming ChatService + GertServices hub + passthrough validation (TODO U6); 23 service tests. Document/Memory/Project/Settings/Account/Admin stubbed (TODO U4b/U7c/U7d) |
 | U7b | Full tool-loop orchestrator | ⬜ | |
 | U7c | Tools (rag/search/sandbox) | ⬜ | |
@@ -35,6 +35,8 @@ Decisions: storage = **interface seam + LocalFS only** (no S3 yet); test pyramid
 hole; production .NET already verified fake-free); ChatService = **step-based redesign, stateless**
 (StartTurn prep + RunTurn stream in ONE request, no turnId/cross-request state — the turnId/GetEvents
 shape would break multi-instance #10).
+
+**Storage seam (confirmed after U4b):** two distinct seams. IRagRepository = SQLite/vec0 query engine (KNN/FTS/RRF — cannot be a blob store). IObjectStore = source files + exports (Local now, S3 later). U7d ingestion/DocumentService MUST route all raw-file read/write/delete through IObjectStore (no direct File.IO). SQLite DB files stay on local FS.
 
 Order (semantic first, file-split enforcement last):
 1. ✅ Drop ISubDenylist (#10) — stateless revocation (expiry + IdP deactivation). Code done; docs pending in this commit.

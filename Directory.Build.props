@@ -17,6 +17,9 @@
     <MicrosoftExtensionsOptionsVersion>9.0.0</MicrosoftExtensionsOptionsVersion>
     <!-- U7a: AddGertServices DI extension + validator resolution. Abstractions only (no host coupling). -->
     <MicrosoftExtensionsDIAbstractionsVersion>9.0.0</MicrosoftExtensionsDIAbstractionsVersion>
+    <!-- U6: fail-closed FluentValidation provider + per-DTO validators. Orchestrator pins a valid net10.0 11.x. -->
+    <FluentValidationVersion>11.11.0</FluentValidationVersion>
+    <FluentValidationDIVersion>11.11.0</FluentValidationDIVersion>
     <!-- U8 auth: orchestrator pins a valid net10.0 version. -->
     <JwtBearerVersion>10.0.0</JwtBearerVersion>
   </PropertyGroup>

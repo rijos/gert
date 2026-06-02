@@ -7,6 +7,9 @@
     <PackageReference Include="NetArchTest.Rules" Version="$(NetArchTestVersion)" />
     <PackageReference Include="NSubstitute" Version="$(NSubstituteVersion)" />
     <PackageReference Include="FluentAssertions" Version="$(FluentAssertionsVersion)" />
+    <!-- U6: ShouldHaveValidationErrorFor / ShouldNotHaveValidationErrorFor.
+         FluentValidation.TestHelper ships inside the FluentValidation package. -->
+    <PackageReference Include="FluentValidation" Version="$(FluentValidationVersion)" />
   </ItemGroup>
 
   <ItemGroup>

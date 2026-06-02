@@ -9,6 +9,11 @@
          IValidator<T> from the container, without coupling the service layer to a host. -->
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions"
                       Version="$(MicrosoftExtensionsDIAbstractionsVersion)" />
+    <!-- U6: the fail-closed validation provider + per-DTO validators (principle #6, security F6). -->
+    <PackageReference Include="FluentValidation"
+                      Version="$(FluentValidationVersion)" />
+    <PackageReference Include="FluentValidation.DependencyInjectionExtensions"
+                      Version="$(FluentValidationDIVersion)" />
   </ItemGroup>
 
 </Project>

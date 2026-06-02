@@ -25,11 +25,16 @@ public sealed class ChatServiceTests
     private readonly IChatRepository _repo = Substitute.For<IChatRepository>();
     private readonly IDatabaseProvider _provider = Substitute.For<IDatabaseProvider>();
     private readonly TestUserContext _user = new();
-    private readonly IValidationProvider _validation = new PassthroughValidationProvider(
-        Substitute.For<IServiceProvider>());
+    private readonly IValidationProvider _validation = Substitute.For<IValidationProvider>();
 
     public ChatServiceTests()
     {
+        // The happy-path tests are about the orchestrator, not validation: stub the
+        // provider to pass. The fail-closed provider itself is covered in the
+        // Validation suite; a dedicated test below asserts ChatService throws when
+        // the provider reports a failure.
+        _validation.Validate(Arg.Any<SendMessageRequest>()).Returns(ValidationResult.Success);
+
         _provider
             .OpenChatAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(_repo);
