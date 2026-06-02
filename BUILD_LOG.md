@@ -20,7 +20,7 @@ Status: ⬜ not started · 🟡 in progress · ✅ done · 🔴 blocked
 | U7c | Tools (rag/search/sandbox) | ⬜ | |
 | U7d | Ingestion pipeline | ⬜ | |
 | U8 | Gert.Authentication | ✅ | F11: HttpUserContext (3-role claim mapping), RS256-pinned JwtBearer, Admin/fallback policies, sub-denylist; 19 tests |
-| U9a | API walking skeleton | ⬜ | **M1 gate** |
+| U9a | API walking skeleton | ✅ | **M1 GATE GREEN** — Program/controllers/SSE + GertApiFactory (offline JWKS, temp DataRoot, fakes); 6 gate tests: 401, healthz, lazy-provision, CRUD, SSE happy path, SPA fallback |
 | U9b | API breadth + RBAC/IDOR + headers | ⬜ | F1,F6,F10,F9 |
 | U10 | Gert.External real adapters | ⬜ | F5,F7,F8 |
 | U11 | Gert.Console | ⬜ | |
@@ -49,3 +49,5 @@ with the sandbox disabled, iterates against compiler output, and checkpoint-comm
 - Process: golden generation needs the compiled fake → orchestrator-only step (agents can't run code). Documented for future regen.
 - U4a+U5 ✅ — SQLite storage core authored by agent; orchestrator fixes: (1) suppressed xUnit1051 suite-wide in tests/Directory.Build.props (responsiveness nicety, not correctness); (2) Dapper Int64 binding — widened MessageRow.token_count / CitationRow.ordinal / ArtifactRow.version to `long` (SQLite returns Int64) and cast to model `int` at mappers. 27/27 storage tests green, 38 total. Pinned: Microsoft.Data.Sqlite 9.0.0, Dapper 2.1.66, Microsoft.Extensions.Options 9.0.0, FluentAssertions 7.0.0 (free). rag.db/vec0 deferred to U4b (TODOs in SqliteRagRepository/OpenRagAsync/EnsureProjectAsync).
 - U8 ✅ — Gert.Authentication authored by agent; built clean first try (JwtBearer 10.0.0, NSubstitute 5.3.0 valid). 19 auth tests green, 56 total. ToolOptions(DefaultGrant) added in Gert.Service/Tools. Denylist + RS256-pin tested via extracted pure statics (no server needed). Note: GertApiFactory still has the U9a TODO (TestTokens JWKS + TempDataRoot wiring).
+- U7a ✅ — services slice; orchestrator fixed an `is`-pattern-in-expression-tree (FA NotContain → Any). 23 service tests, 71 total. DI.Abstractions 9.0.0 pinned.
+- U9a ✅ — **M1 COMPLETE.** API skeleton authored by agent; orchestrator fixes: (1) `MetadataAddress=null` nullable error → dropped (Authority=null suffices); (2) missing `using Gert.Model;` in test; (3) **the real integration bug — JwtBearer `MapInboundClaims` was renaming `sub`→WS-* URI so HttpUserContext threw "no sub claim"; set `MapInboundClaims=false` in AddGertJwtAuth.** All 6 gate tests green; **76 total**. (U8's unit tests built principals with raw claim names so couldn't catch the inbound-mapping rename — the walking skeleton did, as intended.)

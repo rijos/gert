@@ -60,6 +60,10 @@ public static class GertJwtAuthExtensions
         options.Authority = configuration["Auth:Authority"];
         options.Audience = configuration["Auth:Audience"];
 
+        // Keep claim types verbatim (sub, iss, groups, gert_tools). Without this, the JWT handler
+        // remaps short OIDC claims to long WS-* URIs and HttpUserContext can't find "sub".
+        options.MapInboundClaims = false;
+
         options.TokenValidationParameters = new TokenValidationParameters
         {
             ValidateIssuer = true,

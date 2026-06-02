@@ -1,0 +1,36 @@
+using Gert.Api.Sse;
+using Gert.Model.Dtos;
+using Gert.Service;
+using Microsoft.AspNetCore.Mvc;
+
+namespace Gert.Api.Controllers;
+
+/// <summary>
+/// <c>POST /api/projects/{pid}/conversations/{id}/messages</c> — send a user
+/// message and stream the assistant turn as Server-Sent Events (rest-api.md
+/// § sending a message). The controller is transport-only: it iterates the
+/// <see cref="IChatService"/> event stream and renders each <see cref="Model.Events.ChatEvent"/>
+/// as an SSE frame via <see cref="SseWriter"/>. Persistence happens inside the
+/// service as the stream completes. Covered by the fallback authenticated-user policy.
+/// </summary>
+[ApiController]
+[Route("api/projects/{pid}/conversations/{id}/messages")]
+public sealed class MessagesController : ControllerBase
+{
+    private readonly IGertServices _services;
+
+    public MessagesController(IGertServices services) =>
+        _services = services ?? throw new ArgumentNullException(nameof(services));
+
+    /// <summary>Stream the assistant turn as <c>text/event-stream</c>.</summary>
+    [HttpPost]
+    public async Task Post(
+        string pid,
+        string id,
+        [FromBody] SendMessageRequest request,
+        CancellationToken cancellationToken)
+    {
+        var events = _services.Chat.SendMessageAsync(pid, id, request, cancellationToken);
+        await SseWriter.WriteAsync(Response, events, cancellationToken).ConfigureAwait(false);
+    }
+}

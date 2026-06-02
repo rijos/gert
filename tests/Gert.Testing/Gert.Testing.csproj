@@ -12,6 +12,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\Gert.Service\Gert.Service.csproj" />
     <ProjectReference Include="..\..\Gert.Model\Gert.Model.csproj" />
+    <ProjectReference Include="..\..\Gert.Database.Sqlite\Gert.Database.Sqlite.csproj" />
     <ProjectReference Include="..\..\Gert.Api\Gert.Api.csproj" />
   </ItemGroup>
 
