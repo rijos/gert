@@ -3,7 +3,8 @@
     "allow": [
       "Bash(python3 -c \"import json;d=json.load\\(open\\('tests/shared/embeddings_golden.json'\\)\\);print\\('keys:',list\\(d['vectors']\\)\\);print\\('dims:',d['dimensions'],'len:',len\\(next\\(iter\\(d['vectors'].values\\(\\)\\)\\)\\)\\)\")",
       "Bash(git commit -q -m 'build\\(U3\\): shared test infra + fake spec — M0 complete *)",
-      "Bash(git commit -q -m 'build\\(U8\\): authentication — claim mapping, RS256 pin, denylist, policies *)"
+      "Bash(git commit -q -m 'build\\(U8\\): authentication — claim mapping, RS256 pin, denylist, policies *)",
+      "Bash(git commit -q -m 'build\\(U7a\\): conversation service + minimal no-tool ChatService *)"
     ]
   }
 }

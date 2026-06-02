@@ -15,7 +15,7 @@ Status: ⬜ not started · 🟡 in progress · ✅ done · 🔴 blocked
 | U4b | RAG repo (vec0+FTS5+RRF) | ⬜ | needs native sqlite-vec; rag.db deferred from M1 |
 | U5 | Paths, provisioning gate, isolation | ✅ | F12: sha256(iss+sub), validate-before-disk, meta.json identity binding, two-user isolation, pid-traversal guard |
 | U6 | Validation layer | ⬜ | F6, principle #6 |
-| U7a | CRUD + minimal ChatService | ⬜ | M1 slice |
+| U7a | CRUD + minimal ChatService | ✅ | ConversationService CRUD + no-tool streaming ChatService + GertServices hub + passthrough validation (TODO U6); 23 service tests. Document/Memory/Project/Settings/Account/Admin stubbed (TODO U4b/U7c/U7d) |
 | U7b | Full tool-loop orchestrator | ⬜ | |
 | U7c | Tools (rag/search/sandbox) | ⬜ | |
 | U7d | Ingestion pipeline | ⬜ | |

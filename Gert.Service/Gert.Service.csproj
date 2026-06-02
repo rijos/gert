@@ -4,4 +4,11 @@
     <ProjectReference Include="..\Gert.Model\Gert.Model.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Abstractions only: lets AddGertServices register the services + resolve
+         IValidator<T> from the container, without coupling the service layer to a host. -->
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions"
+                      Version="$(MicrosoftExtensionsDIAbstractionsVersion)" />
+  </ItemGroup>
+
 </Project>
