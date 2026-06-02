@@ -5,4 +5,17 @@
     <ProjectReference Include="..\Gert.Model\Gert.Model.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Versions centralized in the repo-root Directory.Build.props; orchestrator pins valid net10.0 versions. -->
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="$(MicrosoftDataSqliteVersion)" />
+    <PackageReference Include="Dapper" Version="$(DapperVersion)" />
+    <PackageReference Include="Microsoft.Extensions.Options" Version="$(MicrosoftExtensionsOptionsVersion)" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- SQL migrations are embedded resources; SqliteMigrationRunner reads them
+         as Gert.Database.Sqlite.Migrations.{family}.{NNN_name}.sql -->
+    <EmbeddedResource Include="Migrations\**\*.sql" />
+  </ItemGroup>
+
 </Project>

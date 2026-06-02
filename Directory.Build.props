@@ -8,4 +8,11 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>
 
+  <!-- Centralized library package versions (U4a). Orchestrator pins valid net10.0 versions. -->
+  <PropertyGroup>
+    <MicrosoftDataSqliteVersion>9.0.0</MicrosoftDataSqliteVersion>
+    <DapperVersion>2.1.66</DapperVersion>
+    <MicrosoftExtensionsOptionsVersion>9.0.0</MicrosoftExtensionsOptionsVersion>
+  </PropertyGroup>
+
 </Project>

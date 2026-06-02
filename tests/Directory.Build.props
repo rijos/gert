@@ -5,6 +5,10 @@
 
   <PropertyGroup>
     <IsPackable>false</IsPackable>
+    <!-- xUnit1051: prefer TestContext.Current.CancellationToken. A responsiveness nicety, not a
+         correctness rule; our tests are fast + hermetic. Suppressed suite-wide so warnings-as-errors
+         doesn't force threading TestContext through every async call site. -->
+    <NoWarn>$(NoWarn);xUnit1051</NoWarn>
   </PropertyGroup>
 
   <!-- Centralized test package versions; bump in one place. -->
@@ -16,6 +20,8 @@
     <!-- Gert.Testing infra (U3). Orchestrator pins valid net10.0 versions. -->
     <AspNetTestingVersion>10.0.0</AspNetTestingVersion>
     <IdentityModelVersion>8.3.0</IdentityModelVersion>
+    <!-- U4a/U5 storage tests. NOTE: orchestrator pins to a free 7.x. -->
+    <FluentAssertionsVersion>7.0.0</FluentAssertionsVersion>
   </PropertyGroup>
 
 </Project>
