@@ -1,16 +1,30 @@
 using Gert.Api.Errors;
+using Gert.Api.Ingestion;
+using Gert.Api.Security;
 using Gert.Authentication;
 using Gert.Database.Sqlite;
 using Gert.Service;
 using Gert.Service.Database;
+using Gert.Service.Ingestion;
 using Gert.Service.Storage;
 using Gert.Service.Tools;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.RateLimiting;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // --- Service layer (host-agnostic) -----------------------------------------
 builder.Services.AddControllers();
+
+// Ingestion worker (U9b): a Channel-backed queue drained by a BackgroundService so
+// uploads respond 202 and extract→chunk→embed→write runs off-thread. Registered as a
+// singleton BEFORE AddGertServices so its TryAdd of the inline queue no-ops, and the
+// worker + the document service share the one queue (writer ↔ reader). The IUserContext
+// is not needed off-thread — IngestJob carries (iss, sub, pid).
+builder.Services.AddSingleton<ChannelIngestionQueue>();
+builder.Services.AddSingleton<IIngestionQueue>(sp => sp.GetRequiredService<ChannelIngestionQueue>());
+builder.Services.AddHostedService<IngestionWorker>();
+
 builder.Services.AddGertServices();
 
 // AddGertServices (U7c) registers the three built-in tools (rag/search/sandbox)
@@ -24,6 +38,20 @@ builder.Services.AddGertServices();
 // AddGertJwtAuth also registers IHttpContextAccessor + IUserContext (HttpUserContext).
 builder.Services.AddGertJwtAuth(builder.Configuration);
 builder.Services.AddGertAuthorization();
+
+// --- Security headers + CSP (security F1, operations.md § headers) -----------
+// Binds the Pocket ID origin from Auth:Authority so the CSP's connect-src lists
+// exactly 'self' + the IdP.
+builder.Services.AddGertSecurityHeaders(builder.Configuration);
+
+// --- Per-user rate limiting (security F10) -----------------------------------
+// Partitioned by token sub (IP fallback for anonymous). Skipped under Testing so
+// the integration suite is never throttled.
+var rateLimitingEnabled = !builder.Environment.IsEnvironment("Testing");
+if (rateLimitingEnabled)
+{
+    builder.Services.AddGertRateLimiting();
+}
 
 // Brand the JwtBearer empty-body responses: 401 (no/invalid token) and 403 (not
 // admin) become Gert ProblemDetails JSON via GertProblem, instead of empty bodies.
@@ -66,6 +94,12 @@ builder.Services.AddSingleton<IDatabaseProvider, SqliteDatabaseProvider>();
 builder.Services.AddSingleton<UserPaths>();
 builder.Services.AddSingleton<IObjectStore, LocalObjectStore>();
 
+// User/project config + directory seam (settings.json, projects/{pid}/meta.json,
+// rm -rf a project/user folder, scan users/*/meta.json). Config files are direct
+// file I/O in the adapter; user blobs still flow through IObjectStore. The four
+// lifecycle services (Projects/Settings/Account/Admin) orchestrate this port.
+builder.Services.AddSingleton<IUserStore, FileSystemUserStore>();
+
 // --- External-world ports ----------------------------------------------------
 // TODO U10: AddGertExternal() registers the real IChatModelClient / IEmbeddingClient
 // / IWebSearch / ISandbox adapters. They are deliberately NOT registered here so a
@@ -87,13 +121,36 @@ var app = builder.Build();
 // Map exceptions (e.g. ValidationException from chat phase 1) to branded problems.
 app.UseExceptionHandler();
 
+// HSTS in non-Development (security F9). We assume HTTPS via the TLS-terminating
+// proxy; we do NOT force a redirect in Testing/Dev so the TestServer (plain HTTP)
+// and local dev still work.
+if (!app.Environment.IsDevelopment() && !app.Environment.IsEnvironment("Testing"))
+{
+    app.UseHsts();
+}
+
+// Strict CSP + security headers on HTML responses (security F1). Runs before the
+// static/SPA shell is served so index.html (and the client-route fallback) carry them.
+app.UseGertSecurityHeaders();
+
 app.UseDefaultFiles();
 app.UseStaticFiles();
 
 app.UseAuthentication();
 app.UseAuthorization();
 
-app.MapControllers();
+// Per-user rate limiting (F10) — applied to the controller surface below. Absent in
+// Testing (the limiter services are not registered there).
+if (rateLimitingEnabled)
+{
+    app.UseRateLimiter();
+}
+
+var controllers = app.MapControllers();
+if (rateLimitingEnabled)
+{
+    controllers.RequireRateLimiting(RateLimiting.PerUserPolicy);
+}
 
 // Liveness probe — the one anonymous endpoint (auth.md authorization matrix).
 app.MapGet("/healthz", () => Results.Ok(new { status = "ok" }))

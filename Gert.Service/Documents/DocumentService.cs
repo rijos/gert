@@ -83,6 +83,12 @@ public sealed class DocumentService : IDocumentService
             throw new ValidationException(validation);
         }
 
+        // Provision the user + project FIRST. The object store's PutAsync creates the
+        // files/ directory, which would otherwise materialise the user folder WITHOUT
+        // its identity-binding meta.json — and the fail-closed gate would reject every
+        // later open. Provisioning writes the binding before any blob is stored.
+        await _databases.EnsureProjectAsync(_user.Iss, _user.Sub, pid, cancellationToken).ConfigureAwait(false);
+
         var documentId = Guid.NewGuid().ToString("D");
         var extension = ValidationRules.ExtensionOf(upload.Filename);
         var key = ObjectKey(documentId, extension);

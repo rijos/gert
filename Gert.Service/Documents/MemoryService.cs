@@ -85,6 +85,11 @@ public sealed class MemoryService : IMemoryService
             throw new ValidationException(validation);
         }
 
+        // Provision the user + project FIRST — PutAsync below creates the files/ dir,
+        // which would otherwise materialise the user folder without its meta.json
+        // identity binding and trip the fail-closed gate on the next open.
+        await _databases.EnsureProjectAsync(_user.Iss, _user.Sub, pid, cancellationToken).ConfigureAwait(false);
+
         var id = Guid.NewGuid().ToString("D");
         var pinned = request.Pinned ?? false;
         var now = DateTimeOffset.UtcNow;

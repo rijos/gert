@@ -70,6 +70,20 @@ public sealed partial class SqliteDatabaseProvider : IDatabaseProvider
         string sub,
         CancellationToken cancellationToken = default)
     {
+        await EnsureUserRootAsync(iss, sub, cancellationToken).ConfigureAwait(false);
+
+        // The landing project is always present.
+        await EnsureProjectAsync(iss, sub, UserPaths.DefaultProjectId, cancellationToken).ConfigureAwait(false);
+    }
+
+    // Ensure the user root dir + identity-binding meta.json + settings.json exist.
+    // Does NOT create any project, so EnsureProjectAsync can call it without recursing
+    // into EnsureProvisionedAsync. Idempotent + fail-closed.
+    private async Task EnsureUserRootAsync(
+        string iss,
+        string sub,
+        CancellationToken cancellationToken = default)
+    {
         // ---- step 0: validate the identity BEFORE touching disk (fail-closed) ----
         // No path is derived and no directory created until these pass.
         ValidateIdentity(iss, sub);
@@ -105,9 +119,6 @@ public sealed partial class SqliteDatabaseProvider : IDatabaseProvider
         {
             await WriteJsonAsync(settingsFile, new UserSettings(), cancellationToken).ConfigureAwait(false);
         }
-
-        // The landing project is always present.
-        await EnsureProjectAsync(iss, sub, UserPaths.DefaultProjectId, cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc />
@@ -117,16 +128,13 @@ public sealed partial class SqliteDatabaseProvider : IDatabaseProvider
         string pid,
         CancellationToken cancellationToken = default)
     {
-        // The user gate must have run; re-validate the identity defensively so a
-        // project is never materialised for an unvalidated/mismatched identity.
-        ValidateIdentity(iss, sub);
+        // A project always belongs to a provisioned user: ensure the user root +
+        // identity-binding meta.json exist FIRST (idempotent; validates the identity
+        // and writes/verifies the binding). This guarantees a direct EnsureProjectAsync
+        // caller (e.g. ProjectService.Create) never materialises the user dir without
+        // its binding. EnsureUserRootAsync creates no project → no recursion.
+        await EnsureUserRootAsync(iss, sub, cancellationToken).ConfigureAwait(false);
         UserPaths.ValidatePid(pid);
-
-        var metaFile = _paths.MetaFile(iss, sub);
-        if (File.Exists(metaFile))
-        {
-            await VerifyBindingAsync(metaFile, iss, sub, cancellationToken).ConfigureAwait(false);
-        }
 
         var projectRoot = _paths.ProjectRoot(iss, sub, pid);
         Directory.CreateDirectory(projectRoot);

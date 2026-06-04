@@ -21,7 +21,7 @@ Status: ⬜ not started · 🟡 in progress · ✅ done · 🔴 blocked
 | U7d | Ingestion pipeline | ✅ | IngestionService (extract→chunk[256/32]→embed[batch16]→write; no-text→failed) via ITextExtractor (md/txt; pdf/docx→U10) + IIngestionQueue (inline; Channel→U9b); DocumentService/MemoryService all blob I/O via IObjectStore, base64 filename; validator relaxed. 440 tests |
 | U8 | Gert.Authentication | ✅ | F11: HttpUserContext (3-role claim mapping), RS256-pinned JwtBearer, Admin/fallback policies, sub-denylist; 19 tests |
 | U9a | API walking skeleton | ✅ | **M1 GATE GREEN** — Program/controllers/SSE + GertApiFactory (offline JWKS, temp DataRoot, fakes); 6 gate tests: 401, healthz, lazy-provision, CRUD, SSE happy path, SPA fallback |
-| U9b | API breadth + RBAC/IDOR + headers | ⬜ | F1,F6,F10,F9 |
+| U9b | API breadth + RBAC/IDOR + headers | ✅ | all endpoints (settings/projects/documents/memory/artifacts/account/admin) + {pid}/{key} validation; CSP+headers (F1), HSTS (F9), per-user rate limit (F10); Channel ingestion BackgroundService; Project/Settings/Account/Admin services + IUserStore port. IDOR/pid-tamper/admin-key-traversal/RBAC/headers tests. 481 total |
 | U10 | Gert.External real adapters | ⬜ | F5,F7,F8 |
 | U11 | Gert.Console | ⬜ | |
 | U12 | Gert.Web SPA | ⬜ | F2,F3,F4 |
