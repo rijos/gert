@@ -45,6 +45,7 @@ from .mocks import SEARXNG_PORT, VLLM_PORT
 from .mocks.searxng import app as searxng_app
 from .mocks.vllm import app as vllm_app
 from .pages import AppPage
+from .proxy import make_proxy_app
 
 # A matrix result row: (browser, role, scenario, ok, detail).
 type MatrixResult = tuple[str, str, str, bool, str]
@@ -284,6 +285,15 @@ def main(argv: list[str] | None = None) -> int:
         "click-through (no scenarios). Use --role to pick the identity.",
     )
     parser.add_argument(
+        "--proxy",
+        action="store_true",
+        help="Boot mocks + host + a dev reverse-proxy (no Playwright). Open the printed "
+        "URL in your OWN browser — the proxy injects a dev bearer. Use --role.",
+    )
+    parser.add_argument(
+        "--proxy-port", type=int, default=5180, help="Port for --proxy (default 5180)."
+    )
+    parser.add_argument(
         "--base-url",
         default=None,
         help="Attach to an already-running host+mocks instead of booting them.",
@@ -312,6 +322,21 @@ def main(argv: list[str] | None = None) -> int:
         if not _wait_healthz(base_url):
             print("Host did not become healthy in time.", file=sys.stderr)
             return 2
+
+        if args.proxy:
+            role = args.role if args.role != "all" else "admin"
+            app = make_proxy_app(base_url, tokens.mint(role))
+            print(
+                f"\n  Open http://127.0.0.1:{args.proxy_port} in your browser "
+                f"(signed in as '{role}')."
+            )
+            print(
+                f"  Proxying to {base_url} with a dev bearer injected. Ctrl+C to stop.\n"
+            )
+            uvicorn.run(
+                app, host="127.0.0.1", port=args.proxy_port, log_level="warning"
+            )
+            return 0
 
         if args.serve:
             _serve(base_url, args.role if args.role != "all" else "admin")

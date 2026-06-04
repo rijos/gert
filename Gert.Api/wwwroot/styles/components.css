@@ -1,5 +1,7 @@
-/* components.css — shared component classes + @imports the area partials.
-   Area partials are loaded in cascade order after the shared rules below. */
+/* components.css — shared component classes.
+   The area partials (styles/areas/*.css) load via <link> tags in index.html, AFTER
+   this file, so area rules win the cascade. (A CSS @import only works before any other
+   rule — keeping them as <link>s avoids that pitfall and loads them in parallel.) */
 
 /* ---------- shared primitives ---------- */
 .ghost{background:none; border:none; color:var(--ink-faint); cursor:pointer; padding:6px; border-radius:6px; display:grid; place-items:center; transition:.14s;}
@@ -60,9 +62,3 @@
 .utable th{text-align:left; font-family:var(--mono); font-size:10px; letter-spacing:.04em; text-transform:uppercase; color:var(--ink-faint); padding:8px 10px; border-bottom:1.5px solid var(--line-strong);}
 .utable td{padding:9px 10px; border-bottom:1px solid var(--line);}
 .utable tr:hover td{background:var(--inset);}
-
-@import url("areas/sidebar.css");
-@import url("areas/main.css");
-@import url("areas/canvas.css");
-@import url("areas/composer.css");
-@import url("areas/artifacts.css");

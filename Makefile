@@ -39,9 +39,9 @@ smoke-unit: ## Run the non-browser Python checks (embedding conformance) — no 
 	PYTHONPATH=. $(SMOKE_DIR)/.venv/bin/python -m pytest $(SMOKE_DIR)/tests/test_embeddings_conformance.py -q
 
 .PHONY: serve-mock
-serve-mock: ## Boot python mocks + FakeE2E host, open the SPA in a browser for manual click-through (ROLE=admin|user|limited)
-	cd $(SMOKE_DIR) && uv sync && uv run playwright install chromium
-	PYTHONPATH=. $(SMOKE_DIR)/.venv/bin/python -m tools.smoke.run --serve --role $(or $(ROLE),admin)
+serve-mock: ## Boot python mocks + FakeE2E host + a dev proxy; open the printed URL in YOUR browser (no Playwright). ROLE=admin|user|limited
+	cd $(SMOKE_DIR) && uv sync
+	PYTHONPATH=. $(SMOKE_DIR)/.venv/bin/python -m tools.smoke.run --proxy --role $(or $(ROLE),admin)
 
 .PHONY: coverage
 coverage: ## Run tests with coverage + generate an HTML report (needs coverlet.collector + reportgenerator tool)

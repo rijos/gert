@@ -9,11 +9,17 @@
          The tokens.css font stack falls back to system fonts; vendor woff2 under
          /fonts + @font-face for the Fraunces/Hanken/JetBrains look. TODO: vendor fonts. -->
 
-    <!-- styles: tokens MUST load first so variables exist before any rule -->
+    <!-- styles: tokens MUST load first so variables exist before any rule; the area
+         partials load after components.css so area rules win the cascade -->
     <link rel="stylesheet" href="/styles/tokens.css" />
     <link rel="stylesheet" href="/styles/base.css" />
     <link rel="stylesheet" href="/styles/layout.css" />
     <link rel="stylesheet" href="/styles/components.css" />
+    <link rel="stylesheet" href="/styles/areas/sidebar.css" />
+    <link rel="stylesheet" href="/styles/areas/main.css" />
+    <link rel="stylesheet" href="/styles/areas/canvas.css" />
+    <link rel="stylesheet" href="/styles/areas/composer.css" />
+    <link rel="stylesheet" href="/styles/areas/artifacts.css" />
 
     <!-- import map: bare specifiers resolve to the vendored libs. van.js and
          van-x.js are vendored by the orchestrator (downloaded), not authored here. -->
