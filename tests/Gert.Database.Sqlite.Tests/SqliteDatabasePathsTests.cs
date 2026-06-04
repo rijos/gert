@@ -7,8 +7,8 @@ using Xunit;
 
 namespace Gert.Database.Sqlite.Tests;
 
-/// <summary>UserPaths key derivation and pid validation / traversal rejection.</summary>
-public class UserPathsTests
+/// <summary>SqliteDatabasePaths key derivation and pid validation / traversal rejection.</summary>
+public class SqliteDatabasePathsTests
 {
     [Fact]
     public void Key_is_lowercase_hex_sha256_of_iss_newline_sub()
@@ -19,13 +19,13 @@ public class UserPathsTests
         var expected = Convert.ToHexString(
             SHA256.HashData(Encoding.UTF8.GetBytes($"{iss}\n{sub}"))).ToLowerInvariant();
 
-        UserPaths.Key(iss, sub).Should().Be(expected);
+        SqliteDatabasePaths.Key(iss, sub).Should().Be(expected);
     }
 
     [Fact]
     public void Distinct_subjects_yield_distinct_keys()
     {
-        UserPaths.Key("iss", "alice").Should().NotBe(UserPaths.Key("iss", "bob"));
+        SqliteDatabasePaths.Key("iss", "alice").Should().NotBe(SqliteDatabasePaths.Key("iss", "bob"));
     }
 
     [Theory]

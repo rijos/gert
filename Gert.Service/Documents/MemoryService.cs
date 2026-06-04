@@ -183,7 +183,7 @@ public sealed class MemoryService : IMemoryService
     private Task<IRagRepository> OpenAsync(string pid, CancellationToken cancellationToken) =>
         _databases.OpenRagAsync(_user.Iss, _user.Sub, pid, cancellationToken);
 
-    private ObjectScope ScopeFor(string pid) => new(_user.Iss, _user.Sub, pid);
+    private ObjectScope ScopeFor(string pid) => ObjectScope.Project(_user.Iss, _user.Sub, pid);
 
     /// <summary>The object-store key for a memory body — <c>memory/{id}.md</c>.</summary>
     private static string MemoryKey(string id) => $"memory/{id}.md";

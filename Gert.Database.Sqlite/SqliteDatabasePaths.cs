@@ -1,12 +1,13 @@
-using System.Security.Cryptography;
-using System.Text;
+using Gert.Service.Storage;
 using Microsoft.Extensions.Options;
 
-namespace Gert.Database;
+namespace Gert.Database.Sqlite;
 
 /// <summary>
-/// Resolves the per-<c>(iss, sub)</c> user folder and its per-<c>pid</c> project
-/// paths (storage-and-data.md § resolving paths). The folder key is
+/// Resolves the LOCAL filesystem paths the SQLite adapter needs — the
+/// per-<c>(iss, sub)</c> user folder and its per-<c>pid</c> project database files
+/// (storage-and-data.md § resolving paths). SQLite-only by design: a server-backed
+/// engine (e.g. Postgres) has a connection string, not paths. The folder key is
 /// <c>sha256(iss + "\n" + sub)</c> lowercase hex (decisions §3) — fixed-length,
 /// path-safe, and traversal-proof for any value the IdP emits.
 ///
@@ -19,10 +20,10 @@ namespace Gert.Database;
 /// impossible). See storage-and-data.md § resolving paths and security F12.
 /// </para>
 /// </summary>
-public sealed class UserPaths(IOptions<StorageOptions> options)
+public sealed class SqliteDatabasePaths(IOptions<StorageOptions> options)
 {
     /// <summary>The literal landing-project id, always present (storage-and-data.md § layout).</summary>
-    public const string DefaultProjectId = "default";
+    public const string DefaultProjectId = StorageKeys.DefaultProjectId;
 
     private readonly StorageOptions _options = options.Value;
 
@@ -31,10 +32,9 @@ public sealed class UserPaths(IOptions<StorageOptions> options)
 
     /// <summary>
     /// Folder key — <c>sha256(iss + "\n" + sub)</c> lowercase hex (decisions §3).
+    /// One policy for every adapter: delegates to <see cref="StorageKeys.UserKey"/>.
     /// </summary>
-    public static string Key(string iss, string sub) =>
-        Convert.ToHexString(
-            SHA256.HashData(Encoding.UTF8.GetBytes($"{iss}\n{sub}"))).ToLowerInvariant();
+    public static string Key(string iss, string sub) => StorageKeys.UserKey(iss, sub);
 
     // ---- user-level paths --------------------------------------------------
 

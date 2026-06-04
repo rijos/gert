@@ -14,6 +14,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Gert.Service\Gert.Service.csproj" />
     <ProjectReference Include="..\Gert.Database.Sqlite\Gert.Database.Sqlite.csproj" />
+    <ProjectReference Include="..\Gert.Storage\Gert.Storage.csproj" />
     <ProjectReference Include="..\Gert.External\Gert.External.csproj" />
   </ItemGroup>
 

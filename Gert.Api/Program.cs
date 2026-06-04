@@ -3,9 +3,9 @@ using Gert.Api.Ingestion;
 using Gert.Api.Logging;
 using Gert.Api.Security;
 using Gert.Authentication;
-using Gert.Database;
 using Gert.Database.Sqlite;
 using Gert.External;
+using Gert.Storage;
 using Gert.Service;
 using Gert.Service.Database;
 using Gert.Service.Ingestion;
@@ -155,21 +155,20 @@ builder.Services.Configure<SqliteVecOptions>(
 builder.Services.Configure<ToolOptions>(
     builder.Configuration.GetSection(ToolOptions.SectionName));
 builder.Services.AddSingleton<IDatabaseProvider, SqliteDatabaseProvider>();
-// Lets the file layer drop SQLite's pooled chat.db/rag.db handles before rm -rf;
-// a server-backed adapter (e.g. Postgres) would register a no-op here.
+// Lets the storage backend drop SQLite's pooled chat.db/rag.db handles before a
+// local whole-tree delete; a server-backed adapter (e.g. Postgres) registers a no-op.
 builder.Services.AddSingleton<IDatabaseHandleReleaser, SqliteHandleReleaser>();
 
-// Object-store seam for per-project file blobs (projects/{pid}/files/). The local
-// adapter writes under UserPaths.FilesDir; a future S3 backend is a drop-in:
+// THE storage-backend seam: every non-database byte under a user tree (uploads,
+// memory bodies, config sidecars) flows through IObjectStore. The local backend
+// writes under {DataRoot}/users; an S3/Azure-Blob backend is a drop-in:
 // S3: new IObjectStore impl, one DI registration (swap the line below).
-builder.Services.AddSingleton<UserPaths>();
 builder.Services.AddSingleton<IObjectStore, LocalObjectStore>();
 
-// User/project config + directory seam (settings.json, projects/{pid}/meta.json,
-// rm -rf a project/user folder, scan users/*/meta.json). Config files are direct
-// file I/O in the adapter; user blobs still flow through IObjectStore. The four
-// lifecycle services (Projects/Settings/Account/Admin) orchestrate this port.
-builder.Services.AddSingleton<IUserStore, FileSystemUserStore>();
+// User/project config + lifecycle seam (meta.json, settings.json, scope deletes,
+// the admin scan) — backend-agnostic: everything goes through IObjectStore. The
+// four lifecycle services (Projects/Settings/Account/Admin) orchestrate this port.
+builder.Services.AddSingleton<IUserStore, ObjectStoreUserStore>();
 
 // --- External-world ports ----------------------------------------------------
 // U10: AddGertExternal registers the real IChatModelClient / IEmbeddingClient /

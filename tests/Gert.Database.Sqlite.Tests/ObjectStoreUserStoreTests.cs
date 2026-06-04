@@ -10,18 +10,19 @@ using Xunit;
 namespace Gert.Database.Sqlite.Tests;
 
 /// <summary>
-/// Round-trips <see cref="FileSystemUserStore"/> against a throwaway
+/// Round-trips <see cref="Gert.Storage.ObjectStoreUserStore"/> (over the local
+/// <see cref="Gert.Storage.LocalObjectStore"/> backend) against a throwaway
 /// <see cref="TempDataRoot"/> — settings + project meta read/merge/write, the
 /// default-emptied-not-removed contract, account delete, admin scan/delete, and
-/// the F6 under-DataRoot assertion.
+/// the F6 key-shape guard.
 /// </summary>
-public class FileSystemUserStoreTests
+public class ObjectStoreUserStoreTests
 {
     private const string Sub = "store-sub";
 
     private static string Iss => ProviderFixture.ExpectedIssuer;
 
-    private static FileSystemUserStore StoreFor(TempDataRoot root) =>
+    private static Gert.Storage.ObjectStoreUserStore StoreFor(TempDataRoot root) =>
         ProviderFixture.StoreFor(root);
 
     private static SqliteDatabaseProvider ProviderFor(TempDataRoot root) =>
@@ -82,7 +83,7 @@ public class FileSystemUserStoreTests
         fetched.Description.Should().Be("notes");
 
         var list = await store.ListProjectsAsync(Iss, Sub);
-        list.Select(p => p.Id).Should().Contain([UserPaths.DefaultProjectId, pid]);
+        list.Select(p => p.Id).Should().Contain([SqliteDatabasePaths.DefaultProjectId, pid]);
     }
 
     [Fact]
@@ -114,11 +115,11 @@ public class FileSystemUserStoreTests
         var store = StoreFor(root);
         var paths = ProviderFixture.PathsFor(root);
 
-        var projectRoot = paths.ProjectRoot(Iss, Sub, UserPaths.DefaultProjectId);
+        var projectRoot = paths.ProjectRoot(Iss, Sub, SqliteDatabasePaths.DefaultProjectId);
         Directory.Exists(projectRoot).Should().BeTrue();
-        File.Exists(paths.ChatDb(Iss, Sub, UserPaths.DefaultProjectId)).Should().BeTrue();
+        File.Exists(paths.ChatDb(Iss, Sub, SqliteDatabasePaths.DefaultProjectId)).Should().BeTrue();
 
-        await store.EmptyProjectAsync(Iss, Sub, UserPaths.DefaultProjectId);
+        await store.EmptyProjectAsync(Iss, Sub, SqliteDatabasePaths.DefaultProjectId);
 
         Directory.Exists(projectRoot).Should().BeTrue("the default project dir is kept");
         Directory.GetFileSystemEntries(projectRoot).Should().BeEmpty("its contents are cleared");
@@ -151,7 +152,7 @@ public class FileSystemUserStoreTests
         var users = await store.ListUsersAsync();
         users.Should().HaveCount(2);
 
-        var aliceKey = UserPaths.Key(Iss, "alice");
+        var aliceKey = SqliteDatabasePaths.Key(Iss, "alice");
         var alice = await store.GetUserAsync(aliceKey);
         alice!.Key.Should().Be(aliceKey);
         alice.Username.Should().Be("alice");
@@ -193,7 +194,7 @@ public class FileSystemUserStoreTests
         await File.WriteAllTextAsync(paths.ProjectMeta(Iss, Sub, pid), "{ not valid json");
 
         var ids = (await store.ListProjectsAsync(Iss, Sub)).Select(p => p.Id).ToList();
-        ids.Should().Contain(UserPaths.DefaultProjectId);
+        ids.Should().Contain(SqliteDatabasePaths.DefaultProjectId);
         ids.Should().NotContain(pid);
     }
 
@@ -223,8 +224,8 @@ public class FileSystemUserStoreTests
         await provider.EnsureProvisionedAsync(Iss, "alice");
         var store = StoreFor(root);
 
-        // A multi-segment / traversal key resolves to null (not a direct child of
-        // users/) → no deletion, the tree is untouched.
+        // A multi-segment / traversal key fails the F6 shape guard → no deletion,
+        // the tree is untouched.
         (await store.DeleteUserByKeyAsync("../alice")).Should().BeFalse();
         Directory.GetDirectories(root.UsersDir).Should().NotBeEmpty();
     }

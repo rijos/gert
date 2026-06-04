@@ -1,5 +1,7 @@
 using Gert.Database;
 using Gert.Database.Sqlite;
+using Gert.Service.Storage;
+using Gert.Storage;
 using Gert.Testing;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -8,8 +10,9 @@ namespace Gert.Database.Sqlite.Tests;
 
 /// <summary>
 /// Shared helpers to spin a <see cref="SqliteDatabaseProvider"/>, its
-/// <see cref="FileSystemUserStore"/> file layer, and <see cref="UserPaths"/> over
-/// a throwaway <see cref="TempDataRoot"/> with a fixed expected issuer.
+/// <see cref="LocalObjectStore"/> backend + <see cref="ObjectStoreUserStore"/>
+/// file layer, and <see cref="SqliteDatabasePaths"/> over a throwaway
+/// <see cref="TempDataRoot"/> with a fixed expected issuer.
 /// </summary>
 internal static class ProviderFixture
 {
@@ -21,11 +24,11 @@ internal static class ProviderFixture
         ExpectedIssuer = issuer ?? ExpectedIssuer,
     };
 
-    public static FileSystemUserStore StoreFor(TempDataRoot root, string? issuer = null) =>
-        new(
-            Options.Create(OptionsFor(root, issuer)),
-            new SqliteHandleReleaser(),
-            NullLogger<FileSystemUserStore>.Instance);
+    public static LocalObjectStore ObjectsFor(TempDataRoot root, string? issuer = null) =>
+        new(Options.Create(OptionsFor(root, issuer)), new SqliteHandleReleaser());
+
+    public static ObjectStoreUserStore StoreFor(TempDataRoot root, string? issuer = null) =>
+        new(ObjectsFor(root, issuer), NullLogger<ObjectStoreUserStore>.Instance);
 
     public static SqliteDatabaseProvider ProviderFor(TempDataRoot root, string? issuer = null) =>
         new(
@@ -33,6 +36,6 @@ internal static class ProviderFixture
             Options.Create(new SqliteVecOptions()),
             StoreFor(root, issuer));
 
-    public static UserPaths PathsFor(TempDataRoot root, string? issuer = null) =>
+    public static SqliteDatabasePaths PathsFor(TempDataRoot root, string? issuer = null) =>
         new(Options.Create(OptionsFor(root, issuer)));
 }

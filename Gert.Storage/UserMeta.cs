@@ -1,4 +1,4 @@
-namespace Gert.Database;
+namespace Gert.Storage;
 
 /// <summary>
 /// The on-disk user metadata sidecar — the <c>meta.json</c> at the user root

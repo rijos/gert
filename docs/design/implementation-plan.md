@@ -105,7 +105,7 @@ real-SQLite isolation, lazy provisioning) into one proven thread before any feat
 - **Acceptance:** **deterministic RRF order** asserted (thanks to `FakeEmbeddings`); memory rows (`kind='memory'`) retrieved by the same query; this is the riskiest SQL in the system, so coverage is thorough.
 
 ### U5 — Paths, provisioning gate & isolation *(security-critical)*
-- **Goal:** `UserPaths` (`sha256(iss + "\n" + sub)`, project-scoped methods), `EnsureProvisioned(iss, sub)` with the **fail-closed validate-before-disk gate** and a descriptive **`meta.json` sidecar** (healed when unreadable), `EnsureProject` + lazy `default` project.
+- **Goal:** `SqliteDatabasePaths` (`sha256(iss + "\n" + sub)`, project-scoped methods), `EnsureProvisioned(iss, sub)` with the **fail-closed validate-before-disk gate** and a descriptive **`meta.json` sidecar** (healed when unreadable), `EnsureProject` + lazy `default` project.
 - **Depends:** U4a
 - **Touches:** `Gert.Database.Sqlite/` (or a small `Provisioning` service in `Gert.Service` over `IDatabaseProvider`), tests in `Gert.Database.Sqlite.Tests`.
 - **Design:** [storage-and-data § lazy provisioning](storage-and-data.md#lazy-provisioning--migrations), [decisions §3](decisions.md#3-folder-key).

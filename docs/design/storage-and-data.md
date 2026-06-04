@@ -30,7 +30,7 @@ below are **per project** — there is one pair of databases per project, not pe
 ### Resolving paths
 
 ```csharp
-public sealed class UserPaths(IOptions<StorageOptions> opt)
+public sealed class SqliteDatabasePaths(IOptions<StorageOptions> opt)
 {
     // Anchor on the stable (iss, sub) pair — never renamed, never recycled (decisions.md §3).
     // sub is only unique within an issuer, so namespace by iss; the hash keeps the folder name

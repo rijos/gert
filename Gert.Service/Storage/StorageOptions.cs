@@ -1,4 +1,4 @@
-namespace Gert.Database;
+namespace Gert.Service.Storage;
 
 /// <summary>
 /// Database-agnostic options for the storage layer (storage-and-data.md § layout /

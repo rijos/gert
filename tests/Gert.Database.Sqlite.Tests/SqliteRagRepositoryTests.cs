@@ -292,7 +292,7 @@ public class SqliteRagRepositoryTests
         Embedding = FakeEmbeddings.Embed(content),
     };
 
-    private static async Task<IReadOnlyList<string>> TablesAndColumnsAsync(UserPaths paths)
+    private static async Task<IReadOnlyList<string>> TablesAndColumnsAsync(SqliteDatabasePaths paths)
     {
         await using var connection = await OpenRagDirectAsync(paths.RagDb(Iss, Sub, "default"));
         await using var cmd = connection.CreateCommand();
@@ -307,7 +307,7 @@ public class SqliteRagRepositoryTests
         return names;
     }
 
-    private static async Task<(long Chunks, long Vec, long Fts)> CountsAsync(UserPaths paths)
+    private static async Task<(long Chunks, long Vec, long Fts)> CountsAsync(SqliteDatabasePaths paths)
     {
         await using var connection = await OpenRagDirectAsync(paths.RagDb(Iss, Sub, "default"));
         var chunks = await ScalarAsync(connection, "SELECT count(*) FROM chunks;");

@@ -7,6 +7,7 @@ using Gert.Service.Account;
 using Gert.Service.Admin;
 using Gert.Service.Projects;
 using Gert.Service.Storage;
+using Gert.Storage;
 using Gert.Testing;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -35,7 +36,7 @@ public class LifecycleServicesTests
         AdminService Admin,
         SqliteDatabaseProvider Provider,
         LocalObjectStore Objects,
-        UserPaths Paths,
+        SqliteDatabasePaths Paths,
         IUserContext User);
 
     private static Harness Build(TempDataRoot root, string sub = Sub)
@@ -43,7 +44,7 @@ public class LifecycleServicesTests
         var provider = ProviderFixture.ProviderFor(root);
         var paths = ProviderFixture.PathsFor(root);
         var store = ProviderFixture.StoreFor(root);
-        var objects = new LocalObjectStore(paths);
+        var objects = ProviderFixture.ObjectsFor(root);
         var validation = new PassThroughValidationProvider();
         IUserContext user = new FixedUserContext { Sub = sub };
 
@@ -85,7 +86,7 @@ public class LifecycleServicesTests
         Guid.TryParseExact(created.Id, "D", out _).Should().BeTrue();
 
         var list = await h.Projects.ListAsync();
-        list.Select(p => p.Meta.Id).Should().Contain([UserPaths.DefaultProjectId, created.Id]);
+        list.Select(p => p.Meta.Id).Should().Contain([SqliteDatabasePaths.DefaultProjectId, created.Id]);
 
         var got = await h.Projects.GetAsync(created.Id);
         got!.Meta.Name.Should().Be("Research");
@@ -128,7 +129,7 @@ public class LifecycleServicesTests
         var h = Build(root);
 
         // Seed a conversation so there is content to clear.
-        await using (var chat = await h.Provider.OpenChatAsync(Iss, Sub, UserPaths.DefaultProjectId))
+        await using (var chat = await h.Provider.OpenChatAsync(Iss, Sub, SqliteDatabasePaths.DefaultProjectId))
         {
             await chat.InsertConversationAsync(new Conversation
             {
@@ -140,15 +141,15 @@ public class LifecycleServicesTests
             });
         }
 
-        var defaultRoot = h.Paths.ProjectRoot(Iss, Sub, UserPaths.DefaultProjectId);
+        var defaultRoot = h.Paths.ProjectRoot(Iss, Sub, SqliteDatabasePaths.DefaultProjectId);
 
-        (await h.Projects.DeleteAsync(UserPaths.DefaultProjectId)).Should().BeTrue();
+        (await h.Projects.DeleteAsync(SqliteDatabasePaths.DefaultProjectId)).Should().BeTrue();
 
         Directory.Exists(defaultRoot).Should().BeTrue("the default project is emptied, never removed");
 
         // Re-provisioned to a clean, usable project (fresh chat.db, no conversations).
-        (await h.Projects.GetAsync(UserPaths.DefaultProjectId)).Should().NotBeNull();
-        await using var reopened = await h.Provider.OpenChatAsync(Iss, Sub, UserPaths.DefaultProjectId);
+        (await h.Projects.GetAsync(SqliteDatabasePaths.DefaultProjectId)).Should().NotBeNull();
+        await using var reopened = await h.Provider.OpenChatAsync(Iss, Sub, SqliteDatabasePaths.DefaultProjectId);
         (await reopened.ListConversationsAsync()).Should().BeEmpty();
     }
 
@@ -159,11 +160,11 @@ public class LifecycleServicesTests
         var h = Build(root);
 
         // A file blob so the archive carries real content.
-        var scope = new ObjectScope(Iss, Sub, UserPaths.DefaultProjectId);
+        var scope = ObjectScope.Project(Iss, Sub, SqliteDatabasePaths.DefaultProjectId);
         await h.Provider.EnsureProvisionedAsync(Iss, Sub);
-        await h.Objects.PutAsync(scope, "note.md", new MemoryStream(Encoding.UTF8.GetBytes("hello export")));
+        await h.Objects.PutAsync(scope, "files/note.md", new MemoryStream(Encoding.UTF8.GetBytes("hello export")));
 
-        var archive = await h.Account.ExportProjectAsync(UserPaths.DefaultProjectId);
+        var archive = await h.Account.ExportProjectAsync(SqliteDatabasePaths.DefaultProjectId);
         archive.ContentType.Should().Be("application/zip");
 
         await using var stream = await archive.OpenReadAsync(default);
@@ -212,7 +213,7 @@ public class LifecycleServicesTests
         var users = await h.Admin.ListUsersAsync();
         users.Select(u => u.Username).Should().Contain(["alice", "bob"]);
 
-        var aliceKey = UserPaths.Key(Iss, "alice");
+        var aliceKey = SqliteDatabasePaths.Key(Iss, "alice");
         (await h.Admin.GetUserAsync(aliceKey))!.Username.Should().Be("alice");
         (await h.Admin.DeleteUserAsync(aliceKey)).Should().BeTrue();
         (await h.Admin.GetUserAsync(aliceKey)).Should().BeNull();

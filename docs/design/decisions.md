@@ -51,3 +51,14 @@ How a user's data is organised: one flat store, or scoped workspaces? See [Confi
 - **Decision:** **Per-project isolation, "default" not "global".** Each project is its own folder with its own `chat.db` + `rag.db` + memory, fully isolated — no cross-project search, no shared/global corpus. The initial, always-present project is **`default`** (the landing project); creating a project just makes another isolated folder. This nests [principle #2](principles.md) (filesystem isolation) and [principle #5](principles.md) (deletion is `rm -rf`) one level down. *Rejected:* a "global + local" blended scope — it reintroduced cross-corpus query fusion and a `use_global` flag for little gain over simply switching projects.
 
 
+
+## 8. Storage backend seam — everything non-database through IObjectStore
+
+Where do config sidecars (`meta.json`, `settings.json`, `projects/{pid}/meta.json`) live: direct file I/O, or the object-store seam? (Supersedes the earlier "config files are direct file I/O in the adapter" stance.)
+
+- **Decision:** **`IObjectStore` is the single storage-backend seam — every byte under a user's tree that is not a database file flows through it**: uploads (`files/…`), memory bodies (`memory/…`), and the JSON config sidecars alike. A config file is just a small object; treating it specially bought nothing once S3/Azure-Blob backends were on the table.
+  - **Scopes:** an `ObjectScope` is the user root or one project root; keys are scope-relative and traversal-guarded. The scope carries only the opaque `sha256(iss+sub)` key (derivation = `StorageKeys`, core policy in `Gert.Service`).
+  - **Atomic PUT is a port contract** — a reader never observes a partial object. Cloud backends give it natively; `LocalObjectStore` stages to a temp sibling + renames. This retires the truncated-`meta.json` failure class at the storage layer.
+  - **Lifecycle = scope ops:** delete user/project = `DeleteScopeAsync` (the `rm -rf` of principle #5); "emptied, never removed" = `DeletePrefixAsync("")`; the admin scan = `ListUserKeysAsync` + `ListEntriesAsync` (maps 1:1 to S3 listing).
+  - **Databases are NOT objects.** `chat.db`/`rag.db` need real local file handles (WAL/mmap) and stay with `IDatabaseProvider`; local whole-tree deletes release pooled handles via the `IDatabaseHandleReleaser` port. *Consequence:* a remote object backend paired with SQLite is a split deployment (objects remote, dbs local) — delete/export compose both stores; the full remote-storage payoff arrives together with a server database (`Gert.Database.Postgres`).
+  - **Backends:** `Gert.Storage.LocalObjectStore` today; S3/Azure Blob = a sibling `Gert.Storage.*` project + one DI swap. `ObjectStoreUserStore` (the `IUserStore` impl) is written purely against the port and never changes with the backend.

@@ -41,6 +41,8 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Gert.Web.Minify.Tests", "te
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Gert.Database", "Gert.Database\Gert.Database.csproj", "{0879C00B-2424-4B3A-826F-168727E9FD69}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Gert.Storage", "Gert.Storage\Gert.Storage.csproj", "{BC3B8D4C-1E80-4751-8B09-A774519D613C}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -255,6 +257,18 @@ Global
 		{0879C00B-2424-4B3A-826F-168727E9FD69}.Release|x64.Build.0 = Release|Any CPU
 		{0879C00B-2424-4B3A-826F-168727E9FD69}.Release|x86.ActiveCfg = Release|Any CPU
 		{0879C00B-2424-4B3A-826F-168727E9FD69}.Release|x86.Build.0 = Release|Any CPU
+		{BC3B8D4C-1E80-4751-8B09-A774519D613C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{BC3B8D4C-1E80-4751-8B09-A774519D613C}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{BC3B8D4C-1E80-4751-8B09-A774519D613C}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{BC3B8D4C-1E80-4751-8B09-A774519D613C}.Debug|x64.Build.0 = Debug|Any CPU
+		{BC3B8D4C-1E80-4751-8B09-A774519D613C}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{BC3B8D4C-1E80-4751-8B09-A774519D613C}.Debug|x86.Build.0 = Debug|Any CPU
+		{BC3B8D4C-1E80-4751-8B09-A774519D613C}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{BC3B8D4C-1E80-4751-8B09-A774519D613C}.Release|Any CPU.Build.0 = Release|Any CPU
+		{BC3B8D4C-1E80-4751-8B09-A774519D613C}.Release|x64.ActiveCfg = Release|Any CPU
+		{BC3B8D4C-1E80-4751-8B09-A774519D613C}.Release|x64.Build.0 = Release|Any CPU
+		{BC3B8D4C-1E80-4751-8B09-A774519D613C}.Release|x86.ActiveCfg = Release|Any CPU
+		{BC3B8D4C-1E80-4751-8B09-A774519D613C}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

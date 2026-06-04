@@ -132,17 +132,22 @@ public sealed class AccountService : IAccountService
             await JsonSerializer.SerializeAsync(entryStream, threads, JsonOptions, cancellationToken).ConfigureAwait(false);
         }
 
-        // Original file blobs → projects/{pid}/files/{key} (via the object store only).
-        var scope = new ObjectScope(_user.Iss, _user.Sub, pid);
-        var keys = await _objects.ListAsync(scope, string.Empty, cancellationToken).ConfigureAwait(false);
-        foreach (var key in keys)
+        // Original file blobs + memory bodies → projects/{pid}/{key} (via the object
+        // store only). Listed by prefix so the config sidecar and database files are
+        // never pulled into the archive.
+        var scope = ObjectScope.Project(_user.Iss, _user.Sub, pid);
+        foreach (var prefix in new[] { "files/", "memory/" })
         {
-            cancellationToken.ThrowIfCancellationRequested();
+            var keys = await _objects.ListAsync(scope, prefix, cancellationToken).ConfigureAwait(false);
+            foreach (var key in keys)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
 
-            var entry = zip.CreateEntry($"projects/{pid}/files/{key}", CompressionLevel.Optimal);
-            await using var source = await _objects.OpenReadAsync(scope, key, cancellationToken).ConfigureAwait(false);
-            await using var target = entry.Open();
-            await source.CopyToAsync(target, cancellationToken).ConfigureAwait(false);
+                var entry = zip.CreateEntry($"projects/{pid}/{key}", CompressionLevel.Optimal);
+                await using var source = await _objects.OpenReadAsync(scope, key, cancellationToken).ConfigureAwait(false);
+                await using var target = entry.Open();
+                await source.CopyToAsync(target, cancellationToken).ConfigureAwait(false);
+            }
         }
     }
 }

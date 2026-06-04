@@ -2,6 +2,7 @@ using System.Text.Json;
 using FluentAssertions;
 using Gert.Database.Sqlite;
 using Gert.Model.Chat;
+using Gert.Storage;
 using Gert.Testing;
 using Xunit;
 
@@ -21,7 +22,7 @@ public class ProvisioningTests
 
         var act = async () => await provider.EnsureProvisionedAsync("https://evil.example", "alice");
 
-        await act.Should().ThrowAsync<UnauthorizedIdentityException>();
+        await act.Should().ThrowAsync<UnauthorizedDatabaseIdentityException>();
 
         // Validate-before-disk: not even the users/ tree may appear.
         Directory.Exists(root.UsersDir).Should().BeFalse();
@@ -41,7 +42,7 @@ public class ProvisioningTests
 
         var act = async () => await provider.EnsureProvisionedAsync(ProviderFixture.ExpectedIssuer, badSub);
 
-        await act.Should().ThrowAsync<UnauthorizedIdentityException>();
+        await act.Should().ThrowAsync<UnauthorizedDatabaseIdentityException>();
         Directory.Exists(root.UsersDir).Should().BeFalse();
     }
 
@@ -59,8 +60,8 @@ public class ProvisioningTests
         File.Exists(paths.SettingsFile(ProviderFixture.ExpectedIssuer, "alice")).Should().BeTrue();
         File.Exists(paths.ProjectMeta(ProviderFixture.ExpectedIssuer, "alice", "default")).Should().BeTrue();
         File.Exists(paths.ChatDb(ProviderFixture.ExpectedIssuer, "alice", "default")).Should().BeTrue();
-        Directory.Exists(paths.FilesDir(ProviderFixture.ExpectedIssuer, "alice", "default")).Should().BeTrue();
-        Directory.Exists(paths.MemoryDir(ProviderFixture.ExpectedIssuer, "alice", "default")).Should().BeTrue();
+        // files/ and memory/ are NOT created eagerly: an object store has no
+        // directories — they materialise with the first put under their prefix.
 
         // rag.db is provisioned alongside chat.db (U4b — vec0 + FTS5 migrated).
         File.Exists(paths.RagDb(ProviderFixture.ExpectedIssuer, "alice", "default")).Should().BeTrue();

@@ -6,8 +6,8 @@ using System.Text.Json;
 using FluentAssertions;
 using Gert.Api.Contracts;
 using Gert.Api.Json;
-using Gert.Database;
 using Gert.Model;
+using Gert.Service.Storage;
 using Gert.Model.Chat;
 using Gert.Model.Dtos;
 using Gert.Model.Events;
@@ -67,7 +67,7 @@ public sealed class WalkingSkeletonTests : IClassFixture<GertApiFactory>
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
         // The token's (iss, sub) → folder key. The standing "user" role mints sub="dev-user".
-        var key = UserPaths.Key(_factory.Tokens.Issuer, "dev-user");
+        var key = StorageKeys.UserKey(_factory.Tokens.Issuer, "dev-user");
         var userRoot = Path.Combine(_factory.UsersDir, key);
         var chatDb = Path.Combine(userRoot, "projects", "default", "chat.db");
 

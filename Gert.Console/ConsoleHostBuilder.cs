@@ -1,6 +1,6 @@
-using Gert.Database;
 using Gert.Database.Sqlite;
 using Gert.External;
+using Gert.Storage;
 using Gert.Service;
 using Gert.Service.Database;
 using Gert.Service.Storage;
@@ -57,9 +57,8 @@ public static class ConsoleHostBuilder
             configuration.GetSection(ToolOptions.SectionName));
         services.TryAddSingleton<IDatabaseProvider, SqliteDatabaseProvider>();
         services.TryAddSingleton<IDatabaseHandleReleaser, SqliteHandleReleaser>();
-        services.TryAddSingleton<UserPaths>();
         services.TryAddSingleton<IObjectStore, LocalObjectStore>();
-        services.TryAddSingleton<IUserStore, FileSystemUserStore>();
+        services.TryAddSingleton<IUserStore, ObjectStoreUserStore>();
 
         // The single fixed local user — tools = "*" via ToolRegistry.AllIds. Singleton:
         // the identity never changes for the life of the process.

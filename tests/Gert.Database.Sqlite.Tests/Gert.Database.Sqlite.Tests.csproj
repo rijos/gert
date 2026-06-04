@@ -9,6 +9,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\Gert.Database.Sqlite\Gert.Database.Sqlite.csproj" />
+    <ProjectReference Include="..\..\Gert.Storage\Gert.Storage.csproj" />
     <ProjectReference Include="..\Gert.Testing\Gert.Testing.csproj" />
   </ItemGroup>
 

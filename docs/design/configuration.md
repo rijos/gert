@@ -109,7 +109,7 @@ ALTER TABLE documents ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0;          -- 
 ```
 
 ### 2.5 Path resolution & why a request-supplied project id is still IDOR-safe
-`UserPaths` ([storage-and-data](storage-and-data.md)) gains a project segment:
+`SqliteDatabasePaths` ([storage-and-data](storage-and-data.md)) gains a project segment:
 
 ```csharp
 public string ProjectRoot(string iss, string sub, string projectId) =>

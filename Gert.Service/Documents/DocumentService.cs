@@ -175,8 +175,11 @@ public sealed class DocumentService : IDocumentService
             await repo.ClearAsync(cancellationToken).ConfigureAwait(false);
         }
 
-        // Empty prefix clears every blob under the scope's files/ root.
-        await _objects.DeletePrefixAsync(ScopeFor(pid), string.Empty, cancellationToken)
+        // Clear the stored uploads and memory bodies; the project's config
+        // sidecar (meta.json) and databases are not touched here.
+        await _objects.DeletePrefixAsync(ScopeFor(pid), "files/", cancellationToken)
+            .ConfigureAwait(false);
+        await _objects.DeletePrefixAsync(ScopeFor(pid), "memory/", cancellationToken)
             .ConfigureAwait(false);
     }
 
@@ -185,11 +188,11 @@ public sealed class DocumentService : IDocumentService
     private Task<IRagRepository> OpenAsync(string pid, CancellationToken cancellationToken) =>
         _databases.OpenRagAsync(_user.Iss, _user.Sub, pid, cancellationToken);
 
-    private ObjectScope ScopeFor(string pid) => new(_user.Iss, _user.Sub, pid);
+    private ObjectScope ScopeFor(string pid) => ObjectScope.Project(_user.Iss, _user.Sub, pid);
 
-    /// <summary>The server-generated blob key: <c>{doc-id}.{ext}</c> (or just the id when no ext).</summary>
+    /// <summary>The server-generated blob key under <c>files/</c>: <c>files/{doc-id}.{ext}</c>.</summary>
     private static string ObjectKey(string documentId, string extension) =>
-        extension.Length == 0 ? documentId : $"{documentId}.{extension}";
+        extension.Length == 0 ? $"files/{documentId}" : $"files/{documentId}.{extension}";
 
     /// <summary>Base64 of the UTF-8 original filename — stored as display metadata (decision).</summary>
     private static string EncodeFilename(string filename) =>

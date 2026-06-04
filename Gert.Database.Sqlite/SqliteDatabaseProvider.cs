@@ -33,7 +33,7 @@ public sealed partial class SqliteDatabaseProvider : IDatabaseProvider
 {
     private readonly StorageOptions _options;
     private readonly SqliteVecOptions _vecOptions;
-    private readonly UserPaths _paths;
+    private readonly SqliteDatabasePaths _paths;
     private readonly IUserStore _files;
 
     /// <summary>
@@ -62,7 +62,7 @@ public sealed partial class SqliteDatabaseProvider : IDatabaseProvider
             throw new InvalidOperationException($"{nameof(StorageOptions)}.{nameof(StorageOptions.ExpectedIssuer)} must be configured.");
         }
 
-        _paths = new UserPaths(options);
+        _paths = new SqliteDatabasePaths(options);
     }
 
     // Bounded charset/length for sub (storage-and-data.md step 0; decisions §3).
@@ -78,7 +78,7 @@ public sealed partial class SqliteDatabaseProvider : IDatabaseProvider
         await EnsureUserRootAsync(iss, sub, cancellationToken).ConfigureAwait(false);
 
         // The landing project is always present.
-        await EnsureProjectAsync(iss, sub, UserPaths.DefaultProjectId, cancellationToken).ConfigureAwait(false);
+        await EnsureProjectAsync(iss, sub, SqliteDatabasePaths.DefaultProjectId, cancellationToken).ConfigureAwait(false);
     }
 
     // Ensure the user root dir + descriptive meta.json + settings.json exist.
@@ -112,7 +112,7 @@ public sealed partial class SqliteDatabaseProvider : IDatabaseProvider
         // ProjectService.Create) never materialises the user dir without its
         // metadata. EnsureUserRootAsync creates no project → no recursion.
         await EnsureUserRootAsync(iss, sub, cancellationToken).ConfigureAwait(false);
-        UserPaths.ValidatePid(pid);
+        SqliteDatabasePaths.ValidatePid(pid);
 
         // The on-disk project skeleton (dirs + meta.json) is the file layer's job;
         // this provider only provisions/migrates the databases below.
@@ -168,7 +168,7 @@ public sealed partial class SqliteDatabaseProvider : IDatabaseProvider
     }
 
     /// <summary>The folder key for a validated identity (exposed for diagnostics/tests).</summary>
-    public string KeyFor(string iss, string sub) => UserPaths.Key(iss, sub);
+    public string KeyFor(string iss, string sub) => SqliteDatabasePaths.Key(iss, sub);
 
     // ---- gate + binding ----------------------------------------------------
 
@@ -181,13 +181,13 @@ public sealed partial class SqliteDatabaseProvider : IDatabaseProvider
     {
         if (string.IsNullOrEmpty(iss) || !string.Equals(iss, _options.ExpectedIssuer, StringComparison.Ordinal))
         {
-            throw new UnauthorizedIdentityException(
+            throw new UnauthorizedDatabaseIdentityException(
                 $"Issuer '{iss}' is not the configured authority.");
         }
 
         if (string.IsNullOrEmpty(sub) || !SubPattern().IsMatch(sub))
         {
-            throw new UnauthorizedIdentityException(
+            throw new UnauthorizedDatabaseIdentityException(
                 "Subject is missing or outside the permitted charset/length (^[A-Za-z0-9._:\\-]{1,128}$).");
         }
     }

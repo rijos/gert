@@ -4,6 +4,7 @@ using Gert.Model;
 using Gert.Service.Documents;
 using Gert.Service.Ingestion;
 using Gert.Service.Storage;
+using Gert.Storage;
 using Gert.Testing;
 using Gert.Testing.Fakes;
 using Xunit;
@@ -72,7 +73,7 @@ public class IngestionPipelineTests
         var reports = new List<IngestionProgress>();
         var progress = new Progress<IngestionProgress>(reports.Add);
         await harness.Ingestion.IngestAsync(
-            new IngestJob { Iss = Iss, Sub = Sub, Pid = Pid, DocumentId = documentId, ObjectKey = $"{documentId}.txt", Extension = "txt" },
+            new IngestJob { Iss = Iss, Sub = Sub, Pid = Pid, DocumentId = documentId, ObjectKey = $"files/{documentId}.txt", Extension = "txt" },
             progress);
 
         // Progress is observed on the captured SynchronizationContext; give the posts a beat.
@@ -127,8 +128,8 @@ public class IngestionPipelineTests
         var doc = await harness.Documents.UploadAsync(Pid, Upload(original, "text/markdown", "body text here"));
 
         // The blob exists under the server-generated {doc-id}.{ext} key — NOT the name.
-        var scope = new ObjectScope(Iss, Sub, Pid);
-        (await harness.Objects.ExistsAsync(scope, $"{doc.Id}.md")).Should().BeTrue();
+        var scope = ObjectScope.Project(Iss, Sub, Pid);
+        (await harness.Objects.ExistsAsync(scope, $"files/{doc.Id}.md")).Should().BeTrue();
 
         // documents.filename is base64 of the original; decoding round-trips it exactly.
         var decoded = Encoding.UTF8.GetString(Convert.FromBase64String(doc.Filename));
@@ -147,7 +148,7 @@ public class IngestionPipelineTests
         recording.Jobs.Should().ContainSingle();
         var job = recording.Jobs[0];
         job.DocumentId.Should().Be(doc.Id);
-        job.ObjectKey.Should().Be($"{doc.Id}.txt");
+        job.ObjectKey.Should().Be($"files/{doc.Id}.txt");
         job.Extension.Should().Be("txt");
         job.Iss.Should().Be(Iss);
         job.Sub.Should().Be(Sub);
@@ -161,13 +162,13 @@ public class IngestionPipelineTests
         var harness = await HarnessAsync(root);
 
         var doc = await harness.Documents.UploadAsync(Pid, Upload("gone.md", "text/markdown", "content to delete"));
-        var scope = new ObjectScope(Iss, Sub, Pid);
-        (await harness.Objects.ExistsAsync(scope, $"{doc.Id}.md")).Should().BeTrue();
+        var scope = ObjectScope.Project(Iss, Sub, Pid);
+        (await harness.Objects.ExistsAsync(scope, $"files/{doc.Id}.md")).Should().BeTrue();
 
         (await harness.Documents.DeleteAsync(Pid, doc.Id)).Should().BeTrue();
 
         (await harness.Documents.GetAsync(Pid, doc.Id)).Should().BeNull();
-        (await harness.Objects.ExistsAsync(scope, $"{doc.Id}.md")).Should().BeFalse("the blob is removed too");
+        (await harness.Objects.ExistsAsync(scope, $"files/{doc.Id}.md")).Should().BeFalse("the blob is removed too");
 
         await using var repo = await harness.Provider.OpenRagAsync(Iss, Sub, Pid);
         var hits = await repo.HybridSearchAsync("content to delete", FakeEmbeddings.Embed("content to delete"), k: 5);
@@ -190,7 +191,7 @@ public class IngestionPipelineTests
         });
 
         // Body blob exists under memory/{id}.md (via the object store).
-        var scope = new ObjectScope(Iss, Sub, Pid);
+        var scope = ObjectScope.Project(Iss, Sub, Pid);
         (await harness.Objects.ExistsAsync(scope, $"memory/{entry.Id}.md")).Should().BeTrue();
 
         // Listed as a memory entry (title round-trips; pinned preserved).
@@ -216,7 +217,7 @@ public class IngestionPipelineTests
             Title = "Throwaway",
             Content = "ephemeral memory body",
         });
-        var scope = new ObjectScope(Iss, Sub, Pid);
+        var scope = ObjectScope.Project(Iss, Sub, Pid);
         (await harness.Objects.ExistsAsync(scope, $"memory/{entry.Id}.md")).Should().BeTrue();
 
         (await harness.Memory.DeleteAsync(Pid, entry.Id)).Should().BeTrue();
@@ -252,8 +253,7 @@ public class IngestionPipelineTests
         var provider = ProviderFixture.ProviderFor(root);
         await provider.EnsureProvisionedAsync(Iss, Sub);
 
-        var paths = ProviderFixture.PathsFor(root);
-        var objects = new LocalObjectStore(paths);
+        var objects = ProviderFixture.ObjectsFor(root);
         var embeddings = new FakeEmbeddings();
         var extractor = new CompositeTextExtractor(new ITextExtractor[] { new PlainTextExtractor() });
         var ingestion = new IngestionService(provider, objects, extractor, embeddings, chunking);

@@ -1,6 +1,7 @@
 using System.Text;
 using FluentAssertions;
 using Gert.Service.Storage;
+using Gert.Storage;
 using Gert.Testing;
 using Xunit;
 
@@ -15,14 +16,15 @@ public class LocalObjectStoreTests
 {
     private const string Sub = "alice-sub";
 
-    private static ObjectScope Scope() => new(ProviderFixture.ExpectedIssuer, Sub, "default");
+    private static ObjectScope Scope() =>
+        ObjectScope.Project(ProviderFixture.ExpectedIssuer, Sub, "default");
 
     private static async Task<LocalObjectStore> NewStoreAsync(TempDataRoot root)
     {
-        // Provision so the project's files/ root exists (mirrors real usage).
+        // Provision so the project scope exists (mirrors real usage).
         var provider = ProviderFixture.ProviderFor(root);
         await provider.EnsureProvisionedAsync(ProviderFixture.ExpectedIssuer, Sub);
-        return new LocalObjectStore(ProviderFixture.PathsFor(root));
+        return ProviderFixture.ObjectsFor(root);
     }
 
     private static MemoryStream Bytes(string text) => new(Encoding.UTF8.GetBytes(text));
@@ -96,7 +98,9 @@ public class LocalObjectStoreTests
         (await store.ExistsAsync(scope, "docs/a.pdf")).Should().BeFalse();
         (await store.ExistsAsync(scope, "docs/sub/b.pdf")).Should().BeFalse();
 
-        (await store.ListAsync(scope, string.Empty)).Should().Equal("exports/c.md");
+        // The project scope also holds meta.json + the db files locally; assert by prefix.
+        (await store.ListAsync(scope, "exports/")).Should().Equal("exports/c.md");
+        (await store.ListAsync(scope, "docs/")).Should().BeEmpty();
     }
 
     [Fact]

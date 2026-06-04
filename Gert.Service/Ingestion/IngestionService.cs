@@ -81,7 +81,7 @@ public sealed class IngestionService : IIngestionService
             return;
         }
 
-        var scope = new ObjectScope(job.Iss, job.Sub, job.Pid);
+        var scope = ObjectScope.Project(job.Iss, job.Sub, job.Pid);
 
         // 1. Extract (step 1) — read bytes ONLY via the object store.
         ExtractionResult extraction;
