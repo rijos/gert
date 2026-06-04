@@ -38,6 +38,8 @@ shape would break multi-instance #10).
 
 **Storage seam (confirmed after U4b):** two distinct seams. IRagRepository = SQLite/vec0 query engine (KNN/FTS/RRF — cannot be a blob store). IObjectStore = source files + exports (Local now, S3 later). U7d ingestion/DocumentService MUST route all raw-file read/write/delete through IObjectStore (no direct File.IO). SQLite DB files stay on local FS.
 
+**Filename handling (decided, apply at U7d/U9b/U12):** the upload filename is NEVER a storage path (files stored under server-generated {doc-id}.{ext}), so it is pure display metadata. Preserve the exact original name **base64-encoded** in documents.filename (any exotic byte sequence round-trips); the upload validation gate checks **extension allowlist + size only** (not path-safety); the SPA **sanitizes at render** (escape + neutralize bidi-override/control chars — anti-spoofing). "Preserve at storage, sanitize at render." U6's current conservative filename gate stays until U7d swaps in this model.
+
 Order (semantic first, file-split enforcement last):
 1. ✅ Drop ISubDenylist (#10) — stateless revocation (expiry + IdP deactivation). Code done; docs pending in this commit.
 2. ✅ Generic tool toggles (#1: ToolToggles=dict map, ToolKind deleted, id strings) + canonical gert_tools (#9: dropped JSON branch) + ChatEventType enum (#2: discriminator renamed $type to avoid collision)
