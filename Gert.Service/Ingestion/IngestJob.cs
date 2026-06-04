@@ -15,6 +15,14 @@ public sealed record IngestJob
 
     public required string DocumentId { get; init; }
 
-    /// <summary>Absolute path to the stored upload under the project's <c>files/</c>.</summary>
-    public required string FilePath { get; init; }
+    /// <summary>
+    /// The object-store key of the stored upload within the project's <c>files/</c>
+    /// (e.g. <c>{doc-id}.pdf</c>). Files are addressed only via
+    /// <see cref="Storage.IObjectStore"/> — never a raw path — so the worker opens
+    /// the blob with <c>OpenReadAsync(scope, key)</c> (decision: files via IObjectStore).
+    /// </summary>
+    public required string ObjectKey { get; init; }
+
+    /// <summary>Lowercase file extension (no dot) routing the text extractor — <c>"md"</c>, <c>"pdf"</c>.</summary>
+    public required string Extension { get; init; }
 }

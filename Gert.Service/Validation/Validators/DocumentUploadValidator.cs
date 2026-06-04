@@ -4,26 +4,34 @@ using Gert.Service.Documents;
 namespace Gert.Service.Validation.Validators;
 
 /// <summary>
-/// Validates a <see cref="DocumentUpload"/> (testing.md §5: filename — reject
-/// path separators / <c>..</c>, extension allowlist; bytes/type — max size,
-/// content-type allowlist, reject empty). This is the upload-hardening gate
-/// (security F-upload-storage) before bytes are written or extracted.
+/// Validates a <see cref="DocumentUpload"/> — the upload gate is <b>extension
+/// allowlist + size + length + non-empty + content-type</b> only (decision: the
+/// filename is display metadata, not a storage path). The blob is stored under a
+/// server-generated <c>{doc-id}.{ext}</c> key and the original name is base64'd into
+/// <c>documents.filename</c>; display safety is the SPA's job (text node +
+/// bidi-isolate), so this gate does <b>not</b> sanitize the filename for path
+/// traversal — exotic names are preserved. (<see cref="ValidationRules.IsSafeFilename"/>
+/// remains for any genuine path use, but the upload gate no longer calls it.)
 /// </summary>
 public sealed class DocumentUploadValidator : AbstractValidator<DocumentUpload>
 {
+    /// <summary>Cap on the original-name length (a basename DoS / metadata brake), not a path check.</summary>
+    public const int MaxFilenameLength = 255;
+
     public DocumentUploadValidator()
     {
         RuleFor(u => u.Filename)
-            .Must(ValidationRules.IsSafeFilename)
-                .WithMessage("Filename must be a basename with no path separators or '..'.")
-                .WithErrorCode("upload.filename")
+            .NotEmpty()
+                .WithMessage("A filename is required.")
+                .WithErrorCode("upload.filename_missing")
+            .Must(f => f is null || f.Length <= MaxFilenameLength)
+                .WithMessage($"Filename must be at most {MaxFilenameLength} characters.")
+                .WithErrorCode("upload.filename_too_long")
             .Must(f => UploadConstraints.AllowedExtensions.Contains(ValidationRules.ExtensionOf(f)))
                 .WithMessage("File type not allowed (pdf, docx, md, txt only).")
                 .WithErrorCode("upload.extension")
-                // Only worth checking the extension once the filename is a clean basename.
-                // CurrentValidator: gate ONLY the extension rule — the default (AllValidators)
-                // would also disable the IsSafeFilename rule above for an unsafe name, letting it slip.
-                .When(u => ValidationRules.IsSafeFilename(u.Filename), ApplyConditionTo.CurrentValidator);
+                // Only meaningful once a non-empty name exists; gate ONLY this rule.
+                .When(u => !string.IsNullOrEmpty(u.Filename), ApplyConditionTo.CurrentValidator);
 
         RuleFor(u => u.Mime)
             .NotEmpty()

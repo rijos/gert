@@ -18,7 +18,7 @@ Status: ⬜ not started · 🟡 in progress · ✅ done · 🔴 blocked
 | U7a | CRUD + minimal ChatService | ✅ | ConversationService CRUD + no-tool streaming ChatService + GertServices hub + passthrough validation (TODO U6); 23 service tests. Document/Memory/Project/Settings/Account/Admin stubbed (TODO U4b/U7c/U7d) |
 | U7b | Full tool-loop orchestrator | ✅ | step-0 instructions prepend + tool loop in RunAsync (offered = requested∩conv∩entitlement∩registry; ToolCall→exec→ToolResult→feed-back; round cap 5; citations); stateless. Pinned-memory retrieval TODO |
 | U7c | Tools (rag/search/sandbox) | ✅ | RagTool (embed→HybridSearch→citations), WebSearchTool, SandboxTool (3 failure shapes); DI-registered; entitlement re-checked at exec. 12 new tests, 425 total |
-| U7d | Ingestion pipeline | ⬜ | |
+| U7d | Ingestion pipeline | ✅ | IngestionService (extract→chunk[256/32]→embed[batch16]→write; no-text→failed) via ITextExtractor (md/txt; pdf/docx→U10) + IIngestionQueue (inline; Channel→U9b); DocumentService/MemoryService all blob I/O via IObjectStore, base64 filename; validator relaxed. 440 tests |
 | U8 | Gert.Authentication | ✅ | F11: HttpUserContext (3-role claim mapping), RS256-pinned JwtBearer, Admin/fallback policies, sub-denylist; 19 tests |
 | U9a | API walking skeleton | ✅ | **M1 GATE GREEN** — Program/controllers/SSE + GertApiFactory (offline JWKS, temp DataRoot, fakes); 6 gate tests: 401, healthz, lazy-provision, CRUD, SSE happy path, SPA fallback |
 | U9b | API breadth + RBAC/IDOR + headers | ⬜ | F1,F6,F10,F9 |
@@ -39,6 +39,8 @@ shape would break multi-instance #10).
 **Storage seam (confirmed after U4b):** two distinct seams. IRagRepository = SQLite/vec0 query engine (KNN/FTS/RRF — cannot be a blob store). IObjectStore = source files + exports (Local now, S3 later). U7d ingestion/DocumentService MUST route all raw-file read/write/delete through IObjectStore (no direct File.IO). SQLite DB files stay on local FS.
 
 **Filename handling (decided, apply at U7d/U9b/U12):** the upload filename is NEVER a storage path (files stored under server-generated {doc-id}.{ext}), so it is pure display metadata. Preserve the exact original name **base64-encoded** in documents.filename (any exotic byte sequence round-trips); the upload validation gate checks **extension allowlist + size only** (not path-safety). Display is **XSS-safe by construction** — the SPA renders the name via a VanJS text node (`createTextNode`), so no HTML/script parsing and no manual escaping. The ONLY residual is **bidi-override spoofing** (U+202E etc. reorder displayed glyphs — `invoice‮fdp.exe` shows as `invoiceexe.pdf`); handle that at render with `unicode-bidi: isolate` (or strip bidi codepoints) — anti-spoofing, optional, NOT XSS. Caveat: the text-node safety holds only while the filename stays a text node (never `innerHTML`/attribute-concat/`href`). U6's conservative filename gate stays until U7d swaps in this model.
+
+**Known deviation (U7d, reconcile later):** LocalObjectStore roots every key under `files/`, so memory bodies land at `projects/{pid}/files/memory/{id}.md` rather than the design.s sibling `projects/{pid}/memory/`. Functionally isolated + correct; to match storage-and-data.md, give IObjectStore a memory scope (or update the doc). Low priority.
 
 Order (semantic first, file-split enforcement last):
 1. ✅ Drop ISubDenylist (#10) — stateless revocation (expiry + IdP deactivation). Code done; docs pending in this commit.

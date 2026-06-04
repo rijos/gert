@@ -1,0 +1,31 @@
+namespace Gert.Service.Ingestion;
+
+/// <summary>
+/// The outcome of <see cref="ITextExtractor.ExtractAsync"/> — the extracted pages
+/// (possibly empty) plus an optional failure reason. The pipeline treats an empty
+/// page set OR a non-null <see cref="Error"/> as "no usable text" and marks the
+/// document <c>failed</c> (chat-and-tools.md § ingestion step 2; decisions § 5).
+/// </summary>
+public sealed record ExtractionResult
+{
+    /// <summary>The pages of extracted text, in source order. Empty when nothing was extracted.</summary>
+    public required IReadOnlyList<ExtractedPage> Pages { get; init; }
+
+    /// <summary>
+    /// A failure reason when extraction could not run at all (e.g. an extractor that
+    /// is not yet available — pdf/docx until U10). Null on success, even if
+    /// <see cref="Pages"/> is empty (a scanned PDF with no text layer).
+    /// </summary>
+    public string? Error { get; init; }
+
+    /// <summary>True when there is at least one page carrying non-whitespace text.</summary>
+    public bool HasText => Pages.Any(p => !string.IsNullOrWhiteSpace(p.Text));
+
+    /// <summary>A successful extract from one or more pages.</summary>
+    public static ExtractionResult FromPages(IReadOnlyList<ExtractedPage> pages) =>
+        new() { Pages = pages };
+
+    /// <summary>A failed extract — the extractor could not run (no pages, an error message).</summary>
+    public static ExtractionResult Failed(string error) =>
+        new() { Pages = [], Error = error };
+}

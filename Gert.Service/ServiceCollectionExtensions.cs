@@ -6,6 +6,7 @@ using Gert.Service.Admin;
 using Gert.Service.Chat;
 using Gert.Service.Conversations;
 using Gert.Service.Documents;
+using Gert.Service.Ingestion;
 using Gert.Service.Projects;
 using Gert.Service.Tools;
 using Gert.Service.Validation;
@@ -56,6 +57,13 @@ public static class ServiceCollectionExtensions
         services.TryAddScoped<IAccountService, AccountService>();
         services.TryAddScoped<IAdminService, AdminService>();
 
+        // Ingestion (U7d) — the extract → chunk → embed → write pipeline and its
+        // ports. Files are read/written ONLY via IObjectStore (host-registered) and
+        // text-extraction is behind ITextExtractor so U10 swaps the hardened pdf/docx
+        // extractor in with one registration. The default queue runs ingestion inline;
+        // U9b replaces it with a Channel-backed queue + BackgroundService (responds 202).
+        AddIngestion(services);
+
         // Tools (U7c) — each ITool is registered so the ToolRegistry is populated
         // from IEnumerable<ITool>. They are scoped: RagTool depends on the
         // per-request IUserContext, so a tool's lifetime must not outlive a request.
@@ -76,6 +84,14 @@ public static class ServiceCollectionExtensions
     private static readonly string[] BuiltInToolIds = ["rag", "search", "sandbox"];
 
     /// <summary>
+    /// DI key for the per-type leaf <see cref="ITextExtractor"/>s the
+    /// <see cref="CompositeTextExtractor"/> composes. Keying them keeps the composite
+    /// (registered as the plain <see cref="ITextExtractor"/>) out of its own
+    /// enumeration. U10's pdf/docx extractor registers under the same key.
+    /// </summary>
+    private const string LeafExtractorKey = "leaf";
+
+    /// <summary>
     /// Register the built-in tools (U7c) as scoped <see cref="ITool"/>s so the
     /// orchestrator resolves them via <c>IEnumerable&lt;ITool&gt;</c>. Scoped
     /// because <see cref="Tools.RagTool"/> depends on the per-request
@@ -89,6 +105,33 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ITool, RagTool>();
         services.AddScoped<ITool, WebSearchTool>();
         services.AddScoped<ITool, SandboxTool>();
+    }
+
+    /// <summary>
+    /// Wire the ingestion pipeline (U7d). Chunking is stateless (a singleton
+    /// options record); the per-type extractors are registered as
+    /// <see cref="ITextExtractor"/> and composed by <see cref="CompositeTextExtractor"/>
+    /// (the one the pipeline depends on). The pipeline + queue are scoped because the
+    /// queue's inline path resolves per-request collaborators; U9b overrides the queue
+    /// with its Channel-backed singleton + a BackgroundService.
+    /// </summary>
+    private static void AddIngestion(IServiceCollection services)
+    {
+        services.TryAddSingleton(ChunkingOptions.Default);
+
+        // The per-type leaf extractors are registered under the "leaf" key so the
+        // composite can enumerate them without the composite (registered as the plain
+        // ITextExtractor below) re-entering its own resolution. U10 registers the
+        // pdf/docx extractor with the same key — one line, no pipeline change.
+        services.AddKeyedSingleton<ITextExtractor, PlainTextExtractor>(LeafExtractorKey);
+
+        // The pipeline depends on the plain ITextExtractor → the composite, which
+        // routes to the keyed leaves.
+        services.TryAddSingleton<ITextExtractor>(sp =>
+            new CompositeTextExtractor(sp.GetKeyedServices<ITextExtractor>(LeafExtractorKey)));
+
+        services.TryAddScoped<IIngestionService, IngestionService>();
+        services.TryAddScoped<IIngestionQueue, InlineIngestionQueue>();
     }
 
     /// <summary>

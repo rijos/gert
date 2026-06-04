@@ -41,10 +41,18 @@ public sealed class AdversarialCorpusTests
         Assert.False(result.IsValid, $"payload should have been rejected: {Describe(payload)}");
     }
 
-    /// <summary>Filenames: traversal / control / bidi must all be rejected; none may crash.</summary>
+    /// <summary>
+    /// Filenames (U7d decision): the upload name is display metadata, not a storage
+    /// path (it is base64'd into <c>documents.filename</c>; the blob lives under a
+    /// server-generated <c>{doc-id}.{ext}</c> key), so the gate is extension allowlist
+    /// + length + non-empty only — it does NOT sanitize the name for traversal/bidi.
+    /// The contract here: validation never crashes, and a name is rejected exactly
+    /// when its extension is disallowed, it is empty, or it is overlong. Path-shaped
+    /// or bidi-laden names with an allowed extension are preserved.
+    /// </summary>
     [Theory]
     [MemberData(nameof(All))]
-    public void Upload_filename_never_slips_through(string payload)
+    public void Upload_filename_gate_is_extension_length_and_nonempty_only(string payload)
     {
         var v = _sp.Validator<DocumentUpload>();
         var upload = new DocumentUpload
@@ -56,13 +64,19 @@ public sealed class AdversarialCorpusTests
         };
 
         var result = v.Validate(upload); // never throws
+
         var ext = ValidationRules.ExtensionOf(payload);
-        var couldBeSafe = ValidationRules.IsSafeFilename(payload)
-                          && UploadConstraints.AllowedExtensions.Contains(ext);
-        if (!couldBeSafe)
+        var extAllowed = UploadConstraints.AllowedExtensions.Contains(ext);
+        var lengthOk = !string.IsNullOrEmpty(payload)
+                       && payload.Length <= Gert.Service.Validation.Validators.DocumentUploadValidator.MaxFilenameLength;
+
+        if (!extAllowed || !lengthOk)
         {
             Assert.False(result.IsValid, $"filename should have been rejected: {Describe(payload)}");
         }
+
+        // The filename rule must never crash on any corpus entry — the assertion above
+        // already exercised Validate without an exception.
     }
 
     /// <summary>Model id / title fields never crash across the whole corpus.</summary>
