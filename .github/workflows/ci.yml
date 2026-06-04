@@ -40,10 +40,10 @@ jobs:
         run: make smoke-unit
 
   e2e:
-    name: Browser E2E smoke (opt-in)
-    # Heavy (Playwright browsers). Not a merge gate — run on demand via the Actions tab
-    # ("Run workflow"). The .NET + Python jobs above are the gates.
-    if: github.event_name == 'workflow_dispatch'
+    name: Browser E2E smoke (gate)
+    # Gating: boots the python mocks + the FakeE2E host and drives the real SPA across
+    # chromium+firefox × admin/user/limited. Heavier than the other jobs (installs
+    # browsers) but a required check — the smoke is what catches SPA/CSP/seam bugs.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

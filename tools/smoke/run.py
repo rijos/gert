@@ -234,6 +234,29 @@ def _run_matrix(
     return results
 
 
+def _serve(base_url: str, role: str) -> None:
+    """Open ONE headed browser signed in as ``role`` and keep it open for manual
+    click-through against the running mocks+host. Same F2-safe token injection as the
+    matrix (an init script seeds the in-memory bearer; nothing in localStorage)."""
+    from playwright.sync_api import sync_playwright
+
+    token = tokens.mint(role)
+    with sync_playwright() as pw:
+        browser = pw.chromium.launch(headless=False)
+        context = browser.new_context()
+        context.add_init_script(_init_script(token))
+        page = context.new_page()
+        app = AppPage(page)
+        app.base_url = base_url
+        app.goto(base_url, "/")
+        app.wait_ready()
+        print(f"\n  Gert is live at {base_url}  (signed in as '{role}').")
+        print("  A browser window is open — click around. Press Enter here to quit.\n")
+        input()
+        context.close()
+        browser.close()
+
+
 def _report(results: list[MatrixResult]) -> int:
     failures = [r for r in results if not r[3]]
     for browser, role, name, ok, detail in results:
@@ -254,6 +277,12 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--headed", action="store_true")
     parser.add_argument("--keep-open", action="store_true")
+    parser.add_argument(
+        "--serve",
+        action="store_true",
+        help="Boot mocks + host, open ONE headed browser and keep it open for manual "
+        "click-through (no scenarios). Use --role to pick the identity.",
+    )
     parser.add_argument(
         "--base-url",
         default=None,
@@ -283,6 +312,10 @@ def main(argv: list[str] | None = None) -> int:
         if not _wait_healthz(base_url):
             print("Host did not become healthy in time.", file=sys.stderr)
             return 2
+
+        if args.serve:
+            _serve(base_url, args.role if args.role != "all" else "admin")
+            return 0
 
         print("Running scenario matrix…")
         results = _run_matrix(base_url, browsers, roles, args.headed, args.keep_open)

@@ -38,6 +38,11 @@ lint-fix: ## Auto-fix ruff lint + format on the Python harness
 smoke-unit: ## Run the non-browser Python checks (embedding conformance) — no Playwright needed
 	PYTHONPATH=. $(SMOKE_DIR)/.venv/bin/python -m pytest $(SMOKE_DIR)/tests/test_embeddings_conformance.py -q
 
+.PHONY: serve-mock
+serve-mock: ## Boot python mocks + FakeE2E host, open the SPA in a browser for manual click-through (ROLE=admin|user|limited)
+	cd $(SMOKE_DIR) && uv sync && uv run playwright install chromium
+	PYTHONPATH=. $(SMOKE_DIR)/.venv/bin/python -m tools.smoke.run --serve --role $(or $(ROLE),admin)
+
 .PHONY: coverage
 coverage: ## Run tests with coverage + generate an HTML report (needs coverlet.collector + reportgenerator tool)
 	rm -rf $(COVERAGE_DIR)
