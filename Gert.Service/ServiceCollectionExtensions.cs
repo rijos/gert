@@ -87,9 +87,10 @@ public static class ServiceCollectionExtensions
     /// DI key for the per-type leaf <see cref="ITextExtractor"/>s the
     /// <see cref="CompositeTextExtractor"/> composes. Keying them keeps the composite
     /// (registered as the plain <see cref="ITextExtractor"/>) out of its own
-    /// enumeration. U10's pdf/docx extractor registers under the same key.
+    /// enumeration. U10's pdf/docx extractor (Gert.External) registers under the same
+    /// key, so it is <c>public</c> for that adapter to reference.
     /// </summary>
-    private const string LeafExtractorKey = "leaf";
+    public const string LeafExtractorKey = "leaf";
 
     /// <summary>
     /// Register the built-in tools (U7c) as scoped <see cref="ITool"/>s so the

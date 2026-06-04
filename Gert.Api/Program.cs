@@ -3,6 +3,7 @@ using Gert.Api.Ingestion;
 using Gert.Api.Security;
 using Gert.Authentication;
 using Gert.Database.Sqlite;
+using Gert.External;
 using Gert.Service;
 using Gert.Service.Database;
 using Gert.Service.Ingestion;
@@ -101,10 +102,13 @@ builder.Services.AddSingleton<IObjectStore, LocalObjectStore>();
 builder.Services.AddSingleton<IUserStore, FileSystemUserStore>();
 
 // --- External-world ports ----------------------------------------------------
-// TODO U10: AddGertExternal() registers the real IChatModelClient / IEmbeddingClient
-// / IWebSearch / ISandbox adapters. They are deliberately NOT registered here so a
-// Testing host can supply fakes (GertApiFactory.AddGertFakes) — and so DI does not
-// validate-on-build against missing ports.
+// U10: AddGertExternal registers the real IChatModelClient / IEmbeddingClient /
+// IWebSearch / ISandbox adapters (vLLM/SearXNG over IHttpClientFactory + Polly,
+// gVisor sandbox) plus the isolated pdf/docx extractor leaf, with options bound from
+// config and secrets from env/user-secrets (F8). The Testing host's
+// GertApiFactory.AddGertFakes() Replaces the four ports afterwards, so the fakes win
+// in tests regardless of order.
+builder.Services.AddGertExternal(builder.Configuration);
 
 // One consistent, Gert-branded ProblemDetails contract: stamp every problem with
 // the service marker + a traceId (Change B). The customizer runs for framework-

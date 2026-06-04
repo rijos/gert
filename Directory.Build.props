@@ -22,6 +22,18 @@
     <FluentValidationDIVersion>11.11.0</FluentValidationDIVersion>
     <!-- U8 auth: orchestrator pins a valid net10.0 version. -->
     <JwtBearerVersion>10.0.0</JwtBearerVersion>
+    <!-- U10 Gert.External adapters (vLLM/SearXNG over IHttpClientFactory + Polly,
+         options binding, logging). Orchestrator pins valid net10.0 versions. -->
+    <MicrosoftExtensionsHttpVersion>9.0.0</MicrosoftExtensionsHttpVersion>
+    <MicrosoftExtensionsConfigVersion>9.0.0</MicrosoftExtensionsConfigVersion>
+    <MicrosoftExtensionsLoggingVersion>9.0.0</MicrosoftExtensionsLoggingVersion>
+    <!-- Polly v8 resilience pipelines (timeout + retry) layered on the typed clients. -->
+    <MicrosoftExtensionsHttpResilienceVersion>9.0.0</MicrosoftExtensionsHttpResilienceVersion>
+    <!-- U10 F7 isolated PDF/DOCX parsers (run only inside the subprocess helper). -->
+    <PdfPigVersion>0.1.9</PdfPigVersion>
+    <OpenXmlVersion>3.1.0</OpenXmlVersion>
+    <!-- Patched System.IO.Packaging overriding OpenXml's vulnerable transitive 8.0.0 (NU1903). -->
+    <SystemIoPackagingVersion>9.0.0</SystemIoPackagingVersion>
   </PropertyGroup>
 
   <!-- One-type-per-file enforcement (#11). Only SA1402/SA1649 are on (see .editorconfig);

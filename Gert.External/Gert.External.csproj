@@ -5,4 +5,38 @@
     <ProjectReference Include="..\Gert.Model\Gert.Model.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- IHttpClientFactory + typed-client wiring, options binding, configuration,
+         DI, logging abstractions. Orchestrator pins valid net10.0 versions. -->
+    <PackageReference Include="Microsoft.Extensions.Http"
+                      Version="$(MicrosoftExtensionsHttpVersion)" />
+    <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions"
+                      Version="$(MicrosoftExtensionsOptionsVersion)" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions"
+                      Version="$(MicrosoftExtensionsConfigVersion)" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions"
+                      Version="$(MicrosoftExtensionsLoggingVersion)" />
+
+    <!-- Resilience: timeout + retry around the vLLM / SearXNG HTTP calls (tech-stack
+         § HTTP). Microsoft.Extensions.Http.Resilience layers Polly v8 pipelines onto
+         the typed clients. -->
+    <PackageReference Include="Microsoft.Extensions.Http.Resilience"
+                      Version="$(MicrosoftExtensionsHttpResilienceVersion)" />
+
+    <!-- F7 isolated extractor leaf parsers. These run only inside the unprivileged
+         subprocess helper; the host never feeds untrusted bytes to them in-process.
+         If the orchestrator wants to keep scope tight, the parse is stubbed behind
+         the subprocess boundary (see IsolatedTextExtractor) and these can be dropped. -->
+    <PackageReference Include="PdfPig"
+                      Version="$(PdfPigVersion)" />
+    <PackageReference Include="DocumentFormat.OpenXml"
+                      Version="$(OpenXmlVersion)" />
+
+    <!-- OpenXml transitively pulls System.IO.Packaging 8.0.0, which has a known
+         high-severity advisory (NU1903). Pin a patched version directly so it wins
+         for the whole graph (the transitive flows to every project via Gert.Testing). -->
+    <PackageReference Include="System.IO.Packaging"
+                      Version="$(SystemIoPackagingVersion)" />
+  </ItemGroup>
+
 </Project>

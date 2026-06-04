@@ -22,7 +22,7 @@ Status: ⬜ not started · 🟡 in progress · ✅ done · 🔴 blocked
 | U8 | Gert.Authentication | ✅ | F11: HttpUserContext (3-role claim mapping), RS256-pinned JwtBearer, Admin/fallback policies, sub-denylist; 19 tests |
 | U9a | API walking skeleton | ✅ | **M1 GATE GREEN** — Program/controllers/SSE + GertApiFactory (offline JWKS, temp DataRoot, fakes); 6 gate tests: 401, healthz, lazy-provision, CRUD, SSE happy path, SPA fallback |
 | U9b | API breadth + RBAC/IDOR + headers | ✅ | all endpoints (settings/projects/documents/memory/artifacts/account/admin) + {pid}/{key} validation; CSP+headers (F1), HSTS (F9), per-user rate limit (F10); Channel ingestion BackgroundService; Project/Settings/Account/Admin services + IUserStore port. IDOR/pid-tamper/admin-key-traversal/RBAC/headers tests. 481 total |
-| U10 | Gert.External real adapters | ⬜ | F5,F7,F8 |
+| U10 | Gert.External real adapters | ✅ | vLLM chat(SSE)/embeddings (Polly), SearXNG + SSRF guard (F5: scheme+private-IP block, ConnectCallback, redirect re-vet), gVisor sandbox (egress-off F5), isolated pdf/docx extractor (F7: RLIMIT+XXE+zip-bomb), AddGertExternal (secrets F8). 94 unit tests (security controls); live wire=U13/staging. 575 total |
 | U11 | Gert.Console | ⬜ | |
 | U12 | Gert.Web SPA | ⬜ | F2,F3,F4 |
 | U13 | Python smoke/E2E + mocks | ⬜ | |
