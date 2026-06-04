@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json.schemastore.org/launchsettings.json",
+  "profiles": {
+    "Gert.Api": {
+      "commandName": "Project",
+      "dotnetRunMessages": true,
+      "launchBrowser": false,
+      "applicationUrl": "http://localhost:5217",
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development"
+      }
+    },
+    "FakeE2E": {
+      "$comment": "E2E profile (testing.md §4.2). The REAL Gert.External adapters run, but point at the Python mock upstreams; the host trusts the git-ignored dev JWKS that tools/smoke/tokens.py generates, validating python-minted tokens offline through the real RS256/JWKS path. NEVER a Production profile.",
+      "commandName": "Project",
+      "dotnetRunMessages": true,
+      "launchBrowser": false,
+      "applicationUrl": "http://127.0.0.1:5217",
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        "DOTNET_ENVIRONMENT": "Development",
+
+        "Auth__Authority": "https://id.dev.local",
+        "Auth__Audience": "gert-api",
+        "Gert__Dev__JwksPath": ".dev/jwt/dev-jwks.json",
+
+        "Gert__Vllm__BaseUrl": "http://127.0.0.1:8000",
+        "Gert__Search__BaseUrl": "http://127.0.0.1:8080",
+
+        "Storage__DataRoot": ".dev/e2e-data",
+        "Storage__ExpectedIssuer": "https://id.dev.local",
+
+        "Gert__Web__TestHarness": "true"
+      }
+    }
+  }
+}

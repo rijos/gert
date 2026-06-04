@@ -21,3 +21,6 @@ __pycache__/
 
 # Coverage / build artifacts
 artifacts/
+
+# Python editable-install metadata
+*.egg-info/

@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Gert component harness</title>
+
+    <!--
+      Component-unit harness (testing.md §8). The Fake host serves this at
+      /tests/harness.html (dev-only mapping of tests/web/ → /tests/), so the real
+      app modules import on the SAME ORIGIN: /components/..., /state/...,
+      /services/..., and the bare specifiers below resolve through the import map.
+
+      A test mounts a real, unmocked VanJS component via page.evaluate() and either
+      returns a value to Python or asserts via Playwright locators. window.__mount
+      is the convenience helper; document.body is otherwise empty so each mount
+      starts clean.
+    -->
+
+    <!-- styles, so mounted components carry their real classes/visibility -->
+    <link rel="stylesheet" href="/styles/tokens.css" />
+    <link rel="stylesheet" href="/styles/base.css" />
+    <link rel="stylesheet" href="/styles/layout.css" />
+    <link rel="stylesheet" href="/styles/components.css" />
+
+    <!-- the SAME import map as index.html, so bare specifiers resolve identically -->
+    <script type="importmap">
+      {
+        "imports": {
+          "van": "/lib/van.js",
+          "vanjs-core": "/lib/van.js",
+          "van-x": "/lib/van-x.js"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <div id="harness-root"></div>
+    <script type="module">
+      // __mount(node) — append a freshly-built component node into a clean root and
+      // return it. Clears any previous mount so tests don't bleed into each other.
+      const root = document.getElementById("harness-root");
+      window.__mount = (node) => {
+        root.replaceChildren(node);
+        return node;
+      };
+      // Signal readiness for tests that wait on it.
+      window.__harnessReady = true;
+    </script>
+  </body>
+</html>

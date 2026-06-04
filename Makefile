@@ -26,6 +26,18 @@ build: ## Build the solution (warnings are errors)
 test: ## Run the full .NET test suite
 	dotnet test $(SLN) -c $(CONFIG) --nologo
 
+.PHONY: lint
+lint: ## Enforce ruff (lint + format check) + mypy --strict on the Python harness
+	cd $(SMOKE_DIR) && uv run ruff check . && uv run ruff format --check . && uv run mypy .
+
+.PHONY: lint-fix
+lint-fix: ## Auto-fix ruff lint + format on the Python harness
+	cd $(SMOKE_DIR) && uv run ruff check --fix . && uv run ruff format .
+
+.PHONY: smoke-unit
+smoke-unit: ## Run the non-browser Python checks (embedding conformance) — no Playwright needed
+	PYTHONPATH=. $(SMOKE_DIR)/.venv/bin/python -m pytest $(SMOKE_DIR)/tests/test_embeddings_conformance.py -q
+
 .PHONY: coverage
 coverage: ## Run tests with coverage + generate an HTML report (needs coverlet.collector + reportgenerator tool)
 	rm -rf $(COVERAGE_DIR)

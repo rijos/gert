@@ -134,6 +134,17 @@ const scheduleRefresh = () => {
 // ensureSession — called once at boot. Handles the redirect callback, then a
 // silent refresh; falls back to starting the PKCE login.
 export const ensureSession = async () => {
+  // DEV/TEST ONLY (testing.md §4.3/§9): the Python E2E harness injects a minted
+  // token as window.GERT_DEV_TOKEN via a Playwright init script (the token is
+  // otherwise in-memory only — F2). When present, install it and skip PKCE. The
+  // global is never set in production, so this branch is inert there.
+  if (window.GERT_DEV_TOKEN) {
+    setToken(window.GERT_DEV_TOKEN, 3600);
+    applyIdentity(decodeClaims(window.GERT_DEV_TOKEN));
+    authState.ready.val = true;
+    return;
+  }
+
   const params = new URLSearchParams(location.search);
   const code = params.get("code");
   try {

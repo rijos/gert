@@ -53,6 +53,55 @@ builder.Services.AddGertServices();
 builder.Services.AddGertJwtAuth(builder.Configuration);
 builder.Services.AddGertAuthorization();
 
+// --- DEV/TEST ONLY: trust a static dev JWKS file (testing.md §4.3) -----------
+// The E2E harness (tools/smoke) mints RS256 tokens with a git-ignored dev key and
+// writes the matching dev-jwks.json. When Gert:Dev:JwksPath is set AND we are NOT
+// in Production, point JwtBearer's signing keys at that file so python-minted
+// tokens validate offline through the SAME RS256/JWKS path prod uses for Pocket ID
+// — only the key SOURCE differs. Two guards: the key is never committed, and this
+// branch is inert under Production (and only fires when the env var is present).
+var devJwksPath = builder.Configuration["Gert:Dev:JwksPath"];
+if (!builder.Environment.IsProduction() && !string.IsNullOrWhiteSpace(devJwksPath))
+{
+    builder.Services.PostConfigure<JwtBearerOptions>(
+        JwtBearerDefaults.AuthenticationScheme,
+        options =>
+        {
+            // The dev JWKS lives at the REPO-ROOT .dev/jwt/ (where tokens.py writes
+            // it). ContentRootPath is the Gert.Api project dir under `dotnet run`, so
+            // a relative path is probed there first, then one level up (the repo root).
+            string resolved;
+            if (Path.IsPathRooted(devJwksPath))
+            {
+                resolved = devJwksPath;
+            }
+            else
+            {
+                var underContentRoot = Path.Combine(builder.Environment.ContentRootPath, devJwksPath);
+                var underRepoRoot = Path.GetFullPath(
+                    Path.Combine(builder.Environment.ContentRootPath, "..", devJwksPath));
+                resolved = File.Exists(underContentRoot) ? underContentRoot : underRepoRoot;
+            }
+
+            if (!File.Exists(resolved))
+            {
+                throw new InvalidOperationException(
+                    $"Gert:Dev:JwksPath set but no JWKS at '{resolved}'. " +
+                    "Run `uv run python -m tools.smoke.tokens --role admin` first to generate it.");
+            }
+
+            var jwks = new Microsoft.IdentityModel.Tokens.JsonWebKeySet(File.ReadAllText(resolved));
+
+            // Static keys, no network metadata fetch. Keep ValidateIssuer/Audience on
+            // (they assert the Auth:Authority/Auth:Audience the dev tokens are stamped with).
+            options.Authority = null;
+            options.RequireHttpsMetadata = false;
+            options.TokenValidationParameters.ValidIssuer = builder.Configuration["Auth:Authority"];
+            options.TokenValidationParameters.ValidAudience = builder.Configuration["Auth:Audience"];
+            options.TokenValidationParameters.IssuerSigningKeys = jwks.GetSigningKeys();
+        });
+}
+
 // --- Security headers + CSP (security F1, operations.md § headers) -----------
 // Binds the Pocket ID origin from Auth:Authority so the CSP's connect-src lists
 // exactly 'self' + the IdP.
@@ -152,6 +201,25 @@ app.UseGertSecurityHeaders();
 
 app.UseDefaultFiles();
 app.UseStaticFiles();
+
+// --- DEV/TEST ONLY: serve the component-unit harness (testing.md §8) ---------
+// Maps tests/web/ at /tests/ so harness.html can import the real app modules on
+// the same origin (/components, /state, …). Gated by Gert:Web:TestHarness AND
+// non-Production, so the dev-only test surface never ships to prod.
+if (!app.Environment.IsProduction() &&
+    app.Configuration.GetValue<bool>("Gert:Web:TestHarness"))
+{
+    var harnessDir = Path.Combine(app.Environment.ContentRootPath, "..", "tests", "web");
+    var fullHarnessDir = Path.GetFullPath(harnessDir);
+    if (Directory.Exists(fullHarnessDir))
+    {
+        app.UseStaticFiles(new StaticFileOptions
+        {
+            FileProvider = new Microsoft.Extensions.FileProviders.PhysicalFileProvider(fullHarnessDir),
+            RequestPath = "/tests",
+        });
+    }
+}
 
 app.UseAuthentication();
 

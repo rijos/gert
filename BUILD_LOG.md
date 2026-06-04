@@ -25,7 +25,7 @@ Status: ⬜ not started · 🟡 in progress · ✅ done · 🔴 blocked
 | U10 | Gert.External real adapters | ✅ | vLLM chat(SSE)/embeddings (Polly), SearXNG + SSRF guard (F5: scheme+private-IP block, ConnectCallback, redirect re-vet), gVisor sandbox (egress-off F5), isolated pdf/docx extractor (F7: RLIMIT+XXE+zip-bomb), AddGertExternal (secrets F8). 94 unit tests (security controls); live wire=U13/staging. 575 total |
 | U11 | Gert.Console | ✅ | LocalUserContext (single user, all tools), AddGertConsole wiring (inline ingest, no auth/controllers/worker), ChatEvent→stdout renderer, chat/ingest commands. NO Gert.Authentication ref (asserted). 12 tests, 586 total |
 | U12 | Gert.Web SPA | ✅ | full VanJS SPA in Gert.Api/wwwroot (68 JS files, all parse; styles split from mockup); F2 in-memory token, F3 sandboxed html+svg iframe (no allow-same-origin), F4 md sanitizer+bidi-isolate; SSE→state→views; van/van-x vendored. Behavioral verification = U13 |
-| U13 | Python smoke/E2E + mocks | ⬜ | |
+| U13 | Python smoke/E2E + mocks | 🟡 | harness authored (mocks/tokens/run.py/pages/scenarios + FakeE2E profile + harness.html); ruff + mypy --strict CLEAN (Playwright-typed tests, no TYPE_CHECKING); token mint + embeddings-golden conformance (float32 bit-exact cross-lang) green. Browser run next |
 | U14 | Release pipeline + ops | ✅ | NUglify minify-in-place on publish (ESM-safe, raw-fallback) verified via dotnet publish; Serilog NDJSON (ts/level-first, uid=hash, never tokens/sub/content); /readyz dep-check (/healthz unchanged). 14 tests, 600 total |
 | U15 | CI | ⬜ | |
 
@@ -49,7 +49,7 @@ Order (semantic first, file-split enforcement last):
 4. ✅ ChatService step-based stateless redesign (#13: StartTurnAsync→ChatTurn→RunAsync, no turnId; invalid input throws ValidationException→400 before stream) + branded Gert ProblemDetails 400/401/403/404 (#15). 83 tests.
 5. ✅ nullable→error explicit (#4); coverage coverlet.collector 6.0.2 + reportgenerator tool, `make coverage` works — 72.6% line/60.2% branch (#5); Makefile (#6).
 6. ✅ One-type-per-file enforced via StyleCop SA1402/SA1649 as ERROR (all other SA rules silenced; SA0001 off). Split ~40 files across all projects; nested types exempt. Build judges it. 83 tests.
-7. ❌ **#14 NOT done (user decision).** Keep the verified .NET WebApplicationFactory suite + fakes as the real gate; AUTHOR the Python E2E harness as code but do NOT install/run browsers in this sandbox (heavy + fragile) and do NOT delete working .NET tests. Browsers run in real CI/staging; U15 CI = .NET gate (runs) + web job documented.
+7. ❌ **#14 NOT done; E2E IS run as a smoke (user decision, revised).** Keep the verified .NET WebApplicationFactory suite + fakes as the gate (no #14 deletion). U13: author the Python E2E harness AND actually **install Playwright browsers + run the full browser smoke** (real adapters → python mocks, FakeE2E host) to prove it works — but it is **non-gating by default** (per spec; the .NET suite gates). First real execution of the SPA + real-adapter-mock stack → expect iteration. U15 CI: .NET gate runs; web/E2E job opt-in.
 8. ✅ Re-green full suite done per unit; M2 complete (eb06d1a).
 
 ## Milestones
