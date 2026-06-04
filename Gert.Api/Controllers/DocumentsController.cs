@@ -52,8 +52,8 @@ public sealed class DocumentsController : ControllerBase
 
     /// <summary>
     /// Accept a multipart upload: store the bytes, insert a <c>processing</c> row,
-    /// enqueue ingestion, and respond <c>202</c> with <c>{ id, status }</c> so the
-    /// client can start polling.
+    /// enqueue ingestion, and respond <c>202</c> with the created
+    /// <see cref="DocumentResponse"/> so the client can render the row and poll.
     /// </summary>
     [HttpPost]
     public async Task<IActionResult> Upload(
@@ -82,12 +82,12 @@ public sealed class DocumentsController : ControllerBase
 
         var document = await _services.Documents.UploadAsync(pid, upload, cancellationToken).ConfigureAwait(false);
 
-        // 202 + { id, status: "processing" } (rest-api.md). The status pill is driven
-        // by polling Get; the Location points at the poll endpoint.
+        // 202 + the created document (status: "processing"). The client renders the
+        // row immediately and polls Get for the transition; Location points at it.
         return AcceptedAtAction(
             nameof(Get),
             new { pid, id = document.Id },
-            new { id = document.Id, status = document.Status });
+            DocumentResponse.From(document));
     }
 
     /// <summary>Delete a document, its chunks/vec/fts rows, and the original file.</summary>

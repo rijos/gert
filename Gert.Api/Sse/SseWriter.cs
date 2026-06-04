@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using Gert.Api.Json;
 using Gert.Model.Events;
 using Microsoft.AspNetCore.Http;
 
@@ -21,9 +22,8 @@ public static class SseWriter
     /// <summary>The SSE content type (with charset), set on the response before writing.</summary>
     public const string ContentType = "text/event-stream";
 
-    /// <summary>JSON shape for SSE payloads — camelCase web defaults, matching the API surface.</summary>
-    public static readonly JsonSerializerOptions JsonOptions =
-        new(JsonSerializerDefaults.Web);
+    /// <summary>JSON shape for SSE payloads — the one API contract (snake_case + string enums).</summary>
+    public static readonly JsonSerializerOptions JsonOptions = GertJsonOptions.Default;
 
     /// <summary>
     /// Set the SSE response headers and stream every event from

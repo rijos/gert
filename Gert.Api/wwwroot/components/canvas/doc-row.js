@@ -5,6 +5,7 @@ import van from "van";
 import { Icon } from "../../icons/icons.js";
 import { Pill } from "../ui/pill.js";
 import * as svc from "../../services/documents.js";
+import { attempt } from "../../lib/action.js";
 
 const { div, button } = van.tags;
 
@@ -34,7 +35,11 @@ export const DocRow = (d) =>
     ),
     () => Pill({ kind: STATUS_KIND[d.status] || "proc" }),
     button(
-      { class: "trash", title: "Delete", onclick: () => svc.remove(d.id).catch(() => {}) },
+      {
+        class: "trash",
+        title: "Delete",
+        onclick: () => attempt(() => svc.remove(d.id), "Couldn't delete this document"),
+      },
       Icon("trash", { size: 14, strokeWidth: 2 }),
     ),
   );

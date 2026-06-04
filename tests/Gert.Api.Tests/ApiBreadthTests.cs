@@ -5,6 +5,7 @@ using System.Text;
 using System.Text.Json;
 using FluentAssertions;
 using Gert.Api.Contracts;
+using Gert.Api.Json;
 using Gert.Model.Dtos;
 using Gert.Model.Projects;
 using Gert.Service.Projects;
@@ -22,7 +23,7 @@ namespace Gert.Api.Tests;
 /// </summary>
 public sealed class ApiBreadthTests : IClassFixture<GertApiFactory>
 {
-    private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
+    private static readonly JsonSerializerOptions Json = GertJsonOptions.Default;
 
     private readonly GertApiFactory _factory;
 
@@ -171,7 +172,7 @@ public sealed class ApiBreadthTests : IClassFixture<GertApiFactory>
         // B's list never includes A's filename.
         var bList = await b.GetFromJsonAsync<IReadOnlyList<DocumentResponse>>(
             "/api/projects/default/documents", Json);
-        bList!.Select(d => d.Filename).Should().NotContain("a-secret.md");
+        bList!.Select(d => d.Name).Should().NotContain("a-secret.md");
     }
 
     [Fact]
@@ -292,7 +293,7 @@ public sealed class ApiBreadthTests : IClassFixture<GertApiFactory>
         var list = await client.GetFromJsonAsync<IReadOnlyList<DocumentResponse>>(
             "/api/projects/default/documents", Json);
 
-        list!.Select(d => d.Filename).Should().Contain(exotic);
+        list!.Select(d => d.Name).Should().Contain(exotic);
     }
 
     // --- helpers ------------------------------------------------------------

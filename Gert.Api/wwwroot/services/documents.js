@@ -13,18 +13,12 @@ export const list = async () => {
 };
 
 // upload a File; insert the optimistic "processing" row, then poll to completion.
+// The created document already matches the doc contract, so it drops straight in.
 export const upload = async (file) => {
   const fd = new FormData();
   fd.append("file", file, file.name);
   const created = await http.upload(`/projects/${pid()}/documents`, fd);
-  const doc = knowledge.addDocument({
-    id: created.id,
-    name: created.name || file.name,
-    size: created.size ?? file.size,
-    chunk_count: created.chunk_count ?? 0,
-    status: created.status || "processing",
-    error: null,
-  });
+  const doc = knowledge.addDocument(created);
   poll(doc.id);
   return doc;
 };

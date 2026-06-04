@@ -13,7 +13,8 @@ public sealed record UserSummary
 
     public required string Username { get; init; }
 
-    public long SizeBytes { get; init; }
+    /// <summary>Total bytes on disk for this user's folder. Wire: <c>size</c>.</summary>
+    public long Size { get; init; }
 
     public int DocumentCount { get; init; }
 

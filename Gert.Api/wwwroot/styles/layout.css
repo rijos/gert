@@ -1,5 +1,13 @@
 /* layout.css — .app grid, collapse/wide states, responsive drawers, scrim. */
-.app{display:grid; grid-template-columns:264px 1fr 372px; height:100vh; transition:grid-template-columns .28s cubic-bezier(.2,.8,.2,1);}
+.app{display:grid; grid-template-columns:264px 1fr var(--panel-w,372px); height:100vh; transition:grid-template-columns .28s cubic-bezier(.2,.8,.2,1);}
+/* while dragging the panel edge: kill the column transition so it tracks the cursor 1:1 */
+.app.resizing{transition:none; user-select:none; cursor:col-resize;}
+
+/* drag handle on the panel's left edge (desktop only; panel is a drawer on
+   mobile). Sits just inside the edge so the panel's overflow:hidden can't clip it. */
+.resize-handle{position:absolute; left:0; top:0; bottom:0; width:6px; cursor:col-resize; z-index:5; touch-action:none;}
+.resize-handle::after{content:""; position:absolute; left:0; top:0; bottom:0; width:2px; background:transparent; transition:background .14s;}
+.resize-handle:hover::after,.app.resizing .resize-handle::after{background:var(--accent);}
 .app.nav-collapsed{grid-template-columns:0 1fr 372px;}
 .app.panel-collapsed{grid-template-columns:264px 1fr 0;}
 .app.nav-collapsed.panel-collapsed{grid-template-columns:0 1fr 0;}
@@ -24,6 +32,7 @@
     transform:translateX(101%); box-shadow:0 0 50px -8px rgba(0,0,0,.5);}
   .app.nav-open .sidebar{transform:none;}
   .app.panel-open .panel{transform:none;}
+  .resize-handle{display:none;}        /* panel is a fixed-width drawer here */
   .app.nav-open .scrim,.app.panel-open .scrim{opacity:1; pointer-events:auto;}
   .scrim{display:block;}
   .drawer-close{display:grid;}

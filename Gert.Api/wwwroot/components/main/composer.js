@@ -6,6 +6,7 @@ import * as chatSvc from "../../services/chat.js";
 import * as chat from "../../state/chat.js";
 import * as knowledge from "../../state/knowledge.js";
 import * as docsSvc from "../../services/documents.js";
+import { attempt } from "../../lib/action.js";
 
 const { div, textarea, button } = van.tags;
 
@@ -40,7 +41,7 @@ export const Composer = () => {
     style: "display:none",
     onchange: (e) => {
       const f = e.target.files?.[0];
-      if (f) docsSvc.upload(f).catch(() => {});
+      if (f) attempt(() => docsSvc.upload(f), "Upload failed");
       e.target.value = "";
     },
   });

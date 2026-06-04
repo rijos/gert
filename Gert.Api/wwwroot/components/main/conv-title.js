@@ -3,6 +3,7 @@ import van from "van";
 import { Icon } from "../../icons/icons.js";
 import * as chat from "../../state/chat.js";
 import * as svc from "../../services/conversations.js";
+import { attempt } from "../../lib/action.js";
 
 const { div, input } = van.tags;
 
@@ -13,7 +14,7 @@ export const ConvTitle = () => {
     editing.val = false;
     const next = value.trim();
     if (next && next !== chat.title.val && chat.activeId.val) {
-      svc.rename(chat.activeId.val, next).catch(() => {});
+      attempt(() => svc.rename(chat.activeId.val, next), "Couldn't rename this chat");
     } else if (next) {
       chat.setTitle(next);
     }

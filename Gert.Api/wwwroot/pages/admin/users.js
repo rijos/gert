@@ -64,7 +64,7 @@ export const AdminUsersPage = () => {
                   ...users.val.map((u) =>
                     tr(
                       td(u.username || u.key),
-                      td(String(u.doc_count ?? 0)),
+                      td(String(u.document_count ?? 0)),
                       td(u.size != null ? fmtSize(u.size) : "—"),
                       td(u.last_active || "—"),
                       td(

@@ -5,6 +5,7 @@
 import { sse } from "./http.js";
 import * as chat from "../state/chat.js";
 import * as artifacts from "../state/artifacts.js";
+import * as conversationsSvc from "./conversations.js";
 import * as ui from "../state/ui.js";
 import { activeProjectId, activeId } from "../state/chat.js";
 import { selectedId } from "../state/models.js";
@@ -100,6 +101,7 @@ export const send = async (content) => {
   const pid = activeProjectId.val;
   // New chat: mint a client id (the server create-if-missing materialises the row on
   // first message). Set it active so the rest of the thread reuses the same id.
+  const isNew = !activeId.val;
   const cid = activeId.val || crypto.randomUUID();
   if (!activeId.val) activeId.val = cid;
   const body = {
@@ -121,5 +123,8 @@ export const send = async (content) => {
   } finally {
     assistant.streaming = false;
     chat.streaming.val = false;
+    // The server materialised the conversation row on this first message; refresh
+    // the sidebar so the new thread shows up without needing a page reload.
+    if (isNew) conversationsSvc.list().catch(() => {});
   }
 };

@@ -1,3 +1,4 @@
+using Gert.Api.Contracts;
 using Gert.Model.Chat;
 using Gert.Model.Dtos;
 using Gert.Service;
@@ -50,9 +51,9 @@ public sealed class ConversationsController : ControllerBase
             created);
     }
 
-    /// <summary>Load a full thread (messages + tool calls + citations + artifacts).</summary>
+    /// <summary>Load a full thread (messages + citations + artifacts), flattened for the SPA.</summary>
     [HttpGet("{id}")]
-    public async Task<ActionResult<ConversationThread>> Get(
+    public async Task<ActionResult<ThreadResponse>> Get(
         string pid,
         string id,
         CancellationToken cancellationToken)
@@ -61,7 +62,7 @@ public sealed class ConversationsController : ControllerBase
             .GetAsync(pid, id, cancellationToken)
             .ConfigureAwait(false);
 
-        return thread is null ? NotFound() : Ok(thread);
+        return thread is null ? NotFound() : Ok(ThreadResponse.From(thread));
     }
 
     /// <summary>Apply a partial update (rename / switch model / toggle tools / archive).</summary>

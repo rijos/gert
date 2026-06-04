@@ -28,7 +28,9 @@ builder.Host.UseSerilog((context, loggerConfiguration) => loggerConfiguration
     .WriteTo.Console(new GertNdjsonFormatter()));
 
 // --- Service layer (host-agnostic) -----------------------------------------
-builder.Services.AddControllers();
+builder.Services
+    .AddControllers()
+    .AddJsonOptions(o => Gert.Api.Json.GertJsonOptions.Configure(o.JsonSerializerOptions));
 
 // Ingestion worker (U9b): a Channel-backed queue drained by a BackgroundService so
 // uploads respond 202 and extract→chunk→embed→write runs off-thread. Registered as a

@@ -16,12 +16,13 @@ public sealed record DocumentResponse
 {
     public required string Id { get; init; }
 
-    /// <summary>The decoded original upload filename (base64 on disk, decoded here).</summary>
-    public required string Filename { get; init; }
+    /// <summary>The decoded original upload filename (base64 on disk, decoded here). Wire: <c>name</c>.</summary>
+    public required string Name { get; init; }
 
     public required string Mime { get; init; }
 
-    public required long SizeBytes { get; init; }
+    /// <summary>Byte size. Wire: <c>size</c>.</summary>
+    public required long Size { get; init; }
 
     public required DocumentStatus Status { get; init; }
 
@@ -39,9 +40,9 @@ public sealed record DocumentResponse
         return new DocumentResponse
         {
             Id = document.Id,
-            Filename = DecodeFilename(document.Filename),
+            Name = DecodeFilename(document.Filename),
             Mime = document.Mime,
-            SizeBytes = document.SizeBytes,
+            Size = document.SizeBytes,
             Status = document.Status,
             ChunkCount = document.ChunkCount,
             Error = document.Error,

@@ -23,7 +23,7 @@ export const mainHost = div({ class: "main" });
 
 export const AppShell = () =>
   div(
-    { class: appClass },
+    { class: appClass, style: () => `--panel-w:${ui.panelWidth.val}px` },
     div({ class: "scrim", onclick: ui.closeDrawers }),
     Sidebar(),
     mainHost,

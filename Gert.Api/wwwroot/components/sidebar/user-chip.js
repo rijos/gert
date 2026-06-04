@@ -2,7 +2,7 @@
 import van from "van";
 import { Icon } from "../../icons/icons.js";
 import * as auth from "../../state/auth.js";
-import { navigate } from "../../lib/router.js";
+import { openSettings } from "../settings/settings-modal.js";
 
 const { div, button } = van.tags;
 
@@ -22,7 +22,7 @@ export const UserChip = () =>
       ),
     ),
     button(
-      { class: "ghost", title: "Settings", onclick: () => navigate("/settings") },
+      { class: "ghost", title: "Settings", onclick: openSettings },
       Icon("gear", { strokeWidth: 2 }),
     ),
   );

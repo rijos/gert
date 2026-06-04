@@ -4,7 +4,6 @@ import van from "van";
 import { mountRouter } from "./lib/router.js";
 import { AppShell, mainHost } from "./components/app-shell.js";
 import { ChatPage } from "./pages/chat.js";
-import { SettingsPage } from "./pages/settings.js";
 import { AdminUsersPage } from "./pages/admin/users.js";
 import * as ui from "./state/ui.js";
 import * as auth from "./services/auth.js";
@@ -14,10 +13,13 @@ import * as conversationsSvc from "./services/conversations.js";
 
 const boot = async () => {
   ui.restoreTheme(); // apply saved/OS theme before first paint
+  ui.restorePanelWidth(); // apply saved canvas-panel width
 
   await auth.ensureSession(); // PKCE / silent refresh (may navigate away)
 
-  // mount the shell once
+  // mount the shell once — drop the SPA-fallback placeholder so its "Gert"
+  // text doesn't linger above the mounted UI.
+  document.getElementById("app")?.remove();
   van.add(document.body, AppShell());
 
   // wire the router: it renders the matched page into the main region.
@@ -29,7 +31,6 @@ const boot = async () => {
     routes: (route) => {
       route("/", () => ChatPage({}));
       route("/c/:id", (p) => ChatPage(p));
-      route("/settings", () => SettingsPage());
       route("/admin/users", () => AdminUsersPage());
     },
   });

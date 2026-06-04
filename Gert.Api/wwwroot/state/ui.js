@@ -4,6 +4,26 @@
 import van from "van";
 
 const THEME_KEY = "gert.theme";
+const PANEL_W_KEY = "gert.panelw";
+
+// canvas panel width (px) — drag-resizable; drives --panel-w on .app.
+export const PANEL_MIN = 300;
+export const DEFAULT_PANEL_W = 372;
+export const panelWidth = van.state(DEFAULT_PANEL_W);
+
+const clampPanelWidth = (px) =>
+  Math.max(PANEL_MIN, Math.min(px, Math.round(window.innerWidth * 0.6)));
+
+export const restorePanelWidth = () => {
+  const v = parseInt(localStorage.getItem(PANEL_W_KEY), 10);
+  if (Number.isFinite(v)) panelWidth.val = clampPanelWidth(v);
+};
+
+export const setPanelWidth = (px) => {
+  const w = clampPanelWidth(px);
+  panelWidth.val = w;
+  localStorage.setItem(PANEL_W_KEY, String(w));
+};
 
 // layout flags (mirror the mockup's app classes)
 export const navCollapsed = van.state(false);

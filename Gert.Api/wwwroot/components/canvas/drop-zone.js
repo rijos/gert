@@ -3,8 +3,12 @@
 import van from "van";
 import { Icon } from "../../icons/icons.js";
 import * as svc from "../../services/documents.js";
+import { attempt } from "../../lib/action.js";
 
 const { div } = van.tags;
+
+const uploadFiles = (files) =>
+  [...(files || [])].forEach((f) => attempt(() => svc.upload(f), "Upload failed"));
 
 export const DropZone = () => {
   const over = van.state(false);
@@ -13,7 +17,7 @@ export const DropZone = () => {
     multiple: true,
     style: "display:none",
     onchange: (e) => {
-      [...(e.target.files || [])].forEach((f) => svc.upload(f).catch(() => {}));
+      uploadFiles(e.target.files);
       e.target.value = "";
     },
   });
@@ -30,9 +34,7 @@ export const DropZone = () => {
       ondrop: (e) => {
         e.preventDefault();
         over.val = false;
-        [...(e.dataTransfer?.files || [])].forEach((f) =>
-          svc.upload(f).catch(() => {}),
-        );
+        uploadFiles(e.dataTransfer?.files);
       },
     },
     Icon("upload", { size: 20, strokeWidth: 1.9 }),

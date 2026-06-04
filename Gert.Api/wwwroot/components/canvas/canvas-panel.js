@@ -10,9 +10,26 @@ import * as ui from "../../state/ui.js";
 
 const { aside, div } = van.tags;
 
+// Drag the panel's left edge to resize. The panel hugs the viewport's right
+// edge, so its width is (viewport width − cursor x). Width persists via ui.
+const startResize = (e) => {
+  e.preventDefault();
+  const app = document.querySelector(".app");
+  app?.classList.add("resizing");
+  const onMove = (ev) => ui.setPanelWidth(window.innerWidth - ev.clientX);
+  const onUp = () => {
+    app?.classList.remove("resizing");
+    window.removeEventListener("pointermove", onMove);
+    window.removeEventListener("pointerup", onUp);
+  };
+  window.addEventListener("pointermove", onMove);
+  window.addEventListener("pointerup", onUp);
+};
+
 export const CanvasPanel = () =>
   aside(
     { class: "panel" },
+    div({ class: "resize-handle", title: "Drag to resize", onpointerdown: startResize }),
     CanvasBar(),
     div(
       { class: "canvas-stage" },

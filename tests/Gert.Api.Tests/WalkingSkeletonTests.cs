@@ -4,6 +4,8 @@ using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
+using Gert.Api.Contracts;
+using Gert.Api.Json;
 using Gert.Database.Sqlite;
 using Gert.Model;
 using Gert.Model.Chat;
@@ -21,7 +23,7 @@ namespace Gert.Api.Tests;
 /// </summary>
 public sealed class WalkingSkeletonTests : IClassFixture<GertApiFactory>
 {
-    private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
+    private static readonly JsonSerializerOptions Json = GertJsonOptions.Default;
 
     private readonly GertApiFactory _factory;
 
@@ -139,13 +141,13 @@ public sealed class WalkingSkeletonTests : IClassFixture<GertApiFactory>
         assembled.Should().Be("Short version: use sqlite-vec for a homelab at this scale.");
 
         // The assistant message persisted — a follow-up GET of the thread reproduces it.
-        var thread = await client.GetFromJsonAsync<ConversationThread>(
+        var thread = await client.GetFromJsonAsync<ThreadResponse>(
             $"/api/projects/default/conversations/{conversation.Id}", Json);
 
         thread.Should().NotBeNull();
         var assistant = thread!.Messages.SingleOrDefault(m => m.Role == MessageRole.Assistant);
         assistant.Should().NotBeNull();
-        assistant!.Content.Should().Be("Short version: use sqlite-vec for a homelab at this scale.");
+        assistant!.Text.Should().Be("Short version: use sqlite-vec for a homelab at this scale.");
     }
 
     [Fact]

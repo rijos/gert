@@ -372,7 +372,7 @@ public sealed class FileSystemUserStore : IUserStore
         {
             Key = Path.GetFileName(userDir.TrimEnd(Path.DirectorySeparatorChar)),
             Username = meta.Username,
-            SizeBytes = sizeBytes,
+            Size = sizeBytes,
             DocumentCount = documentCount,
             LastActive = lastActive,
         };

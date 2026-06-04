@@ -23,6 +23,7 @@ def _open(page: Page, base_url: str) -> AppPage:
 
 def test_upload_shows_status_pill_and_reaches_ready(page: Page, base_url: str) -> None:
     app = _open(page, base_url)
+    app.knowledge.open()  # reveal the knowledge view (doc list lives there)
     # Upload via the hidden composer file input (the SPA routes uploads through it).
     payload: FilePayload = {
         "name": "notes.txt",
@@ -42,6 +43,7 @@ def test_upload_shows_status_pill_and_reaches_ready(page: Page, base_url: str) -
 
 def test_use_in_chat_toggle(page: Page, base_url: str) -> None:
     app = _open(page, base_url)
+    app.knowledge.open()  # the use-in-chat switch lives in the knowledge view
     switch = app.knowledge.use_in_chat_switch
     expect(switch).to_be_visible()
     switch.click()

@@ -129,6 +129,11 @@ class Knowledge:
         self.page = page
         self.root = page.locator(".kb-view")
 
+    def open(self) -> None:
+        """Show the knowledge view (click the canvas bar's KB button)."""
+        self.page.locator('.kbtn[title="Knowledge base"]').click()
+        self.root.wait_for(state="visible")
+
     @property
     def docs(self) -> Locator:
         return self.root.locator(".doc")
@@ -139,8 +144,9 @@ class Knowledge:
 
     @property
     def file_input(self) -> Locator:
-        # The hidden file input lives in the composer; uploads route through it.
-        return self.page.locator("input[type=file]")
+        # Two hidden file inputs exist (composer + knowledge drop-zone); uploads
+        # route through the composer's, so scope to it to stay unambiguous.
+        return self.page.locator(".composer input[type=file]")
 
     def doc(self, name: str) -> Locator:
         return self.root.locator(".doc", has_text=name)

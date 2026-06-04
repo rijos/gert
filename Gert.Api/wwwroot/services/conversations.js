@@ -13,13 +13,17 @@ export const list = async () => {
 };
 
 export const open = async (id) => {
+  // GET thread returns the flattened contract: { id, title, tools, messages:[{ id,
+  // role, text, citations }], artifacts } — consumed directly, no remapping.
   const conv = await http.get(`/projects/${pid()}/conversations/${id}`);
   chat.setConversation(conv);
   artifacts.setArtifacts(conv.artifacts || []);
-  if (Array.isArray(conv.tools)) {
-    chat.tools.rag = conv.tools.includes("rag");
-    chat.tools.search = conv.tools.includes("search");
-    chat.tools.sandbox = conv.tools.includes("sandbox");
+  // `tools` is the ToolToggles map { rag, search, sandbox }.
+  const t = conv.tools;
+  if (t && typeof t === "object") {
+    chat.tools.rag = !!t.rag;
+    chat.tools.search = !!t.search;
+    chat.tools.sandbox = !!t.sandbox;
   }
   return conv;
 };

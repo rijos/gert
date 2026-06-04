@@ -6,6 +6,7 @@ import { Menu } from "../ui/menu.js";
 import { Modal } from "../ui/modal.js";
 import * as chat from "../../state/chat.js";
 import * as svc from "../../services/projects.js";
+import { attempt } from "../../lib/action.js";
 
 const { div, button, span, input } = van.tags;
 
@@ -38,7 +39,7 @@ export const ProjectPicker = () => {
       confirmLabel: "Create",
       onConfirm: () => {
         const name = nameInput.value.trim();
-        if (name) svc.create({ name }).catch(() => {});
+        if (name) attempt(() => svc.create({ name }), "Couldn't create the project");
       },
     });
   };
@@ -57,7 +58,7 @@ export const ProjectPicker = () => {
                   "p-item" + (chat.activeProjectId.val === p.id ? " sel" : ""),
                 onclick: () => {
                   open.val = false;
-                  svc.select(p.id).catch(() => {});
+                  attempt(() => svc.select(p.id), "Couldn't switch project");
                 },
               },
               p.name,
