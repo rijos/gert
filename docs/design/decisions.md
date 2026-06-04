@@ -18,13 +18,13 @@ Split (recommended) or merged `gert.db`. See [Per-user storage → Why two datab
 
 `sha256(iss + sub)` (recommended) vs. raw `sub` vs. email. See [Per-user storage → Resolving paths](storage-and-data.md#resolving-paths).
 
-- **Decision:** **`sha256(iss + "\n" + sub)` lowercase hex**, with a fail-closed provisioning gate and a `meta.json` identity binding.
+- **Decision:** **`sha256(iss + "\n" + sub)` lowercase hex**, with a fail-closed provisioning gate; `meta.json` is a descriptive sidecar, not a gate.
   - **Anchor on `sub`, not email or username.** `sub` is Pocket ID's stable, opaque UUID — *never renamed, never recycled*. Email is **mutable** (a rename orphans the folder) and **recycled** (a reassigned address would inherit the prior owner's data — the exact reuse attack we want to avoid); username is renamed. `sub` is also no less trusted: every claim in a signature-validated JWT is equally trusted, `sub` is just the most stable.
   - **Namespace by issuer.** `sub` is only unique *within* an issuer, so the key hashes `iss + "\n" + sub`. With one IdP today this is moot; it makes a second IdP collision-proof for free.
   - **Hashing** gives a fixed-length, path-safe, traversal-proof folder name for any value the IdP emits; the opaque name is covered by `meta.json` and `GET /api/admin/users` for key→user mapping.
-  - **Collision is not the threat** — `sha256` makes cross-user collision infeasible regardless of input; the real risk is *identifier reuse*, addressed by anchoring on `sub` (above) plus the binding below.
+  - **Collision is not the threat** — `sha256` makes cross-user collision infeasible regardless of input; the real risk is *identifier reuse*, addressed by anchoring on `sub` (above).
   - **Validate before touching disk** ([principle #6](principles.md)): provisioning asserts `iss` == configured authority, `aud` matches, and `sub` is present + within a bounded charset/length **before** any path-derive or `mkdir`. No well-formed identity → no folder.
-  - **Identity binding** ([security F12](security.md#3-findings--remediations)): `meta.json` records `(iss, sub)`; on every request to an existing folder the API asserts it matches the token, so a recreated/reassigned identity can never silently inherit a folder — it is refused.
+  - **Trust the validated JWT past the gate** ([security F12](security.md#3-findings--remediations)): the folder key derives from the token and nothing else, so no per-request disk-side re-check exists. `meta.json` records `(iss, sub, username, schema_version)` purely descriptively — key→user mapping for `GET /api/admin/users` and a version anchor for migrations — and is rewritten from the token when missing or unreadable (e.g. truncated by an interrupted write).
 
 ## 4. Token lifetime / revocation
 

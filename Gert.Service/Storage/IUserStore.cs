@@ -17,12 +17,32 @@ namespace Gert.Service.Storage;
 /// validated UUID or the literal <c>default</c>, so an operation can never select
 /// another user's or project's data. The host-agnostic service layer depends only
 /// on this port; the local-persistence adapter
-/// (<c>Gert.Database.Sqlite.FileSystemUserStore</c>) implements it over the
+/// (<c>Gert.Database.FileSystemUserStore</c>) implements it over the
 /// filesystem and a future object-storage backend is a drop-in.
 /// </para>
 /// </summary>
 public interface IUserStore
 {
+    // ---- provisioning (user root + project skeleton on disk) ---------------
+
+    /// <summary>
+    /// Ensure the user root's on-disk skeleton: the directory, the descriptive
+    /// <c>meta.json</c> sidecar (written when missing or unreadable — a healthy
+    /// file is left alone so <c>created_at</c> survives), and a default
+    /// <c>settings.json</c> when absent. The caller (the database provider's
+    /// fail-closed provisioning gate) has already validated <c>(iss, sub)</c>;
+    /// this method only does file work.
+    /// </summary>
+    Task EnsureUserFilesAsync(string iss, string sub, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Ensure a project's on-disk skeleton: <c>projects/{pid}/</c> with its
+    /// <c>files/</c> and <c>memory/</c> directories, and a default
+    /// <c>meta.json</c> when absent. Database files are NOT touched — they
+    /// belong to <see cref="Database.IDatabaseProvider"/>.
+    /// </summary>
+    Task EnsureProjectFilesAsync(string iss, string sub, string pid, CancellationToken cancellationToken = default);
+
     // ---- user settings (settings.json) ------------------------------------
 
     /// <summary>

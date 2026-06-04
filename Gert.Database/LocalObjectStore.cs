@@ -1,6 +1,6 @@
 using Gert.Service.Storage;
 
-namespace Gert.Database.Sqlite;
+namespace Gert.Database;
 
 /// <summary>
 /// Filesystem <see cref="IObjectStore"/> — the local-persistence adapter that

@@ -36,16 +36,8 @@
   </head>
   <body>
     <div id="harness-root"></div>
-    <script type="module">
-      // __mount(node) — append a freshly-built component node into a clean root and
-      // return it. Clears any previous mount so tests don't bleed into each other.
-      const root = document.getElementById("harness-root");
-      window.__mount = (node) => {
-        root.replaceChildren(node);
-        return node;
-      };
-      // Signal readiness for tests that wait on it.
-      window.__harnessReady = true;
-    </script>
+    <!-- External module (NOT inline): the host CSP is `script-src 'self'` + the
+         import-map hash, so an inline bootstrap is blocked. See harness.js. -->
+    <script type="module" src="/tests/harness.js"></script>
   </body>
 </html>

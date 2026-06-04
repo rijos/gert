@@ -87,7 +87,7 @@ public sealed class MemoryService : IMemoryService
 
         // Provision the user + project FIRST — PutAsync below creates the files/ dir,
         // which would otherwise materialise the user folder without its meta.json
-        // identity binding and trip the fail-closed gate on the next open.
+        // sidecar (admin scans skip a folder with no readable meta).
         await _databases.EnsureProjectAsync(_user.Iss, _user.Sub, pid, cancellationToken).ConfigureAwait(false);
 
         var id = Guid.NewGuid().ToString("D");

@@ -8,6 +8,7 @@ using Gert.Service.Admin;
 using Gert.Service.Projects;
 using Gert.Service.Storage;
 using Gert.Testing;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Xunit;
 
@@ -39,10 +40,9 @@ public class LifecycleServicesTests
 
     private static Harness Build(TempDataRoot root, string sub = Sub)
     {
-        var options = Options.Create(ProviderFixture.OptionsFor(root));
         var provider = ProviderFixture.ProviderFor(root);
         var paths = ProviderFixture.PathsFor(root);
-        var store = new FileSystemUserStore(options);
+        var store = ProviderFixture.StoreFor(root);
         var objects = new LocalObjectStore(paths);
         var validation = new PassThroughValidationProvider();
         IUserContext user = new FixedUserContext { Sub = sub };

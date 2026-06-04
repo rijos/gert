@@ -1,8 +1,7 @@
-using System.Globalization;
-using System.Text.Json;
 using System.Text.RegularExpressions;
-using Gert.Model.Projects;
+using Gert.Database;
 using Gert.Service.Database;
+using Gert.Service.Storage;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Options;
 
@@ -16,10 +15,11 @@ namespace Gert.Database.Sqlite;
 ///
 /// <para>
 /// Provisioning is <b>fail-closed</b> (security F12 / decisions §3): the identity
-/// is validated <i>before any path is derived or directory created</i>, and an
-/// existing folder's <c>meta.json</c> <c>(iss, sub)</c> binding is re-asserted
-/// against the token on every touch. A bad/unexpected identity never yields a
-/// folder; a binding mismatch refuses the request.
+/// is validated <i>before any path is derived or directory created</i>, so a
+/// bad/unexpected identity never yields a folder. Past that gate the validated JWT
+/// is trusted — the folder key derives from the token and nothing else.
+/// <c>meta.json</c> is a descriptive sidecar (username for the admin scan,
+/// <c>schema_version</c> for migrations) rewritten when missing or unreadable.
 /// </para>
 ///
 /// <para>
@@ -31,21 +31,26 @@ namespace Gert.Database.Sqlite;
 /// </summary>
 public sealed partial class SqliteDatabaseProvider : IDatabaseProvider
 {
-    private const int SchemaVersion = 1;
-
-    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
-    {
-        WriteIndented = true,
-    };
-
     private readonly StorageOptions _options;
+    private readonly SqliteVecOptions _vecOptions;
     private readonly UserPaths _paths;
+    private readonly IUserStore _files;
 
-    /// <summary>Create the provider with bound <see cref="StorageOptions"/>.</summary>
-    public SqliteDatabaseProvider(IOptions<StorageOptions> options)
+    /// <summary>
+    /// Create the provider with bound <see cref="StorageOptions"/> /
+    /// <see cref="SqliteVecOptions"/> and the file layer (<see cref="IUserStore"/>)
+    /// that owns all config-file I/O (<c>meta.json</c>, <c>settings.json</c>).
+    /// </summary>
+    public SqliteDatabaseProvider(
+        IOptions<StorageOptions> options,
+        IOptions<SqliteVecOptions> vecOptions,
+        IUserStore files)
     {
         ArgumentNullException.ThrowIfNull(options);
+        ArgumentNullException.ThrowIfNull(vecOptions);
+        _files = files ?? throw new ArgumentNullException(nameof(files));
         _options = options.Value;
+        _vecOptions = vecOptions.Value;
 
         if (string.IsNullOrWhiteSpace(_options.DataRoot))
         {
@@ -76,7 +81,7 @@ public sealed partial class SqliteDatabaseProvider : IDatabaseProvider
         await EnsureProjectAsync(iss, sub, UserPaths.DefaultProjectId, cancellationToken).ConfigureAwait(false);
     }
 
-    // Ensure the user root dir + identity-binding meta.json + settings.json exist.
+    // Ensure the user root dir + descriptive meta.json + settings.json exist.
     // Does NOT create any project, so EnsureProjectAsync can call it without recursing
     // into EnsureProvisionedAsync. Idempotent + fail-closed.
     private async Task EnsureUserRootAsync(
@@ -88,37 +93,10 @@ public sealed partial class SqliteDatabaseProvider : IDatabaseProvider
         // No path is derived and no directory created until these pass.
         ValidateIdentity(iss, sub);
 
-        // Only now is it safe to derive a path from the (accepted) identity.
-        var root = _paths.Root(iss, sub);
-        var metaFile = _paths.MetaFile(iss, sub);
-
-        if (Directory.Exists(root))
-        {
-            // ---- step 1a: existing folder -> verify the identity binding ----
-            await VerifyBindingAsync(metaFile, iss, sub, cancellationToken).ConfigureAwait(false);
-        }
-        else
-        {
-            // ---- step 1b: fresh folder -> create it and write the binding ----
-            Directory.CreateDirectory(root);
-
-            var meta = new UserMeta
-            {
-                Iss = iss,
-                Sub = sub,
-                Username = sub, // username is refreshed from the token elsewhere; sub is the safe default.
-                CreatedAt = DateTimeOffset.UtcNow.ToString("o", CultureInfo.InvariantCulture),
-                SchemaVersion = SchemaVersion,
-            };
-            await WriteJsonAsync(metaFile, meta, cancellationToken).ConfigureAwait(false);
-        }
-
-        // settings.json (defaults) — written only when absent so user edits survive.
-        var settingsFile = _paths.SettingsFile(iss, sub);
-        if (!File.Exists(settingsFile))
-        {
-            await WriteJsonAsync(settingsFile, new UserSettings(), cancellationToken).ConfigureAwait(false);
-        }
+        // All config-file I/O (root dir, the meta.json sidecar — healed when
+        // unreadable — and default settings.json) belongs to the file layer; this
+        // provider only provisions databases.
+        await _files.EnsureUserFilesAsync(iss, sub, cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc />
@@ -129,31 +107,16 @@ public sealed partial class SqliteDatabaseProvider : IDatabaseProvider
         CancellationToken cancellationToken = default)
     {
         // A project always belongs to a provisioned user: ensure the user root +
-        // identity-binding meta.json exist FIRST (idempotent; validates the identity
-        // and writes/verifies the binding). This guarantees a direct EnsureProjectAsync
-        // caller (e.g. ProjectService.Create) never materialises the user dir without
-        // its binding. EnsureUserRootAsync creates no project → no recursion.
+        // meta.json sidecar exist FIRST (idempotent; validates the identity before
+        // touching disk). This guarantees a direct EnsureProjectAsync caller (e.g.
+        // ProjectService.Create) never materialises the user dir without its
+        // metadata. EnsureUserRootAsync creates no project → no recursion.
         await EnsureUserRootAsync(iss, sub, cancellationToken).ConfigureAwait(false);
         UserPaths.ValidatePid(pid);
 
-        var projectRoot = _paths.ProjectRoot(iss, sub, pid);
-        Directory.CreateDirectory(projectRoot);
-        Directory.CreateDirectory(_paths.FilesDir(iss, sub, pid));
-        Directory.CreateDirectory(_paths.MemoryDir(iss, sub, pid));
-
-        var projectMetaFile = _paths.ProjectMeta(iss, sub, pid);
-        if (!File.Exists(projectMetaFile))
-        {
-            var now = DateTimeOffset.UtcNow;
-            var projectMeta = new ProjectMeta
-            {
-                Id = pid,
-                Name = pid == UserPaths.DefaultProjectId ? "Default" : pid,
-                CreatedAt = now,
-                UpdatedAt = now,
-            };
-            await WriteJsonAsync(projectMetaFile, projectMeta, cancellationToken).ConfigureAwait(false);
-        }
+        // The on-disk project skeleton (dirs + meta.json) is the file layer's job;
+        // this provider only provisions/migrates the databases below.
+        await _files.EnsureProjectFilesAsync(iss, sub, pid, cancellationToken).ConfigureAwait(false);
 
         // chat.db: open + apply chat migrations by PRAGMA user_version.
         await using (var chat = await OpenConnectionAsync(_paths.ChatDb(iss, sub, pid), cancellationToken)
@@ -176,7 +139,7 @@ public sealed partial class SqliteDatabaseProvider : IDatabaseProvider
         string pid,
         CancellationToken cancellationToken = default)
     {
-        // Ensure the user (gate + binding + settings + default project) then the
+        // Ensure the user (gate + sidecars + default project) then the
         // requested project, per the interface contract ("provisioning is ensured
         // first"). Idempotent, so the common already-provisioned path is cheap.
         await EnsureProvisionedAsync(iss, sub, cancellationToken).ConfigureAwait(false);
@@ -226,39 +189,6 @@ public sealed partial class SqliteDatabaseProvider : IDatabaseProvider
         {
             throw new UnauthorizedIdentityException(
                 "Subject is missing or outside the permitted charset/length (^[A-Za-z0-9._:\\-]{1,128}$).");
-        }
-    }
-
-    /// <summary>
-    /// Identity binding check (security F12): the existing folder's
-    /// <c>meta.json</c> <c>(iss, sub)</c> must equal the token's, else refuse.
-    /// </summary>
-    private static async Task VerifyBindingAsync(
-        string metaFile,
-        string iss,
-        string sub,
-        CancellationToken cancellationToken)
-    {
-        if (!File.Exists(metaFile))
-        {
-            // A folder without its binding is corrupt/unsafe — never serve it.
-            throw new IdentityBindingException(
-                $"User folder is missing its identity binding ('{metaFile}').");
-        }
-
-        UserMeta? meta;
-        await using (var stream = File.OpenRead(metaFile))
-        {
-            meta = await JsonSerializer.DeserializeAsync<UserMeta>(stream, JsonOptions, cancellationToken)
-                .ConfigureAwait(false);
-        }
-
-        if (meta is null ||
-            !string.Equals(meta.Iss, iss, StringComparison.Ordinal) ||
-            !string.Equals(meta.Sub, sub, StringComparison.Ordinal))
-        {
-            throw new IdentityBindingException(
-                "Identity binding mismatch: the folder's recorded (iss, sub) does not match the token.");
         }
     }
 
@@ -324,24 +254,12 @@ public sealed partial class SqliteDatabaseProvider : IDatabaseProvider
     }
 
     /// <summary>
-    /// The configured <see cref="StorageOptions.VecExtensionPath"/>, or
+    /// The configured <see cref="SqliteVecOptions.VecExtensionPath"/>, or
     /// <c>vec0.so</c> beside the running assembly (the csproj copies the vendored
     /// extension into every consumer's output).
     /// </summary>
     private string ResolveVecExtensionPath() =>
-        string.IsNullOrWhiteSpace(_options.VecExtensionPath)
+        string.IsNullOrWhiteSpace(_vecOptions.VecExtensionPath)
             ? Path.Combine(AppContext.BaseDirectory, "vec0.so")
-            : _options.VecExtensionPath;
-
-    private static async Task WriteJsonAsync<T>(string path, T value, CancellationToken cancellationToken)
-    {
-        var directory = Path.GetDirectoryName(path);
-        if (!string.IsNullOrEmpty(directory))
-        {
-            Directory.CreateDirectory(directory);
-        }
-
-        await using var stream = File.Create(path);
-        await JsonSerializer.SerializeAsync(stream, value, JsonOptions, cancellationToken).ConfigureAwait(false);
-    }
+            : _vecOptions.VecExtensionPath;
 }

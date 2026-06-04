@@ -6,7 +6,7 @@ using System.Text.Json;
 using FluentAssertions;
 using Gert.Api.Contracts;
 using Gert.Api.Json;
-using Gert.Database.Sqlite;
+using Gert.Database;
 using Gert.Model;
 using Gert.Model.Chat;
 using Gert.Model.Dtos;

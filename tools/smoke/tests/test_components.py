@@ -13,7 +13,12 @@ before asserting.
 
 from __future__ import annotations
 
+import pytest
 from playwright.sync_api import Page, expect
+
+# Deterministic harness-mount tests (no LLM/backend round-trip) — part of the CI
+# gate via `run.py --pytest -m component`.
+pytestmark = pytest.mark.component
 
 
 def test_convo_item_active(page: Page, base_url: str) -> None:

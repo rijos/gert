@@ -1,4 +1,4 @@
-namespace Gert.Database.Sqlite;
+namespace Gert.Database;
 
 /// <summary>
 /// Thrown by the fail-closed provisioning gate when an identity is rejected

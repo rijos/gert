@@ -2,7 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using Microsoft.Extensions.Options;
 
-namespace Gert.Database.Sqlite;
+namespace Gert.Database;
 
 /// <summary>
 /// Resolves the per-<c>(iss, sub)</c> user folder and its per-<c>pid</c> project
@@ -41,7 +41,7 @@ public sealed class UserPaths(IOptions<StorageOptions> options)
     /// <summary>The user folder root, <c>{DataRoot}/users/{key}</c>.</summary>
     public string Root(string iss, string sub) => Path.Combine(UsersDir, Key(iss, sub));
 
-    /// <summary>The user identity binding file <c>meta.json</c>.</summary>
+    /// <summary>The user metadata sidecar <c>meta.json</c>.</summary>
     public string MetaFile(string iss, string sub) => Path.Combine(Root(iss, sub), "meta.json");
 
     /// <summary>The user preferences file <c>settings.json</c>.</summary>

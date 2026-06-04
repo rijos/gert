@@ -8,6 +8,13 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <!-- Nullable diagnostics are errors even if TreatWarningsAsErrors is ever relaxed (#4, full coverage). -->
     <WarningsAsErrors>$(WarningsAsErrors);nullable</WarningsAsErrors>
+    <!-- Some SDK installs ship the shared-framework targeting packs without the
+         package-prune data, which otherwise hard-fails the build with NETSDK1226
+         (e.g. Microsoft.AspNetCore.App on .NETCoreApp 10.0). This only suppresses
+         that error when the data is absent and skips the (optional) restore-graph
+         pruning; where the data IS present (CI's setup-dotnet), pruning runs
+         normally, so this is a safe no-op there. -->
+    <AllowMissingPrunePackageData>true</AllowMissingPrunePackageData>
   </PropertyGroup>
 
   <!-- Centralized library package versions (U4a). Orchestrator pins valid net10.0 versions. -->

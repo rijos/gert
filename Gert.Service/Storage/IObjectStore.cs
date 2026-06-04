@@ -10,7 +10,7 @@ namespace Gert.Service.Storage;
 /// paths) so a key can never reach another project's bytes.
 ///
 /// <para>
-/// The local-persistence adapter (<c>Gert.Database.Sqlite.LocalObjectStore</c>)
+/// The local-persistence adapter (<c>Gert.Database.LocalObjectStore</c>)
 /// writes under the filesystem. A future object-storage backend is a drop-in:
 /// </para>
 /// <code>// S3: new IObjectStore impl, one DI registration</code>

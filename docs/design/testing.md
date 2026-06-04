@@ -273,8 +273,8 @@ temp-file DB created per test by `TempDataRoot`.
 JWT claims (`iss`, `sub`, `groups`, `gert_tools`) → `IUserContext`; `sha256(iss + sub)` key
 derivation and the **anti-reuse** guarantees ([decisions §3](decisions.md#3-folder-key),
 [security F12](security.md#3-findings--remediations)): the provisioning gate rejects a malformed/
-unexpected-issuer identity **before** any folder is created, and a `meta.json` `(iss, sub)` binding
-that mismatches the token is **refused** (a recreated/reassigned identity can't inherit a folder).
+unexpected-issuer identity **before** any folder is created, and a missing/truncated `meta.json`
+sidecar is **healed** from the token on the next touch (never a 500, never a gate).
 Plus the admin policy. (No denylist — revocation is stateless via token expiry, [decisions §4](decisions.md#4-token-lifetime--revocation).)
 
 ### Validation — the input-security boundary

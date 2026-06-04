@@ -95,15 +95,16 @@ public sealed class UserContext(IHttpContextAccessor http, IOptions<ToolOptions>
 The validated **`(iss, sub)`** pair is the only thing that ever decides which folder is touched — and
 only after the fail-closed provisioning gate accepts it.
 
-> **Identity is validated before any disk access, and bound to the folder.** `EnsureProvisioned(iss,
+> **Identity is validated before any disk access.** `EnsureProvisioned(iss,
 > sub)` ([storage-and-data](storage-and-data.md#lazy-provisioning--migrations)) asserts `iss` ==
 > the configured authority, `aud` == `gert-api`, and a well-formed `sub` **before** deriving a path
 > or creating a directory — no folder is ever created for an unvalidated token. The folder key is
 > `sha256(iss + sub)`, anchored on `sub` because it is the IdP's **stable, never-recycled** UUID —
 > email is mutable and *recycled* (a reassigned address would inherit the prior owner's data) and so
-> is rejected as the anchor ([decisions §3](decisions.md#3-folder-key)). Each folder's `meta.json`
-> records `(iss, sub)`; the API re-checks it on every request, so a recreated/reassigned identity can
-> never silently inherit an existing folder ([security F12](security.md#3-findings--remediations)).
+> is rejected as the anchor ([decisions §3](decisions.md#3-folder-key)). Past that gate the
+> validated JWT is trusted: the folder key derives from the token and nothing else; each folder's
+> `meta.json` is a descriptive sidecar (admin key→user mapping, migration version anchor), never a
+> per-request check ([security F12](security.md#3-findings--remediations)).
 
 ## Authorization matrix
 

@@ -47,7 +47,7 @@ Four boundaries matter:
 |-------|--------|---------|-------|
 | A user's data | IDOR — read/write another user | Key derived **only** from token `sub`; isolation is filesystem-structural | [principles #2/#3](principles.md), [auth](auth.md#authorization-matrix) |
 | A user's data | Path traversal via `pid` | `pid` validated to UUID/`default`, joined only under the token folder | [configuration §2.5](configuration.md#25-path-resolution--why-a-request-supplied-project-id-is-still-idor-safe) |
-| A user's data | **Identifier reuse** — a recreated/reassigned identity inherits a folder | Anchor on stable `sub` (not email); key = `sha256(iss+sub)`; validate-before-disk; `meta.json` `(iss,sub)` binding re-checked per request | [§3 / F12](#3-findings--remediations), [decisions §3](decisions.md#3-folder-key) |
+| A user's data | **Identifier reuse** — a recreated/reassigned identity inherits a folder | Anchor on stable `sub` (not email); key = `sha256(iss+sub)`; validate-before-disk | [§3 / F12](#3-findings--remediations), [decisions §3](decisions.md#3-folder-key) |
 | **All users' data** | **Path traversal via admin `{key}`** | `{key}` must match `^[0-9a-f]{64}$`; resolved path asserted under `/data/users` before `rm -rf` | [§3 / F6](#3-findings--remediations), [rest-api](rest-api.md#admin-requires-admin-policy) |
 | Bearer token | Theft via XSS | CSP + sanitized rendering + sandboxed artifacts; token kept out of long-lived storage where possible | [§3 / F1-F4](#3-findings--remediations) |
 | Tool capability | Privilege escalation via UI toggle | `gert_tools` JWT entitlement is the hard ceiling; intersect before advertising | [auth](auth.md#enforcement--the-claim-is-the-ceiling) |
@@ -173,13 +173,17 @@ The user folder is the root of all isolation, so its derivation is itself a cont
   a second IdP.
 - **Collision isn't the threat; reuse is.** `sha256` makes cross-user collision infeasible for *any*
   input — so switching the input doesn't change collision odds. The live risk is an identifier
-  recurring for a different human, which the `sub` anchor + the binding below address.
+  recurring for a different human, which the `sub` anchor closes by construction.
 - **Validate before touching disk** ([principle #6](principles.md)): provisioning asserts `iss` ==
   configured authority, `aud` == `gert-api`, and a bounded/well-formed `sub` **before** any
   path-derive or `mkdir`. No valid identity → no folder.
-- **Identity binding:** `meta.json` records `(iss, sub)`; every request to an existing folder
-  re-asserts it equals the token. A recreated/reassigned identity that resolves onto an existing
-  folder is **refused**, never served. → [decisions §3](decisions.md#3-folder-key),
+- **Past the gate, the validated JWT is trusted.** The folder key derives from the token and
+  nothing else, so there is no disk-side state to re-check per request. `meta.json` is a
+  *descriptive sidecar* — it records `(iss, sub, username, schema_version)` so the admin scan can
+  map the opaque hash folder to a person and future migrations have a version anchor. It is
+  rewritten from the token when missing or unreadable, never used as a gate (a per-request
+  equality check could only ever fire on a sha256 collision or local file tampering — neither is
+  a real threat once the IdP is trusted). → [decisions §3](decisions.md#3-folder-key),
   [storage-and-data](storage-and-data.md#lazy-provisioning--migrations), [auth](auth.md#the-user-context-resolved-per-request).
 
 ---

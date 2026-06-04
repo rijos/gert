@@ -63,7 +63,7 @@ The compiler enforces the inward direction: `Gert.Service` cannot reference `Ger
 
 The persistence seam is the **repository interfaces** (`IChatRepository`, `IRagRepository`), not a generic connection wrapper — because the RAG SQL is engine-specific and cannot be abstracted into shared SQL. The service layer talks only to those interfaces, so swapping engines means adding a new `Gert.Database.*` project and changing one DI registration; `Gert.Service` is untouched.
 
-A future Postgres implementation (`Gert.Database.Postgres`) is therefore a **new project with its own SQL**, not a config flag:
+The database-agnostic half of persistence — the on-disk layout (`UserPaths`), the config-file store (`FileSystemUserStore`), the blob store (`LocalObjectStore`), `StorageOptions`, and the user-root `meta.json` sidecar (`UserMeta`) — lives in **`Gert.Database`**, which every engine adapter references. A future Postgres implementation (`Gert.Database.Postgres`) is therefore a **new project with its own SQL** reusing that shared layer, not a config flag:
 
 - `vec0 … MATCH … ORDER BY distance` → **pgvector** `<=>` / `<->` with an HNSW index; `FLOAT[1024]` → `vector(1024)`.
 - FTS5 `bm25()` → `tsvector` + `ts_rank_cd` (no native BM25 without `pg_search`/ParadeDB or `rum`), so the lexical rank and the RRF fusion are re-tuned.
@@ -89,10 +89,19 @@ Gert.sln
 │  ├─ Validation/             # IValidationProvider + FluentValidation validators per model
 │  └─ Database/               # IDatabaseProvider (+ IChatRepository, IRagRepository) — the portability seam
 │
-├─ Gert.Database.Sqlite/      # SQLite impl — references Service, Model
+├─ Gert.Database/             # database-AGNOSTIC persistence shared by every adapter
+│  ├─ UserPaths.cs            #   sha256(iss+sub) key + the on-disk layout
+│  ├─ StorageOptions.cs       #   DataRoot / ExpectedIssuer ("Storage" section)
+│  ├─ UserMeta.cs             #   the user-root meta.json sidecar record
+│  ├─ FileSystemUserStore.cs  #   IUserStore impl — ALL config-file I/O (meta.json, settings.json)
+│  ├─ LocalObjectStore.cs     #   IObjectStore impl — project file blobs
+│  └─ UnauthorizedIdentityException.cs  # the fail-closed provisioning-gate refusal
+│
+├─ Gert.Database.Sqlite/      # SQLite impl — references Database, Service, Model
 │  ├─ SqliteDatabaseProvider.cs   # opens THIS user's chat.db/rag.db (WAL, vec0, busy_timeout)
 │  ├─ SqliteChatRepository.cs      # Dapper
 │  ├─ SqliteRagRepository.cs       # Dapper + sqlite-vec/FTS5
+│  ├─ SqliteHandleReleaser.cs      # IDatabaseHandleReleaser — drop pooled handles before rm -rf
 │  └─ Migrations/
 │     ├─ chat/001_init.sql
 │     └─ rag/001_init.sql

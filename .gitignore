@@ -19,8 +19,10 @@ TestResults/
 .venv/
 __pycache__/
 
-# Coverage / build artifacts
-artifacts/
+# Coverage / build artifacts — E2E traces/screenshots. Scope to the smoke output
+# dir: an unanchored `artifacts/` also swallows source dirs (e.g. the canvas
+# viewer modules under components/canvas/artifacts/), which then 404 in CI.
+/tools/smoke/artifacts/
 
 # Python editable-install metadata
 *.egg-info/

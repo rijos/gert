@@ -7,7 +7,12 @@ HTML artifact iframe and the Problems panel on the code artifact.
 
 from __future__ import annotations
 
+import pytest
 from playwright.sync_api import Page, expect
+
+# Deterministic harness-mount tests (no LLM/backend round-trip) — part of the CI
+# gate via `run.py --pytest -m component`.
+pytestmark = pytest.mark.component
 
 
 def test_html_artifact_iframe_is_sandboxed(page: Page, base_url: str) -> None:

@@ -85,8 +85,8 @@ public sealed class DocumentService : IDocumentService
 
         // Provision the user + project FIRST. The object store's PutAsync creates the
         // files/ directory, which would otherwise materialise the user folder WITHOUT
-        // its identity-binding meta.json — and the fail-closed gate would reject every
-        // later open. Provisioning writes the binding before any blob is stored.
+        // its meta.json sidecar (admin scans skip a folder with no readable meta).
+        // Provisioning writes the metadata before any blob is stored.
         await _databases.EnsureProjectAsync(_user.Iss, _user.Sub, pid, cancellationToken).ConfigureAwait(false);
 
         var documentId = Guid.NewGuid().ToString("D");

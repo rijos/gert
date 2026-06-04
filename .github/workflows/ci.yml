@@ -42,8 +42,10 @@ jobs:
   e2e:
     name: Browser E2E smoke (gate)
     # Gating: boots the python mocks + the FakeE2E host and drives the real SPA across
-    # chromium+firefox × admin/user/limited. Heavier than the other jobs (installs
-    # browsers) but a required check — the smoke is what catches SPA/CSP/seam bugs.
+    # chromium+firefox × admin/user/limited (the matrix), then runs the richer
+    # component/integration assertions in tools/smoke/tests/*.py against the same host
+    # (--pytest). Heavier than the other jobs (installs browsers) but a required check —
+    # the smoke is what catches SPA/CSP/seam bugs.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -56,8 +58,8 @@ jobs:
         run: |
           uv sync
           uv run playwright install --with-deps chromium firefox
-      - name: Boot mocks + FakeE2E host, run the matrix
-        run: PYTHONPATH=. tools/smoke/.venv/bin/python -m tools.smoke.run --browser all --role all
+      - name: Boot mocks + FakeE2E host, run the matrix + pytest suite
+        run: PYTHONPATH=. tools/smoke/.venv/bin/python -m tools.smoke.run --browser all --role all --pytest
       - name: Upload traces/screenshots on failure
         if: failure()
         uses: actions/upload-artifact@v4

@@ -119,7 +119,7 @@ public string RagDb (string iss, string sub, string projectId) => Path.Combine(P
 ```
 
 The user key still comes **only** from the validated token `(iss, sub)` — anchored on the stable,
-never-recycled `sub` and verified against the folder's `meta.json` binding on every request
+never-recycled `sub`
 ([principle #3](principles.md), [decisions §3](decisions.md#3-folder-key)). The project id
 *does* come from the request — but it is validated to a safe shape (a UUID, or the literal
 `default`) and is only ever joined **under the token-derived user folder**. So a tampered

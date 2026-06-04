@@ -9,7 +9,7 @@ namespace Gert.Database.Sqlite.Tests;
 
 /// <summary>
 /// U5 security-critical behaviour: the fail-closed validate-before-disk gate, the
-/// meta.json identity binding, two-user isolation, and pid traversal rejection.
+/// self-healing meta.json sidecar, two-user isolation, and pid traversal rejection.
 /// </summary>
 public class ProvisioningTests
 {
@@ -79,34 +79,45 @@ public class ProvisioningTests
     }
 
     [Fact]
-    public async Task Tampered_identity_binding_on_existing_folder_is_refused()
+    public async Task Truncated_meta_json_is_healed_on_next_touch()
     {
-        // Simulate the reuse attack: the folder key is sha256(iss + "\n" + sub),
-        // so a folder is addressed purely by (iss, sub). We provision a folder, then
-        // overwrite its meta.json so the recorded (iss, sub) differs from the token
-        // that resolves to that very folder — exactly what a recreated/reassigned
-        // identity colliding onto an existing folder would look like. The next
-        // EnsureProvisioned for that (iss, sub) must refuse rather than serve it.
+        // meta.json is a descriptive sidecar, not a gate: the identity is trusted once
+        // the JWT validates. A 0-byte file (an interrupted write before WriteJsonAsync
+        // was atomic, or external truncation) must be rewritten from the token on the
+        // next touch — never an unhandled JsonException 500ing every request.
         await using var root = new TempDataRoot();
         var provider = ProviderFixture.ProviderFor(root);
         var paths = ProviderFixture.PathsFor(root);
 
         await provider.EnsureProvisionedAsync(ProviderFixture.ExpectedIssuer, "alice");
-
         var metaFile = paths.MetaFile(ProviderFixture.ExpectedIssuer, "alice");
-        var tampered = new UserMeta
-        {
-            Iss = ProviderFixture.ExpectedIssuer,
-            Sub = "someone-else", // binding now disagrees with the resolving token.
-            Username = "someone-else",
-            CreatedAt = DateTimeOffset.UtcNow.ToString("o"),
-            SchemaVersion = 1,
-        };
-        await File.WriteAllTextAsync(metaFile, JsonSerializer.Serialize(tampered));
+        await File.WriteAllTextAsync(metaFile, "");
 
-        var act = async () => await provider.EnsureProvisionedAsync(ProviderFixture.ExpectedIssuer, "alice");
+        await provider.EnsureProvisionedAsync(ProviderFixture.ExpectedIssuer, "alice");
 
-        await act.Should().ThrowAsync<IdentityBindingException>();
+        var healed = JsonSerializer.Deserialize<UserMeta>(
+            await File.ReadAllTextAsync(metaFile),
+            new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        healed.Should().NotBeNull();
+        healed!.Iss.Should().Be(ProviderFixture.ExpectedIssuer);
+        healed.Sub.Should().Be("alice");
+    }
+
+    [Fact]
+    public async Task Healthy_meta_json_is_left_alone_on_subsequent_touches()
+    {
+        // Re-provisioning must not rewrite a readable meta.json (created_at survives).
+        await using var root = new TempDataRoot();
+        var provider = ProviderFixture.ProviderFor(root);
+        var paths = ProviderFixture.PathsFor(root);
+
+        await provider.EnsureProvisionedAsync(ProviderFixture.ExpectedIssuer, "alice");
+        var metaFile = paths.MetaFile(ProviderFixture.ExpectedIssuer, "alice");
+        var original = await File.ReadAllTextAsync(metaFile);
+
+        await provider.EnsureProvisionedAsync(ProviderFixture.ExpectedIssuer, "alice");
+
+        (await File.ReadAllTextAsync(metaFile)).Should().Be(original);
     }
 
     [Fact]

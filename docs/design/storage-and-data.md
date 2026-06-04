@@ -59,7 +59,7 @@ public sealed class UserPaths(IOptions<StorageOptions> opt)
 > identity the gate already accepted. (Callers can thread the once-computed key instead of
 > recomputing the hash; the per-`sub` signatures above just keep the derivation explicit.)
 
-Hashing `iss + sub` gives a clean, fixed-length, path-safe folder name and avoids any traversal risk from exotic claim values; anchoring on `sub` (stable, never recycled) rather than email/username is what closes the **identifier-reuse** class of attack ([decisions §3](decisions.md#3-folder-key)). `meta.json` records `(iss, sub)` and the username so admins can still find a folder by username **and** so the API can verify the binding on every request (below). The **`pid`** comes from the request (unlike the user key), but it is validated to a UUID or the literal `default` and is only ever joined **under** `Root(iss, sub)` — so it can select among *this* user's projects but can never escape the user's folder, keeping cross-user IDOR structurally impossible ([configuration.md §2.5](configuration.md#25-path-resolution--why-a-request-supplied-project-id-is-still-idor-safe)).
+Hashing `iss + sub` gives a clean, fixed-length, path-safe folder name and avoids any traversal risk from exotic claim values; anchoring on `sub` (stable, never recycled) rather than email/username is what closes the **identifier-reuse** class of attack ([decisions §3](decisions.md#3-folder-key)). `meta.json` records `(iss, sub)` and the username purely descriptively, so admins can still find an opaque hash folder by username. The **`pid`** comes from the request (unlike the user key), but it is validated to a UUID or the literal `default` and is only ever joined **under** `Root(iss, sub)` — so it can select among *this* user's projects but can never escape the user's folder, keeping cross-user IDOR structurally impossible ([configuration.md §2.5](configuration.md#25-path-resolution--why-a-request-supplied-project-id-is-still-idor-safe)).
 
 ### Why two databases per project?
 
@@ -95,10 +95,11 @@ It is **fail-closed and runs before any path is derived or any directory is crea
    `aud` == `gert-api`, and `sub` is present and within a bounded charset/length (e.g.
    `^[A-Za-z0-9._:\-]{1,128}$`). A missing/malformed identity is rejected here; **no folder is ever
    created for an unvalidated token.**
-1. **If the folder already exists, verify the identity binding** — read `meta.json` and assert its
-   `(iss, sub)` equals the token's. A mismatch means a recreated/reassigned identity resolved onto
-   an existing folder → **refuse the request** (never serve another identity's data). On a fresh
-   folder, write `(iss, sub)` into `meta.json` as the binding.
+1. **Write `meta.json` when missing or unreadable** — the descriptive sidecar recording
+   `(iss, sub, username, schema_version)`. Past the gate the validated JWT is trusted (the folder
+   key derives from the token and nothing else), so the file is never used as a check; it exists
+   for the admin key→user mapping and as a migration version anchor. A healthy file is left alone
+   (`created_at` survives); a truncated/corrupt one is rewritten from the token.
 
 Then it creates `Root/`, `settings.json`, and the `default` **project** so the user always has a
 landing project. Provisioning a project (`EnsureProject(iss, sub, pid)`, also lazy) does:

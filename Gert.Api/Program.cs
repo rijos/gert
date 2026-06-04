@@ -3,6 +3,7 @@ using Gert.Api.Ingestion;
 using Gert.Api.Logging;
 using Gert.Api.Security;
 using Gert.Authentication;
+using Gert.Database;
 using Gert.Database.Sqlite;
 using Gert.External;
 using Gert.Service;
@@ -149,9 +150,14 @@ builder.Services.PostConfigure<JwtBearerOptions>(
 // --- Storage seam (storage-and-data.md § lazy provisioning) -----------------
 builder.Services.Configure<StorageOptions>(
     builder.Configuration.GetSection(StorageOptions.SectionName));
+builder.Services.Configure<SqliteVecOptions>(
+    builder.Configuration.GetSection(SqliteVecOptions.SectionName));
 builder.Services.Configure<ToolOptions>(
     builder.Configuration.GetSection(ToolOptions.SectionName));
 builder.Services.AddSingleton<IDatabaseProvider, SqliteDatabaseProvider>();
+// Lets the file layer drop SQLite's pooled chat.db/rag.db handles before rm -rf;
+// a server-backed adapter (e.g. Postgres) would register a no-op here.
+builder.Services.AddSingleton<IDatabaseHandleReleaser, SqliteHandleReleaser>();
 
 // Object-store seam for per-project file blobs (projects/{pid}/files/). The local
 // adapter writes under UserPaths.FilesDir; a future S3 backend is a drop-in:

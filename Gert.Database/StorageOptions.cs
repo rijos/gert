@@ -1,23 +1,15 @@
-namespace Gert.Database.Sqlite;
+namespace Gert.Database;
 
 /// <summary>
-/// Options for the SQLite storage layer (storage-and-data.md § layout / lazy
-/// provisioning). Bound via <c>IOptions&lt;StorageOptions&gt;</c>.
+/// Database-agnostic options for the storage layer (storage-and-data.md § layout /
+/// lazy provisioning). Bound via <c>IOptions&lt;StorageOptions&gt;</c>. Adapter-
+/// specific knobs (e.g. the sqlite-vec extension path) live in the adapter's own
+/// options class bound to the same <c>Storage</c> section.
 /// </summary>
 public sealed class StorageOptions
 {
     /// <summary>Configuration section name for binding.</summary>
     public const string SectionName = "Storage";
-
-    /// <summary>
-    /// Filesystem path to the native <b>sqlite-vec</b> loadable extension
-    /// (<c>vec0.so</c> / <c>vec0.dll</c>), loaded on every <c>rag.db</c>
-    /// connection (chat-and-tools.md § "Loading sqlite-vec in .NET"). When null,
-    /// the provider falls back to <c>vec0.so</c> beside the running assembly
-    /// (<c>AppContext.BaseDirectory</c>) — the csproj copies the vendored
-    /// extension there, and it flows transitively into every consumer's output.
-    /// </summary>
-    public string? VecExtensionPath { get; set; }
 
     /// <summary>
     /// Filesystem root that contains the <c>users/</c> tree

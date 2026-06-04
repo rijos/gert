@@ -3,6 +3,7 @@ using Gert.Model;
 using Gert.Model.Dtos;
 using Gert.Model.Projects;
 using Gert.Testing;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Xunit;
 
@@ -21,7 +22,7 @@ public class FileSystemUserStoreTests
     private static string Iss => ProviderFixture.ExpectedIssuer;
 
     private static FileSystemUserStore StoreFor(TempDataRoot root) =>
-        new(Options.Create(ProviderFixture.OptionsFor(root)));
+        ProviderFixture.StoreFor(root);
 
     private static SqliteDatabaseProvider ProviderFor(TempDataRoot root) =>
         ProviderFixture.ProviderFor(root);
@@ -158,6 +159,60 @@ public class FileSystemUserStoreTests
         (await store.DeleteUserByKeyAsync(aliceKey)).Should().BeTrue();
         (await store.GetUserAsync(aliceKey)).Should().BeNull();
         (await store.ListUsersAsync()).Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task Settings_default_when_file_empty()
+    {
+        await using var root = new TempDataRoot();
+        await ProviderFor(root).EnsureProvisionedAsync(Iss, Sub);
+        var store = StoreFor(root);
+        var paths = ProviderFixture.PathsFor(root);
+
+        // A 0-byte settings.json (e.g. a write killed before its atomic rename) must
+        // fall back to defaults, not throw a JsonException.
+        await File.WriteAllTextAsync(paths.SettingsFile(Iss, Sub), string.Empty);
+
+        var settings = await store.GetSettingsAsync(Iss, Sub);
+        settings.Should().BeEquivalentTo(new UserSettings());
+    }
+
+    [Fact]
+    public async Task List_projects_skips_corrupt_meta()
+    {
+        await using var root = new TempDataRoot();
+        var provider = ProviderFor(root);
+        await provider.EnsureProvisionedAsync(Iss, Sub);
+        var store = StoreFor(root);
+        var paths = ProviderFixture.PathsFor(root);
+
+        // A second project whose meta.json holds non-JSON garbage is skipped, not
+        // fatal — the valid default project still lists.
+        var pid = Guid.NewGuid().ToString("D");
+        await provider.EnsureProjectAsync(Iss, Sub, pid);
+        await File.WriteAllTextAsync(paths.ProjectMeta(Iss, Sub, pid), "{ not valid json");
+
+        var ids = (await store.ListProjectsAsync(Iss, Sub)).Select(p => p.Id).ToList();
+        ids.Should().Contain(UserPaths.DefaultProjectId);
+        ids.Should().NotContain(pid);
+    }
+
+    [Fact]
+    public async Task Admin_list_skips_user_with_empty_meta()
+    {
+        await using var root = new TempDataRoot();
+        var provider = ProviderFor(root);
+        await provider.EnsureProvisionedAsync(Iss, "alice");
+        await provider.EnsureProvisionedAsync(Iss, "bob");
+        var store = StoreFor(root);
+        var paths = ProviderFixture.PathsFor(root);
+
+        // Reproduces the original 500: bob's meta.json truncated to 0 bytes must be
+        // skipped so the admin scan still returns the healthy users.
+        await File.WriteAllTextAsync(Path.Combine(paths.Root(Iss, "bob"), "meta.json"), string.Empty);
+
+        var users = await store.ListUsersAsync();
+        users.Should().ContainSingle(u => u.Username == "alice");
     }
 
     [Fact]

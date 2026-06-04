@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Database-agnostic persistence building blocks shared by every database
+       adapter (Gert.Database.Sqlite today, e.g. Gert.Database.Postgres tomorrow):
+       the filesystem layout (UserPaths), the storage options, the user/project
+       config-file store (FileSystemUserStore), the blob store (LocalObjectStore),
+       and the fail-closed provisioning-gate exception. Nothing in here may
+       reference a concrete database driver. -->
+
+  <ItemGroup>
+    <ProjectReference Include="..\Gert.Service\Gert.Service.csproj" />
+    <ProjectReference Include="..\Gert.Model\Gert.Model.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Versions centralized in the repo-root Directory.Build.props. -->
+    <PackageReference Include="Microsoft.Extensions.Options" Version="$(MicrosoftExtensionsOptionsVersion)" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="$(MicrosoftExtensionsLoggingVersion)" />
+  </ItemGroup>
+
+</Project>

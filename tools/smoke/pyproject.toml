@@ -17,6 +17,13 @@ dependencies = [
 [tool.pytest.ini_options]
 # Tests import `tools.smoke.*`; run pytest from the repo root so that resolves.
 testpaths = ["tests"]
+markers = [
+    # Deterministic component/harness mount tests (no LLM/backend round-trip). The
+    # CI gate runs exactly these via `run.py --pytest -m component`; the integration
+    # tests (chat/knowledge/rbac) stay covered by the run.py scenario matrix until
+    # their mock-flow timing is hardened.
+    "component: deterministic component/harness mount tests, safe for the CI gate",
+]
 
 [tool.ruff]
 # 88 cols (black/ruff default). The harness declares its own standard so the

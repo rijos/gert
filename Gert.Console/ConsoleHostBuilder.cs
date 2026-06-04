@@ -1,3 +1,4 @@
+using Gert.Database;
 using Gert.Database.Sqlite;
 using Gert.External;
 using Gert.Service;
@@ -50,9 +51,12 @@ public static class ConsoleHostBuilder
         // Api's non-HTTP wiring.
         services.Configure<StorageOptions>(
             configuration.GetSection(StorageOptions.SectionName));
+        services.Configure<SqliteVecOptions>(
+            configuration.GetSection(SqliteVecOptions.SectionName));
         services.Configure<ToolOptions>(
             configuration.GetSection(ToolOptions.SectionName));
         services.TryAddSingleton<IDatabaseProvider, SqliteDatabaseProvider>();
+        services.TryAddSingleton<IDatabaseHandleReleaser, SqliteHandleReleaser>();
         services.TryAddSingleton<UserPaths>();
         services.TryAddSingleton<IObjectStore, LocalObjectStore>();
         services.TryAddSingleton<IUserStore, FileSystemUserStore>();

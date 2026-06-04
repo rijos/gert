@@ -28,6 +28,7 @@ mint, specs conformance, mocks boot) run without browsers; see the README.
 from __future__ import annotations
 
 import argparse
+import shutil
 import subprocess
 import sys
 import threading
@@ -52,6 +53,10 @@ type MatrixResult = tuple[str, str, str, bool, str]
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 ARTIFACTS_DIR = Path(__file__).resolve().parent / "artifacts"
+# The FakeE2E host's user-data root (Storage__DataRoot, resolved against Gert.Api/).
+# Wiped on every harness-owned boot — NOT the sibling .dev/jwt keypair, which is
+# meant to be reused across runs.
+DATA_ROOT = REPO_ROOT / "Gert.Api" / ".dev" / "e2e-data"
 
 DEFAULT_HOST = "http://127.0.0.1:5217"
 BROWSERS = ["chromium", "firefox"]
@@ -258,6 +263,33 @@ def _serve(base_url: str, role: str) -> None:
         browser.close()
 
 
+def _run_pytest(base_url: str, browsers: list[str]) -> int:
+    """Drive the deterministic component/harness assertions (``-m component``) in
+    tests/*.py against the already-booted host, then fold their result into the gate.
+    Runs from the repo root (so ``tools.smoke`` imports resolve) against the same
+    FakeE2E host the matrix used. The integration tests (chat/knowledge/rbac) are not
+    selected here — the scenario matrix above already covers that ground, and their
+    mock-flow timing isn't gate-stable yet. Returns the pytest exit code (0 = pass)."""
+    print("\nRunning pytest component suite (-m component)…")
+    browser_flags = [f"--browser={b}" for b in browsers]
+    proc = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "pytest",
+            str(Path(__file__).resolve().parent / "tests"),
+            "-m",
+            "component",
+            f"--gert-base-url={base_url}",
+            *browser_flags,
+            "-q",
+        ],
+        cwd=str(REPO_ROOT),
+        check=False,
+    )
+    return proc.returncode
+
+
 def _report(results: list[MatrixResult]) -> int:
     failures = [r for r in results if not r[3]]
     for browser, role, name, ok, detail in results:
@@ -277,6 +309,12 @@ def main(argv: list[str] | None = None) -> int:
         "--role", choices=["admin", "user", "limited", "all"], default="all"
     )
     parser.add_argument("--headed", action="store_true")
+    parser.add_argument(
+        "--pytest",
+        action="store_true",
+        help="After the matrix, run the richer tests/*.py assertions against the "
+        "same booted host. The gate fails if either the matrix or pytest fails.",
+    )
     parser.add_argument("--keep-open", action="store_true")
     parser.add_argument(
         "--serve",
@@ -315,6 +353,11 @@ def main(argv: list[str] | None = None) -> int:
             print("Booting mock upstreams (vLLM + SearXNG)…")
             mocks = _boot_mocks()
             time.sleep(1.0)
+            # Deterministic runs: the host's user data is recreated from scratch on
+            # every harness-owned boot, so stale state from a previous/killed run
+            # can never leak into this one. (--base-url attaches to a host we don't
+            # own, so its data is left alone.)
+            shutil.rmtree(DATA_ROOT, ignore_errors=True)
             print("Booting FakeE2E host (dotnet run)…")
             host_proc = _boot_host()
 
@@ -344,7 +387,11 @@ def main(argv: list[str] | None = None) -> int:
 
         print("Running scenario matrix…")
         results = _run_matrix(base_url, browsers, roles, args.headed, args.keep_open)
-        return _report(results)
+        matrix_rc = _report(results)
+        if args.pytest:
+            pytest_rc = _run_pytest(base_url, browsers)
+            return matrix_rc or pytest_rc
+        return matrix_rc
     finally:
         if host_proc is not None:
             host_proc.terminate()

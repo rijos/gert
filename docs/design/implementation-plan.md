@@ -105,12 +105,12 @@ real-SQLite isolation, lazy provisioning) into one proven thread before any feat
 - **Acceptance:** **deterministic RRF order** asserted (thanks to `FakeEmbeddings`); memory rows (`kind='memory'`) retrieved by the same query; this is the riskiest SQL in the system, so coverage is thorough.
 
 ### U5 — Paths, provisioning gate & isolation *(security-critical)*
-- **Goal:** `UserPaths` (`sha256(iss + "\n" + sub)`, project-scoped methods), `EnsureProvisioned(iss, sub)` with the **fail-closed validate-before-disk gate** and **`meta.json` `(iss,sub)` identity binding**, `EnsureProject` + lazy `default` project.
+- **Goal:** `UserPaths` (`sha256(iss + "\n" + sub)`, project-scoped methods), `EnsureProvisioned(iss, sub)` with the **fail-closed validate-before-disk gate** and a descriptive **`meta.json` sidecar** (healed when unreadable), `EnsureProject` + lazy `default` project.
 - **Depends:** U4a
 - **Touches:** `Gert.Database.Sqlite/` (or a small `Provisioning` service in `Gert.Service` over `IDatabaseProvider`), tests in `Gert.Database.Sqlite.Tests`.
 - **Design:** [storage-and-data § lazy provisioning](storage-and-data.md#lazy-provisioning--migrations), [decisions §3](decisions.md#3-folder-key).
-- **Hardens:** **F12** (anti-reuse, validate-before-disk, identity binding); foundation for F6.
-- **Acceptance:** malformed/unexpected-`iss` identity rejected **before any folder is created** (assert no dir on disk); identity-binding mismatch → refused; two-user run yields two `sha256(iss+sub)` dirs, neither `rag.db` sees the other's rows; a `../`/non-UUID `pid` is rejected and never escapes `Root`.
+- **Hardens:** **F12** (anti-reuse via the `sub` anchor, validate-before-disk); foundation for F6.
+- **Acceptance:** malformed/unexpected-`iss` identity rejected **before any folder is created** (assert no dir on disk); a truncated `meta.json` is healed on the next touch; two-user run yields two `sha256(iss+sub)` dirs, neither `rag.db` sees the other's rows; a `../`/non-UUID `pid` is rejected and never escapes `Root`.
 
 ---
 
@@ -280,7 +280,7 @@ silently dropped:
 | F9 TLS/HSTS | U14 |
 | F10 rate limits | U9b |
 | F11 JWT alg pin | U8 |
-| F12 folder-root anti-reuse + binding | U5 |
+| F12 folder-root anti-reuse + validate-before-disk | U5 |
 
 ---
 
@@ -294,8 +294,10 @@ These are doc gaps the design set doesn't yet pin — surface, don't guess:
    `dotnet test` tiers and **Python mock upstreams** (`tools/smoke/mocks`) serve the browser E2E
    against the real adapters ([tech-stack](tech-stack.md#solution-layout-projects),
    [testing §4.2](testing.md#42-two-ways-to-fake-the-outside-world)). *(Built in U10 / U13.)*
-2. **Identity-binding mismatch handling** (U5): hard-refuse is specced; decide whether it also
-   alerts/logs loudly, since it should be impossible in practice (raised previously).
+2. ✅ **Resolved — no identity-binding check** (U5): the per-request `meta.json` `(iss,sub)`
+   re-check was dropped — it could only ever fire on a sha256 collision or local tampering, and a
+   recycled `sub` (identical `(iss,sub)`) would pass it anyway. The validated JWT is trusted past
+   the provisioning gate; `meta.json` is a descriptive sidecar, healed when unreadable.
 3. **`gert_tools` claim placement — a prod deploy-time check, not a design gap** (U8): "claim
    source" = *which token* carries `gert_tools`. The API reads the **access token**; tests fully
    control this because Python mints the token, so test coverage can't surface a mismatch. The only

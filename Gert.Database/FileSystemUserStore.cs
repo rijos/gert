@@ -1,17 +1,22 @@
+using System.Globalization;
 using System.Text.Json;
 using Gert.Model.Projects;
+using Gert.Service.Database;
 using Gert.Service.Storage;
-using Microsoft.Data.Sqlite;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
-namespace Gert.Database.Sqlite;
+namespace Gert.Database;
 
 /// <summary>
 /// Filesystem <see cref="IUserStore"/> — the local-persistence adapter that owns
-/// <see cref="UserPaths"/> / <c>DataRoot</c>. It reads/writes the two config files
-/// (<c>settings.json</c>, <c>projects/{pid}/meta.json</c>) with direct file I/O —
-/// these are config, not user blobs — and performs the coarse directory lifecycle
-/// (<c>rm -rf</c> a project/user folder, enumerate users) as plain filesystem ops.
+/// <see cref="UserPaths"/> / <c>DataRoot</c>. It reads/writes the config files
+/// (the user-root <c>meta.json</c> sidecar, <c>settings.json</c>,
+/// <c>projects/{pid}/meta.json</c>) with direct file I/O — these are config, not
+/// user blobs — and performs the coarse directory lifecycle (<c>rm -rf</c> a
+/// project/user folder, enumerate users) as plain filesystem ops. Database-agnostic:
+/// destructive directory ops release engine-held file handles through the
+/// <see cref="IDatabaseHandleReleaser"/> port rather than any concrete driver.
 ///
 /// <para>
 /// Identity is handled exactly as the database / object-store seams: <c>(iss, sub)</c>
@@ -24,7 +29,7 @@ namespace Gert.Database.Sqlite;
 /// </summary>
 public sealed class FileSystemUserStore : IUserStore
 {
-    // Match the provider's serialization so meta.json/settings.json round-trip
+    // One serializer for every config file so meta.json/settings.json round-trip
     // byte-for-byte regardless of which component last wrote them.
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
     {
@@ -33,11 +38,18 @@ public sealed class FileSystemUserStore : IUserStore
 
     private readonly StorageOptions _options;
     private readonly UserPaths _paths;
+    private readonly ILogger<FileSystemUserStore> _logger;
+    private readonly IDatabaseHandleReleaser _dbHandles;
 
     /// <summary>Create the store with bound <see cref="StorageOptions"/>.</summary>
-    public FileSystemUserStore(IOptions<StorageOptions> options)
+    public FileSystemUserStore(
+        IOptions<StorageOptions> options,
+        IDatabaseHandleReleaser dbHandles,
+        ILogger<FileSystemUserStore> logger)
     {
         ArgumentNullException.ThrowIfNull(options);
+        _dbHandles = dbHandles ?? throw new ArgumentNullException(nameof(dbHandles));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _options = options.Value;
 
         if (string.IsNullOrWhiteSpace(_options.DataRoot))
@@ -49,6 +61,74 @@ public sealed class FileSystemUserStore : IUserStore
         _paths = new UserPaths(options);
     }
 
+    // ---- provisioning (user root + project skeleton on disk) ---------------
+
+    /// <inheritdoc />
+    public async Task EnsureUserFilesAsync(
+        string iss,
+        string sub,
+        CancellationToken cancellationToken = default)
+    {
+        Directory.CreateDirectory(_paths.Root(iss, sub));
+
+        // meta.json is a descriptive sidecar, not a gate: the identity is trusted once
+        // the JWT validates (the folder key is derived from it and nothing else). It
+        // exists so the admin scan can map the opaque hash folder to a username, and
+        // schema_version anchors future layout migrations. Missing or unreadable
+        // (e.g. truncated by an interrupted write) -> rewrite from the token; a
+        // healthy file is left alone so created_at survives.
+        var metaFile = _paths.MetaFile(iss, sub);
+        var existing = await ReadJsonOrNullAsync<UserMeta>(metaFile, cancellationToken)
+            .ConfigureAwait(false);
+        if (existing is null)
+        {
+            var meta = new UserMeta
+            {
+                Iss = iss,
+                Sub = sub,
+                Username = sub, // username is refreshed from the token elsewhere; sub is the safe default.
+                CreatedAt = DateTimeOffset.UtcNow.ToString("o", CultureInfo.InvariantCulture),
+                SchemaVersion = UserMeta.CurrentSchemaVersion,
+            };
+            await WriteJsonAsync(metaFile, meta, cancellationToken).ConfigureAwait(false);
+        }
+
+        // settings.json (defaults) — written only when absent so user edits survive.
+        var settingsFile = _paths.SettingsFile(iss, sub);
+        if (!File.Exists(settingsFile))
+        {
+            await WriteJsonAsync(settingsFile, new UserSettings(), cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    /// <inheritdoc />
+    public async Task EnsureProjectFilesAsync(
+        string iss,
+        string sub,
+        string pid,
+        CancellationToken cancellationToken = default)
+    {
+        // ProjectRoot validates the pid shape AND asserts the resolved path stays
+        // under the user root.
+        Directory.CreateDirectory(_paths.ProjectRoot(iss, sub, pid));
+        Directory.CreateDirectory(_paths.FilesDir(iss, sub, pid));
+        Directory.CreateDirectory(_paths.MemoryDir(iss, sub, pid));
+
+        var metaFile = _paths.ProjectMeta(iss, sub, pid);
+        if (!File.Exists(metaFile))
+        {
+            var now = DateTimeOffset.UtcNow;
+            var meta = new ProjectMeta
+            {
+                Id = pid,
+                Name = pid == UserPaths.DefaultProjectId ? "Default" : pid,
+                CreatedAt = now,
+                UpdatedAt = now,
+            };
+            await WriteJsonAsync(metaFile, meta, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
     // ---- settings.json -----------------------------------------------------
 
     /// <inheritdoc />
@@ -57,16 +137,10 @@ public sealed class FileSystemUserStore : IUserStore
         string sub,
         CancellationToken cancellationToken = default)
     {
-        var path = _paths.SettingsFile(iss, sub);
-        if (!File.Exists(path))
-        {
-            return new UserSettings();
-        }
-
-        await using var stream = File.OpenRead(path);
-        var settings = await JsonSerializer
-            .DeserializeAsync<UserSettings>(stream, JsonOptions, cancellationToken)
-            .ConfigureAwait(false);
+        // A missing OR empty/corrupt settings.json falls back to defaults rather
+        // than 500-ing the read — see ReadJsonOrNullAsync.
+        var settings = await ReadJsonOrNullAsync<UserSettings>(
+            _paths.SettingsFile(iss, sub), cancellationToken).ConfigureAwait(false);
         return settings ?? new UserSettings();
     }
 
@@ -100,13 +174,11 @@ public sealed class FileSystemUserStore : IUserStore
         {
             cancellationToken.ThrowIfCancellationRequested();
 
+            // A missing/empty/corrupt meta.json is skipped (not fatal): one bad
+            // project folder must not sink the whole list.
             var metaFile = Path.Combine(dir, "meta.json");
-            if (!File.Exists(metaFile))
-            {
-                continue;
-            }
-
-            var meta = await ReadMetaAsync(metaFile, cancellationToken).ConfigureAwait(false);
+            var meta = await ReadJsonOrNullAsync<ProjectMeta>(metaFile, cancellationToken)
+                .ConfigureAwait(false);
             if (meta is not null)
             {
                 results.Add(meta);
@@ -126,9 +198,8 @@ public sealed class FileSystemUserStore : IUserStore
         CancellationToken cancellationToken = default)
     {
         var metaFile = _paths.ProjectMeta(iss, sub, pid);
-        return File.Exists(metaFile)
-            ? await ReadMetaAsync(metaFile, cancellationToken).ConfigureAwait(false)
-            : null;
+        return await ReadJsonOrNullAsync<ProjectMeta>(metaFile, cancellationToken)
+            .ConfigureAwait(false);
     }
 
     /// <inheritdoc />
@@ -162,7 +233,7 @@ public sealed class FileSystemUserStore : IUserStore
         // Close pooled SQLite handles first — open-per-use returns connections to the
         // pool, so a pooled handle to chat.db/rag.db would otherwise keep the unlinked
         // file alive (stale reads) after the directory is removed.
-        SqliteConnection.ClearAllPools();
+        _dbHandles.ReleaseAll();
         Directory.Delete(projectRoot, recursive: true);
         return Task.FromResult(true);
     }
@@ -184,7 +255,7 @@ public sealed class FileSystemUserStore : IUserStore
 
         // Drop pooled chat.db/rag.db handles so deleting the files doesn't leave stale
         // pooled connections that resurface old rows after the project is re-provisioned.
-        SqliteConnection.ClearAllPools();
+        _dbHandles.ReleaseAll();
 
         foreach (var file in Directory.EnumerateFiles(projectRoot))
         {
@@ -315,7 +386,7 @@ public sealed class FileSystemUserStore : IUserStore
         }
 
         // Close pooled SQLite handles under this folder before rm -rf.
-        SqliteConnection.ClearAllPools();
+        _dbHandles.ReleaseAll();
         Directory.Delete(full, recursive: true);
         return true;
     }
@@ -323,21 +394,12 @@ public sealed class FileSystemUserStore : IUserStore
     /// <summary>Summarise one user folder from its <c>meta.json</c> + on-disk footprint.</summary>
     private async Task<UserSummary?> SummariseAsync(string userDir, CancellationToken cancellationToken)
     {
+        // A folder whose meta.json is missing, empty, or corrupt is not a usable
+        // user binding — skip it (warned, not thrown) so the admin list survives one
+        // bad folder instead of 500-ing the whole enumeration.
         var metaFile = Path.Combine(userDir, "meta.json");
-        if (!File.Exists(metaFile))
-        {
-            // A folder without its binding is not a valid user — skip it.
-            return null;
-        }
-
-        UserMeta? meta;
-        await using (var stream = File.OpenRead(metaFile))
-        {
-            meta = await JsonSerializer
-                .DeserializeAsync<UserMeta>(stream, JsonOptions, cancellationToken)
-                .ConfigureAwait(false);
-        }
-
+        var meta = await ReadJsonOrNullAsync<UserMeta>(metaFile, cancellationToken)
+            .ConfigureAwait(false);
         if (meta is null)
         {
             return null;
@@ -378,12 +440,42 @@ public sealed class FileSystemUserStore : IUserStore
         };
     }
 
-    private static async Task<ProjectMeta?> ReadMetaAsync(string metaFile, CancellationToken cancellationToken)
+    /// <summary>
+    /// Read and deserialize a small JSON config file (<c>settings.json</c>,
+    /// <c>meta.json</c>), tolerating a missing, empty, or corrupt file by returning
+    /// <see langword="null"/> instead of throwing. A truncated config — e.g. a 0-byte
+    /// file left by a process killed mid-write before <see cref="WriteJsonAsync"/>'s
+    /// atomic rename, or an externally-interrupted write — must not 500 a read
+    /// endpoint (it would otherwise sink whole-list reads like the admin user scan).
+    /// A missing file is the normal "not provisioned yet" case and is silent; an
+    /// empty/unparseable present file is real, recoverable corruption and is logged.
+    /// </summary>
+    private async Task<T?> ReadJsonOrNullAsync<T>(string path, CancellationToken cancellationToken)
+        where T : class
     {
-        await using var stream = File.OpenRead(metaFile);
-        return await JsonSerializer
-            .DeserializeAsync<ProjectMeta>(stream, JsonOptions, cancellationToken)
-            .ConfigureAwait(false);
+        if (!File.Exists(path))
+        {
+            return null;
+        }
+
+        try
+        {
+            await using var stream = File.OpenRead(path);
+            if (stream.Length == 0)
+            {
+                _logger.LogWarning("Config file {Path} is empty; treating as absent.", path);
+                return null;
+            }
+
+            return await JsonSerializer
+                .DeserializeAsync<T>(stream, JsonOptions, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (JsonException ex)
+        {
+            _logger.LogWarning(ex, "Config file {Path} is not valid JSON; treating as absent.", path);
+            return null;
+        }
     }
 
     private static async Task WriteJsonAsync<T>(string path, T value, CancellationToken cancellationToken)
