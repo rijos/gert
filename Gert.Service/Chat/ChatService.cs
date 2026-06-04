@@ -95,6 +95,24 @@ public sealed class ChatService : IChatService
         var conversation = await repo.GetConversationAsync(conversationId, cancellationToken)
             .ConfigureAwait(false);
 
+        // First message to a not-yet-created conversation materialises it (the SPA's
+        // "new chat → type → send" sends a fresh client id). Without this, the user
+        // message's FK to conversations(id) fails. Title seeds from the first message.
+        if (conversation is null)
+        {
+            var createdAt = DateTimeOffset.UtcNow;
+            conversation = new Conversation
+            {
+                Id = conversationId,
+                Title = DeriveTitle(request.Content),
+                ModelId = request.ModelId ?? DefaultModelId,
+                Tools = request.Tools ?? new ToolToggles(),
+                CreatedAt = createdAt,
+                UpdatedAt = createdAt,
+            };
+            await repo.InsertConversationAsync(conversation, cancellationToken).ConfigureAwait(false);
+        }
+
         // 2. Persist the user message.
         var userMessage = new Message
         {
@@ -580,6 +598,18 @@ public sealed class ChatService : IChatService
         }
 
         return result;
+    }
+
+    // Seed a conversation title from its first message (single-lined, capped).
+    private static string DeriveTitle(string content)
+    {
+        var text = (content ?? string.Empty).Replace('\n', ' ').Replace('\r', ' ').Trim();
+        if (text.Length == 0)
+        {
+            return "New chat";
+        }
+
+        return text.Length > 60 ? text[..60] : text;
     }
 
     private static string ToOpenAiRole(MessageRole role) => role switch

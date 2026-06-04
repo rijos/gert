@@ -37,6 +37,7 @@ import urllib.request
 from pathlib import Path
 
 import uvicorn
+from playwright.sync_api import ConsoleMessage, Error
 from starlette.applications import Starlette
 
 from . import tokens
@@ -183,12 +184,28 @@ def _run_matrix(
                 context.add_init_script(_init_script(token))
                 context.tracing.start(screenshots=True, snapshots=True)
                 page = context.new_page()
+                # Surface SPA load-time failures: console errors + uncaught page errors.
+                # Default-bind the per-iteration list into each handler (B023).
+                console_errors: list[str] = []
+
+                def _on_console(
+                    m: ConsoleMessage, errs: list[str] = console_errors
+                ) -> None:
+                    if m.type == "error":
+                        errs.append(f"{m.type}: {m.text}")
+
+                def _on_pageerror(e: Error, errs: list[str] = console_errors) -> None:
+                    errs.append(f"pageerror: {e}")
+
+                page.on("console", _on_console)
+                page.on("pageerror", _on_pageerror)
                 app = AppPage(page)
                 app.base_url = base_url
 
                 # `limited` is RBAC-only; others run the full click-through.
                 scenario_names = ["rbac"] if role == "limited" else list(SCENARIOS)
 
+                stem_base = f"{browser_name}-{role}"
                 for name in scenario_names:
                     ok, detail = True, ""
                     try:
@@ -196,17 +213,21 @@ def _run_matrix(
                         app.wait_ready()
                         SCENARIOS[name](app, role)
                     except Exception as exc:
-                        ok, detail = False, repr(exc)
-                        stem = f"{browser_name}-{role}-{name}"
-                        page.screenshot(path=str(ARTIFACTS_DIR / f"{stem}.png"))
-                        context.tracing.export(path=str(ARTIFACTS_DIR / f"{stem}.zip"))
+                        errs = " | ".join(console_errors[-5:])
+                        ok, detail = (
+                            False,
+                            f"{exc!r}{'  console: ' + errs if errs else ''}",
+                        )
+                        page.screenshot(
+                            path=str(ARTIFACTS_DIR / f"{stem_base}-{name}.png")
+                        )
                     results.append((browser_name, role, name, ok, detail))
 
                 if keep_open:
                     input(
                         f"[{browser_name}/{role}] keep-open — press Enter to continue…"
                     )
-                context.tracing.stop()
+                context.tracing.stop(path=str(ARTIFACTS_DIR / f"{stem_base}.zip"))
                 context.close()
             browser.close()
 

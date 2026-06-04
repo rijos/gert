@@ -5,13 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Gert</title>
 
-    <!-- fonts (the only external assets; everything else is self-hosted) -->
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Hanken+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
-      rel="stylesheet"
-    />
+    <!-- Fonts are self-hosted only (CSP forbids external CDNs — style-src 'self').
+         The tokens.css font stack falls back to system fonts; vendor woff2 under
+         /fonts + @font-face for the Fraunces/Hanken/JetBrains look. TODO: vendor fonts. -->
 
     <!-- styles: tokens MUST load first so variables exist before any rule -->
     <link rel="stylesheet" href="/styles/tokens.css" />

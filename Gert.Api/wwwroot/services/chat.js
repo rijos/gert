@@ -98,7 +98,10 @@ export const send = async (content) => {
   chat.streaming.val = true;
 
   const pid = activeProjectId.val;
-  const cid = activeId.val || "new"; // server creates the conversation if "new"
+  // New chat: mint a client id (the server create-if-missing materialises the row on
+  // first message). Set it active so the rest of the thread reuses the same id.
+  const cid = activeId.val || crypto.randomUUID();
+  if (!activeId.val) activeId.val = cid;
   const body = {
     content: text,
     model_id: selectedId.val,
