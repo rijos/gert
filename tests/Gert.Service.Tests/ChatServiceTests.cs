@@ -7,6 +7,7 @@ using Gert.Model.Events;
 using Gert.Service.Chat;
 using Gert.Service.Database;
 using Gert.Service.External;
+using Gert.Service.Tools;
 using Gert.Service.Validation;
 using Gert.Testing.Fakes;
 using NSubstitute;
@@ -52,7 +53,7 @@ public sealed class ChatServiceTests
     private readonly List<Message> _persisted = new();
 
     private ChatService NewService(IChatModelClient model) =>
-        new(_provider, model, _user, _validation);
+        new(_provider, model, _user, _validation, Array.Empty<ITool>(), instructions: null);
 
     [Fact]
     public async Task No_tool_path_emits_start_then_deltas_then_end()
@@ -169,7 +170,8 @@ public sealed class ChatServiceTests
                 new ValidationError { Property = "Content", Message = "required" },
             }));
 
-        var sut = new ChatService(_provider, new FakeChatModel(), _user, failing);
+        var sut = new ChatService(
+            _provider, new FakeChatModel(), _user, failing, Array.Empty<ITool>(), instructions: null);
 
         // Phase 1 throws ValidationException (the host maps it to a 400 ProblemDetails)
         // — it is no longer an in-stream ErrorEvent.

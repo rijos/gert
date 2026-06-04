@@ -1,0 +1,93 @@
+using System.Text.Json;
+using Gert.Model;
+using Gert.Model.Chat;
+using Gert.Model.Events;
+using Gert.Service.Tools;
+
+namespace Gert.Service.Chat;
+
+/// <summary>
+/// The orchestrator's view of a single executed tool call — the persisted/event
+/// shapes derived from a tool's <see cref="ToolResult"/>: the recorded kind and
+/// status, the latency, the JSON fed back to the model, the citations to collect,
+/// and the result hits to render on the tool card.
+/// </summary>
+internal sealed record ToolOutcome
+{
+    public required string Kind { get; init; }
+
+    public required ToolCallStatus Status { get; init; }
+
+    public long? LatencyMs { get; init; }
+
+    /// <summary>The JSON fed back to the model as the tool message content.</summary>
+    public string? ResponseJson { get; init; }
+
+    public IReadOnlyList<Citation> Citations { get; init; } = [];
+
+    public IReadOnlyList<ToolResultHit>? Hits { get; init; }
+
+    /// <summary>Build an outcome from a successful or failed tool execution.</summary>
+    public static ToolOutcome From(string kind, ToolResult result, long latencyMs)
+    {
+        if (!result.Success)
+        {
+            var errorJson = result.ResultJson
+                            ?? JsonSerializer.Serialize(new { error = result.Error ?? "tool failed" });
+            return new ToolOutcome
+            {
+                Kind = kind,
+                Status = ToolCallStatus.Error,
+                LatencyMs = latencyMs,
+                ResponseJson = errorJson,
+            };
+        }
+
+        return new ToolOutcome
+        {
+            Kind = kind,
+            Status = ToolCallStatus.Done,
+            LatencyMs = latencyMs,
+            ResponseJson = result.ResultJson,
+            Citations = result.Citations,
+            Hits = ToHits(result.Citations),
+        };
+    }
+
+    /// <summary>A failure that never reached the tool (unknown / not permitted / threw).</summary>
+    public static ToolOutcome Failure(string kind, string error, long? latencyMs = null) => new()
+    {
+        Kind = kind,
+        Status = ToolCallStatus.Error,
+        LatencyMs = latencyMs,
+        ResponseJson = JsonSerializer.Serialize(new { error }),
+    };
+
+    private static IReadOnlyList<ToolResultHit> ToHits(IReadOnlyList<Citation> citations)
+    {
+        var hits = new List<ToolResultHit>(citations.Count);
+        foreach (var citation in citations)
+        {
+            if (citation.SourceType == CitationSourceType.Web)
+            {
+                hits.Add(new ToolResultHit
+                {
+                    Title = citation.Label,
+                    Url = citation.Locator,
+                    Score = citation.Score,
+                });
+            }
+            else
+            {
+                hits.Add(new ToolResultHit
+                {
+                    Doc = citation.Label,
+                    Page = citation.Locator,
+                    Score = citation.Score,
+                });
+            }
+        }
+
+        return hits;
+    }
+}

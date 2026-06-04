@@ -16,8 +16,8 @@ Status: ⬜ not started · 🟡 in progress · ✅ done · 🔴 blocked
 | U5 | Paths, provisioning gate, isolation | ✅ | F12: sha256(iss+sub), validate-before-disk, meta.json identity binding, two-user isolation, pid-traversal guard |
 | U6 | Validation layer | ✅ | fail-closed FluentValidationProvider + per-DTO validators (threat-model rules) + reflection meta-test + NaughtyStrings theories; F6 route-param validators (admin {key}, pid). 344 service tests, 413 total |
 | U7a | CRUD + minimal ChatService | ✅ | ConversationService CRUD + no-tool streaming ChatService + GertServices hub + passthrough validation (TODO U6); 23 service tests. Document/Memory/Project/Settings/Account/Admin stubbed (TODO U4b/U7c/U7d) |
-| U7b | Full tool-loop orchestrator | ⬜ | |
-| U7c | Tools (rag/search/sandbox) | ⬜ | |
+| U7b | Full tool-loop orchestrator | ✅ | step-0 instructions prepend + tool loop in RunAsync (offered = requested∩conv∩entitlement∩registry; ToolCall→exec→ToolResult→feed-back; round cap 5; citations); stateless. Pinned-memory retrieval TODO |
+| U7c | Tools (rag/search/sandbox) | ✅ | RagTool (embed→HybridSearch→citations), WebSearchTool, SandboxTool (3 failure shapes); DI-registered; entitlement re-checked at exec. 12 new tests, 425 total |
 | U7d | Ingestion pipeline | ⬜ | |
 | U8 | Gert.Authentication | ✅ | F11: HttpUserContext (3-role claim mapping), RS256-pinned JwtBearer, Admin/fallback policies, sub-denylist; 19 tests |
 | U9a | API walking skeleton | ✅ | **M1 GATE GREEN** — Program/controllers/SSE + GertApiFactory (offline JWKS, temp DataRoot, fakes); 6 gate tests: 401, healthz, lazy-provision, CRUD, SSE happy path, SPA fallback |
@@ -38,7 +38,7 @@ shape would break multi-instance #10).
 
 **Storage seam (confirmed after U4b):** two distinct seams. IRagRepository = SQLite/vec0 query engine (KNN/FTS/RRF — cannot be a blob store). IObjectStore = source files + exports (Local now, S3 later). U7d ingestion/DocumentService MUST route all raw-file read/write/delete through IObjectStore (no direct File.IO). SQLite DB files stay on local FS.
 
-**Filename handling (decided, apply at U7d/U9b/U12):** the upload filename is NEVER a storage path (files stored under server-generated {doc-id}.{ext}), so it is pure display metadata. Preserve the exact original name **base64-encoded** in documents.filename (any exotic byte sequence round-trips); the upload validation gate checks **extension allowlist + size only** (not path-safety); the SPA **sanitizes at render** (escape + neutralize bidi-override/control chars — anti-spoofing). "Preserve at storage, sanitize at render." U6's current conservative filename gate stays until U7d swaps in this model.
+**Filename handling (decided, apply at U7d/U9b/U12):** the upload filename is NEVER a storage path (files stored under server-generated {doc-id}.{ext}), so it is pure display metadata. Preserve the exact original name **base64-encoded** in documents.filename (any exotic byte sequence round-trips); the upload validation gate checks **extension allowlist + size only** (not path-safety). Display is **XSS-safe by construction** — the SPA renders the name via a VanJS text node (`createTextNode`), so no HTML/script parsing and no manual escaping. The ONLY residual is **bidi-override spoofing** (U+202E etc. reorder displayed glyphs — `invoice‮fdp.exe` shows as `invoiceexe.pdf`); handle that at render with `unicode-bidi: isolate` (or strip bidi codepoints) — anti-spoofing, optional, NOT XSS. Caveat: the text-node safety holds only while the filename stays a text node (never `innerHTML`/attribute-concat/`href`). U6's conservative filename gate stays until U7d swaps in this model.
 
 Order (semantic first, file-split enforcement last):
 1. ✅ Drop ISubDenylist (#10) — stateless revocation (expiry + IdP deactivation). Code done; docs pending in this commit.

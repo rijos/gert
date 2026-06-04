@@ -33,8 +33,28 @@ public sealed record ChatTurn
     /// <summary>The prior turns (incl. the just-persisted user message) to send upstream.</summary>
     public required IReadOnlyList<ChatModelMessage> Messages { get; init; }
 
-    /// <summary>Enabled tool ids for this turn. Empty on the no-tool path (tool loop lands later).</summary>
+    /// <summary>
+    /// The offered tool ids for this turn — the intersection
+    /// <c>requested ∩ conversation-enabled ∩ entitlement ∩ registry</c>, resolved
+    /// in phase 1 (auth.md § the claim is the ceiling). Empty on the no-tool path.
+    /// The matching specs (advertised to the model) are in <see cref="Tools"/>.
+    /// </summary>
     public IReadOnlyList<string> ToolIds { get; init; } = [];
+
+    /// <summary>
+    /// The model-facing specs for the offered tools, in the same order as
+    /// <see cref="ToolIds"/> — exactly what <see cref="IChatService.RunAsync"/>
+    /// advertises to the model. A tool the user isn't entitled to never appears
+    /// here, even if requested.
+    /// </summary>
+    public IReadOnlyList<External.ChatToolSpec> Tools { get; init; } = [];
+
+    /// <summary>
+    /// The project's pinned system context (step 0) — the always-injected
+    /// instructions prepended as a <c>system</c> message before the prior turns,
+    /// or <c>null</c> when the project has none.
+    /// </summary>
+    public string? SystemPrompt { get; init; }
 
     /// <summary>Generation params resolved from the conversation, forwarded to the model.</summary>
     public double? Temperature { get; init; }

@@ -13,10 +13,12 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddControllers();
 builder.Services.AddGertServices();
 
-// The tool registry is the one concrete seam type the auth + chat layers depend
-// on (auth.md § tool entitlements). For M1 there are no registered tools (the
-// no-tool path), so it is constructed over the empty ITool set; U7c adds tools.
-builder.Services.AddSingleton<ToolRegistry>();
+// AddGertServices (U7c) registers the three built-in tools (rag/search/sandbox)
+// as scoped ITool and the id-only ToolRegistry singleton the auth + validation
+// layers use for entitlement/toggle id checks (auth.md § tool entitlements). The
+// orchestrator resolves the tool instances via IEnumerable<ITool>; the external
+// ports each tool needs (IChatModelClient / IEmbeddingClient / IWebSearch /
+// ISandbox) are registered by the U10 adapters (or a Testing host's fakes).
 
 // --- Auth (auth.md § ASP.NET Core wiring) -----------------------------------
 // AddGertJwtAuth also registers IHttpContextAccessor + IUserContext (HttpUserContext).

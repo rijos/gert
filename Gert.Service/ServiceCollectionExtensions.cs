@@ -41,6 +41,10 @@ public static class ServiceCollectionExtensions
         // reflection meta-test keeps that throw unreachable in production.
         AddValidation(services);
 
+        // Step-0 instructions reader — default to "no instructions" so the service
+        // layer is self-contained; a host that can read project meta.json overrides it.
+        services.TryAddScoped<IProjectInstructionsReader, NullProjectInstructionsReader>();
+
         // Granular services.
         services.TryAddScoped<IChatService, ChatService>();
         services.TryAddScoped<IConversationService, ConversationService>();
@@ -52,10 +56,39 @@ public static class ServiceCollectionExtensions
         services.TryAddScoped<IAccountService, AccountService>();
         services.TryAddScoped<IAdminService, AdminService>();
 
+        // Tools (U7c) — each ITool is registered so the ToolRegistry is populated
+        // from IEnumerable<ITool>. They are scoped: RagTool depends on the
+        // per-request IUserContext, so a tool's lifetime must not outlive a request.
+        AddTools(services);
+
         // Aggregate hub.
         services.TryAddScoped<IGertServices, GertServices>();
 
         return services;
+    }
+
+    /// <summary>
+    /// The canonical capability ids of the built-in tools (U7c) — the id-only
+    /// <see cref="ToolRegistry"/> singleton is built from these, matching the
+    /// <see cref="ITool.Id"/> of each registered tool. Keep in sync with
+    /// <see cref="AddTools"/>.
+    /// </summary>
+    private static readonly string[] BuiltInToolIds = ["rag", "search", "sandbox"];
+
+    /// <summary>
+    /// Register the built-in tools (U7c) as scoped <see cref="ITool"/>s so the
+    /// orchestrator resolves them via <c>IEnumerable&lt;ITool&gt;</c>. Scoped
+    /// because <see cref="Tools.RagTool"/> depends on the per-request
+    /// <see cref="IUserContext"/>. The external ports each tool needs
+    /// (<see cref="External.IEmbeddingClient"/>, <see cref="External.IWebSearch"/>,
+    /// <see cref="External.ISandbox"/>) and the <see cref="Database.IDatabaseProvider"/>
+    /// are supplied by the host/adapters (Gert.External / a database adapter).
+    /// </summary>
+    private static void AddTools(IServiceCollection services)
+    {
+        services.AddScoped<ITool, RagTool>();
+        services.AddScoped<ITool, WebSearchTool>();
+        services.AddScoped<ITool, SandboxTool>();
     }
 
     /// <summary>
@@ -70,9 +103,13 @@ public static class ServiceCollectionExtensions
     {
         services.TryAddScoped<IValidationProvider, FluentValidationProvider>();
 
-        // The tool validator depends on the registry; a host normally registers it,
-        // but provide an empty fallback so the service layer is self-contained.
-        services.TryAddSingleton<ToolRegistry>();
+        // The tool validator + the entitlement resolver depend on the registry for
+        // id checks only (Contains / Normalize / AllIds), so it is an id-only
+        // singleton built from the registered tools' canonical ids — it never holds
+        // the per-request scoped tool instances (which the orchestrator resolves via
+        // IEnumerable<ITool>). Registered as a singleton so the singleton validators
+        // that take it are not captive-dependent on a scoped service.
+        services.TryAddSingleton(new ToolRegistry(BuiltInToolIds));
 
         // Shared / nested validators — needed by concrete type for SetValidator.
         AddValidator<ToolToggles, ToolTogglesValidator>(services);
