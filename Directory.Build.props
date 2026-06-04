@@ -25,6 +25,9 @@
     <!-- U10 Gert.External adapters (vLLM/SearXNG over IHttpClientFactory + Polly,
          options binding, logging). Orchestrator pins valid net10.0 versions. -->
     <MicrosoftExtensionsHttpVersion>9.0.0</MicrosoftExtensionsHttpVersion>
+    <!-- U11 Gert.Console host: concrete DI container + JSON/env configuration +
+         logging (the non-HTTP analog of the Web SDK's built-in hosting). -->
+    <MicrosoftExtensionsHostingVersion>9.0.0</MicrosoftExtensionsHostingVersion>
     <MicrosoftExtensionsConfigVersion>9.0.0</MicrosoftExtensionsConfigVersion>
     <MicrosoftExtensionsLoggingVersion>9.0.0</MicrosoftExtensionsLoggingVersion>
     <!-- Polly v8 resilience pipelines (timeout + retry) layered on the typed clients. -->

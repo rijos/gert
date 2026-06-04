@@ -2,12 +2,28 @@
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
+    <!-- Resolve the System.Console.* calls and the Gert.Console namespace without
+         ambiguity (the assembly/root namespace is Gert.Console). -->
+    <RootNamespace>Gert.Console</RootNamespace>
   </PropertyGroup>
+
+  <ItemGroup>
+    <None Update="appsettings.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\Gert.Service\Gert.Service.csproj" />
     <ProjectReference Include="..\Gert.Database.Sqlite\Gert.Database.Sqlite.csproj" />
     <ProjectReference Include="..\Gert.External\Gert.External.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Concrete DI container + JSON/env configuration + logging. The non-HTTP
+         analog of the Web SDK's built-in hosting; brings DI, Configuration,
+         Options, and Logging implementations. NO Gert.Authentication reference —
+         the "Console must not need the API" guarantee is structural (tech-stack.md). -->
+    <PackageReference Include="Microsoft.Extensions.Hosting"
+                      Version="$(MicrosoftExtensionsHostingVersion)" />
   </ItemGroup>
 
 </Project>

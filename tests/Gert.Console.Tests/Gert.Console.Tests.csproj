@@ -4,10 +4,14 @@
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="$(TestSdkVersion)" />
     <PackageReference Include="xunit.v3" Version="$(XunitV3Version)" />
     <PackageReference Include="xunit.runner.visualstudio" Version="$(XunitRunnerVersion)" />
+    <PackageReference Include="FluentAssertions" Version="$(FluentAssertionsVersion)" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\..\Gert.Console\Gert.Console.csproj" />
+    <!-- The storage seam types (StorageOptions / SqliteDatabaseProvider / UserPaths)
+         the wiring test provisions a temp DataRoot against. -->
+    <ProjectReference Include="..\..\Gert.Database.Sqlite\Gert.Database.Sqlite.csproj" />
     <ProjectReference Include="..\Gert.Testing\Gert.Testing.csproj" />
   </ItemGroup>
 
