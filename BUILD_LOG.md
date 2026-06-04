@@ -24,7 +24,7 @@ Status: ⬜ not started · 🟡 in progress · ✅ done · 🔴 blocked
 | U9b | API breadth + RBAC/IDOR + headers | ✅ | all endpoints (settings/projects/documents/memory/artifacts/account/admin) + {pid}/{key} validation; CSP+headers (F1), HSTS (F9), per-user rate limit (F10); Channel ingestion BackgroundService; Project/Settings/Account/Admin services + IUserStore port. IDOR/pid-tamper/admin-key-traversal/RBAC/headers tests. 481 total |
 | U10 | Gert.External real adapters | ✅ | vLLM chat(SSE)/embeddings (Polly), SearXNG + SSRF guard (F5: scheme+private-IP block, ConnectCallback, redirect re-vet), gVisor sandbox (egress-off F5), isolated pdf/docx extractor (F7: RLIMIT+XXE+zip-bomb), AddGertExternal (secrets F8). 94 unit tests (security controls); live wire=U13/staging. 575 total |
 | U11 | Gert.Console | ✅ | LocalUserContext (single user, all tools), AddGertConsole wiring (inline ingest, no auth/controllers/worker), ChatEvent→stdout renderer, chat/ingest commands. NO Gert.Authentication ref (asserted). 12 tests, 586 total |
-| U12 | Gert.Web SPA | ⬜ | F2,F3,F4 |
+| U12 | Gert.Web SPA | ✅ | full VanJS SPA in Gert.Api/wwwroot (68 JS files, all parse; styles split from mockup); F2 in-memory token, F3 sandboxed html+svg iframe (no allow-same-origin), F4 md sanitizer+bidi-isolate; SSE→state→views; van/van-x vendored. Behavioral verification = U13 |
 | U13 | Python smoke/E2E + mocks | ⬜ | |
 | U14 | Release pipeline + ops | ⬜ | logging, NUglify |
 | U15 | CI | ⬜ | |

@@ -1,0 +1,64 @@
+/* layout.css — .app grid, collapse/wide states, responsive drawers, scrim. */
+.app{display:grid; grid-template-columns:264px 1fr 372px; height:100vh; transition:grid-template-columns .28s cubic-bezier(.2,.8,.2,1);}
+.app.nav-collapsed{grid-template-columns:0 1fr 372px;}
+.app.panel-collapsed{grid-template-columns:264px 1fr 0;}
+.app.nav-collapsed.panel-collapsed{grid-template-columns:0 1fr 0;}
+.app.panel-wide{grid-template-columns:264px 1fr 588px;}
+.app.nav-collapsed.panel-wide{grid-template-columns:0 1fr 588px;}
+.app.panel-collapsed.panel-wide{grid-template-columns:264px 1fr 0;}
+
+/* scrim behind mobile drawers */
+.scrim{position:fixed; inset:0; background:var(--scrim); backdrop-filter:blur(2px); opacity:0; pointer-events:none; transition:.26s; z-index:50; display:none;}
+.drawer-close{display:none;}
+
+/* hide tool chips first as width tightens */
+@media (max-width:1180px){ .tools{display:none;} }
+
+/* --- tablet & mobile: sidebar + canvas become slide-over drawers --- */
+@media (max-width:1079px){
+  .app{grid-template-columns:1fr !important;}
+  .sidebar,.panel{position:fixed; top:0; bottom:0; z-index:60; width:300px; max-width:88vw;
+    transition:transform .28s cubic-bezier(.2,.8,.2,1); will-change:transform;}
+  .sidebar{left:0; transform:translateX(-101%); box-shadow:0 0 50px -8px rgba(0,0,0,.5);}
+  .panel{right:0; width:480px; max-width:94vw; border-left:1px solid var(--line);
+    transform:translateX(101%); box-shadow:0 0 50px -8px rgba(0,0,0,.5);}
+  .app.nav-open .sidebar{transform:none;}
+  .app.panel-open .panel{transform:none;}
+  .app.nav-open .scrim,.app.panel-open .scrim{opacity:1; pointer-events:auto;}
+  .scrim{display:block;}
+  .drawer-close{display:grid;}
+  .brand{padding-right:14px;}
+  .expand-btn{display:none;}            /* pane is already an overlay */
+  .topbar{padding:11px 14px; gap:8px;}
+  .conv-title{font-size:16px; display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  .title-wrap .edit{display:none;}
+  .menu{width:312px; max-width:calc(100vw - 28px);}
+  .thread{padding:0 18px;}
+  .composer-wrap{padding:12px 14px 18px;}
+  .chint{padding:0 8px;}
+  .legend{display:none;}
+}
+
+/* --- phones: tighten chrome, let canvas fill --- */
+@media (max-width:640px){
+  body{font-size:13.5px;}
+  .panel{width:100vw; max-width:100vw; border-left:none;}
+  .model-btn{padding:7px 9px;}
+  .model-btn .mname{display:none;}     /* keep dot + chevron only */
+  .brand h1{font-size:22px;}
+  .stream{padding:20px 0 18px;}
+  .msg{margin-bottom:24px;}
+  .msg.bot .body{font-size:14.5px;}
+  .md-render,.source-view{padding-left:16px; padding-right:16px;}
+  .composer{border-radius:14px;}
+}
+
+/* devices that can't hover: always show affordances that rely on hover */
+@media (hover:none){
+  .title-wrap .edit{opacity:.6;}
+  .trash{opacity:.7;}
+  .convo .node, .convo:hover .node{transition:none;}
+}
+
+.legend{position:fixed; bottom:13px; left:50%; transform:translateX(-50%); z-index:40; font-family:var(--mono); font-size:10px; color:var(--ink-faint); background:var(--surface); border:1px solid var(--line-strong); border-radius:20px; padding:6px 14px; box-shadow:0 6px 18px -10px rgba(60,46,28,.3);}
+.legend b{color:var(--accent-deep); font-weight:500;}

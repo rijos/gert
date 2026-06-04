@@ -1,0 +1,37 @@
+/* tokens.css — :root design tokens, manual dark override, OS preference.
+   MUST load first so variables exist before any rule references them. */
+:root{
+  --paper:#f4efe4; --surface:#fbf7ef; --surface-2:#efe7d7; --inset:#f0e9da;
+  --ink:#241f17; --ink-soft:#6f6557; --ink-faint:#a89c89;
+  --line:#e3dbca; --line-strong:#d6ccb7;
+  --accent:#bf4727; --accent-deep:#9c3417; --accent-soft:#ecd6c9;
+  --sage:#5e7350; --sage-soft:#dde2d0; --amber:#bb8526; --amber-soft:#eedec6;
+  --brick:#a02f1c;
+  --scrim:rgba(36,26,16,.42);
+  --display:'Fraunces',Georgia,serif;
+  --sans:'Hanken Grotesk',-apple-system,sans-serif;
+  --mono:'JetBrains Mono',ui-monospace,monospace;
+  --r:12px; --r-sm:8px;
+}
+/* ---- warm dark theme: manual override ---- */
+:root[data-theme="dark"]{
+  --paper:#17120d; --surface:#201a13; --surface-2:#2a2218; --inset:#241d15;
+  --ink:#efe6d6; --ink-soft:#b6a994; --ink-faint:#7e7160;
+  --line:#332b21; --line-strong:#473c2d;
+  --accent:#e2613d; --accent-deep:#f2855f; --accent-soft:#3b2419;
+  --sage:#92ab78; --sage-soft:#2a331e; --amber:#d8a44d; --amber-soft:#392c17;
+  --brick:#df5b41;
+  --scrim:rgba(0,0,0,.6);
+}
+/* ---- follow OS preference when not manually set ---- */
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --paper:#17120d; --surface:#201a13; --surface-2:#2a2218; --inset:#241d15;
+    --ink:#efe6d6; --ink-soft:#b6a994; --ink-faint:#7e7160;
+    --line:#332b21; --line-strong:#473c2d;
+    --accent:#e2613d; --accent-deep:#f2855f; --accent-soft:#3b2419;
+    --sage:#92ab78; --sage-soft:#2a331e; --amber:#d8a44d; --amber-soft:#392c17;
+    --brick:#df5b41;
+    --scrim:rgba(0,0,0,.6);
+  }
+}

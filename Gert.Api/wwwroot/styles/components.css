@@ -1,0 +1,68 @@
+/* components.css — shared component classes + @imports the area partials.
+   Area partials are loaded in cascade order after the shared rules below. */
+
+/* ---------- shared primitives ---------- */
+.ghost{background:none; border:none; color:var(--ink-faint); cursor:pointer; padding:6px; border-radius:6px; display:grid; place-items:center; transition:.14s;}
+.ghost:hover{background:var(--inset); color:var(--ink);}
+.ghost svg{width:16px; height:16px;}
+
+.badge{font-family:var(--mono); font-size:9.5px; padding:2px 6px; border-radius:5px; background:var(--surface-2); color:var(--ink-soft); border:1px solid var(--line);}
+.badge.cap{color:var(--accent-deep); background:var(--accent-soft); border-color:transparent;}
+
+.pill{font-family:var(--mono); font-size:9.5px; padding:3px 7px; border-radius:20px; font-weight:500; display:flex; align-items:center; gap:4px; flex:none;}
+.pill .pd{width:5px; height:5px; border-radius:50%;}
+.pill.ready{background:var(--sage-soft); color:#46583a;} .pill.ready .pd{background:var(--sage);}
+.pill.proc{background:#f1e4c8; color:#83611f;} .pill.proc .pd{background:var(--amber); animation:pulse 1.1s infinite;}
+.pill.fail{background:#f0d8d1; color:#8a2917;} .pill.fail .pd{background:var(--brick);}
+
+.switch{width:34px; height:19px; border-radius:20px; background:var(--sage); position:relative; cursor:pointer; flex:none;}
+.switch::after{content:""; position:absolute; width:15px; height:15px; border-radius:50%; background:#fff; top:2px; left:17px; transition:.18s; box-shadow:0 1px 3px rgba(0,0,0,.2);}
+.switch.off{background:var(--line-strong);} .switch.off::after{left:2px;}
+
+.seg{display:flex; background:var(--inset); border:1px solid var(--line); border-radius:7px; padding:2px; flex:none;}
+.sgb{font-family:var(--sans); font-size:11px; font-weight:600; color:var(--ink-soft); border:none; background:none; padding:4px 9px; border-radius:5px; cursor:pointer; transition:.12s;}
+.sgb.on{background:var(--surface); color:var(--ink); box-shadow:0 1px 3px rgba(60,46,28,.12);}
+
+/* menu (model picker + project picker) */
+.menu{position:absolute; top:calc(100% + 8px); right:0; width:312px; background:var(--surface); border:1px solid var(--line-strong); border-radius:var(--r); box-shadow:0 18px 44px -14px rgba(60,46,28,.34), 0 2px 8px rgba(60,46,28,.08); padding:7px; opacity:0; transform:translateY(-6px) scale(.98); transform-origin:top right; pointer-events:none; transition:.2s cubic-bezier(.2,.8,.2,1); z-index:30;}
+.menu-h{font-family:var(--mono); font-size:10px; letter-spacing:.08em; text-transform:uppercase; color:var(--ink-faint); padding:8px 10px 6px;}
+
+/* toast + modal + loader */
+.toast-host{position:fixed; bottom:18px; right:18px; z-index:80; display:flex; flex-direction:column; gap:8px;}
+.toast{font-size:12.5px; font-weight:500; color:var(--ink); background:var(--surface); border:1px solid var(--line-strong); border-left:3px solid var(--accent); border-radius:var(--r-sm); padding:10px 14px; box-shadow:0 8px 24px -12px rgba(60,46,28,.4); animation:rise .3s cubic-bezier(.2,.8,.2,1) backwards; max-width:320px;}
+.toast.err{border-left-color:var(--brick);}
+.toast.ok{border-left-color:var(--sage);}
+.modal-scrim{position:fixed; inset:0; background:var(--scrim); backdrop-filter:blur(2px); z-index:70; display:grid; place-items:center;}
+.modal{background:var(--surface); border:1px solid var(--line-strong); border-radius:var(--r); box-shadow:0 24px 60px -20px rgba(60,46,28,.5); padding:20px 22px; width:min(440px,calc(100vw - 32px)); animation:rise .26s cubic-bezier(.2,.8,.2,1) backwards;}
+.modal h2{font-family:var(--display); font-size:18px; font-weight:600; margin-bottom:6px;}
+.modal .modal-acts{display:flex; gap:8px; justify-content:flex-end; margin-top:18px;}
+.loader{width:18px; height:18px; border-radius:50%; border:2px solid var(--line-strong); border-top-color:var(--accent); animation:spin .7s linear infinite; display:inline-block;}
+@keyframes spin{to{transform:rotate(360deg);}}
+
+/* generic buttons */
+.btn{font-family:var(--sans); font-weight:600; font-size:13px; padding:8px 14px; border-radius:var(--r-sm); border:1px solid var(--accent); background:var(--accent); color:#fff; cursor:pointer; transition:.14s;}
+.btn:hover{background:var(--accent-deep);}
+.btn.secondary{background:var(--surface); color:var(--ink); border-color:var(--line-strong);}
+.btn.secondary:hover{border-color:var(--accent); color:var(--accent-deep); background:var(--accent-soft);}
+
+/* simple page (settings / admin) scaffolding */
+.page{flex:1; overflow-y:auto; padding:34px 0;}
+.page-inner{max-width:680px; margin:0 auto; padding:0 30px;}
+.page h1{font-family:var(--display); font-size:24px; font-weight:600; margin-bottom:4px;}
+.page .sub{color:var(--ink-soft); margin-bottom:24px;}
+.field{display:flex; flex-direction:column; gap:6px; margin-bottom:18px;}
+.field label{font-weight:600; font-size:13px;}
+.field input,.field select,.field textarea{font-family:var(--sans); font-size:14px; color:var(--ink); background:var(--surface); border:1px solid var(--line-strong); border-radius:var(--r-sm); padding:9px 12px;}
+.field input:focus,.field select:focus,.field textarea:focus{outline:none; border-color:var(--accent);}
+.row-toggle{display:flex; align-items:center; gap:12px; margin-bottom:18px;}
+.row-toggle .lab{flex:1; font-weight:600; font-size:13px;}
+.utable{width:100%; border-collapse:collapse; font-size:13px;}
+.utable th{text-align:left; font-family:var(--mono); font-size:10px; letter-spacing:.04em; text-transform:uppercase; color:var(--ink-faint); padding:8px 10px; border-bottom:1.5px solid var(--line-strong);}
+.utable td{padding:9px 10px; border-bottom:1px solid var(--line);}
+.utable tr:hover td{background:var(--inset);}
+
+@import url("areas/sidebar.css");
+@import url("areas/main.css");
+@import url("areas/canvas.css");
+@import url("areas/composer.css");
+@import url("areas/artifacts.css");

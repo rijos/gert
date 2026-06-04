@@ -1,0 +1,46 @@
+/* areas/sidebar.css — sidebar column, brand, new-chat, convo list, user chip, project picker. */
+.sidebar{background:var(--surface); border-right:1px solid var(--line); display:flex; flex-direction:column; overflow:hidden; min-width:0;}
+.brand{padding:20px 20px 14px; display:flex; align-items:center; gap:11px;}
+.mark{width:30px; height:30px; flex:none; position:relative;}
+.mark svg{display:block;}
+.brand h1{font-family:var(--display); font-weight:600; font-size:25px; letter-spacing:-.01em; line-height:1;}
+.brand .ver{font-family:var(--mono); font-size:10px; color:var(--ink-faint); margin-top:3px; letter-spacing:.02em;}
+
+/* project picker — sits above the conversation list */
+.project-picker{margin:0 16px 8px; position:relative;}
+.project-btn{width:calc(100% - 0px); display:flex; align-items:center; gap:8px; padding:8px 11px; border:1px solid var(--line); background:var(--inset); border-radius:var(--r-sm); cursor:pointer; font-family:var(--sans); font-weight:600; font-size:12.5px; color:var(--ink); transition:.14s;}
+.project-btn:hover{border-color:var(--accent); background:var(--accent-soft);}
+.project-btn .pname{flex:1; min-width:0; text-align:left; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+.project-btn .chev{width:13px; height:13px; color:var(--ink-faint); transition:.2s;}
+.project-picker.open .chev{transform:rotate(180deg);}
+.project-picker .menu{left:0; right:auto; width:232px; transform-origin:top left;}
+.project-picker.open .menu{opacity:1; transform:none; pointer-events:auto;}
+.p-item{padding:8px 10px; border-radius:var(--r-sm); cursor:pointer; transition:.12s; font-size:12.5px; font-weight:500;}
+.p-item:hover{background:var(--inset);}
+.p-item.sel{background:var(--accent-soft); color:var(--accent-deep); font-weight:600;}
+.p-new{border-top:1px solid var(--line); margin-top:5px; padding-top:8px; color:var(--accent-deep);}
+
+.newchat{margin:4px 16px 14px; padding:10px 14px; border:1px solid var(--line-strong); background:var(--surface-2);
+  border-radius:var(--r-sm); font-family:var(--sans); font-weight:600; font-size:13px; color:var(--ink);
+  display:flex; align-items:center; gap:9px; cursor:pointer; transition:.16s; width:calc(100% - 32px);}
+.newchat:hover{border-color:var(--accent); color:var(--accent-deep); background:var(--accent-soft);}
+.newchat svg{width:15px; height:15px;}
+
+.convos{flex:1; overflow-y:auto; padding:4px 0 12px;}
+.convo-group{padding:14px 22px 6px; font-family:var(--mono); font-size:10px; letter-spacing:.09em; text-transform:uppercase; color:var(--ink-faint);}
+.branch{position:relative; padding-left:30px; margin:0 12px;}
+.branch::before{content:""; position:absolute; left:13px; top:0; bottom:0; width:1.5px; background:var(--line-strong);}
+.convo{position:relative; padding:8px 10px 8px 0; border-radius:var(--r-sm); cursor:pointer; display:flex; align-items:center; color:var(--ink-soft); transition:.14s;}
+.convo .node{position:absolute; left:-21.5px; top:50%; transform:translateY(-50%); width:9px; height:9px; border-radius:50%; background:var(--paper); border:1.5px solid var(--line-strong); transition:.14s;}
+.convo .t{font-size:13px; font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+.convo:hover{background:var(--inset); color:var(--ink);}
+.convo:hover .node{border-color:var(--ink-faint);}
+.convo.active{background:var(--accent-soft); color:var(--accent-deep); font-weight:600;}
+.convo.active .node{background:var(--accent); border-color:var(--accent); box-shadow:0 0 0 3px rgba(191,71,39,.13);}
+
+.userchip{border-top:1px solid var(--line); padding:13px 16px; display:flex; align-items:center; gap:11px;}
+.avatar{width:32px; height:32px; border-radius:9px; flex:none; background:linear-gradient(140deg,var(--accent),var(--accent-deep)); color:#fff; font-family:var(--display); font-weight:600; font-size:15px; display:grid; place-items:center;}
+.userchip .who{flex:1; min-width:0;}
+.userchip .name{font-weight:600; font-size:13px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+.userchip .auth{font-family:var(--mono); font-size:10px; color:var(--ink-faint); display:flex; align-items:center; gap:4px;}
+.userchip .auth svg{width:9px; height:9px;}
