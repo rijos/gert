@@ -1,0 +1,66 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master, "feat/**"]
+  pull_request:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  dotnet:
+    name: .NET — build + test (gate)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+      # Warnings-as-errors, the reference-direction arch test, real-SQLite (vec0.so is
+      # vendored + copied to output), and the full suite — hermetic, no network at runtime.
+      - name: Test
+        run: dotnet test Gert.sln --nologo
+
+  python:
+    name: Python — ruff + mypy + conformance (gate)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - name: Sync harness env
+        working-directory: tools/smoke
+        run: uv sync
+      # ruff (lint + format check) + mypy --strict, then the non-browser embedding
+      # conformance (Python embed == .NET FakeEmbeddings golden, bit-for-bit).
+      - name: Lint + type-check
+        run: make lint
+      - name: Embedding conformance
+        run: make smoke-unit
+
+  e2e:
+    name: Browser E2E smoke (opt-in)
+    # Heavy (Playwright browsers). Not a merge gate — run on demand via the Actions tab
+    # ("Run workflow"). The .NET + Python jobs above are the gates.
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+      - uses: astral-sh/setup-uv@v5
+      - name: Sync harness + install browsers
+        working-directory: tools/smoke
+        run: |
+          uv sync
+          uv run playwright install --with-deps chromium firefox
+      - name: Boot mocks + FakeE2E host, run the matrix
+        run: PYTHONPATH=. tools/smoke/.venv/bin/python -m tools.smoke.run --browser all --role all
+      - name: Upload traces/screenshots on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-artifacts
+          path: tools/smoke/artifacts/

@@ -27,7 +27,7 @@ Status: ⬜ not started · 🟡 in progress · ✅ done · 🔴 blocked
 | U12 | Gert.Web SPA | ✅ | full VanJS SPA in Gert.Api/wwwroot (68 JS files, all parse; styles split from mockup); F2 in-memory token, F3 sandboxed html+svg iframe (no allow-same-origin), F4 md sanitizer+bidi-isolate; SSE→state→views; van/van-x vendored. Behavioral verification = U13 |
 | U13 | Python smoke/E2E + mocks | ✅ | harness + mocks + FakeE2E; ruff+mypy --strict CLEAN; **browser smoke 18/18 GREEN** (chromium+firefox × admin/user/limited) — first real SPA run. Caught+fixed 4 bugs: tracing API, CSP-blocked importmap, fonts-CDN CSP, new-chat FK. Non-gating. embeddings conformance bit-exact |
 | U14 | Release pipeline + ops | ✅ | NUglify minify-in-place on publish (ESM-safe, raw-fallback) verified via dotnet publish; Serilog NDJSON (ts/level-first, uid=hash, never tokens/sub/content); /readyz dep-check (/healthz unchanged). 14 tests, 600 total |
-| U15 | CI | ⬜ | |
+| U15 | CI | ✅ | .github/workflows/ci.yml — gating .NET (build+test, vec0 vendored) + gating Python (ruff+mypy+conformance via uv sync/make); opt-in browser E2E job (workflow_dispatch, --with-deps, artifact upload). YAML valid; make targets verified |
 
 ## M1.5 — review pass (user feedback before M2)
 Decisions: storage = **interface seam + LocalFS only** (no S3 yet); test pyramid = **lean on Python**
