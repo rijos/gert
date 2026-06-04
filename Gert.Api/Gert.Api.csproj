@@ -7,4 +7,25 @@
     <ProjectReference Include="..\Gert.External\Gert.External.csproj" />
   </ItemGroup>
 
+  <!-- U14B: Serilog NDJSON logging (operations.md § Logging format). Versions pinned
+       centrally in Directory.Build.props for the orchestrator. -->
+  <ItemGroup>
+    <PackageReference Include="Serilog" Version="$(SerilogVersion)" />
+    <PackageReference Include="Serilog.Extensions.Hosting" Version="$(SerilogExtensionsHostingVersion)" />
+    <PackageReference Include="Serilog.Sinks.Console" Version="$(SerilogSinksConsoleVersion)" />
+  </ItemGroup>
+
+  <!-- AfterTargets=Publish, Release only: walk $(PublishDir)wwwroot and minify each
+       .js/.css to the SAME relative path. Filenames stay stable so the ESM import
+       graph + import map keep resolving (cache-bust via ETag + asp-append-version on
+       index.html, NOT content hashes). Dev/Debug serves raw source unchanged. A single
+       file failing to minify is left raw (the tool exits 0) — never breaks the graph.
+
+       `dotnet run` builds + runs the NUglify tool from source (the doc's representative
+       target, ui-components.md §6) — robust with no SDK-state assumptions. Minifies in
+       place, same relative paths, so the ESM import graph + import map still resolve. -->
+  <Target Name="MinifyWebAssets" AfterTargets="Publish" Condition="'$(Configuration)'=='Release'">
+    <Exec Command="dotnet run --project &quot;$(MSBuildThisFileDirectory)..\tools\Gert.Web.Minify\Gert.Web.Minify.csproj&quot; -c $(Configuration) --no-launch-profile -- &quot;$(PublishDir)wwwroot&quot;" />
+  </Target>
+
 </Project>

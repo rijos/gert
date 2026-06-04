@@ -26,7 +26,7 @@ Status: ⬜ not started · 🟡 in progress · ✅ done · 🔴 blocked
 | U11 | Gert.Console | ✅ | LocalUserContext (single user, all tools), AddGertConsole wiring (inline ingest, no auth/controllers/worker), ChatEvent→stdout renderer, chat/ingest commands. NO Gert.Authentication ref (asserted). 12 tests, 586 total |
 | U12 | Gert.Web SPA | ✅ | full VanJS SPA in Gert.Api/wwwroot (68 JS files, all parse; styles split from mockup); F2 in-memory token, F3 sandboxed html+svg iframe (no allow-same-origin), F4 md sanitizer+bidi-isolate; SSE→state→views; van/van-x vendored. Behavioral verification = U13 |
 | U13 | Python smoke/E2E + mocks | ⬜ | |
-| U14 | Release pipeline + ops | ⬜ | logging, NUglify |
+| U14 | Release pipeline + ops | ✅ | NUglify minify-in-place on publish (ESM-safe, raw-fallback) verified via dotnet publish; Serilog NDJSON (ts/level-first, uid=hash, never tokens/sub/content); /readyz dep-check (/healthz unchanged). 14 tests, 600 total |
 | U15 | CI | ⬜ | |
 
 ## M1.5 — review pass (user feedback before M2)
@@ -49,8 +49,8 @@ Order (semantic first, file-split enforcement last):
 4. ✅ ChatService step-based stateless redesign (#13: StartTurnAsync→ChatTurn→RunAsync, no turnId; invalid input throws ValidationException→400 before stream) + branded Gert ProblemDetails 400/401/403/404 (#15). 83 tests.
 5. ✅ nullable→error explicit (#4); coverage coverlet.collector 6.0.2 + reportgenerator tool, `make coverage` works — 72.6% line/60.2% branch (#5); Makefile (#6).
 6. ✅ One-type-per-file enforced via StyleCop SA1402/SA1649 as ERROR (all other SA rules silenced; SA0001 off). Split ~40 files across all projects; nested types exempt. Build judges it. 83 tests.
-7. ⬜ DEFERRED to U10+U13 boundary: remove .NET fakes/minting + .NET HTTP test tier → Python E2E (#14)
-8. ⬜ Re-green full suite; resume M2 (U4b RAG → U6 → U7b-d → U9b)
+7. ❌ **#14 NOT done (user decision).** Keep the verified .NET WebApplicationFactory suite + fakes as the real gate; AUTHOR the Python E2E harness as code but do NOT install/run browsers in this sandbox (heavy + fragile) and do NOT delete working .NET tests. Browsers run in real CI/staging; U15 CI = .NET gate (runs) + web job documented.
+8. ✅ Re-green full suite done per unit; M2 complete (eb06d1a).
 
 ## Milestones
 - **M0** skeleton compiles — U0–U3

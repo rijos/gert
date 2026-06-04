@@ -24,6 +24,11 @@
          the "Console must not need the API" guarantee is structural (tech-stack.md). -->
     <PackageReference Include="Microsoft.Extensions.Hosting"
                       Version="$(MicrosoftExtensionsHostingVersion)" />
+    <!-- U14B: shared NDJSON logging (operations.md). The non-host Console builds a
+         Serilog logger and bridges it into Microsoft.Extensions.Logging via AddSerilog. -->
+    <PackageReference Include="Serilog" Version="$(SerilogVersion)" />
+    <PackageReference Include="Serilog.Extensions.Logging" Version="$(SerilogExtensionsLoggingVersion)" />
+    <PackageReference Include="Serilog.Sinks.Console" Version="$(SerilogSinksConsoleVersion)" />
   </ItemGroup>
 
 </Project>

@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="$(TestSdkVersion)" />
+    <PackageReference Include="xunit.v3" Version="$(XunitV3Version)" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="$(XunitRunnerVersion)" />
+    <PackageReference Include="FluentAssertions" Version="$(FluentAssertionsVersion)" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- U14: the NUglify minify tool, and Gert.Service for the NDJSON formatter +
+         uid-hash so the U14 logging assertions live alongside the minify ones. -->
+    <ProjectReference Include="..\..\tools\Gert.Web.Minify\Gert.Web.Minify.csproj" />
+    <ProjectReference Include="..\..\Gert.Service\Gert.Service.csproj" />
+  </ItemGroup>
+
+</Project>

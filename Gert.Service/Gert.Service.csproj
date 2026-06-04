@@ -14,6 +14,11 @@
                       Version="$(FluentValidationVersion)" />
     <PackageReference Include="FluentValidation.DependencyInjectionExtensions"
                       Version="$(FluentValidationDIVersion)" />
+    <!-- U14B: the shared NDJSON ITextFormatter lives here so BOTH hosts (Gert.Api and
+         Gert.Console) emit the identical operations.md log schema. Serilog (core only —
+         no sinks/hosting) is a logging library, not a host coupling, so the
+         host-agnostic service layer stays clean (Console still never references the API). -->
+    <PackageReference Include="Serilog" Version="$(SerilogVersion)" />
   </ItemGroup>
 
 </Project>

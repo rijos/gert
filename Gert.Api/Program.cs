@@ -1,5 +1,6 @@
 using Gert.Api.Errors;
 using Gert.Api.Ingestion;
+using Gert.Api.Logging;
 using Gert.Api.Security;
 using Gert.Authentication;
 using Gert.Database.Sqlite;
@@ -7,12 +8,24 @@ using Gert.External;
 using Gert.Service;
 using Gert.Service.Database;
 using Gert.Service.Ingestion;
+using Gert.Service.Observability;
 using Gert.Service.Storage;
 using Gert.Service.Tools;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.RateLimiting;
+using Serilog;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// --- Shared NDJSON logging (operations.md § Logging format) -----------------
+// Serilog as the host logger, emitting the shared schema (ts/level first) via the
+// custom GertNdjsonFormatter. FromLogContext picks up the per-request comp/req/uid
+// pushed by RequestLogContextMiddleware. Never logs tokens/raw sub/email/content.
+builder.Host.UseSerilog((context, loggerConfiguration) => loggerConfiguration
+    .MinimumLevel.Information()
+    .Enrich.FromLogContext()
+    .Enrich.WithProperty("comp", "api")
+    .WriteTo.Console(new GertNdjsonFormatter()));
 
 // --- Service layer (host-agnostic) -----------------------------------------
 builder.Services.AddControllers();
@@ -141,6 +154,12 @@ app.UseDefaultFiles();
 app.UseStaticFiles();
 
 app.UseAuthentication();
+
+// After authentication so context.User is populated: push comp/req/uid onto the
+// Serilog LogContext for the rest of the request (operations.md). uid is the short
+// sha256(iss+sub) hash and only set when authenticated — never the raw sub.
+app.UseMiddleware<RequestLogContextMiddleware>();
+
 app.UseAuthorization();
 
 // Per-user rate limiting (F10) — applied to the controller surface below. Absent in
@@ -157,7 +176,25 @@ if (rateLimitingEnabled)
 }
 
 // Liveness probe — the one anonymous endpoint (auth.md authorization matrix).
+// UNCHANGED: always 200 for anonymous (the U9a WalkingSkeleton test asserts this).
 app.MapGet("/healthz", () => Results.Ok(new { status = "ok" }))
+    .AllowAnonymous();
+
+// Readiness probe (operations.md § Observability: "/healthz checking vLLM + SearXNG
+// reachability"). Kept on a SEPARATE path so liveness stays a pure 200. Best-effort:
+// a short-timeout GET against each upstream via its named HttpClient. 200 when all
+// reachable, else 503 with a per-dependency map. Anonymous, like /healthz.
+app.MapGet("/readyz", async (IHttpClientFactory httpFactory, CancellationToken ct) =>
+    {
+        var checks = await ReadinessCheck.RunAsync(httpFactory, ct);
+        var ready = checks.Values.All(ok => ok);
+        var payload = new { status = ready ? "ready" : "degraded", deps = checks };
+        return Results.Json(
+            payload,
+            statusCode: ready
+                ? StatusCodes.Status200OK
+                : StatusCodes.Status503ServiceUnavailable);
+    })
     .AllowAnonymous();
 
 // Unknown /api/* paths must 404 as a Gert-branded ProblemDetails, never an empty

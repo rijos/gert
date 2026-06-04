@@ -37,6 +37,13 @@
     <OpenXmlVersion>3.1.0</OpenXmlVersion>
     <!-- Patched System.IO.Packaging overriding OpenXml's vulnerable transitive 8.0.0 (NU1903). -->
     <SystemIoPackagingVersion>9.0.0</SystemIoPackagingVersion>
+    <!-- U14 release pipeline: NUglify minify-in-place on publish (no npm) +
+         Serilog NDJSON logging. Orchestrator pins valid net10.0 versions. -->
+    <NUglifyVersion>1.21.10</NUglifyVersion>
+    <SerilogVersion>4.2.0</SerilogVersion>
+    <SerilogExtensionsHostingVersion>9.0.0</SerilogExtensionsHostingVersion>
+    <SerilogExtensionsLoggingVersion>9.0.0</SerilogExtensionsLoggingVersion>
+    <SerilogSinksConsoleVersion>6.0.0</SerilogSinksConsoleVersion>
   </PropertyGroup>
 
   <!-- One-type-per-file enforcement (#11). Only SA1402/SA1649 are on (see .editorconfig);

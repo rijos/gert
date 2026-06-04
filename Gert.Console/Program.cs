@@ -3,8 +3,11 @@
 // It bypasses the API/controllers, has NO Gert.Authentication reference, and runs
 // no BackgroundService — ingestion is inline via the default InlineIngestionQueue.
 using Gert.Console;
+using Gert.Service.Observability;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Serilog;
 
 var configuration = new ConfigurationBuilder()
     .SetBasePath(AppContext.BaseDirectory)
@@ -12,8 +15,17 @@ var configuration = new ConfigurationBuilder()
     .AddEnvironmentVariables(prefix: "GERT_")
     .Build();
 
+// Shared NDJSON logging (operations.md): the SAME formatter the API uses, so the
+// Console host's structured lines interleave cleanly with every other process in the
+// deployment. comp="console" identifies them.
+using var serilog = new LoggerConfiguration()
+    .MinimumLevel.Information()
+    .Enrich.WithProperty("comp", "console")
+    .WriteTo.Console(new GertNdjsonFormatter())
+    .CreateLogger();
+
 var services = new ServiceCollection();
-services.AddLogging();
+services.AddLogging(builder => builder.AddSerilog(serilog, dispose: false));
 services.AddGertConsole(configuration);
 
 await using var provider = services.BuildServiceProvider();
