@@ -17,5 +17,11 @@ public sealed record ToolResultEvent : ChatEvent
     /// <summary>Result hits/rows (e.g. doc-hit rows for a RAG call).</summary>
     public IReadOnlyList<ToolResultHit>? Hits { get; init; }
 
+    /// <summary>Plain-text output the card renders verbatim (sandbox stdout, the clock reading).</summary>
+    public string? Stdout { get; init; }
+
+    /// <summary>The model-managed todo list (the <c>set_todos</c> tool) for the todo card.</summary>
+    public IReadOnlyList<Chat.TodoItem>? Todos { get; init; }
+
     public override ChatEventType Type => ChatEventType.ToolResult;
 }

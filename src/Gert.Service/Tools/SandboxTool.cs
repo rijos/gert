@@ -122,6 +122,8 @@ public sealed class SandboxTool : ITool
         {
             Success = true,
             ResultJson = resultJson,
+            // The card's pre block renders this verbatim (the model reads ResultJson).
+            Stdout = result.Stdout,
         };
     }
 }

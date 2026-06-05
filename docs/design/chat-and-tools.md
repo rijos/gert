@@ -4,7 +4,7 @@
 
 vLLM exposes an **OpenAI-compatible** `/v1/chat/completions` with function calling and streaming, so the orchestrator can use a standard OpenAI client pointed at the model's base URL.
 
-The API advertises three tools to the model:
+The API advertises five tools to the model:
 
 ```jsonc
 [
@@ -13,9 +13,30 @@ The API advertises three tools to the model:
   { "name":"web_search", "description":"Search the web via SearXNG",
     "parameters": { "query":"string" } },
   { "name":"run_python", "description":"Execute Python in a sandbox, return stdout",
-    "parameters": { "code":"string" } }
+    "parameters": { "code":"string" } },
+  { "name":"set_todos", "description":"Replace the model-managed todo checklist the chat window renders",
+    "parameters": { "todos":"[{ text, status: pending|active|done }]" } },
+  { "name":"get_datetime", "description":"Current date/time (UTC + optional IANA timezone)",
+    "parameters": { "timezone":"string?" } }
 ]
 ```
+
+`set_todos` and `get_datetime` touch no external world: the todo list is
+replace-not-patch (the latest call is the truth, rendered as a checklist on its
+tool card and persisted with the `tool_calls` row — no extra storage), and the
+clock reads only through the injected `TimeProvider`, so tests pin the instant.
+
+### Artifacts (canvas tabs)
+
+The model opts a fenced block into the canvas by **naming it in the fence info
+string** — ` ```html name=demo.html ` … ` ``` `. When the turn's final content is
+assembled, the runner extracts every named fence whose language maps onto the
+closed artifact-kind set (`md`/`markdown`, `html`/`htm`, `svg`, `py`/`python`),
+persists each as an `artifacts` row (provenance: conversation + producing
+message), and emits an `artifact` event before `message_end` — the canvas tab
+opens live, and a reload gets the same artifacts back through the thread GET.
+Unnamed fences and unknown languages stay inline in the bubble; extraction is
+additive (the fence text remains part of the message).
 
 ### Detached turns
 

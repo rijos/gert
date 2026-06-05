@@ -13,6 +13,8 @@ before asserting.
 
 from __future__ import annotations
 
+import re
+
 import pytest
 from playwright.sync_api import Page, expect
 
@@ -84,3 +86,68 @@ def test_citation_chip(page: Page, base_url: str) -> None:
     chip = page.locator(".cite")
     expect(chip).to_have_text("3")
     expect(chip).to_have_attribute("title", "My doc")
+
+
+def test_tool_card_renders_todo_checklist(page: Page, base_url: str) -> None:
+    page.goto(f"{base_url}/tests/harness.html")
+    page.evaluate(
+        """async () => {
+            const { ToolCard } = await import('/components/main/tool-card.js');
+            const { reactive } = await import('van-x');
+            const card = reactive({
+                kind: 'todo', status: 'done', label: 'Updating the todo list',
+                tag: 'todo', query: '', hits: [], stdout: '', open: true,
+                todos: [
+                    { text: 'Order the new SSD', status: 'done' },
+                    { text: 'Migrate rag.db', status: 'active' },
+                    { text: 'Re-embed the corpus', status: 'pending' },
+                ],
+            });
+            window.__mount(ToolCard(card));
+        }"""
+    )
+    rows = page.locator(".tcard .todo-row")
+    expect(rows).to_have_count(3)
+    # Per-status classes drive the marker + strikethrough styling.
+    expect(rows.nth(0)).to_have_class("todo-row done")
+    expect(rows.nth(1)).to_have_class("todo-row active")
+    expect(rows.nth(2)).to_have_class("todo-row pending")
+    expect(rows.nth(1)).to_contain_text("Migrate rag.db")
+
+
+def test_tool_card_renders_stdout(page: Page, base_url: str) -> None:
+    # The pre block a sandbox/clock card renders verbatim (tool_result.stdout).
+    page.goto(f"{base_url}/tests/harness.html")
+    page.evaluate(
+        """async () => {
+            const { ToolCard } = await import('/components/main/tool-card.js');
+            const { reactive } = await import('van-x');
+            const card = reactive({
+                kind: 'clock', status: 'done', label: 'Checking the date & time',
+                tag: 'clock', query: '', hits: [], todos: [], open: true,
+                stdout: '2026-06-05 12:30:00 (UTC, Friday)',
+            });
+            window.__mount(ToolCard(card));
+        }"""
+    )
+    expect(page.locator(".tcard .stdout")).to_have_text(
+        "2026-06-05 12:30:00 (UTC, Friday)"
+    )
+
+
+def test_tool_card_error_state(page: Page, base_url: str) -> None:
+    # A refused/failed tool call styles the card as an error (the entitlement
+    # ceiling surfaces visibly instead of pretending the tool ran).
+    page.goto(f"{base_url}/tests/harness.html")
+    page.evaluate(
+        """async () => {
+            const { ToolCard } = await import('/components/main/tool-card.js');
+            const { reactive } = await import('van-x');
+            const card = reactive({
+                kind: 'todo', status: 'error', label: 'Updating the todo list',
+                tag: 'todo', query: '', hits: [], stdout: '', todos: [], open: false,
+            });
+            window.__mount(ToolCard(card));
+        }"""
+    )
+    expect(page.locator(".tcard")).to_have_class(re.compile(r"\berr\b"))

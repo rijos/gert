@@ -107,6 +107,15 @@ const GLYPHS = {
     path({ d: "M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" }),
     path({ d: "M15 3h6v6M10 14 21 3", "stroke-linecap": "round", "stroke-linejoin": "round" }),
   ],
+  clock: () => [
+    circle({ cx: "12", cy: "12", r: "10" }),
+    path({ d: "M12 6v6l4 2", "stroke-linecap": "round", "stroke-linejoin": "round" }),
+  ],
+  // checklist — the todo tool card mark
+  checklist: () => [
+    path({ d: "M3.5 5.5 5 7l2.5-2.5M3.5 11.5 5 13l2.5-2.5M3.5 17.5 5 19l2.5-2.5", "stroke-linecap": "round", "stroke-linejoin": "round" }),
+    path({ d: "M11 6h10M11 12h10M11 18h10", "stroke-linecap": "round" }),
+  ],
   // globe + magnifier — the web-search/sources mark
   websearch: () => [
     circle({ cx: "10.5", cy: "10.5", r: "7.5" }),

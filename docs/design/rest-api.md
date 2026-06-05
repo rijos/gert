@@ -115,7 +115,7 @@ footnotes sequence:
 |----------|----------------|-----------|
 | `message_start` | `{ "message_id": "…" }` | creates the assistant bubble |
 | `tool_call` | `{ "id","kind":"rag","status":"running","request":{"query":"…"} }` | renders a tool card with the spinner node |
-| `tool_result` | `{ "id","kind":"rag","status":"done","latency_ms":142, "hits":[{"doc":"qdrant-benchmarks.pdf","page":"p.4","score":0.89}] }` | fills the card's doc-hit rows |
+| `tool_result` | `{ "id","kind":"rag","status":"done","latency_ms":142, "hits":[{"doc":"qdrant-benchmarks.pdf","page":"p.4","score":0.89}], "stdout":"…?", "todos":[{"text":"…","status":"pending\|active\|done"}]? }` | fills the card's doc-hit rows / stdout pre / todo checklist |
 | `delta` | `{ "text": "Short version: " }` | typewriter token append |
 | `citation` | `{ "ordinal":1, "label":"qdrant-benchmarks.pdf · p.4", "doc_id":"…" }` | the `[1]` marker + footnote |
 | `artifact` | `{ "id","kind":"md","name":"decision.md","content":"…" }` | opens a canvas tab |

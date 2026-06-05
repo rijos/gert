@@ -206,6 +206,8 @@ public sealed class TurnRunner : ITurnRunner
                     Status = outcome.Status,
                     LatencyMs = outcome.LatencyMs,
                     Hits = outcome.Hits,
+                    Stdout = outcome.Stdout,
+                    Todos = outcome.Todos,
                 }, token).ConfigureAwait(false);
 
                 // Tool rows persist LIVE (the tree read model grows as the turn
@@ -237,6 +239,33 @@ public sealed class TurnRunner : ITurnRunner
             await repo.UpdateMessageStreamAsync(
                 job.AssistantMessageId, content.ToString(), MessageStatus.Streaming, null, token)
                 .ConfigureAwait(false);
+        }
+
+        // Artifact extraction (implementation-plan U7b): named fences in the final
+        // content become canvas artifacts — persisted first (the thread read model
+        // returns them on reload), then emitted so the live canvas tab opens.
+        foreach (var extracted in ArtifactExtractor.Extract(content.ToString()))
+        {
+            var artifact = new Artifact
+            {
+                Id = Guid.NewGuid().ToString("D"),
+                ConversationId = job.ConversationId,
+                MessageId = job.AssistantMessageId,
+                Kind = extracted.Kind,
+                Name = extracted.Name,
+                Language = extracted.Language,
+                Content = extracted.Content,
+                CreatedAt = DateTimeOffset.UtcNow,
+            };
+            await repo.InsertArtifactAsync(artifact, token).ConfigureAwait(false);
+
+            await EmitAsync(repo, topic, new ArtifactEvent
+            {
+                Id = artifact.Id,
+                Kind = artifact.Kind,
+                Name = artifact.Name,
+                Content = artifact.Content,
+            }, token).ConfigureAwait(false);
         }
 
         // Re-number citations into one stable sequence over the whole turn, bind

@@ -17,6 +17,15 @@ public sealed record ToolResult
     /// <summary>Citations derived from this result, if any.</summary>
     public IReadOnlyList<Citation> Citations { get; init; } = [];
 
+    /// <summary>
+    /// Plain-text display output for the tool card (sandbox stdout, the clock
+    /// reading) — presentation only; the model sees <see cref="ResultJson"/>.
+    /// </summary>
+    public string? Stdout { get; init; }
+
+    /// <summary>The todo list for the todo card (the <c>set_todos</c> tool).</summary>
+    public IReadOnlyList<TodoItem>? Todos { get; init; }
+
     /// <summary>Error message when <see cref="Success"/> is false.</summary>
     public string? Error { get; init; }
 }

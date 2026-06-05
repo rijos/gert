@@ -295,11 +295,94 @@ def _scenario_rbac(app: AppPage, role: str) -> None:
         expect(app.page.locator(".utable")).to_have_count(0)
 
 
+def _scenario_artifact(app: AppPage, role: str) -> None:
+    """The model's named html fence becomes a live canvas artifact (U7b extraction)."""
+    from playwright.sync_api import expect
+
+    app.composer.send("make me a demo html page")
+    tab = app.canvas.tab("html")
+    expect(tab).to_be_visible(timeout=15000)
+    expect(tab).to_contain_text("demo.html")
+    expect(app.canvas.html_iframe).to_be_visible(timeout=15000)
+
+
+def _scenario_memory(app: AppPage, role: str) -> None:
+    """A memory entry rides the hybrid query: seeded via the SPA's own memory
+    service, retrieved by the model's search_documents call, and surfaced with
+    its DECODED title (never the base64 blob) plus a citation."""
+    from playwright.sync_api import expect
+
+    app.page.evaluate(
+        """async () => {
+            const memory = await import('/services/memory.js');
+            await memory.add({
+                title: 'Favorite database',
+                content: 'My favorite database is sqlite-vec, running the homelab RAG stack.',
+            });
+        }"""
+    )
+    app.composer.send("search my docs about favorite database")
+    card = app.thread.tool_cards.first
+    expect(card).to_be_visible(timeout=15000)
+    app.thread.expand_tool_card(card)
+    expect(card.locator(".doc-hit").first).to_contain_text(
+        "Favorite database", timeout=15000
+    )
+    expect(app.thread.last_bot_body).to_contain_text(
+        "sqlite-vec is your favorite", timeout=15000
+    )
+    expect(app.thread.citations.first).to_be_visible(timeout=15000)
+
+
+def _scenario_todos(app: AppPage, role: str) -> None:
+    """The set_todos tool renders the model-managed checklist; a role without the
+    `todo` entitlement proves the execution-time ceiling (card errors, turn survives)."""
+    from playwright.sync_api import expect
+
+    app.composer.send("plan the homelab upgrade")
+    expect(app.thread.tool_cards.first).to_be_visible(timeout=15000)
+    if role == "admin":
+        # The todo card auto-opens; three rows with their statuses.
+        expect(app.thread.todo_rows).to_have_count(3, timeout=15000)
+        expect(app.thread.todo_rows.first).to_contain_text("Order the new SSD")
+        expect(app.thread.root.locator(".tcard .todo-row.active")).to_contain_text(
+            "Migrate rag.db"
+        )
+    else:
+        # `user` carries gert_tools "rag search": set_todos is refused at
+        # execution time, the card errors, and the turn still finishes.
+        expect(app.thread.errored_tool_cards.first).to_be_visible(timeout=15000)
+    expect(app.thread.last_bot_body).to_contain_text("Plan is up", timeout=15000)
+
+
+def _scenario_clock(app: AppPage, role: str) -> None:
+    """The get_datetime tool puts a wall-clock reading on the card (entitled roles)."""
+    import re
+
+    from playwright.sync_api import expect
+
+    app.composer.send("what time is it")
+    card = app.thread.tool_cards.first
+    expect(card).to_be_visible(timeout=15000)
+    if role == "admin":
+        app.thread.expand_tool_card(card)
+        expect(app.thread.tool_stdout.first).to_contain_text(
+            re.compile(r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} \(UTC"), timeout=15000
+        )
+    else:
+        expect(app.thread.errored_tool_cards.first).to_be_visible(timeout=15000)
+    expect(app.thread.last_bot_body).to_contain_text("on the card above", timeout=15000)
+
+
 SCENARIOS = {
     "chat": _scenario_chat,
     "tool_cards": _scenario_tool_cards,
     "chrome": _scenario_chrome,
     "rbac": _scenario_rbac,
+    "artifact": _scenario_artifact,
+    "memory": _scenario_memory,
+    "todos": _scenario_todos,
+    "clock": _scenario_clock,
 }
 
 

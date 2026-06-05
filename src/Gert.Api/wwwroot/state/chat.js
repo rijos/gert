@@ -19,11 +19,18 @@ export const messages = reactive([]); // see message shape below
 export const streaming = van.state(false);
 
 // per-conversation tool toggles (mockup chips)
-export const tools = reactive({ rag: true, search: true, sandbox: false });
+export const tools = reactive({
+  rag: true,
+  search: true,
+  sandbox: false,
+  todo: true,
+  clock: true,
+});
 
 // Message shape (van-x reactive object pushed onto `messages`):
 //   { id, role: "user"|"assistant", text, streaming,
-//     tools: reactive([ { id, kind, status, label, tag, query, hits, code, stdout, open } ]),
+//     tools: reactive([ { id, kind, status, label, tag, query, hits, code, stdout,
+//                         todos: [{ text, status }], open } ]),
 //     citations: reactive([ { ordinal, label, doc_id, locator } ]) }
 
 export const newConversation = () => {

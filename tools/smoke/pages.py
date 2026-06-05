@@ -119,6 +119,20 @@ class Thread:
     def tool_card(self, label: str) -> Locator:
         return self.root.locator(".tcard", has_text=label)
 
+    @property
+    def errored_tool_cards(self) -> Locator:
+        return self.root.locator(".tcard.err")
+
+    @property
+    def todo_rows(self) -> Locator:
+        """Checklist rows on a todo tool card (class carries the status)."""
+        return self.root.locator(".tcard .todo-row")
+
+    @property
+    def tool_stdout(self) -> Locator:
+        """The pre block a sandbox/clock card renders verbatim."""
+        return self.root.locator(".tcard .stdout")
+
     def expand_tool_card(self, card: Locator) -> None:
         card.locator(".thead").click()
 

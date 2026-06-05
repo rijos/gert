@@ -276,7 +276,77 @@ public sealed class TurnRunnerTests
         _streamUpdates.Last().Status.Should().Be(MessageStatus.Error);
     }
 
+    [Fact]
+    public async Task Named_fence_in_the_final_content_persists_and_emits_an_artifact()
+    {
+        var inserted = new List<Artifact>();
+        _repo.InsertArtifactAsync(Arg.Any<Artifact>(), Arg.Any<CancellationToken>())
+            .Returns(Task.CompletedTask)
+            .AndDoes(ci => inserted.Add(ci.Arg<Artifact>()));
+
+        await NewRunner(new ArtifactModel()).RunAsync(NewJob("make me a demo page"));
+
+        // Persisted with full provenance…
+        var row = inserted.Should().ContainSingle().Subject;
+        row.ConversationId.Should().Be(Conv);
+        row.MessageId.Should().Be(AssistantId);
+        row.Kind.Should().Be(ArtifactKind.Html);
+        row.Name.Should().Be("demo.html");
+        row.Content.Should().Be("<h1>Demo</h1>");
+
+        // …and emitted AFTER the deltas, BEFORE message_end (the live canvas tab).
+        var types = Events.Select(e => e.GetType().Name).ToList();
+        var artifactEvent = Events.OfType<ArtifactEvent>().Single();
+        artifactEvent.Id.Should().Be(row.Id);
+        artifactEvent.Kind.Should().Be(ArtifactKind.Html);
+        artifactEvent.Name.Should().Be("demo.html");
+        artifactEvent.Content.Should().Be("<h1>Demo</h1>");
+        types.IndexOf(nameof(ArtifactEvent))
+            .Should().BeGreaterThan(types.LastIndexOf(nameof(DeltaEvent)))
+            .And.BeLessThan(types.IndexOf(nameof(MessageEndEvent)));
+    }
+
+    [Fact]
+    public async Task Plain_code_fences_produce_no_artifact()
+    {
+        var inserted = new List<Artifact>();
+        _repo.InsertArtifactAsync(Arg.Any<Artifact>(), Arg.Any<CancellationToken>())
+            .Returns(Task.CompletedTask)
+            .AndDoes(ci => inserted.Add(ci.Arg<Artifact>()));
+
+        await NewRunner(new InlineCodeModel()).RunAsync(NewJob("show me some code"));
+
+        inserted.Should().BeEmpty();
+        Events.Should().NotContain(e => e is ArtifactEvent);
+    }
+
     // ---- scripted models -----------------------------------------------------
+
+    /// <summary>Streams a named html fence split across deltas (the artifact path).</summary>
+    private sealed class ArtifactModel : IChatModelClient
+    {
+        public async IAsyncEnumerable<ChatModelChunk> StreamAsync(
+            ChatCompletionRequest request,
+            [EnumeratorCancellation] CancellationToken cancellationToken = default)
+        {
+            yield return new ChatModelChunk { TextDelta = "Here you go:\n\n```html " };
+            yield return new ChatModelChunk { TextDelta = "name=demo.html\n<h1>Demo</h1>\n```" };
+            yield return new ChatModelChunk { TextDelta = "\n\nOpened in the canvas." };
+            await Task.Yield();
+        }
+    }
+
+    /// <summary>Streams an ordinary (unnamed) code fence — must stay inline.</summary>
+    private sealed class InlineCodeModel : IChatModelClient
+    {
+        public async IAsyncEnumerable<ChatModelChunk> StreamAsync(
+            ChatCompletionRequest request,
+            [EnumeratorCancellation] CancellationToken cancellationToken = default)
+        {
+            yield return new ChatModelChunk { TextDelta = "```python\nprint(1)\n```" };
+            await Task.Yield();
+        }
+    }
 
     private sealed class ExplodingModel : IChatModelClient
     {

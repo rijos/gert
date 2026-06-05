@@ -27,6 +27,12 @@ internal sealed record ToolOutcome
 
     public IReadOnlyList<ToolResultHit>? Hits { get; init; }
 
+    /// <summary>Plain-text card output (sandbox stdout, the clock reading).</summary>
+    public string? Stdout { get; init; }
+
+    /// <summary>The todo list for the todo card (the <c>set_todos</c> tool).</summary>
+    public IReadOnlyList<TodoItem>? Todos { get; init; }
+
     /// <summary>Build an outcome from a successful or failed tool execution.</summary>
     public static ToolOutcome From(string kind, ToolResult result, long latencyMs)
     {
@@ -51,6 +57,8 @@ internal sealed record ToolOutcome
             ResponseJson = result.ResultJson,
             Citations = result.Citations,
             Hits = ToHits(result.Citations),
+            Stdout = result.Stdout,
+            Todos = result.Todos,
         };
     }
 

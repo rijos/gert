@@ -13,9 +13,10 @@ public sealed class ToolOptions
 
     /// <summary>
     /// The capability ids granted when the <c>gert_tools</c> claim is absent or
-    /// blank (auth.md: default <c>rag search</c>; <c>sandbox</c> is opt-in). These
-    /// are the raw configured ids; the resolver still intersects them with the
-    /// registry, so an id that names no registered tool is silently dropped.
+    /// blank (auth.md: default <c>rag search todo clock</c>; <c>sandbox</c> — the
+    /// only one that executes anything — stays opt-in). These are the raw
+    /// configured ids; the resolver still intersects them with the registry, so
+    /// an id that names no registered tool is silently dropped.
     /// </summary>
-    public IReadOnlyList<string> DefaultGrant { get; set; } = ["rag", "search"];
+    public IReadOnlyList<string> DefaultGrant { get; set; } = ["rag", "search", "todo", "clock"];
 }

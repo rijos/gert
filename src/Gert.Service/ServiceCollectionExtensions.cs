@@ -98,7 +98,7 @@ public static class ServiceCollectionExtensions
     /// <see cref="ITool.Id"/> of each registered tool. Keep in sync with
     /// <see cref="AddTools"/>.
     /// </summary>
-    private static readonly string[] BuiltInToolIds = ["rag", "search", "sandbox"];
+    private static readonly string[] BuiltInToolIds = ["rag", "search", "sandbox", "todo", "clock"];
 
     /// <summary>
     /// DI key for the per-type leaf <see cref="ITextExtractor"/>s the
@@ -123,6 +123,10 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ITool, RagTool>();
         services.AddScoped<ITool, WebSearchTool>();
         services.AddScoped<ITool, SandboxTool>();
+        services.AddScoped<ITool, TodoTool>();
+        services.AddScoped<ITool, ClockTool>();
+        // ClockTool reads time only through TimeProvider, so tests pin the instant.
+        services.TryAddSingleton(TimeProvider.System);
     }
 
     /// <summary>

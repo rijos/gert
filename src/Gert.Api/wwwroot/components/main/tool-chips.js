@@ -1,4 +1,4 @@
-// components/main/tool-chips.js — RAG / Search / Sandbox on-off chips.
+// components/main/tool-chips.js — RAG / Search / Sandbox / Todos / Clock on-off chips.
 // Reflects state/chat.tools; clicking toggles the per-conversation preference.
 // Inert when the selected model can't call tools (the server drops them anyway
 // — IModelCatalog gates the turn planner; this mirrors that in the UI).
@@ -13,6 +13,8 @@ const CHIPS = [
   { id: "rag", label: "RAG" },
   { id: "search", label: "Search" },
   { id: "sandbox", label: "Sandbox" },
+  { id: "todo", label: "Todos" },
+  { id: "clock", label: "Clock" },
 ];
 
 const Chip = ({ id, label }) =>

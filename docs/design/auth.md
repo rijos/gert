@@ -143,7 +143,7 @@ The admin sets a custom claim in Pocket ID, per user or per user-group:
 |---|---|
 | `"rag search"` (space-delimited) or `["rag","search"]` (array) | grant exactly these tool ids |
 | `"*"` | grant every tool in the registry — current **and future** (blanket grant) |
-| *absent* | fall back to the configured **default grant** (`Tools:DefaultGrant`, default `rag search`) |
+| *absent* | fall back to the configured **default grant** (`Tools:DefaultGrant`, default `rag search todo clock`) |
 
 > **Pocket ID setup.** Define `gert_tools` as a custom claim and attach it to users or to a group (e.g. a `gert-sandbox` group whose members get `sandbox`). Make sure it is emitted into the **access token** the API validates. If your Pocket ID build only places custom claims in the ID token / userinfo, have the API read it from the userinfo endpoint once per session — the rest of the logic is unchanged.
 
@@ -154,6 +154,8 @@ The admin sets a custom claim in Pocket ID, per user or per user-group:
 | RAG — `search_documents` | `rag` | granted | reads **this** user's `rag.db` only |
 | Web search — `web_search` | `search` | granted | SearXNG; outbound egress |
 | Sandbox — `run_python` | `sandbox` | **denied — opt-in** | gVisor; executes code, grant deliberately |
+| Todos — `set_todos` | `todo` | granted | renders the chat checklist; no external world |
+| Clock — `get_datetime` | `clock` | granted | reads the host clock via `TimeProvider`; no external world |
 
 Sandbox defaults to *off* because it is the one tool that runs arbitrary code; it must be granted on purpose. All defaults are tunable via `Tools:DefaultGrant`.
 

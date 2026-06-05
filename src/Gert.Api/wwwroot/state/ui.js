@@ -91,4 +91,6 @@ export const openKnowledge = () => {
 export const openArtifact = (id) => {
   activeArtifact.val = id;
   showKnowledge.val = false;
+  // A live artifact event should always surface the canvas.
+  panelCollapsed.val = false;
 };

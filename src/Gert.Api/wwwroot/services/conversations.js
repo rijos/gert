@@ -23,12 +23,14 @@ export const open = async (id) => {
   const conv = await http.get(`/projects/${pid()}/conversations/${id}`);
   chat.setConversation(conv);
   artifacts.setArtifacts(conv.artifacts || []);
-  // `tools` is the ToolToggles map { rag, search, sandbox }.
+  // `tools` is the ToolToggles map { rag, search, sandbox, todo, clock }.
   const t = conv.tools;
   if (t && typeof t === "object") {
     chat.tools.rag = !!t.rag;
     chat.tools.search = !!t.search;
     chat.tools.sandbox = !!t.sandbox;
+    chat.tools.todo = !!t.todo;
+    chat.tools.clock = !!t.clock;
   }
   // Detached turns: a still-streaming assistant row means the worker is busy on
   // this conversation — re-attach and let the bubble fill in live (the server

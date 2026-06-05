@@ -81,6 +81,66 @@
       "delay_ms": 500,
       "finish": "stop",
       "usage": { "completion_tokens": 7 }
+    },
+    {
+      "$comment": "Artifact fixture: the NAMED html fence in the final content is extracted by TurnRunner into a canvas artifact (artifact event + persisted row) — the fence is deliberately split across deltas to prove extraction runs on the assembled content.",
+      "match": "contains",
+      "when": "make me a demo html page",
+      "deltas": [
+        "Here you go:\n\n",
+        "```html name=demo.html\n",
+        "<h1>Demo</h1>\n",
+        "<p>Hello from Gert.</p>\n",
+        "```",
+        "\n\nI opened it in the canvas."
+      ],
+      "finish": "stop",
+      "usage": { "completion_tokens": 14 }
+    },
+    {
+      "$comment": "Memory-retrieval fixture: search_documents over the memory entry the E2E seeds via POST /api/projects/{pid}/memory (title 'Favorite database') — proves memory rides the hybrid query and surfaces its DECODED title in the hit + citation.",
+      "match": "contains",
+      "when": "search my docs about favorite database",
+      "tool_call": {
+        "name": "search_documents",
+        "arguments": "{\"query\":\"favorite database\",\"k\":5}"
+      },
+      "finish": "tool_calls",
+      "after_tool": {
+        "deltas": ["Your notes say ", "sqlite-vec is your favorite [1]."],
+        "finish": "stop",
+        "usage": { "completion_tokens": 8 }
+      }
+    },
+    {
+      "$comment": "Todo tool-call fixture: set_todos replaces the model-managed checklist the todo card renders (one done, one active, one pending).",
+      "match": "contains",
+      "when": "plan the homelab upgrade",
+      "tool_call": {
+        "name": "set_todos",
+        "arguments": "{\"todos\":[{\"text\":\"Order the new SSD\",\"status\":\"done\"},{\"text\":\"Migrate rag.db to the new disk\",\"status\":\"active\"},{\"text\":\"Re-embed the document corpus\",\"status\":\"pending\"}]}"
+      },
+      "finish": "tool_calls",
+      "after_tool": {
+        "deltas": ["Plan is up — ", "working through it now."],
+        "finish": "stop",
+        "usage": { "completion_tokens": 6 }
+      }
+    },
+    {
+      "$comment": "Clock tool-call fixture: get_datetime — the card shows the host's TimeProvider reading (the E2E asserts shape, not instant); the closing deltas stay fixture-fixed.",
+      "match": "contains",
+      "when": "what time is it",
+      "tool_call": {
+        "name": "get_datetime",
+        "arguments": "{}"
+      },
+      "finish": "tool_calls",
+      "after_tool": {
+        "deltas": ["The current date and time ", "is on the card above."],
+        "finish": "stop",
+        "usage": { "completion_tokens": 7 }
+      }
     }
   ],
 

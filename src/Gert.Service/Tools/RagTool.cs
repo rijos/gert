@@ -1,6 +1,8 @@
+using System.Text;
 using System.Text.Json;
 using Gert.Model;
 using Gert.Model.Chat;
+using Gert.Model.Rag;
 using Gert.Service.Database;
 using Gert.Service.External;
 
@@ -112,9 +114,13 @@ public sealed class RagTool : ITool
         {
             var hit = hits[i];
             var ordinal = i + 1;
+            // A memory hit's `filename` is the base64-encoded entry title
+            // (MemoryService.EncodeTitle) — decode it so the card and the
+            // citation show the title, never the encoded blob.
+            var display = DisplayName(hit.Document);
             var label = hit.Chunk.Page is { Length: > 0 } page
-                ? $"{hit.Document.Filename} · {page}"
-                : hit.Document.Filename;
+                ? $"{display} · {page}"
+                : display;
 
             citations.Add(new Citation
             {
@@ -131,7 +137,8 @@ public sealed class RagTool : ITool
             resultHits.Add(new
             {
                 ordinal,
-                doc = hit.Document.Filename,
+                doc = display,
+                kind = hit.Document.Kind == DocumentKind.Memory ? "memory" : "document",
                 page = hit.Chunk.Page,
                 score = Math.Round(hit.Score, 4),
                 content = hit.Chunk.Content,
@@ -146,5 +153,28 @@ public sealed class RagTool : ITool
             ResultJson = resultJson,
             Citations = citations,
         };
+    }
+
+    /// <summary>
+    /// What a hit is called in the card/citation: the filename for an uploaded
+    /// document, the DECODED title for a memory entry (whose <c>filename</c> column
+    /// carries the base64-encoded title — MemoryService.EncodeTitle). Falls back to
+    /// the raw value if it does not decode (defensive; never fails the search).
+    /// </summary>
+    private static string DisplayName(Document document)
+    {
+        if (document.Kind != DocumentKind.Memory)
+        {
+            return document.Filename;
+        }
+
+        try
+        {
+            return Encoding.UTF8.GetString(Convert.FromBase64String(document.Filename));
+        }
+        catch (FormatException)
+        {
+            return document.Filename;
+        }
     }
 }

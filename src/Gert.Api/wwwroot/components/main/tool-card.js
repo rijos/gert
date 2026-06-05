@@ -1,5 +1,6 @@
 // components/main/tool-card.js — toolzone node card: expandable, done state,
-// doc-hits, query, stdout. Binds to one reactive tool entry on a message.
+// doc-hits, query, stdout, todo checklist. Binds to one reactive tool entry on
+// a message.
 import van from "van";
 import { component } from "../../lib/component.js";
 import { Icon } from "../../icons/icons.js";
@@ -7,7 +8,13 @@ import { Icon } from "../../icons/icons.js";
 const { div, span, pre } = van.tags;
 
 const iconFor = (kind) =>
-  ({ rag: "search", search: "globe", sandbox: "file" })[kind] || "file";
+  ({
+    rag: "search",
+    search: "globe",
+    sandbox: "file",
+    todo: "checklist",
+    clock: "clock",
+  })[kind] || "file";
 
 const DocHit = (h) =>
   div(
@@ -16,6 +23,14 @@ const DocHit = (h) =>
     span({ class: "dn" }, h.doc || h.title || ""),
     h.page ? span({ class: "pg" }, h.page) : null,
     h.score != null ? span({ class: "score" }, String(h.score)) : null,
+  );
+
+// One checklist row: a status-shaped marker + the step text (done = struck out).
+const TodoRow = (t) =>
+  div(
+    { class: `todo-row ${t.status}`, "data-status": t.status },
+    span({ class: "tmark" }, t.status === "done" ? "✓" : t.status === "active" ? "›" : ""),
+    span({ class: "ttext" }, t.text || ""),
   );
 
 export const ToolCard = component({
@@ -38,11 +53,26 @@ export const ToolCard = component({
     .doc-hit .pg{font-family:var(--mono); font-size:10.5px; color:var(--ink-faint); margin-left:auto;}
     .doc-hit .score{font-family:var(--mono); font-size:10px; color:var(--sage);}
     .stdout{font-family:var(--mono); font-size:11.5px; background:var(--inset); border:1px solid var(--line); border-left:2.5px solid var(--sage); border-radius:6px; padding:8px 11px; color:var(--ink); white-space:pre-wrap;}
+    .todo-row{display:flex; align-items:baseline; gap:8px; padding:5px 0; border-bottom:1px solid var(--line);}
+    .todo-row:last-child{border-bottom:none;}
+    .todo-row .tmark{font-family:var(--mono); font-size:11px; width:14px; flex:none; text-align:center; color:var(--ink-faint); border:1px solid var(--line-strong); border-radius:4px; line-height:14px; height:16px;}
+    .todo-row.done .tmark{color:var(--sage); border-color:var(--sage-soft); background:var(--sage-soft);}
+    .todo-row.active .tmark{color:var(--accent-deep); border-color:var(--accent);}
+    .todo-row .ttext{font-size:12.5px; color:var(--ink);}
+    .todo-row.done .ttext{color:var(--ink-faint); text-decoration:line-through;}
+    .todo-row.active .ttext{font-weight:600;}
+    .tcard.err{border-color:var(--rust, #bf4727);}
   `,
-  // `card` is a reactive tool entry: { kind, status, label, tag, query, hits, stdout, open }
+  // `card` is a reactive tool entry:
+  //   { kind, status, label, tag, query, hits, stdout, todos, open }
   view: (card) =>
     div(
-      { class: () => "tcard" + (card.status === "done" ? " done" : "") },
+      {
+        class: () =>
+          "tcard" +
+          (card.status === "done" ? " done" : "") +
+          (card.status === "error" ? " err" : ""),
+      },
       span({ class: "tnode" }),
       div(
         { class: "thead", onclick: () => (card.open = !card.open) },
@@ -56,6 +86,10 @@ export const ToolCard = component({
         () =>
           card.hits && card.hits.length
             ? div(...card.hits.map((h) => DocHit(h)))
+            : div(),
+        () =>
+          card.todos && card.todos.length
+            ? div({ class: "todos" }, ...card.todos.map((t) => TodoRow(t)))
             : div(),
         () => (card.stdout ? pre({ class: "stdout" }, card.stdout) : div()),
       ),

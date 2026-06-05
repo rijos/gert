@@ -1,5 +1,6 @@
 using FluentAssertions;
 using Gert.Model;
+using Gert.Model.Chat;
 using Gert.Model.Rag;
 using Gert.Service.Database;
 using Gert.Service.External;
@@ -183,6 +184,182 @@ public sealed class ToolsTests
         result.Success.Should().BeFalse();
         result.Error.Should().Contain("timed out");
         result.ResultJson.Should().Contain("\"timed_out\":true");
+    }
+
+    [Fact]
+    public async Task SandboxTool_success_surfaces_stdout_for_the_card()
+    {
+        var tool = new SandboxTool(StubSandbox.WithStdout("4\n"));
+
+        var result = await tool.ExecuteAsync(new ToolInvocation
+        {
+            Pid = "default",
+            ArgumentsJson = "{\"code\":\"print(2 + 2)\"}",
+        });
+
+        // The display seam: the card's pre block renders Stdout verbatim.
+        result.Stdout.Should().Be("4\n");
+    }
+
+    // ---- RagTool: memory hits ----------------------------------------------
+
+    [Fact]
+    public async Task RagTool_decodes_a_memory_hits_title_for_the_label_and_payload()
+    {
+        var ragRepo = Substitute.For<IRagRepository>();
+        var provider = Substitute.For<IDatabaseProvider>();
+        provider
+            .OpenRagAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(ragRepo);
+
+        // A memory entry's documents.filename is the base64-encoded title
+        // (MemoryService.EncodeTitle) — the tool must surface the decoded title.
+        var encoded = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes("Favorite database"));
+        var memoryHit = Hit("mem-1", encoded, null, "My favorite database is sqlite-vec.", 0.92);
+        memoryHit = memoryHit with { Document = memoryHit.Document with { Kind = DocumentKind.Memory } };
+        ragRepo
+            .HybridSearchAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<float>>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(new[] { memoryHit });
+
+        var tool = new RagTool(provider, new FakeEmbeddings(), User);
+        var result = await tool.ExecuteAsync(new ToolInvocation
+        {
+            Pid = "default",
+            ArgumentsJson = "{\"query\":\"favorite database\"}",
+        });
+
+        result.Success.Should().BeTrue();
+        result.Citations.Should().ContainSingle();
+        result.Citations[0].Label.Should().Be("Favorite database");
+        result.ResultJson.Should().Contain("Favorite database")
+            .And.Contain("\"kind\":\"memory\"")
+            .And.NotContain(encoded);
+    }
+
+    // ---- TodoTool ----------------------------------------------------------
+
+    [Fact]
+    public async Task TodoTool_accepts_the_full_list_and_surfaces_it_for_the_card()
+    {
+        var tool = new TodoTool();
+
+        var result = await tool.ExecuteAsync(new ToolInvocation
+        {
+            Pid = "default",
+            ArgumentsJson =
+                "{\"todos\":[" +
+                "{\"text\":\"Order the new SSD\",\"status\":\"done\"}," +
+                "{\"text\":\"Migrate rag.db\",\"status\":\"active\"}," +
+                "{\"text\":\"Re-embed the corpus\",\"status\":\"pending\"}]}",
+        });
+
+        result.Success.Should().BeTrue();
+        result.Citations.Should().BeEmpty();
+
+        // The display seam the todo card renders…
+        result.Todos.Should().HaveCount(3);
+        result.Todos![0].Should().Be(new TodoItem { Text = "Order the new SSD", Status = TodoStatus.Done });
+        result.Todos[1].Status.Should().Be(TodoStatus.Active);
+        result.Todos[2].Status.Should().Be(TodoStatus.Pending);
+
+        // …and the model-facing echo (snake_case statuses) for the follow-up call.
+        result.ResultJson.Should().Contain("\"status\":\"active\"").And.Contain("Migrate rag.db");
+    }
+
+    [Fact]
+    public async Task TodoTool_rejects_a_missing_list_an_empty_text_and_a_bad_status()
+    {
+        var tool = new TodoTool();
+
+        var missing = await tool.ExecuteAsync(new ToolInvocation { Pid = "default", ArgumentsJson = "{}" });
+        missing.Success.Should().BeFalse();
+        missing.Error.Should().Contain("todos");
+
+        var blankText = await tool.ExecuteAsync(new ToolInvocation
+        {
+            Pid = "default",
+            ArgumentsJson = "{\"todos\":[{\"text\":\"  \",\"status\":\"pending\"}]}",
+        });
+        blankText.Success.Should().BeFalse();
+        blankText.Error.Should().Contain("text");
+
+        var badStatus = await tool.ExecuteAsync(new ToolInvocation
+        {
+            Pid = "default",
+            ArgumentsJson = "{\"todos\":[{\"text\":\"x\",\"status\":\"someday\"}]}",
+        });
+        badStatus.Success.Should().BeFalse();
+        badStatus.Error.Should().Contain("status");
+    }
+
+    [Fact]
+    public async Task TodoTool_malformed_json_is_a_graceful_failure()
+    {
+        var tool = new TodoTool();
+
+        var result = await tool.ExecuteAsync(new ToolInvocation { Pid = "default", ArgumentsJson = "{not json" });
+
+        result.Success.Should().BeFalse();
+        result.Error.Should().Contain("invalid arguments");
+    }
+
+    // ---- ClockTool ---------------------------------------------------------
+
+    /// <summary>The pinned instant the clock tests read through TimeProvider.</summary>
+    private sealed class FixedTime(DateTimeOffset instant) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => instant;
+    }
+
+    [Fact]
+    public async Task ClockTool_returns_the_pinned_instant_in_utc()
+    {
+        var instant = new DateTimeOffset(2026, 6, 5, 12, 30, 0, TimeSpan.Zero);
+        var tool = new ClockTool(new FixedTime(instant));
+
+        var result = await tool.ExecuteAsync(new ToolInvocation { Pid = "default", ArgumentsJson = "{}" });
+
+        result.Success.Should().BeTrue();
+        result.ResultJson.Should().Contain("2026-06-05T12:30:00")
+            .And.Contain("\"timezone\":\"UTC\"")
+            .And.Contain($"\"unix\":{instant.ToUnixTimeSeconds()}")
+            .And.Contain("Friday");
+        result.Stdout.Should().Be("2026-06-05 12:30:00 (UTC, Friday)");
+        result.Citations.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task ClockTool_converts_to_a_requested_iana_timezone()
+    {
+        var instant = new DateTimeOffset(2026, 6, 5, 12, 30, 0, TimeSpan.Zero);
+        var tool = new ClockTool(new FixedTime(instant));
+
+        var result = await tool.ExecuteAsync(new ToolInvocation
+        {
+            Pid = "default",
+            ArgumentsJson = "{\"timezone\":\"Europe/Amsterdam\"}",
+        });
+
+        result.Success.Should().BeTrue();
+        // CEST in June: UTC+2.
+        result.ResultJson.Should().Contain("2026-06-05T14:30:00")
+            .And.Contain("\"timezone\":\"Europe/Amsterdam\"");
+        result.Stdout.Should().Contain("14:30:00 (Europe/Amsterdam");
+    }
+
+    [Fact]
+    public async Task ClockTool_unknown_timezone_is_a_graceful_failure()
+    {
+        var tool = new ClockTool(new FixedTime(DateTimeOffset.UnixEpoch));
+
+        var result = await tool.ExecuteAsync(new ToolInvocation
+        {
+            Pid = "default",
+            ArgumentsJson = "{\"timezone\":\"Mars/Olympus_Mons\"}",
+        });
+
+        result.Success.Should().BeFalse();
+        result.Error.Should().Contain("Mars/Olympus_Mons");
     }
 
     // ---- helpers -----------------------------------------------------------
