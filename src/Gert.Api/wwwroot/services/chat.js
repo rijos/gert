@@ -58,6 +58,7 @@ const apply = (assistant, event, data) => {
         ordinal: data.ordinal,
         label: data.label,
         doc_id: data.doc_id,
+        locator: data.locator,
       });
       break;
 

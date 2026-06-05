@@ -15,6 +15,15 @@ body::before{
   background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.025'/%3E%3C/svg%3E");
 }
 
+/* fenced-code token tints (lib/highlight.js). Code blocks always sit on
+   --code-bg, which is dark in both themes, so these are fixed warm values. */
+.tok-kw{color:#e8a063;}
+.tok-str{color:#a9c08a;}
+.tok-num{color:#d9b86a;}
+.tok-com{color:#8d7f6a; font-style:italic;}
+.tok-key{color:#9fc1e0;}
+.tok-dec{color:#c79bd6;}
+
 ::-webkit-scrollbar{width:9px;}
 ::-webkit-scrollbar-thumb{background:var(--line-strong); border-radius:10px; border:2px solid var(--surface);}
 ::-webkit-scrollbar-thumb:hover{background:var(--ink-faint);}

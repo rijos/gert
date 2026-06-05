@@ -11,5 +11,8 @@ public sealed record CitationEvent : ChatEvent
 
     public string? DocId { get; init; }
 
+    /// <summary>Locator within the source — a URL for web citations, "p.4"-style for documents.</summary>
+    public string? Locator { get; init; }
+
     public override ChatEventType Type => ChatEventType.Citation;
 }

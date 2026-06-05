@@ -113,7 +113,8 @@ class Thread:
 
     @property
     def footnotes(self) -> Locator:
-        return self.root.locator(".footnotes, [class*='footnote']")
+        # the sources card replaced the flat .footnotes list
+        return self.root.locator(".sources, .footnotes, [class*='footnote']")
 
     def tool_card(self, label: str) -> Locator:
         return self.root.locator(".tcard", has_text=label)

@@ -254,6 +254,7 @@ public sealed class TurnRunner : ITurnRunner
                 Ordinal = citation.Ordinal,
                 Label = citation.Label,
                 DocId = citation.DocId,
+                Locator = citation.Locator,
             }, token).ConfigureAwait(false);
         }
 

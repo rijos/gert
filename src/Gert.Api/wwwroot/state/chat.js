@@ -24,7 +24,7 @@ export const tools = reactive({ rag: true, search: true, sandbox: false });
 // Message shape (van-x reactive object pushed onto `messages`):
 //   { id, role: "user"|"assistant", text, streaming,
 //     tools: reactive([ { id, kind, status, label, tag, query, hits, code, stdout, open } ]),
-//     citations: reactive([ { ordinal, label, doc_id } ]) }
+//     citations: reactive([ { ordinal, label, doc_id, locator } ]) }
 
 export const newConversation = () => {
   activeId.val = null;
