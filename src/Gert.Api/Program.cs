@@ -96,8 +96,8 @@ if (!builder.Environment.IsProduction() && !string.IsNullOrWhiteSpace(devJwksPat
         options =>
         {
             // The dev JWKS lives at the REPO-ROOT .dev/jwt/ (where tokens.py writes
-            // it). ContentRootPath is the Gert.Api project dir under `dotnet run`, so
-            // a relative path is probed there first, then one level up (the repo root).
+            // it). ContentRootPath is the src/Gert.Api project dir under `dotnet run`,
+            // so a relative path is probed there first, then two levels up (the repo root).
             string resolved;
             if (Path.IsPathRooted(devJwksPath))
             {
@@ -107,7 +107,7 @@ if (!builder.Environment.IsProduction() && !string.IsNullOrWhiteSpace(devJwksPat
             {
                 var underContentRoot = Path.Combine(builder.Environment.ContentRootPath, devJwksPath);
                 var underRepoRoot = Path.GetFullPath(
-                    Path.Combine(builder.Environment.ContentRootPath, "..", devJwksPath));
+                    Path.Combine(builder.Environment.ContentRootPath, "..", "..", devJwksPath));
                 resolved = File.Exists(underContentRoot) ? underContentRoot : underRepoRoot;
             }
 
@@ -255,7 +255,7 @@ app.UseStaticFiles();
 if (!app.Environment.IsProduction() &&
     app.Configuration.GetValue<bool>("Gert:Web:TestHarness"))
 {
-    var harnessDir = Path.Combine(app.Environment.ContentRootPath, "..", "tests", "web");
+    var harnessDir = Path.Combine(app.Environment.ContentRootPath, "..", "..", "tests", "web");
     var fullHarnessDir = Path.GetFullPath(harnessDir);
     if (Directory.Exists(fullHarnessDir))
     {

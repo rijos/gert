@@ -14,8 +14,8 @@ import { ToolCard } from "./tool-card.js";
 
 const { div, span } = van.tags;
 
-// inline [n] superscript marker
-const Citation = ({ ordinal, label } = {}) =>
+// inline [n] superscript marker (exported for the component-unit harness)
+export const Citation = ({ ordinal, label } = {}) =>
   span({ class: "cite", title: label || "" }, String(ordinal));
 
 // streaming typewriter caret
