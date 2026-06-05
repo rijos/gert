@@ -7,6 +7,7 @@ import { Menu } from "../ui/menu.js";
 import { Modal } from "../ui/modal.js";
 import * as chat from "../../state/chat.js";
 import * as svc from "../../services/projects.js";
+import { navigate } from "../../lib/router.js";
 import { attempt } from "../../lib/action.js";
 
 const { div, button, span, input } = van.tags;
@@ -79,7 +80,10 @@ export const ProjectPicker = component({
                   "p-item" + (chat.activeProjectId.val === p.id ? " sel" : ""),
                 onclick: () => {
                   open.val = false;
-                  attempt(() => svc.select(p.id), "Couldn't switch project");
+                  attempt(async () => {
+                    const recent = await svc.select(p.id);
+                    navigate(recent ? "/c/" + recent.id : "/");
+                  }, "Couldn't switch project");
                 },
               },
               p.name,

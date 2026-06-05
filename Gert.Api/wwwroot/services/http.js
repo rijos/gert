@@ -71,9 +71,10 @@ export const upload = (path, formData) =>
 // parsed { id, event, data } records — `id` is the seq cursor from the frame's
 // `id:` field. Parses the EventSource wire format off a fetch body reader
 // (EventSource itself can't send auth headers; fetch keeps the Bearer — F2).
-export async function* sse(path) {
+export async function* sse(path, { signal } = {}) {
   const res = await fetch(BASE + path, {
     headers: authHeaders({ Accept: "text/event-stream" }),
+    signal,
   });
   if (!res.ok || !res.body) {
     throw new ApiError(res.status, "stream failed");

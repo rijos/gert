@@ -17,10 +17,21 @@ export const create = async (body) => {
   return p;
 };
 
+// Switch project, load its conversations, and open the most recently-updated one
+// (so you land on your latest topic, not a blank composer). Falls back to a fresh
+// conversation when the project is empty. Returns the opened conversation (or null)
+// so the caller can route to it.
 export const select = async (id) => {
   chat.activeProjectId.val = id;
   chat.newConversation();
-  await conversations.list();
+  const items = (await conversations.list()) || [];
+  const recent = items.reduce(
+    (best, c) =>
+      !best || new Date(c.updated_at || 0) > new Date(best.updated_at || 0) ? c : best,
+    null,
+  );
+  if (recent) await conversations.open(recent.id);
+  return recent;
 };
 
 export const remove = async (id) => {

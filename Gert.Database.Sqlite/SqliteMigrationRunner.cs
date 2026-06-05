@@ -34,7 +34,7 @@ public static class SqliteMigrationRunner
         ArgumentNullException.ThrowIfNull(connection);
         ArgumentException.ThrowIfNullOrEmpty(family);
 
-        var current = await GetUserVersionAsync(connection, cancellationToken).ConfigureAwait(false);
+        var current = await GetUserVersionAsync(connection, null, cancellationToken).ConfigureAwait(false);
 
         foreach (var (version, resourceName) in DiscoverMigrations(family))
         {
@@ -45,11 +45,30 @@ public static class SqliteMigrationRunner
 
             var sql = ReadResource(resourceName);
 
-            // Each migration + its user_version bump is one atomic step. SQLite
-            // does not allow PRAGMA user_version to be parameterised, but the value
-            // is an int we produced, so interpolation is safe here.
-            await using var transaction =
-                (SqliteTransaction)await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+            // Each migration + its user_version bump is one atomic step, applied
+            // under an IMMEDIATE (write-locking) transaction. This serializes
+            // concurrent provisioning of the same DB: when the SPA fires several
+            // first requests at once they each open chat.db and call here, so
+            // without the lock they'd all read user_version=0 and all run the same
+            // CREATE TABLE — the losers throwing "table … already exists" → 500.
+            // With IMMEDIATE a second migrator BLOCKS on the write lock (up to
+            // busy_timeout), then RE-READS user_version inside the lock and skips
+            // the step the winner already applied. SQLite forbids parameterising
+            // PRAGMA user_version, but the value is an int we produced, so the
+            // interpolation is safe.
+            // No async overload takes `deferred`; the sync begin only issues
+            // "BEGIN IMMEDIATE" (a fast local op), then all real work is async.
+            await using var transaction = connection.BeginTransaction(deferred: false);
+
+            // Authoritative now that we hold the write lock: a racer that committed
+            // this migration while we waited makes this iteration a no-op for us.
+            var applied = await GetUserVersionAsync(connection, transaction, cancellationToken).ConfigureAwait(false);
+            if (version <= applied)
+            {
+                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                current = applied;
+                continue;
+            }
 
             await using (var cmd = connection.CreateCommand())
             {
@@ -74,9 +93,11 @@ public static class SqliteMigrationRunner
 
     private static async Task<int> GetUserVersionAsync(
         SqliteConnection connection,
+        SqliteTransaction? transaction,
         CancellationToken cancellationToken)
     {
         await using var cmd = connection.CreateCommand();
+        cmd.Transaction = transaction;
         cmd.CommandText = "PRAGMA user_version;";
         var result = await cmd.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
         return Convert.ToInt32(result, CultureInfo.InvariantCulture);

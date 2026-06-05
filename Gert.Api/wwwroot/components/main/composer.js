@@ -31,15 +31,27 @@ export const Composer = component({
     .cbtn.toggle.on{border-color:var(--sage-soft); color:var(--sage); background:var(--sage-soft);}
     .send{margin-left:auto; width:36px; height:36px; border-radius:10px; border:none; background:var(--accent); color:var(--on-accent); cursor:pointer; display:grid; place-items:center; transition:.16s;}
     .send:hover{background:var(--accent-deep); transform:translateY(-1px);}
-    .send:disabled{opacity:.5; cursor:default; transform:none;}
+    /* empty textbox → inert grey button (no faded-accent look) */
+    .send:disabled{background:var(--line-strong); color:var(--ink-faint); cursor:default; transform:none;}
+    .send:disabled:hover{background:var(--line-strong);}
     .send svg{width:17px; height:17px;}
+    /* shown while the turn streams — click to detach (stop) */
+    .stop{margin-left:auto; width:36px; height:36px; border-radius:10px; border:none; background:var(--accent); color:var(--on-accent); cursor:pointer; display:grid; place-items:center; transition:.16s; animation:pulse 1.4s ease-in-out infinite;}
+    .stop:hover{background:var(--accent-deep);}
+    .stop svg{width:15px; height:15px;}
   `,
   view: () => {
     // ── logic ───────────────────────────────────
+    // mirror the textarea's emptiness reactively so the send button can grey out.
+    const empty = van.state(true);
+
     const ta = textarea({
       rows: 1,
       placeholder: "Message Gert…  ⌘↵ to send",
-      oninput: (e) => autogrow(e.target),
+      oninput: (e) => {
+        autogrow(e.target);
+        empty.val = !e.target.value.trim();
+      },
       onkeydown: (e) => {
         if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
           e.preventDefault();
@@ -53,6 +65,7 @@ export const Composer = component({
       if (!text.trim() || chat.streaming.val) return;
       chatSvc.send(text);
       ta.value = "";
+      empty.val = true;
       autogrow(ta);
     };
 
@@ -88,15 +101,22 @@ export const Composer = component({
             Icon("file", { size: 14, strokeWidth: 2 }),
             "Use my docs",
           ),
-          button(
-            {
-              class: "send",
-              title: "Send",
-              disabled: () => chat.streaming.val,
-              onclick: submit,
-            },
-            Icon("send", { size: 17, strokeWidth: 2.2 }),
-          ),
+          // streaming → Stop (detach the turn); otherwise → Send (grey when empty).
+          () =>
+            chat.streaming.val
+              ? button(
+                  { class: "stop", title: "Stop", onclick: chatSvc.stop },
+                  Icon("stop", { size: 15, strokeWidth: 0 }),
+                )
+              : button(
+                  {
+                    class: "send",
+                    title: "Send",
+                    disabled: () => empty.val,
+                    onclick: submit,
+                  },
+                  Icon("send", { size: 17, strokeWidth: 2.2 }),
+                ),
         ),
       ),
     );

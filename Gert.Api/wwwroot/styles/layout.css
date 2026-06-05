@@ -19,16 +19,23 @@
 .scrim{position:fixed; inset:0; background:var(--scrim); backdrop-filter:blur(2px); opacity:0; pointer-events:none; transition:.26s; z-index:50; display:none;}
 .drawer-close{display:none;}
 
+/* Responsive overrides are scoped under `.app` on purpose. Each component injects
+   its base CSS as a Constructable Stylesheet (document.adoptedStyleSheets), which
+   cascades AFTER this <link>ed file — so a bare `.panel{...}` here would lose to the
+   component's `.panel{position:relative}` and the canvas drawer would fall out of
+   `position:fixed` into normal flow (landing bottom-right). Prefixing with `.app`
+   raises specificity to (0,2,0+) so these win regardless of injection order. */
+
 /* hide tool chips first as width tightens */
-@media (max-width:1180px){ .tools{display:none;} }
+@media (max-width:1180px){ .app .tools{display:none;} }
 
 /* --- tablet & mobile: sidebar + canvas become slide-over drawers --- */
 @media (max-width:1079px){
   .app{grid-template-columns:1fr !important;}
-  .sidebar,.panel{position:fixed; top:0; bottom:0; z-index:60; width:300px; max-width:88vw;
+  .app .sidebar,.app .panel{position:fixed; top:0; bottom:0; z-index:60; width:300px; max-width:88vw;
     transition:transform .28s cubic-bezier(.2,.8,.2,1); will-change:transform;}
-  .sidebar{left:0; transform:translateX(-101%); box-shadow:0 0 50px -8px rgba(0,0,0,.5);}
-  .panel{right:0; width:480px; max-width:94vw; border-left:1px solid var(--line);
+  .app .sidebar{left:0; transform:translateX(-101%); box-shadow:0 0 50px -8px rgba(0,0,0,.5);}
+  .app .panel{right:0; width:480px; max-width:94vw; border-left:1px solid var(--line);
     transform:translateX(101%); box-shadow:0 0 50px -8px rgba(0,0,0,.5);}
   .app.nav-open .sidebar{transform:none;}
   .app.panel-open .panel{transform:none;}
@@ -36,36 +43,36 @@
   .app.nav-open .scrim,.app.panel-open .scrim{opacity:1; pointer-events:auto;}
   .scrim{display:block;}
   .drawer-close{display:grid;}
-  .brand{padding-right:14px;}
+  .app .brand{padding-right:14px;}
   .expand-btn{display:none;}            /* pane is already an overlay */
-  .topbar{padding:0 14px; gap:8px;}
-  .conv-title{font-size:16px; display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
-  .title-wrap .edit{display:none;}
-  .menu{width:312px; max-width:calc(100vw - 28px);}
-  .thread{padding:0 18px;}
-  .composer-wrap{padding:12px 14px 18px;}
+  .app .topbar{padding:0 14px; gap:8px;}
+  .app .conv-title{font-size:16px; display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  .app .title-wrap .edit{display:none;}
+  .app .menu{width:312px; max-width:calc(100vw - 28px);}
+  .app .thread{padding:0 18px;}
+  .app .composer-wrap{padding:12px 14px 18px;}
   .legend{display:none;}
 }
 
 /* --- phones: tighten chrome, let canvas fill --- */
 @media (max-width:640px){
   body{font-size:13.5px;}
-  .panel{width:100vw; max-width:100vw; border-left:none;}
-  .model-btn{padding:7px 9px;}
-  .model-btn .mname{display:none;}     /* keep dot + chevron only */
-  .brand h1{font-size:22px;}
-  .stream{padding:20px 0 18px;}
-  .msg{margin-bottom:24px;}
-  .msg.bot .body{font-size:14.5px;}
-  .md-render,.source-view{padding-left:16px; padding-right:16px;}
-  .composer{border-radius:14px;}
+  .app .panel{width:100vw; max-width:100vw; border-left:none;}
+  .app .model-btn{padding:7px 9px;}
+  .app .model-btn .mname{display:none;}     /* keep dot + chevron only */
+  .app .brand h1{font-size:22px;}
+  .app .stream{padding:20px 0 18px;}
+  .app .msg{margin-bottom:24px;}
+  .app .msg.bot .body{font-size:14.5px;}
+  .app .md-render,.app .source-view{padding-left:16px; padding-right:16px;}
+  .app .composer{border-radius:14px;}
 }
 
 /* devices that can't hover: always show affordances that rely on hover */
 @media (hover:none){
-  .title-wrap .edit{opacity:.6;}
-  .trash{opacity:.7;}
-  .convo .node, .convo:hover .node{transition:none;}
+  .app .title-wrap .edit{opacity:.6;}
+  .app .trash{opacity:.7;}
+  .app .convo .node, .app .convo:hover .node{transition:none;}
 }
 
 .legend{position:fixed; bottom:13px; left:50%; transform:translateX(-50%); z-index:40; font-family:var(--mono); font-size:10px; color:var(--ink-faint); background:var(--surface); border:1px solid var(--line-strong); border-radius:20px; padding:6px 14px; box-shadow:0 6px 18px -10px rgba(60,46,28,.3);}

@@ -111,8 +111,12 @@ const applyTurnEvent = (assistant, cursor, seq, data) => {
 // WS: subscribe with the cursor; server frames are {kind:"event", seq, event}.
 // Resolves true when the turn finished, false to fall back (e.g. the dev proxy
 // does not speak WS).
-const consumeWs = (pid, cid, cursor, assistant) =>
+const consumeWs = (pid, cid, cursor, assistant, signal) =>
   new Promise((resolve) => {
+    if (signal?.aborted) {
+      resolve(true); // stopped before we opened — treat as terminal, no fallback
+      return;
+    }
     let socket;
     try {
       socket = http.ws(`/projects/${pid}/conversations/${cid}/ws`);
@@ -131,6 +135,11 @@ const consumeWs = (pid, cid, cursor, assistant) =>
       }
       resolve(ok);
     };
+    // Stop button: abort closes the socket and reports terminal so consume()
+    // doesn't fall through to SSE/poll. (The server turn is detached and keeps
+    // running; this just detaches the client — true cancel awaits the WS
+    // `cancel` message the backend has yet to register.)
+    signal?.addEventListener("abort", () => settle(true), { once: true });
     socket.onopen = () =>
       socket.send(JSON.stringify({ type: "subscribe", after: cursor.seq }));
     socket.onmessage = (e) => {
@@ -148,26 +157,28 @@ const consumeWs = (pid, cid, cursor, assistant) =>
   });
 
 // SSE: the GET stream endpoint with ?after= (works through the dev proxy).
-const consumeSse = async (pid, cid, cursor, assistant) => {
+const consumeSse = async (pid, cid, cursor, assistant, signal) => {
   try {
     for await (const { id, data } of http.sse(
       `/projects/${pid}/conversations/${cid}/stream?after=${cursor.seq}`,
+      { signal },
     )) {
       if (applyTurnEvent(assistant, cursor, id, data)) return true;
     }
   } catch {
-    /* fall back */
+    /* aborted or transient — fall through */
   }
-  return false;
+  return signal?.aborted ? true : false; // aborted → terminal, don't fall to poll
 };
 
 // Polling: the range endpoint, like documents.js polls ingest status. The last
 // resort — and the bound: if no terminal event lands within the server's max
 // turn duration (+ slack), the worker is gone and no error event will ever
 // come (the orphan rule covers the DB); stop and mark the bubble failed.
-const consumePoll = async (pid, cid, cursor, assistant) => {
+const consumePoll = async (pid, cid, cursor, assistant, signal) => {
   const deadline = Date.now() + 6 * 60_000;
   while (Date.now() < deadline) {
+    if (signal?.aborted) return true; // stop button — detach
     let page = null;
     try {
       page = await http.get(
@@ -186,11 +197,24 @@ const consumePoll = async (pid, cid, cursor, assistant) => {
 };
 
 // Drive one turn's events into `assistant` from a cursor until terminal.
-const consume = async (pid, cid, after, assistant) => {
+const consume = async (pid, cid, after, assistant, signal) => {
   const cursor = { seq: after };
-  if (await consumeWs(pid, cid, cursor, assistant)) return;
-  if (await consumeSse(pid, cid, cursor, assistant)) return;
-  await consumePoll(pid, cid, cursor, assistant);
+  if (signal?.aborted) return;
+  if (await consumeWs(pid, cid, cursor, assistant, signal)) return;
+  if (signal?.aborted) return;
+  if (await consumeSse(pid, cid, cursor, assistant, signal)) return;
+  if (signal?.aborted) return;
+  await consumePoll(pid, cid, cursor, assistant, signal);
+};
+
+// The in-flight turn's abort handle. stop() detaches the client from the current
+// turn (the server keeps generating; the row is persisted and re-attachable).
+let activeController = null;
+
+export const stop = () => {
+  if (!chat.streaming.val) return;
+  activeController?.abort();
+  chat.streaming.val = false; // swap Stop → Send immediately; finally re-confirms
 };
 
 // send(content) — append the user message, open an assistant bubble, POST
@@ -215,17 +239,23 @@ export const send = async (content) => {
     tools: { ...chat.tools },
   };
 
+  const ac = new AbortController();
+  activeController = ac;
   try {
     const accepted = await http.post(
       `/projects/${pid}/conversations/${cid}/messages`,
       body,
     );
     assistant.id = accepted.assistant_message_id;
-    await consume(pid, cid, accepted.seq, assistant);
+    await consume(pid, cid, accepted.seq, assistant, ac.signal);
   } catch (e) {
-    assistant.text +=
-      (assistant.text ? "\n\n" : "") + "_Error: " + (e.message || "stream failed") + "_";
+    // A user-initiated stop is not an error — keep whatever text streamed in.
+    if (!ac.signal.aborted) {
+      assistant.text +=
+        (assistant.text ? "\n\n" : "") + "_Error: " + (e.message || "stream failed") + "_";
+    }
   } finally {
+    if (activeController === ac) activeController = null;
     assistant.streaming = false;
     chat.streaming.val = false;
     // The server materialised the conversation row on this first message; refresh
@@ -248,9 +278,12 @@ export const resume = async (cid, threadMessage) => {
   assistant.streaming = true;
   chat.streaming.val = true;
 
+  const ac = new AbortController();
+  activeController = ac;
   try {
-    await consume(activeProjectId.val, cid, threadMessage.seq, assistant);
+    await consume(activeProjectId.val, cid, threadMessage.seq, assistant, ac.signal);
   } finally {
+    if (activeController === ac) activeController = null;
     assistant.streaming = false;
     chat.streaming.val = false;
   }

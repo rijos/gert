@@ -91,9 +91,16 @@ def make_proxy_app(upstream: str, token: str) -> Starlette:
             media_type=content_type,
         )
 
+    # Aborting the harness (Ctrl+C) drives uvicorn's graceful shutdown, which runs
+    # this lifespan hook — close the upstream client so its pooled keep-alive
+    # connections (timeout=None, so they never expire on their own) don't leak.
+    async def _close_client() -> None:
+        await client.aclose()
+
     return Starlette(
         routes=[
             Route("/__dev_token.js", dev_token),
             Route("/{path:path}", proxy, methods=_PROXY_METHODS),
-        ]
+        ],
+        on_shutdown=[_close_client],
     )

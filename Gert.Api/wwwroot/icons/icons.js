@@ -64,6 +64,10 @@ const GLYPHS = {
   send: () => [
     path({ d: "M22 2 11 13M22 2l-7 20-4-9-9-4z", "stroke-linejoin": "round" }),
   ],
+  // filled rounded square — the universal "stop" affordance.
+  stop: () => [
+    rect({ x: "6", y: "6", width: "12", height: "12", rx: "2.5", fill: "currentColor" }),
+  ],
   attach: () => [
     path({
       d: "M21.4 11.05 12.25 20.2a5.5 5.5 0 0 1-7.78-7.78l9.2-9.2a3.5 3.5 0 0 1 4.95 4.95l-9.2 9.19a1.5 1.5 0 0 1-2.12-2.12l8.49-8.48",
