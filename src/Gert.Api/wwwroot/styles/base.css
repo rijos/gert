@@ -24,9 +24,20 @@ body::before{
 .tok-key{color:#9fc1e0;}
 .tok-dec{color:#c79bd6;}
 
-::-webkit-scrollbar{width:9px;}
-::-webkit-scrollbar-thumb{background:var(--line-strong); border-radius:10px; border:2px solid var(--surface);}
-::-webkit-scrollbar-thumb:hover{background:var(--ink-faint);}
+/* themed scrollbars — one treatment for every scroll container (convo list,
+   chat stream, doc list, code/artifact panes). The translucent thumb floats
+   over any panel background; the transparent border + padding-box clip keeps
+   it slim until hover. Firefox doesn't do ::-webkit-scrollbar, so the
+   @supports gate hands it the standard thin equivalent — gated so Chromium
+   (which now also parses scrollbar-color) keeps the richer styling below. */
+::-webkit-scrollbar{width:10px; height:10px;}
+::-webkit-scrollbar-track{background:transparent;}
+::-webkit-scrollbar-corner{background:transparent;}
+::-webkit-scrollbar-thumb{background:var(--scroll-thumb); border-radius:10px; border:3px solid transparent; background-clip:padding-box;}
+::-webkit-scrollbar-thumb:hover{background:var(--scroll-thumb-hover); border-width:2px; background-clip:padding-box;}
+@supports not selector(::-webkit-scrollbar){
+  *{scrollbar-width:thin; scrollbar-color:var(--scroll-thumb) transparent;}
+}
 
 @keyframes rise{from{opacity:0; transform:translateY(10px);} to{opacity:1; transform:none;}}
 @keyframes blink{to{visibility:hidden;}}

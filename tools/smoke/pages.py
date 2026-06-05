@@ -46,7 +46,7 @@ class Sidebar:
 
 
 class Composer:
-    """The message composer: textarea, attach, use-docs toggle, send."""
+    """The message composer: textarea, attach, tools dropdown, send."""
 
     def __init__(self, page: Page) -> None:
         self.page = page
@@ -65,8 +65,17 @@ class Composer:
         return self.root.locator("button.cbtn", has_text="Attach")
 
     @property
+    def tools_button(self) -> Locator:
+        """Trigger of the tools dropdown (replaces the old top-bar chips)."""
+        return self.root.locator(".tools-menu button.cbtn")
+
+    def open_tools(self) -> None:
+        self.tools_button.click()
+
+    @property
     def use_docs_toggle(self) -> Locator:
-        return self.root.locator("button.cbtn.toggle")
+        """The "Use my docs" row inside the tools dropdown; carries `on` when active."""
+        return self.root.locator(".tools-menu .t-row.t-docs")
 
     @property
     def file_input(self) -> Locator:

@@ -1,11 +1,11 @@
-// components/main/composer.js — autogrow textarea + attach/use-docs toggles +
+// components/main/composer.js — autogrow textarea + attach + tools dropdown +
 // send + hint. Calls services/chat.send; never fetches directly.
 import van from "van";
 import { component } from "../../lib/component.js";
 import { Icon } from "../../icons/icons.js";
+import { ToolsMenu } from "./tools-menu.js";
 import * as chatSvc from "../../services/chat.js";
 import * as chat from "../../state/chat.js";
-import * as knowledge from "../../state/knowledge.js";
 import * as docsSvc from "../../services/documents.js";
 import { attempt } from "../../lib/action.js";
 
@@ -93,14 +93,7 @@ export const Composer = component({
             "Attach",
           ),
           fileInput,
-          button(
-            {
-              class: () => "cbtn toggle" + (knowledge.useInChat.val ? " on" : ""),
-              onclick: knowledge.toggleUseInChat,
-            },
-            Icon("file", { size: 14, strokeWidth: 2 }),
-            "Use my docs",
-          ),
+          ToolsMenu(),
           // streaming → Stop (detach the turn); otherwise → Send (grey when empty).
           () =>
             chat.streaming.val

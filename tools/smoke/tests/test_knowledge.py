@@ -46,6 +46,9 @@ def test_use_in_chat_toggle(page: Page, base_url: str) -> None:
     app.knowledge.open()  # the use-in-chat switch lives in the knowledge view
     switch = app.knowledge.use_in_chat_switch
     expect(switch).to_be_visible()
-    switch.click()
-    # Toggling flips the composer "Use my docs" button on too (shared state).
+    # Default-on: the "Use my docs" row in the composer's tools dropdown is active.
+    app.composer.open_tools()
     expect(app.composer.use_docs_toggle).to_have_class(re.compile(r"\bon\b"))
+    # Toggling the knowledge switch flips the dropdown row off too (shared state).
+    switch.click()
+    expect(app.composer.use_docs_toggle).not_to_have_class(re.compile(r"\bon\b"))

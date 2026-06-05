@@ -16,6 +16,8 @@
   --preview-bg:#fff;   /* html artifact preview backdrop — a page, always on white */
   --sun-display:none; --moon-display:block;   /* theme-toggle icon swap, flipped in dark */
   --scrim:rgba(36,26,16,.42);
+  /* scrollbar thumb — translucent ink so it floats on any panel background */
+  --scroll-thumb:rgba(36,31,23,.18); --scroll-thumb-hover:rgba(36,31,23,.34);
   --display:'Fraunces',Georgia,serif;
   --sans:'Hanken Grotesk',-apple-system,sans-serif;
   --mono:'JetBrains Mono',ui-monospace,monospace;
@@ -38,6 +40,7 @@
   --preview-bg:#fff;
   --sun-display:block; --moon-display:none;
   --scrim:rgba(0,0,0,.6);
+  --scroll-thumb:rgba(239,230,214,.16); --scroll-thumb-hover:rgba(239,230,214,.3);
 }
 /* ---- follow OS preference when not manually set ---- */
 @media (prefers-color-scheme: dark){
@@ -56,5 +59,6 @@
     --preview-bg:#fff;
     --sun-display:block; --moon-display:none;
     --scrim:rgba(0,0,0,.6);
+    --scroll-thumb:rgba(239,230,214,.16); --scroll-thumb-hover:rgba(239,230,214,.3);
   }
 }

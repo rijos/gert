@@ -1,10 +1,9 @@
-// components/main/top-bar.js — collapse btn · title · tool chips · theme ·
-// model picker · panel toggle.
+// components/main/top-bar.js — collapse btn · title · theme · model picker ·
+// panel toggle. Tool toggles live in the composer's tools dropdown.
 import van from "van";
 import { component } from "../../lib/component.js";
 import { Icon } from "../../icons/icons.js";
 import { ConvTitle } from "./conv-title.js";
-import { ToolChips } from "./tool-chips.js";
 import { ThemeToggle } from "./theme-toggle.js";
 import { ModelPicker } from "./model-picker.js";
 import * as ui from "../../state/ui.js";
@@ -29,7 +28,6 @@ export const TopBar = component({
       Icon("sidebar", { strokeWidth: 2 }),
     ),
     ConvTitle(),
-    ToolChips(),
     ThemeToggle(),
     ModelPicker(),
     button(
