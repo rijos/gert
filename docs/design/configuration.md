@@ -3,7 +3,9 @@
 What a user can configure, and the **project** model that organises their data. This is the
 feature layer on top of the storage foundation in [storage-and-data](storage-and-data.md) —
 it extends the per-user folder with **per-project** folders and adds the settings that steer
-chat, retrieval, language, and appearance.
+chat, retrieval, language, and appearance. (For the *operator* view — every server-level
+appsettings/env knob with defaults — see
+[installation/configuration.md](../installation/configuration.md).)
 
 > **One-line model:** a **project is a folder** — its own conversations, its own documents,
 > its own memory, fully isolated from every other project. **"Default" is just the project you

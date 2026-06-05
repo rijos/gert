@@ -27,7 +27,7 @@ export const mainHost = div({ class: "main" });
 export const AppShell = component({
   name: "app-shell",
   css: `
-    .main{display:flex; flex-direction:column; min-width:0; background:var(--paper); position:relative;}
+    .main{display:flex; flex-direction:column; min-width:0; min-height:0; background:var(--paper); position:relative;}
   `,
   view: () =>
     div(

@@ -78,6 +78,8 @@ export const Message = component({
     .role .rl{font-weight:700; font-size:12px; letter-spacing:.02em;}
     .role.gert .rl{color:var(--accent-deep);}
 
+    /* long unbroken tokens (URLs, hashes) wrap instead of overflowing the thread */
+    .msg .body{min-width:0; overflow-wrap:anywhere;}
     .msg.user .body{background:var(--inset); border:1px solid var(--line); border-left:2.5px solid var(--line-strong); border-radius:var(--r); padding:13px 16px; color:var(--ink); font-size:14.5px;}
     .msg.bot .body{font-size:15px; line-height:1.62; color:var(--ink);}
     .msg.bot .body p{margin-bottom:12px;}
@@ -85,7 +87,11 @@ export const Message = component({
     .msg.bot .body em{font-style:italic;}
     .msg.bot .body a{color:var(--accent-deep); text-decoration:underline;}
     .msg.bot .body code{font-family:var(--mono); font-size:12.5px; background:var(--surface-2); padding:1.5px 5px; border-radius:5px; border:1px solid var(--line);}
-    .msg.bot .body ul{margin:0 0 12px; padding-left:20px;}
+    /* fenced code blocks: scroll horizontally inside the bubble (same look as
+       .md-render pre in the canvas) instead of stretching the thread */
+    .msg.bot .body pre{background:var(--code-bg); color:var(--code-fg); border-radius:8px; padding:12px 14px; margin:0 0 12px; overflow-x:auto;}
+    .msg.bot .body pre code{background:none; border:none; padding:0; color:inherit; font-size:12px; overflow-wrap:normal;}
+    .msg.bot .body ul,.msg.bot .body ol{margin:0 0 12px; padding-left:24px;}
     .msg.bot .body li{margin-bottom:5px;}
 
     .cite{font-family:var(--mono); font-size:9.5px; vertical-align:super; color:var(--on-accent); background:var(--accent); border-radius:4px; padding:1px 4px; margin:0 1px; cursor:pointer; line-height:1; transition:.12s;}

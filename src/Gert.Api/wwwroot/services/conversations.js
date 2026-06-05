@@ -10,6 +10,10 @@ const pid = () => chat.activeProjectId.val;
 export const list = async () => {
   const items = await http.get(`/projects/${pid()}/conversations`);
   chat.setConversations(items || []);
+  // Keep the header in sync: the server may have titled the active conversation
+  // since we last looked (e.g. auto-title after the first message materialised it).
+  const active = (items || []).find((c) => c.id === chat.activeId.val);
+  if (active?.title) chat.setTitle(active.title);
   return items;
 };
 

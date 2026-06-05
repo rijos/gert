@@ -1,5 +1,6 @@
 // components/main/message-stream.js — the scrolling thread.
-// Binds to state/chat.messages (van-x list); auto-scrolls on growth.
+// Binds to state/chat.messages (van-x list); follows growth only while the
+// user is pinned to the bottom — scrolling up detaches, scrolling back re-pins.
 import van from "van";
 import { component } from "../../lib/component.js";
 import { Message } from "./message.js";
@@ -14,12 +15,29 @@ export const MessageStream = component({
     .thread{max-width:760px; margin:0 auto; padding:0 30px;}
   `,
   view: () => {
-  const stream = div({ class: "stream" });
+  // pinned = the user sits at the bottom (4px tolerance for fractional scroll
+  // positions). Only then does the stream follow new content; a user reading
+  // back is left alone. Content growth alone fires no scroll event, so pinned
+  // always reflects the user's (or our) last actual scroll.
+  let pinned = true;
+  const stream = div({
+    class: "stream",
+    onscroll: (e) => {
+      const el = e.target;
+      pinned = el.scrollHeight - el.scrollTop - el.clientHeight < 4;
+    },
+  });
   const thread = div(
     { class: "thread" },
     () => div(...chat.messages.map((m) => Message(m))),
   );
   van.add(stream, thread);
+
+  // switching conversations re-pins: a freshly opened thread starts at the end.
+  van.derive(() => {
+    chat.activeId.val;
+    pinned = true;
+  });
 
   // keep the latest content in view while streaming. Reading the last
   // message's text inside the derive subscribes to delta updates too.
@@ -29,7 +47,7 @@ export const MessageStream = component({
     const last = chat.messages[chat.messages.length - 1];
     if (last) last.text; // subscribe to token deltas
     queueMicrotask(() => {
-      stream.scrollTop = stream.scrollHeight;
+      if (pinned) stream.scrollTop = stream.scrollHeight;
     });
   });
 

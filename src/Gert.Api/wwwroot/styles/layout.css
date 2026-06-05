@@ -1,5 +1,8 @@
 /* layout.css — .app grid, collapse/wide states, responsive drawers, scrim. */
-.app{display:grid; grid-template-columns:264px 1fr var(--panel-w,372px); height:100vh; transition:grid-template-columns .28s cubic-bezier(.2,.8,.2,1);}
+/* grid-template-rows pins the single row to the viewport — without it the implicit
+   auto row grows with the thread, body{overflow:hidden} clips it, and the composer
+   drifts off-screen instead of .stream scrolling internally. */
+.app{display:grid; grid-template-columns:264px 1fr var(--panel-w,372px); grid-template-rows:minmax(0,1fr); height:100vh; transition:grid-template-columns .28s cubic-bezier(.2,.8,.2,1);}
 /* while dragging the panel edge: kill the column transition so it tracks the cursor 1:1 */
 .app.resizing{transition:none; user-select:none; cursor:col-resize;}
 
