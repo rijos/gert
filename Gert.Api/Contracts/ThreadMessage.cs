@@ -18,6 +18,15 @@ public sealed record ThreadMessage
 
     public string? ModelId { get; init; }
 
+    /// <summary>
+    /// Lifecycle (<c>streaming|complete|error</c>, orphan rule pre-applied by the
+    /// reader). A reload that finds <c>streaming</c> resubscribes from <see cref="Seq"/>.
+    /// </summary>
+    public required MessageStatus Status { get; init; }
+
+    /// <summary>The row's seq — the resume cursor for a streaming assistant row.</summary>
+    public long Seq { get; init; }
+
     public required DateTimeOffset CreatedAt { get; init; }
 
     public IReadOnlyList<ThreadCitation> Citations { get; init; } = [];
@@ -34,6 +43,8 @@ public sealed record ThreadMessage
             Role = message.Role,
             Text = message.Content,
             ModelId = message.ModelId,
+            Status = message.Status,
+            Seq = message.Seq,
             CreatedAt = message.CreatedAt,
             Citations = citations
                 .OrderBy(c => c.Ordinal)

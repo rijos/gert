@@ -78,6 +78,12 @@ public sealed class FailClosedMetaTest
             .Where(t => t.IsInterface)
             .ToList();
 
+        // Chat is not on the hub (the detached turn pipeline injects its seams
+        // directly — chat-and-tools.md § detached turns), but its planner is still
+        // a host-called boundary that accepts a request DTO: include it explicitly
+        // so SendMessageRequest never drops out of the fail-closed net.
+        serviceInterfaces.Add(typeof(Gert.Service.Chat.ITurnPlanner));
+
         var dtos = new HashSet<Type>();
         foreach (var svc in serviceInterfaces)
         {

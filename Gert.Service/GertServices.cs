@@ -1,6 +1,5 @@
 using Gert.Service.Account;
 using Gert.Service.Admin;
-using Gert.Service.Chat;
 using Gert.Service.Conversations;
 using Gert.Service.Documents;
 using Gert.Service.Projects;
@@ -15,7 +14,6 @@ namespace Gert.Service;
 public sealed class GertServices : IGertServices
 {
     public GertServices(
-        IChatService chat,
         IConversationService conversations,
         IDocumentService documents,
         IArtifactService artifacts,
@@ -25,7 +23,6 @@ public sealed class GertServices : IGertServices
         IAccountService account,
         IAdminService admin)
     {
-        Chat = chat ?? throw new ArgumentNullException(nameof(chat));
         Conversations = conversations ?? throw new ArgumentNullException(nameof(conversations));
         Documents = documents ?? throw new ArgumentNullException(nameof(documents));
         Artifacts = artifacts ?? throw new ArgumentNullException(nameof(artifacts));
@@ -35,9 +32,6 @@ public sealed class GertServices : IGertServices
         Account = account ?? throw new ArgumentNullException(nameof(account));
         Admin = admin ?? throw new ArgumentNullException(nameof(admin));
     }
-
-    /// <inheritdoc />
-    public IChatService Chat { get; }
 
     /// <inheritdoc />
     public IConversationService Conversations { get; }

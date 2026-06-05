@@ -29,6 +29,42 @@ public interface IChatRepository : IAsyncDisposable
 
     Task InsertMessageAsync(Message message, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Stream-update an assistant row: replace content, set status, and (when
+    /// non-null) the token count. Used by the turn runner for incremental flushes
+    /// and the final complete/error transition.
+    /// </summary>
+    Task UpdateMessageStreamAsync(
+        string messageId,
+        string content,
+        MessageStatus status,
+        int? tokenCount,
+        CancellationToken cancellationToken = default);
+
+    // Turn sequencing + the durable event log (chat-and-tools.md § detached turns)
+
+    /// <summary>
+    /// Atomically allocate the next per-conversation sequence number
+    /// (<c>UPDATE conversations SET next_seq = next_seq + 1 … RETURNING</c>).
+    /// The single source of <c>seq</c> — single-writer per conversation by
+    /// invariant (planner finishes before the worker dequeues; concurrent turns
+    /// are rejected with 409 while one is streaming).
+    /// </summary>
+    Task<long> AllocateSeqAsync(string conversationId, CancellationToken cancellationToken = default);
+
+    /// <summary>Append one event to the conversation's durable replay log.</summary>
+    Task AppendTurnEventAsync(TurnEventRecord turnEvent, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Read the replay log: events with <c>seq &gt; afterSeq</c>, ascending, at
+    /// most <paramref name="limit"/> rows. The catch-up/resume/poll read.
+    /// </summary>
+    Task<IReadOnlyList<TurnEventRecord>> ReadTurnEventsAsync(
+        string conversationId,
+        long afterSeq,
+        int limit,
+        CancellationToken cancellationToken = default);
+
     // Tool calls
     Task InsertToolCallAsync(ToolCall toolCall, CancellationToken cancellationToken = default);
 

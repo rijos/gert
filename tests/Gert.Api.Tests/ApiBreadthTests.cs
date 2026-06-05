@@ -5,7 +5,7 @@ using System.Text;
 using System.Text.Json;
 using FluentAssertions;
 using Gert.Api.Contracts;
-using Gert.Api.Json;
+using Gert.Model.Json;
 using Gert.Model.Dtos;
 using Gert.Model.Projects;
 using Gert.Service.Projects;

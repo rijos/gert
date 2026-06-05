@@ -72,6 +72,15 @@ browsers.
 module), and a dev-only branch in `ensureSession` installs it as the in-memory
 bearer. Production never sets that global, so the branch is inert there.
 
+## WebSocket and the dev proxy
+
+The chat SPA prefers WS for live turn delivery, but `proxy.py` (the
+`make serve-mock` viewing path) is plain HTTP and does **not** upgrade
+WebSockets — through the proxy the SPA's transport chain falls back to the SSE
+stream endpoint automatically (then to range polling), so streaming still
+works. WS is exercised when the browser talks to the FakeE2E host directly
+(the Playwright matrix and `--serve`).
+
 ## Artifacts
 
 Traces + screenshots on failure land under `tools/smoke/artifacts/`

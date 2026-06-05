@@ -12,8 +12,8 @@ namespace Gert.Console;
 /// <list type="bullet">
 ///   <item>
 ///     <c>chat "&lt;message&gt;" [--project &lt;pid&gt;]</c> — creates a conversation,
-///     runs <c>StartTurnAsync</c> + <c>RunAsync</c>, and renders the
-///     <see cref="Model.Events.ChatEvent"/> stream to stdout via
+///     plans + runs a detached turn inline (planner/runner, no queue), and renders
+///     the live <see cref="Model.Events.ChatEvent"/> stream to stdout via
 ///     <see cref="ConsoleChatRenderer"/>.
 ///   </item>
 ///   <item>
@@ -88,19 +88,44 @@ public sealed class ConsoleApp
             .CreateAsync(pid, new CreateConversationRequest(), cancellationToken)
             .ConfigureAwait(false);
 
-        var turn = await gert.Chat
-            .StartTurnAsync(
-                pid,
-                conversation.Id,
-                new SendMessageRequest { Content = message },
+        // The detached pipeline, driven inline (no queue/worker in the CLI): plan,
+        // run the turn concurrently, and render the live event stream from the
+        // same splice the web transports use, stopping at the terminal event.
+        var planner = scope.ServiceProvider.GetRequiredService<Service.Chat.ITurnPlanner>();
+        var runner = scope.ServiceProvider.GetRequiredService<Service.Chat.ITurnRunner>();
+        var streamer = scope.ServiceProvider.GetRequiredService<Service.Chat.IConversationStreamer>();
+
+        var job = await planner
+            .PlanAsync(pid, conversation.Id, new SendMessageRequest { Content = message }, cancellationToken)
+            .ConfigureAwait(false);
+
+        var run = runner.RunAsync(job, cancellationToken);
+
+        var renderer = new ConsoleChatRenderer(_out, _error);
+        await renderer
+            .RenderAsync(
+                UntilTerminal(streamer.StreamAsync(pid, conversation.Id, job.AssistantSeq, cancellationToken)),
                 cancellationToken)
             .ConfigureAwait(false);
 
-        var renderer = new ConsoleChatRenderer(_out, _error);
-        await renderer.RenderAsync(gert.Chat.RunAsync(turn, cancellationToken), cancellationToken)
-            .ConfigureAwait(false);
-
+        await run.ConfigureAwait(false);
         return 0;
+    }
+
+    /// <summary>The turn's slice of the (otherwise endless) conversation stream.</summary>
+    private static async IAsyncEnumerable<Model.Events.ChatEvent> UntilTerminal(
+        IAsyncEnumerable<Model.Events.TurnEvent> source,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        await foreach (var turnEvent in source.WithCancellation(cancellationToken).ConfigureAwait(false))
+        {
+            yield return turnEvent.Event;
+
+            if (turnEvent.Event is Model.Events.MessageEndEvent or Model.Events.ErrorEvent)
+            {
+                yield break;
+            }
+        }
     }
 
     private async Task<int> IngestAsync(string[] args, CancellationToken cancellationToken)

@@ -53,11 +53,10 @@ Scoped to a project. `pid` may be `default`.
 | `PATCH` | `/api/projects/{pid}/conversations/{id}` | `{ title?, model_id?, tools?, params?, archived? }` (rename / switch model / toggle tools). |
 | `DELETE` | `/api/projects/{pid}/conversations/{id}` | Cascade-deletes messages, tool calls, citations, artifacts. |
 
-## Sending a message (streaming)
+## Sending a message (detached turn)
 
 ```
 POST /api/projects/{pid}/conversations/{id}/messages
-Accept: text/event-stream
 ```
 Body:
 ```json
@@ -66,9 +65,53 @@ Body:
   "tools": { "rag": true, "search": true, "sandbox": false } }
 ```
 
-Responds with **Server-Sent Events** (SSE). Each line is `event: <type>\ndata: <json>\n\n`. This is what drives the mockup's tool cards → streamed text → footnotes sequence:
+Responds **202 Accepted** — the turn runs *detached* on a background worker
+([chat-and-tools.md § detached turns](chat-and-tools.md#detached-turns)); the
+body carries the persisted ids and the **subscribe cursor**:
 
-| `event:` | `data` payload | UI effect |
+```json
+{ "conversation_id": "…", "user_message_id": "…",
+  "assistant_message_id": "…", "seq": 42 }
+```
+
+A second POST while the conversation's latest assistant row is still
+`streaming` returns **409 Conflict** (turns are serialized per conversation;
+the SPA disables the composer while streaming).
+
+## Receiving a turn
+
+Every event of a conversation carries a per-conversation monotonic **`seq`** —
+one cursor for pagination, catch-up, and resume. Three delivery views over the
+same durable `turn_events` log; pick by capability, fall back freely (the seq
+watermark makes switching transports gap- and duplicate-free):
+
+```
+GET /api/projects/{pid}/conversations/{id}/events?after={seq}&limit={n}   range / poll
+GET /api/projects/{pid}/conversations/{id}/stream?after={seq}            SSE (live)
+GET /api/projects/{pid}/conversations/{id}/ws                            WebSocket (live)
+```
+
+* **Range** returns `{ "events": [{ "seq": n, "event": { … } }], "next_cursor": n, "has_more": b }`
+  — always served from `chat.db`, correct across instances/restarts; also the
+  polling fallback.
+* **SSE stream** frames are `id: <seq>\nevent: <type>\ndata: <chatEvent json>\n\n`;
+  replays `seq > after` from the log, then tails live. This is the
+  dev-proxy-compatible path.
+* **WS** authenticates via the bearer **subprotocol**
+  (`new WebSocket(url, ["bearer", token])` — a browser WS cannot send an
+  Authorization header and the token never goes in the URL; the server lifts it
+  into the normal JwtBearer pipeline). Client messages are JSON with `type`:
+  `{"type":"subscribe","after":42}` (replay-then-live) and
+  `{"type":"range","after":0,"limit":200}`; server frames carry `kind`:
+  `{"kind":"event","seq":n,"event":{…}}` / `{"kind":"range", …}` /
+  `{"kind":"error","message":"…"}`. Unknown/malformed client messages are
+  ignored. *(Future: `{"type":"cancel"}` for client-initiated turn abort.)*
+
+The `event` payload is the ChatEvent union (the `$type` field matches the SSE
+`event:` name). This is what drives the mockup's tool cards → streamed text →
+footnotes sequence:
+
+| type | payload | UI effect |
 |----------|----------------|-----------|
 | `message_start` | `{ "message_id": "…" }` | creates the assistant bubble |
 | `tool_call` | `{ "id","kind":"rag","status":"running","request":{"query":"…"} }` | renders a tool card with the spinner node |
@@ -77,11 +120,18 @@ Responds with **Server-Sent Events** (SSE). Each line is `event: <type>\ndata: <
 | `citation` | `{ "ordinal":1, "label":"qdrant-benchmarks.pdf · p.4", "doc_id":"…" }` | the `[1]` marker + footnote |
 | `artifact` | `{ "id","kind":"md","name":"decision.md","content":"…" }` | opens a canvas tab |
 | `message_end` | `{ "token_count":312 }` | removes caret |
-| `error` | `{ "message":"…" }` | inline error |
+| `error` | `{ "message":"…" }` | inline error; the assistant row persists as `status="error"` |
 
-Everything emitted is also persisted to `chat.db` as the stream completes, so reloading the conversation reproduces the same cards, citations, and artifacts.
+Every event is persisted **before** it is published, so reloading a
+conversation reproduces the same cards, citations, and artifacts — and a reload
+*mid-turn* resubscribes from the streaming assistant row's `seq` and loses
+nothing (thread messages carry `status` + `seq` for exactly this).
 
-> **Why SSE, not WebSocket:** token streaming is one-directional server→client; SSE is simpler over plain HTTP, survives proxies well, and maps 1:1 to the event types above. ASP.NET Core implements it by writing `text/event-stream` to `Response.Body` (or via `IAsyncEnumerable` results). Use WebSocket only if you later need client→server mid-generation control (e.g. interrupt).
+> **Why both SSE and WS:** SSE survives plain-HTTP proxies (the dev proxy does
+> not upgrade WebSockets) and needs no auth workaround; WS adds the
+> client→server channel (range backfill today, mid-generation cancel later).
+> Both are thin subscribers over the same log + bus splice — the SPA tries WS,
+> falls back to SSE, then to range polling.
 
 ## Documents (knowledge panel)
 

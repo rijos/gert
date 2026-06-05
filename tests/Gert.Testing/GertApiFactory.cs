@@ -99,6 +99,10 @@ public sealed class GertApiFactory : WebApplicationFactory<Program>
     private void ConfigureOfflineJwtBearer(JwtBearerOptions options)
     {
         options.Authority = null;
+        // JwtBearer's own post-configure already built a ConfigurationManager from the
+        // host's Auth:Authority; nulling Authority alone doesn't remove it, and the
+        // handler would still attempt (slow, failing) OIDC metadata fetches.
+        options.ConfigurationManager = null;
         options.RequireHttpsMetadata = false;
 
         var tvp = options.TokenValidationParameters;

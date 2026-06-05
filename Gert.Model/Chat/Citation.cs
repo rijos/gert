@@ -12,6 +12,14 @@ public sealed record Citation
 
     public required string MessageId { get; init; }
 
+    /// <summary>
+    /// Provenance: the <c>tool_calls.id</c> that produced this citation, or null
+    /// for citations not attributable to a tool (e.g. model-inline). Keeps the
+    /// Message → ToolCall → Citations tree intact; display ordinals are computed
+    /// at read time.
+    /// </summary>
+    public string? ToolCallId { get; init; }
+
     /// <summary>The <c>[1]</c>, <c>[2]</c> marker ordinal.</summary>
     public required int Ordinal { get; init; }
 

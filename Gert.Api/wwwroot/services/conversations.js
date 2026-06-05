@@ -3,6 +3,7 @@
 import * as http from "./http.js";
 import * as chat from "../state/chat.js";
 import * as artifacts from "../state/artifacts.js";
+import * as chatSvc from "./chat.js";
 
 const pid = () => chat.activeProjectId.val;
 
@@ -14,7 +15,7 @@ export const list = async () => {
 
 export const open = async (id) => {
   // GET thread returns the flattened contract: { id, title, tools, messages:[{ id,
-  // role, text, citations }], artifacts } — consumed directly, no remapping.
+  // role, text, status, seq, citations }], artifacts } — consumed directly, no remapping.
   const conv = await http.get(`/projects/${pid()}/conversations/${id}`);
   chat.setConversation(conv);
   artifacts.setArtifacts(conv.artifacts || []);
@@ -25,6 +26,11 @@ export const open = async (id) => {
     chat.tools.search = !!t.search;
     chat.tools.sandbox = !!t.sandbox;
   }
+  // Detached turns: a still-streaming assistant row means the worker is busy on
+  // this conversation — re-attach and let the bubble fill in live (the server
+  // applies the orphan rule, so an abandoned row reads "error", not "streaming").
+  const inFlight = (conv.messages || []).findLast((m) => m.status === "streaming");
+  if (inFlight) chatSvc.resume(conv.id, inFlight).catch(() => {});
   return conv;
 };
 

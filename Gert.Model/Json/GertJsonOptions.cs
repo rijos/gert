@@ -1,13 +1,16 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-namespace Gert.Api.Json;
+namespace Gert.Model.Json;
 
 /// <summary>
 /// The single JSON wire contract for the whole API surface (rest-api.md): snake_case
 /// property names and <b>string</b> enums (<c>"ready"</c>, <c>"assistant"</c>, …) so
 /// every consumer reads one shape — no per-field casing/enum guesswork. Applied to
-/// the MVC pipeline, the SSE writer, and the API test deserialisers from this one place.
+/// the MVC pipeline, the SSE writer, the API test deserialisers, and the persisted
+/// <c>turn_events</c> payloads from this one place. Lives in Gert.Model because it is
+/// the contract OF the model types — both the Api transports and the Service's turn
+/// runner serialize with it.
 /// </summary>
 public static class GertJsonOptions
 {

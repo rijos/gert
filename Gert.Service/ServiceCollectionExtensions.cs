@@ -47,8 +47,25 @@ public static class ServiceCollectionExtensions
         services.TryAddScoped<IProjectInstructionsReader, NullProjectInstructionsReader>();
 
         // Granular services.
-        services.TryAddScoped<IChatService, ChatService>();
         services.TryAddScoped<IConversationService, ConversationService>();
+
+        // Detached turn pipeline (chat-and-tools.md § detached turns): the bus is a
+        // process-wide singleton (live delivery is per-process; the DB is the
+        // cross-instance truth); the reader is scoped (per-request IUserContext).
+        services.TryAddSingleton<Chat.Bus.IConversationBus, Chat.Bus.ConversationBus>();
+        services.TryAddScoped<IConversationReader, ConversationReader>();
+        services.TryAddScoped<IConversationStreamer, ConversationStreamer>();
+        services.TryAddScoped<ITurnPlanner, TurnPlanner>();
+        services.TryAddScoped<ITurnRunner, TurnRunner>();
+        // The worker-scope IUserContext: seeded from the TurnJob before anything
+        // else resolves in the scope. The host's IUserContext registration picks
+        // this when there is no HttpContext (the queue seam: ITurnQueue is
+        // host-registered, like IIngestionQueue).
+        services.TryAddScoped<DetachedUserContext>();
+        // TurnOptions get DEFAULTS here; the host binds "Gert:Turn" over them
+        // (this layer stays configuration-agnostic).
+        services.AddOptions<TurnOptions>();
+
         services.TryAddScoped<IDocumentService, DocumentService>();
         services.TryAddScoped<IArtifactService, ArtifactService>();
         services.TryAddScoped<IMemoryService, MemoryService>();

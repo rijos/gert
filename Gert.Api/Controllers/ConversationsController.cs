@@ -2,6 +2,7 @@ using Gert.Api.Contracts;
 using Gert.Model.Chat;
 using Gert.Model.Dtos;
 using Gert.Service;
+using Gert.Service.Chat;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Gert.Api.Controllers;
@@ -18,9 +19,13 @@ namespace Gert.Api.Controllers;
 public sealed class ConversationsController : ControllerBase
 {
     private readonly IGertServices _services;
+    private readonly IConversationReader _reader;
 
-    public ConversationsController(IGertServices services) =>
+    public ConversationsController(IGertServices services, IConversationReader reader)
+    {
         _services = services ?? throw new ArgumentNullException(nameof(services));
+        _reader = reader ?? throw new ArgumentNullException(nameof(reader));
+    }
 
     /// <summary>List the project's conversations (lazily provisions the folder on first touch).</summary>
     [HttpGet]
@@ -58,8 +63,10 @@ public sealed class ConversationsController : ControllerBase
         string id,
         CancellationToken cancellationToken)
     {
-        var thread = await _services.Conversations
-            .GetAsync(pid, id, cancellationToken)
+        // Through the reader, not the CRUD service: it applies the orphan rule, so
+        // an abandoned streaming row reads as error (chat-and-tools.md § detached turns).
+        var thread = await _reader
+            .GetThreadAsync(pid, id, cancellationToken)
             .ConfigureAwait(false);
 
         return thread is null ? NotFound() : Ok(ThreadResponse.From(thread));

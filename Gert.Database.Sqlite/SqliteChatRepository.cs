@@ -96,7 +96,7 @@ public sealed class SqliteChatRepository(SqliteConnection connection) : IChatRep
             .ConfigureAwait(false);
 
         const string citeSql =
-            "SELECT c.id, c.message_id, c.ordinal, c.source_type, c.doc_id, c.label, c.locator, c.score " +
+            "SELECT c.id, c.message_id, c.tool_call_id, c.ordinal, c.source_type, c.doc_id, c.label, c.locator, c.score " +
             "FROM citations c JOIN messages m ON m.id = c.message_id " +
             "WHERE m.conversation_id = @cid ORDER BY c.message_id ASC, c.ordinal ASC;";
         var citeRows = await _connection.QueryAsync<CitationRow>(
@@ -186,9 +186,11 @@ public sealed class SqliteChatRepository(SqliteConnection connection) : IChatRep
     {
         ArgumentNullException.ThrowIfNull(conversationId);
 
+        // seq is the primary order; pre-v2 rows all have seq=0 and fall back to
+        // created_at, so legacy threads keep their original order.
         const string sql =
-            "SELECT id, conversation_id, role, content, model_id, token_count, created_at " +
-            "FROM messages WHERE conversation_id = @cid ORDER BY created_at ASC, id ASC;";
+            "SELECT id, conversation_id, role, content, model_id, token_count, seq, status, created_at " +
+            "FROM messages WHERE conversation_id = @cid ORDER BY seq ASC, created_at ASC, id ASC;";
 
         var rows = await _connection.QueryAsync<MessageRow>(
             new CommandDefinition(sql, new { cid = conversationId }, cancellationToken: cancellationToken))
@@ -203,8 +205,8 @@ public sealed class SqliteChatRepository(SqliteConnection connection) : IChatRep
         ArgumentNullException.ThrowIfNull(message);
 
         const string sql =
-            "INSERT INTO messages (id, conversation_id, role, content, model_id, token_count, created_at) " +
-            "VALUES (@Id, @ConversationId, @Role, @Content, @ModelId, @TokenCount, @CreatedAt);";
+            "INSERT INTO messages (id, conversation_id, role, content, model_id, token_count, seq, status, created_at) " +
+            "VALUES (@Id, @ConversationId, @Role, @Content, @ModelId, @TokenCount, @Seq, @Status, @CreatedAt);";
 
         await _connection.ExecuteAsync(new CommandDefinition(sql, new
         {
@@ -214,8 +216,104 @@ public sealed class SqliteChatRepository(SqliteConnection connection) : IChatRep
             message.Content,
             message.ModelId,
             message.TokenCount,
+            message.Seq,
+            Status = MessageStatusToString(message.Status),
             CreatedAt = FormatTime(message.CreatedAt),
         }, cancellationToken: cancellationToken)).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
+    public async Task UpdateMessageStreamAsync(
+        string messageId,
+        string content,
+        MessageStatus status,
+        int? tokenCount,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(messageId);
+        ArgumentNullException.ThrowIfNull(content);
+
+        // COALESCE keeps an already-written token count when the caller has none
+        // (intermediate flushes pass null; only the finish chunk carries usage).
+        const string sql =
+            "UPDATE messages SET content = @Content, status = @Status, " +
+            "token_count = COALESCE(@TokenCount, token_count) WHERE id = @Id;";
+
+        await _connection.ExecuteAsync(new CommandDefinition(sql, new
+        {
+            Id = messageId,
+            Content = content,
+            Status = MessageStatusToString(status),
+            TokenCount = tokenCount,
+        }, cancellationToken: cancellationToken)).ConfigureAwait(false);
+    }
+
+    // ---- turn sequencing + replay log ---------------------------------------
+
+    /// <inheritdoc />
+    public async Task<long> AllocateSeqAsync(
+        string conversationId,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(conversationId);
+
+        // Atomic increment-and-return; the single source of seq. WAL + busy_timeout
+        // serialize writers, and per-conversation single-writer is an invariant
+        // (see IChatRepository.AllocateSeqAsync docs).
+        const string sql =
+            "UPDATE conversations SET next_seq = next_seq + 1 WHERE id = @id RETURNING next_seq - 1;";
+
+        var seq = await _connection.ExecuteScalarAsync<long?>(
+            new CommandDefinition(sql, new { id = conversationId }, cancellationToken: cancellationToken))
+            .ConfigureAwait(false);
+
+        return seq ?? throw new InvalidOperationException(
+            $"Cannot allocate seq: conversation '{conversationId}' does not exist.");
+    }
+
+    /// <inheritdoc />
+    public async Task AppendTurnEventAsync(
+        TurnEventRecord turnEvent,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(turnEvent);
+
+        const string sql =
+            "INSERT INTO turn_events (conversation_id, seq, type, payload_json, created_at) " +
+            "VALUES (@ConversationId, @Seq, @Type, @PayloadJson, @CreatedAt);";
+
+        await _connection.ExecuteAsync(new CommandDefinition(sql, new
+        {
+            turnEvent.ConversationId,
+            turnEvent.Seq,
+            turnEvent.Type,
+            turnEvent.PayloadJson,
+            CreatedAt = FormatTime(turnEvent.CreatedAt),
+        }, cancellationToken: cancellationToken)).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<TurnEventRecord>> ReadTurnEventsAsync(
+        string conversationId,
+        long afterSeq,
+        int limit,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(conversationId);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(limit);
+
+        const string sql =
+            "SELECT conversation_id, seq, type, payload_json, created_at " +
+            "FROM turn_events WHERE conversation_id = @cid AND seq > @after " +
+            "ORDER BY seq ASC LIMIT @limit;";
+
+        var rows = await _connection.QueryAsync<TurnEventRow>(
+            new CommandDefinition(
+                sql,
+                new { cid = conversationId, after = afterSeq, limit },
+                cancellationToken: cancellationToken)).ConfigureAwait(false);
+
+        return rows.Select(MapTurnEvent).ToList();
     }
 
     // ---- tool calls --------------------------------------------------------
@@ -256,8 +354,8 @@ public sealed class SqliteChatRepository(SqliteConnection connection) : IChatRep
         }
 
         const string sql =
-            "INSERT INTO citations (id, message_id, ordinal, source_type, doc_id, label, locator, score) " +
-            "VALUES (@Id, @MessageId, @Ordinal, @SourceType, @DocId, @Label, @Locator, @Score);";
+            "INSERT INTO citations (id, message_id, tool_call_id, ordinal, source_type, doc_id, label, locator, score) " +
+            "VALUES (@Id, @MessageId, @ToolCallId, @Ordinal, @SourceType, @DocId, @Label, @Locator, @Score);";
 
         await using var transaction =
             (SqliteTransaction)await _connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
@@ -268,6 +366,7 @@ public sealed class SqliteChatRepository(SqliteConnection connection) : IChatRep
             {
                 citation.Id,
                 citation.MessageId,
+                citation.ToolCallId,
                 citation.Ordinal,
                 SourceType = CitationSourceToString(citation.SourceType),
                 citation.DocId,
@@ -369,6 +468,17 @@ public sealed class SqliteChatRepository(SqliteConnection connection) : IChatRep
         Content = row.Content,
         ModelId = row.ModelId,
         TokenCount = row.TokenCount,
+        Seq = row.Seq,
+        Status = MessageStatusFromString(row.Status),
+        CreatedAt = ParseTime(row.CreatedAt),
+    };
+
+    private static TurnEventRecord MapTurnEvent(TurnEventRow row) => new()
+    {
+        ConversationId = row.ConversationId,
+        Seq = row.Seq,
+        Type = row.Type,
+        PayloadJson = row.PayloadJson,
         CreatedAt = ParseTime(row.CreatedAt),
     };
 
@@ -388,6 +498,7 @@ public sealed class SqliteChatRepository(SqliteConnection connection) : IChatRep
     {
         Id = row.Id,
         MessageId = row.MessageId,
+        ToolCallId = row.ToolCallId,
         Ordinal = row.Ordinal,
         SourceType = CitationSourceFromString(row.SourceType),
         DocId = row.DocId,
@@ -453,6 +564,22 @@ public sealed class SqliteChatRepository(SqliteConnection connection) : IChatRep
         _ => throw new InvalidOperationException($"Unknown tool-call status '{value}'."),
     };
 
+    private static string MessageStatusToString(MessageStatus status) => status switch
+    {
+        MessageStatus.Streaming => "streaming",
+        MessageStatus.Complete => "complete",
+        MessageStatus.Error => "error",
+        _ => throw new ArgumentOutOfRangeException(nameof(status), status, null),
+    };
+
+    private static MessageStatus MessageStatusFromString(string value) => value switch
+    {
+        "streaming" => MessageStatus.Streaming,
+        "complete" => MessageStatus.Complete,
+        "error" => MessageStatus.Error,
+        _ => throw new InvalidOperationException($"Unknown message status '{value}'."),
+    };
+
     private static string CitationSourceToString(CitationSourceType type) => type switch
     {
         CitationSourceType.Document => "document",
@@ -510,6 +637,17 @@ public sealed class SqliteChatRepository(SqliteConnection connection) : IChatRep
         public required string Content { get; init; }
         public string? ModelId { get; init; }
         public int? TokenCount { get; init; }
+        public long Seq { get; init; }
+        public required string Status { get; init; }
+        public required string CreatedAt { get; init; }
+    }
+
+    private sealed record TurnEventRow
+    {
+        public required string ConversationId { get; init; }
+        public long Seq { get; init; }
+        public required string Type { get; init; }
+        public required string PayloadJson { get; init; }
         public required string CreatedAt { get; init; }
     }
 
@@ -529,6 +667,7 @@ public sealed class SqliteChatRepository(SqliteConnection connection) : IChatRep
     {
         public required string Id { get; init; }
         public required string MessageId { get; init; }
+        public string? ToolCallId { get; init; }
         public int Ordinal { get; init; }
         public required string SourceType { get; init; }
         public string? DocId { get; init; }

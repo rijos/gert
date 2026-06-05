@@ -50,6 +50,33 @@ def test_reload_restores_persisted_thread(page: Page, base_url: str) -> None:
     )
 
 
+def test_reload_during_generation_resumes(page: Page, base_url: str) -> None:
+    # THE headline of the detached turn pipeline (chat-and-tools.md § detached
+    # turns): generation survives the client. The slow fixture (delay_ms in
+    # fixtures.json) paces the mock so we can reload MID-stream; the worker keeps
+    # generating server-side, the thread GET returns the assistant row as
+    # status=streaming, and conversations.open() resubscribes from its seq — the
+    # bubble replays what was missed and finishes live.
+    app = _open(page, base_url)
+    app.composer.send("count slowly")
+
+    # Mid-stream: the first words arrived, the turn is not done.
+    expect(app.thread.last_bot_body).to_contain_text("one", timeout=15000)
+
+    cid = page.evaluate("async () => (await import('/state/chat.js')).activeId.val")
+    assert cid, "sending should have set an active conversation id"
+
+    # Reload while the worker is still generating (fresh SPA state, same thread).
+    app.goto(base_url, f"/c/{cid}")
+    app.wait_ready()
+
+    # The resumed bubble rebuilds the full text — including the tail produced
+    # while no client was connected.
+    expect(app.thread.bot_messages.last).to_contain_text(
+        "six — done counting.", timeout=20000
+    )
+
+
 def test_new_conversation_appears_in_sidebar_without_reload(
     page: Page, base_url: str
 ) -> None:

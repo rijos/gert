@@ -106,7 +106,11 @@ def resolve_completion(last_user_message: str, after_tool: bool) -> dict[str, An
 
         { "deltas": [...], "finish": "stop"|"tool_calls",
           "tool_call": {name, arguments} | None,
-          "usage": {"completion_tokens": n} }
+          "usage": {"completion_tokens": n},
+          "delay_ms": 0 }
+
+    ``delay_ms`` paces the mock between deltas (the slow fixture behind the
+    detached-turn resume test); the .NET FakeChatModel ignores it.
 
     ``after_tool`` selects the follow-up reply (the second model call, whose
     messages now carry the tool result) for a tool-exercising fixture.
@@ -129,6 +133,7 @@ def resolve_completion(last_user_message: str, after_tool: bool) -> dict[str, An
                 "finish": entry.get("finish", "tool_calls"),
                 "tool_call": entry["tool_call"],
                 "usage": entry.get("usage", {"completion_tokens": 0}),
+                "delay_ms": 0,
             }
 
         source = (
@@ -141,6 +146,7 @@ def resolve_completion(last_user_message: str, after_tool: bool) -> dict[str, An
             "finish": source.get("finish", "stop"),
             "tool_call": None,
             "usage": source.get("usage", {"completion_tokens": 0}),
+            "delay_ms": int(source.get("delay_ms", 0)),
         }
 
     # Fallback: "echo" — stream "Echo: <message>" tokenised on word boundaries
@@ -153,6 +159,7 @@ def resolve_completion(last_user_message: str, after_tool: bool) -> dict[str, An
             "finish": "stop",
             "tool_call": None,
             "usage": {"completion_tokens": len(deltas)},
+            "delay_ms": 0,
         }
 
     return {
@@ -160,6 +167,7 @@ def resolve_completion(last_user_message: str, after_tool: bool) -> dict[str, An
         "finish": "stop",
         "tool_call": None,
         "usage": {"completion_tokens": 0},
+        "delay_ms": 0,
     }
 
 

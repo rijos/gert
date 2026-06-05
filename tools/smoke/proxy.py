@@ -77,6 +77,10 @@ def make_proxy_app(upstream: str, token: str) -> Starlette:
             try:
                 async for chunk in resp.aiter_bytes():
                     yield chunk
+            except httpx.TransportError:
+                # Upstream died mid-stream (e.g. the mock was terminated while an
+                # SSE stream was open) — end the response instead of blowing up.
+                pass
             finally:
                 await resp.aclose()
 

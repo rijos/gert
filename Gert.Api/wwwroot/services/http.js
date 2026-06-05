@@ -67,17 +67,13 @@ export const upload = (path, formData) =>
     body: formData,
   }).then(handle);
 
-// Open a POST SSE stream and yield parsed { event, data } records.
-// Used by services/chat.js. Parses the EventSource wire format off a fetch body
-// reader (EventSource itself can't POST or send auth headers).
-export async function* sse(path, body) {
+// Open a GET SSE stream (the live conversation stream endpoint) and yield
+// parsed { id, event, data } records — `id` is the seq cursor from the frame's
+// `id:` field. Parses the EventSource wire format off a fetch body reader
+// (EventSource itself can't send auth headers; fetch keeps the Bearer — F2).
+export async function* sse(path) {
   const res = await fetch(BASE + path, {
-    method: "POST",
-    headers: authHeaders({
-      "Content-Type": "application/json",
-      Accept: "text/event-stream",
-    }),
-    body: JSON.stringify(body ?? {}),
+    headers: authHeaders({ Accept: "text/event-stream" }),
   });
   if (!res.ok || !res.body) {
     throw new ApiError(res.status, "stream failed");
@@ -95,9 +91,11 @@ export async function* sse(path, body) {
       const raw = buf.slice(0, sep);
       buf = buf.slice(sep + 2);
       let event = "message";
+      let id = null;
       const dataLines = [];
       for (const line of raw.split("\n")) {
         if (line.startsWith("event:")) event = line.slice(6).trim();
+        else if (line.startsWith("id:")) id = Number(line.slice(3).trim());
         else if (line.startsWith("data:")) dataLines.push(line.slice(5).trim());
       }
       if (!dataLines.length) continue;
@@ -107,7 +105,18 @@ export async function* sse(path, body) {
       } catch {
         data = dataLines.join("\n");
       }
-      yield { event, data };
+      yield { id, event, data };
     }
   }
 }
+
+// Open the chat WebSocket. The in-memory token rides as the second
+// Sec-WebSocket-Protocol entry (F2 — a browser WebSocket cannot send an
+// Authorization header, and the token never goes in the URL); the server's
+// shim middleware authenticates it through the normal JwtBearer pipeline.
+export const ws = (path) => {
+  const scheme = location.protocol === "https:" ? "wss://" : "ws://";
+  const url = scheme + location.host + BASE + path;
+  const t = getToken();
+  return t ? new WebSocket(url, ["bearer", t]) : new WebSocket(url);
+};

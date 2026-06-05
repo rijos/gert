@@ -1,8 +1,11 @@
-// services/chat.js — send a message and consume the SSE ChatEvent stream,
-// pushing each event onto state/chat.js (+ artifacts). Components bind to the
-// state, so the typewriter, tool cards, citations, and canvas tabs are all just
-// reactive re-renders of incoming events. The ONLY caller of /api here.
-import { sse } from "./http.js";
+// services/chat.js — send a message (202 + detached turn) and consume the
+// conversation's TurnEvent stream, pushing each event onto state/chat.js
+// (+ artifacts). Components bind to the state, so the typewriter, tool cards,
+// citations, and canvas tabs are all just reactive re-renders of incoming
+// events. Delivery rides the best available transport — WS, then the SSE
+// stream endpoint (the dev-proxy-compatible path), then range polling — all
+// sharing one seq cursor, so a fallback resumes without gaps or duplicates.
+import * as http from "./http.js";
 import * as chat from "../state/chat.js";
 import * as artifacts from "../state/artifacts.js";
 import * as conversationsSvc from "./conversations.js";
@@ -10,7 +13,7 @@ import * as ui from "../state/ui.js";
 import { activeProjectId, activeId } from "../state/chat.js";
 import { selectedId } from "../state/models.js";
 
-// Map an SSE event onto state. `assistant` is the reactive message object.
+// Map a ChatEvent onto state. `assistant` is the reactive message object.
 const apply = (assistant, event, data) => {
   switch (event) {
     case "message_start":
@@ -89,7 +92,109 @@ const labelFor = (kind) =>
     sandbox: "Running code in the sandbox",
   })[kind] || kind;
 
-// send(content) — append the user message, open an assistant bubble, stream.
+// --- the turn consumer: one cursor, three transports -------------------------
+
+const TERMINAL = new Set(["message_end", "error"]);
+const POLL_MS = 1500;
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// Apply one TurnEvent if it advances the cursor (the seq watermark drops
+// replay/live and transport-fallback duplicates). Returns true on a terminal
+// event — the turn is over.
+const applyTurnEvent = (assistant, cursor, seq, data) => {
+  if (!data || typeof seq !== "number" || seq <= cursor.seq) return false;
+  cursor.seq = seq;
+  apply(assistant, data.$type, data);
+  return TERMINAL.has(data.$type);
+};
+
+// WS: subscribe with the cursor; server frames are {kind:"event", seq, event}.
+// Resolves true when the turn finished, false to fall back (e.g. the dev proxy
+// does not speak WS).
+const consumeWs = (pid, cid, cursor, assistant) =>
+  new Promise((resolve) => {
+    let socket;
+    try {
+      socket = http.ws(`/projects/${pid}/conversations/${cid}/ws`);
+    } catch {
+      resolve(false);
+      return;
+    }
+    let settled = false;
+    const settle = (ok) => {
+      if (settled) return;
+      settled = true;
+      try {
+        socket.close();
+      } catch {
+        /* already closed */
+      }
+      resolve(ok);
+    };
+    socket.onopen = () =>
+      socket.send(JSON.stringify({ type: "subscribe", after: cursor.seq }));
+    socket.onmessage = (e) => {
+      let frame;
+      try {
+        frame = JSON.parse(e.data);
+      } catch {
+        return;
+      }
+      if (frame?.kind !== "event") return;
+      if (applyTurnEvent(assistant, cursor, frame.seq, frame.event)) settle(true);
+    };
+    socket.onerror = () => settle(false);
+    socket.onclose = () => settle(false);
+  });
+
+// SSE: the GET stream endpoint with ?after= (works through the dev proxy).
+const consumeSse = async (pid, cid, cursor, assistant) => {
+  try {
+    for await (const { id, data } of http.sse(
+      `/projects/${pid}/conversations/${cid}/stream?after=${cursor.seq}`,
+    )) {
+      if (applyTurnEvent(assistant, cursor, id, data)) return true;
+    }
+  } catch {
+    /* fall back */
+  }
+  return false;
+};
+
+// Polling: the range endpoint, like documents.js polls ingest status. The last
+// resort — and the bound: if no terminal event lands within the server's max
+// turn duration (+ slack), the worker is gone and no error event will ever
+// come (the orphan rule covers the DB); stop and mark the bubble failed.
+const consumePoll = async (pid, cid, cursor, assistant) => {
+  const deadline = Date.now() + 6 * 60_000;
+  while (Date.now() < deadline) {
+    let page = null;
+    try {
+      page = await http.get(
+        `/projects/${pid}/conversations/${cid}/events?after=${cursor.seq}&limit=200`,
+      );
+    } catch {
+      /* transient — retry */
+    }
+    for (const te of page?.events || []) {
+      if (applyTurnEvent(assistant, cursor, te.seq, te.event)) return true;
+    }
+    if (!page?.has_more) await sleep(POLL_MS);
+  }
+  apply(assistant, "error", { message: "the turn did not finish" });
+  return true;
+};
+
+// Drive one turn's events into `assistant` from a cursor until terminal.
+const consume = async (pid, cid, after, assistant) => {
+  const cursor = { seq: after };
+  if (await consumeWs(pid, cid, cursor, assistant)) return;
+  if (await consumeSse(pid, cid, cursor, assistant)) return;
+  await consumePoll(pid, cid, cursor, assistant);
+};
+
+// send(content) — append the user message, open an assistant bubble, POST
+// (202 + cursor), then consume the detached turn's events.
 export const send = async (content) => {
   const text = content.trim();
   if (!text || chat.streaming.val) return;
@@ -111,12 +216,12 @@ export const send = async (content) => {
   };
 
   try {
-    for await (const { event, data } of sse(
+    const accepted = await http.post(
       `/projects/${pid}/conversations/${cid}/messages`,
       body,
-    )) {
-      apply(assistant, event, data);
-    }
+    );
+    assistant.id = accepted.assistant_message_id;
+    await consume(pid, cid, accepted.seq, assistant);
   } catch (e) {
     assistant.text +=
       (assistant.text ? "\n\n" : "") + "_Error: " + (e.message || "stream failed") + "_";
@@ -126,5 +231,27 @@ export const send = async (content) => {
     // The server materialised the conversation row on this first message; refresh
     // the sidebar so the new thread shows up without needing a page reload.
     if (isNew) conversationsSvc.list().catch(() => {});
+  }
+};
+
+// resume(cid, threadMessage) — re-attach to an in-flight turn after a reload:
+// the thread GET returned an assistant row with status "streaming", so replay
+// its events from the row's seq and tail live. The replay carries every delta
+// of the turn, so the bubble's text is rebuilt from scratch (the headline of
+// detached generation: a refresh mid-turn loses nothing).
+export const resume = async (cid, threadMessage) => {
+  if (chat.streaming.val) return;
+  const assistant = chat.messages.find((m) => m.id === threadMessage.id);
+  if (!assistant) return;
+
+  assistant.text = "";
+  assistant.streaming = true;
+  chat.streaming.val = true;
+
+  try {
+    await consume(activeProjectId.val, cid, threadMessage.seq, assistant);
+  } finally {
+    assistant.streaming = false;
+    chat.streaming.val = false;
   }
 };

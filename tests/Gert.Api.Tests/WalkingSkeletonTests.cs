@@ -5,7 +5,7 @@ using System.Text;
 using System.Text.Json;
 using FluentAssertions;
 using Gert.Api.Contracts;
-using Gert.Api.Json;
+using Gert.Model.Json;
 using Gert.Model;
 using Gert.Service.Storage;
 using Gert.Model.Chat;
@@ -100,7 +100,7 @@ public sealed class WalkingSkeletonTests : IClassFixture<GertApiFactory>
     }
 
     [Fact]
-    public async Task Sse_happy_path_streams_message_start_deltas_message_end_and_persists()
+    public async Task Detached_turn_accepts_then_streams_message_start_deltas_message_end_and_persists()
     {
         var client = Authed();
 
@@ -112,35 +112,41 @@ public sealed class WalkingSkeletonTests : IClassFixture<GertApiFactory>
         var conversation = await createResponse.Content.ReadFromJsonAsync<Conversation>(Json);
         conversation.Should().NotBeNull();
 
-        // POST the fixture-keyed message and read the SSE stream.
-        var request = new HttpRequestMessage(
-            HttpMethod.Post,
-            $"/api/projects/default/conversations/{conversation!.Id}/messages")
-        {
-            Content = JsonContent.Create(
-                new SendMessageRequest { Content = "should I use Qdrant or sqlite-vec?" },
-                options: Json),
-        };
-        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("text/event-stream"));
+        // POST the fixture-keyed message: 202 + the ids and the subscribe cursor
+        // (the turn itself runs detached on the worker).
+        var post = await client.PostAsJsonAsync(
+            $"/api/projects/default/conversations/{conversation!.Id}/messages",
+            new SendMessageRequest { Content = "should I use Qdrant or sqlite-vec?" },
+            Json);
 
-        var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
+        post.StatusCode.Should().Be(HttpStatusCode.Accepted);
+        var accepted = await post.Content.ReadFromJsonAsync<TurnAccepted>(Json);
+        accepted.Should().NotBeNull();
+        accepted!.AssistantMessageId.Should().NotBeNullOrEmpty();
+        accepted.Seq.Should().BeGreaterThan(0);
 
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        response.Content.Headers.ContentType!.MediaType.Should().Be("text/event-stream");
+        // Subscribe from the cursor and read live SSE until the terminal event —
+        // the splice replays anything the worker already produced, then tails.
+        using var stream = await client.GetAsync(
+            $"/api/projects/default/conversations/{conversation.Id}/stream?after={accepted.Seq}",
+            HttpCompletionOption.ResponseHeadersRead);
+        stream.StatusCode.Should().Be(HttpStatusCode.OK);
+        stream.Content.Headers.ContentType!.MediaType.Should().Be("text/event-stream");
 
-        var body = await response.Content.ReadAsStringAsync();
-        var events = ParseSse(body);
+        var events = ParseSse(await ReadUntilTerminalAsync(stream));
 
-        // Shape: message_start → delta… → message_end.
+        // Shape unchanged from the old pipeline: message_start → delta… → message_end.
         events.Should().NotBeEmpty();
         events[0].Should().BeOfType<MessageStartEvent>();
+        ((MessageStartEvent)events[0]).MessageId.Should().Be(accepted.AssistantMessageId);
         events[^1].Should().BeOfType<MessageEndEvent>();
         events.Skip(1).Take(events.Count - 2).Should().AllBeOfType<DeltaEvent>();
 
         var assembled = string.Concat(events.OfType<DeltaEvent>().Select(d => d.Text));
         assembled.Should().Be("Short version: use sqlite-vec for a homelab at this scale.");
 
-        // The assistant message persisted — a follow-up GET of the thread reproduces it.
+        // The assistant message persisted (status=complete) — a follow-up GET of
+        // the thread reproduces it.
         var thread = await client.GetFromJsonAsync<ThreadResponse>(
             $"/api/projects/default/conversations/{conversation.Id}", Json);
 
@@ -148,6 +154,38 @@ public sealed class WalkingSkeletonTests : IClassFixture<GertApiFactory>
         var assistant = thread!.Messages.SingleOrDefault(m => m.Role == MessageRole.Assistant);
         assistant.Should().NotBeNull();
         assistant!.Text.Should().Be("Short version: use sqlite-vec for a homelab at this scale.");
+        assistant.Status.Should().Be(MessageStatus.Complete);
+        assistant.Id.Should().Be(accepted.AssistantMessageId);
+    }
+
+    /// <summary>
+    /// Read SSE text until the terminal frame (<c>message_end</c>/<c>error</c>) —
+    /// the live stream never ends on its own (detached turns keep it open).
+    /// </summary>
+    private static async Task<string> ReadUntilTerminalAsync(HttpResponseMessage response)
+    {
+        await using var body = await response.Content.ReadAsStreamAsync();
+        using var reader = new StreamReader(body, Encoding.UTF8);
+        var collected = new StringBuilder();
+
+        while (await reader.ReadLineAsync() is { } line)
+        {
+            collected.Append(line).Append('\n');
+            if (line is "event: message_end" or "event: error")
+            {
+                // One more blank-line-terminated data line completes the frame.
+                while (await reader.ReadLineAsync() is { } tail)
+                {
+                    collected.Append(tail).Append('\n');
+                    if (tail.Length == 0)
+                    {
+                        return collected.ToString();
+                    }
+                }
+            }
+        }
+
+        return collected.ToString();
     }
 
     [Fact]

@@ -18,6 +18,7 @@ The chunk shapes match exactly what ``VllmStreamParser`` consumes, so the
 
 from __future__ import annotations
 
+import asyncio
 import json
 import time
 from collections.abc import AsyncIterator
@@ -103,10 +104,14 @@ async def chat_completions(request: Request) -> StreamingResponse:
                 )
             )
 
-        # 2) Content deltas, one SSE chunk per element.
+        # 2) Content deltas, one SSE chunk per element. delay_ms (the slow
+        # fixture) paces them so the resume E2E can reload mid-stream.
+        delay_s = reply.get("delay_ms", 0) / 1000.0
         for delta in reply.get("deltas", []):
             if not delta:
                 continue
+            if delay_s:
+                await asyncio.sleep(delay_s)
             yield _sse(
                 base_chunk(
                     [{"index": 0, "delta": {"content": delta}, "finish_reason": None}]

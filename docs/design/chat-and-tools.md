@@ -17,26 +17,70 @@ The API advertises three tools to the model:
 ]
 ```
 
-Loop:
+### Detached turns
+
+A turn is **detached from the request that started it**: `POST …/messages` only
+*plans* (validate → materialize the conversation if new → persist the user
+message and a `streaming` assistant placeholder → snapshot identity +
+entitlements into a `TurnJob`) and enqueues; a `TurnWorker`
+(`BackgroundService`, mirroring ingestion) runs the tool loop off-thread.
+**The database is the source of truth and transports are just delivery** — the
+runner's emit protocol is *persist, then publish*: allocate a per-conversation
+monotonic `seq` (`conversations.next_seq`), append the event to the durable
+`turn_events` log, then publish to the in-process `ConversationBus`. Clients
+attach over WS / SSE / range-polling (rest-api.md § receiving a turn) through
+one splice (`ConversationStreamer`): subscribe first, replay `seq > cursor`
+from the log, then drain live deduping by the seq watermark — no gaps, no
+duplicates, and **generation survives the client disconnecting** (a reload
+mid-turn resubscribes from the assistant row's `seq` and loses nothing).
+
+Plan phase (request scope):
 
 ```
-0. Resolve the active project (pid); prepend its pinned instructions/memory to the system prompt.
-1. Append the user message; load prior turns from this project's chat.db (trim to context window).
-2. Call vLLM (stream).
+0. Validate (fail-closed) BEFORE any disk touch; reject a concurrent turn with 409
+   (turns are serialized per conversation — the seq single-writer invariant).
+1. Materialize the conversation if new; persist the user message (status=complete)
+   and the assistant placeholder (status=streaming), each with an allocated seq.
+2. Resolve offered tools + snapshot the entitlement claim; capture history
+   (complete rows only), system prompt, and generation params into the TurnJob.
+3. Enqueue; respond 202 { ids, seq } — the subscribe cursor.
+```
+
+Run phase (worker scope, `DetachedUserContext` seeded from the job's snapshot):
+
+```
+2. Call vLLM (stream). Every text delta is emitted LIVE as it arrives
+   (persist `turn_events` row → publish to the bus), no per-call buffering.
 3. If the model emits tool_calls:
-     a. emit `tool_call` SSE (card appears)
+     a. emit `tool_call` (card appears)
      b. execute the tool against THIS project's resources
         - search_documents → hybrid query (below) on this project's rag.db (docs + memory)
         - web_search       → SearXNG
         - run_python       → gVisor sandbox
-     c. emit `tool_result` SSE + persist a tool_calls row (with latency_ms)
+        (entitlement re-checked against the job's plan-time snapshot)
+     c. emit `tool_result` + persist the tool_calls row live (with latency_ms);
+        collected citations keep tool_call_id provenance
+        (message → tool_call → citations); flush partial content to the row
      d. feed the tool result back to the model; go to 2
-4. Otherwise stream `delta` tokens to the client, extract citations,
-   detect/extract artifacts, then emit `message_end`.
-5. Persist the assistant message, citations, and artifacts.
+4. Otherwise: renumber + persist + emit citations, finalize the assistant row
+   (status=complete, token_count), then emit `message_end`.
+5. On any fault (model error, tool defect, or the max-turn-duration cap): finalize
+   the row as status=error keeping the partial content, and emit a terminal
+   `error` event. (Unlike the old pipeline, a failed turn persists.)
 ```
 
-Only tools that are **(a) granted to the user by the `gert_tools` JWT entitlement, (b) enabled on the conversation, and (c) requested in the body** are offered to the model — the entitlement is the hard ceiling (see [Auth → Tool entitlements](auth.md#tool-entitlements-allowed-tools-in-the-jwt)). So flipping "Use my docs" off removes `search_documents` for that turn, and a user without the `sandbox` entitlement never gets `run_python` advertised regardless of toggles.
+**The orphan rule.** The turn queue is in-memory and non-durable: a crashed
+worker leaves rows stuck at `streaming` forever. Every *reader*
+(`MessageStatusRules`) maps a `streaming` row older than
+`Gert:Turn:MaxTurnDuration` to `error` — stateless and multi-instance-safe —
+and the planner's 409 check goes through the same rule, so an abandoned turn
+never blocks a conversation.
+
+**Scale-out.** The bus is per-process (live push is a latency optimization);
+the `turn_events` log + range endpoint are the cross-instance truth, so a
+client on another instance still sees everything — just less live.
+
+Only tools that are **(a) granted to the user by the `gert_tools` JWT entitlement, (b) enabled on the conversation, and (c) requested in the body** are offered to the model — the entitlement is the hard ceiling (see [Auth → Tool entitlements](auth.md#tool-entitlements-allowed-tools-in-the-jwt)), enforced at advertise time in the planner and re-checked at execution time against the job's plan-time snapshot. So flipping "Use my docs" off removes `search_documents` for that turn, and a user without the `sandbox` entitlement never gets `run_python` advertised regardless of toggles.
 
 ---
 

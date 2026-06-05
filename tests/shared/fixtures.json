@@ -72,6 +72,15 @@
       "deltas": ["Hi! ", "How can I help ", "with your homelab today?"],
       "finish": "stop",
       "usage": { "completion_tokens": 8 }
+    },
+    {
+      "$comment": "SLOW fixture for the detached-turn resume test: delay_ms paces the python mock between deltas (~3s total) so the browser can reload mid-stream and resubscribe. The .NET FakeChatModel ignores delay_ms (unit tests stay instant).",
+      "match": "contains",
+      "when": "count slowly",
+      "deltas": ["one ", "two ", "three ", "four ", "five ", "six — done counting."],
+      "delay_ms": 500,
+      "finish": "stop",
+      "usage": { "completion_tokens": 7 }
     }
   ],
 

@@ -20,5 +20,16 @@ public sealed record Message
 
     public int? TokenCount { get; init; }
 
+    /// <summary>
+    /// Per-conversation monotonic sequence (the streaming/pagination cursor).
+    /// Allocated from <c>conversations.next_seq</c> when the row is written;
+    /// 0 on rows that predate the turn pipeline (ordering falls back to
+    /// <see cref="CreatedAt"/> for those).
+    /// </summary>
+    public long Seq { get; init; }
+
+    /// <summary>Lifecycle state; see <see cref="MessageStatus"/> for the orphan rule.</summary>
+    public MessageStatus Status { get; init; } = MessageStatus.Complete;
+
     public required DateTimeOffset CreatedAt { get; init; }
 }

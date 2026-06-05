@@ -3,7 +3,7 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
-using Gert.Api.Json;
+using Gert.Model.Json;
 using Gert.Model.Projects;
 using Gert.Service.Admin;
 using Gert.Testing;

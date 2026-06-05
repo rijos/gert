@@ -214,6 +214,167 @@ public class SqliteChatRepositoryTests
         Convert.ToInt32(await cmd.ExecuteScalarAsync()).Should().Be(0);
     }
 
+    [Fact]
+    public async Task AllocateSeq_is_monotonic_from_one_and_throws_for_missing_conversation()
+    {
+        await using var root = new TempDataRoot();
+        var provider = ProviderFixture.ProviderFor(root);
+        await provider.EnsureProvisionedAsync(ProviderFixture.ExpectedIssuer, Sub);
+
+        var conversation = NewConversation();
+
+        await using var repo = await provider.OpenChatAsync(ProviderFixture.ExpectedIssuer, Sub, "default");
+        await repo.InsertConversationAsync(conversation);
+
+        var seqs = new List<long>();
+        for (var i = 0; i < 5; i++)
+        {
+            seqs.Add(await repo.AllocateSeqAsync(conversation.Id));
+        }
+
+        seqs.Should().Equal(1, 2, 3, 4, 5);
+
+        var missing = () => repo.AllocateSeqAsync("nope");
+        await missing.Should().ThrowAsync<InvalidOperationException>();
+    }
+
+    [Fact]
+    public async Task TurnEvents_append_and_read_by_cursor_in_seq_order()
+    {
+        await using var root = new TempDataRoot();
+        var provider = ProviderFixture.ProviderFor(root);
+        await provider.EnsureProvisionedAsync(ProviderFixture.ExpectedIssuer, Sub);
+
+        var conversation = NewConversation();
+        var now = DateTimeOffset.UtcNow;
+
+        await using var repo = await provider.OpenChatAsync(ProviderFixture.ExpectedIssuer, Sub, "default");
+        await repo.InsertConversationAsync(conversation);
+
+        for (var i = 1; i <= 4; i++)
+        {
+            var seq = await repo.AllocateSeqAsync(conversation.Id);
+            await repo.AppendTurnEventAsync(new TurnEventRecord
+            {
+                ConversationId = conversation.Id,
+                Seq = seq,
+                Type = "delta",
+                PayloadJson = $"{{\"text\":\"chunk-{i}\"}}",
+                CreatedAt = now,
+            });
+        }
+
+        // Cursor semantics: seq > after, ascending, capped by limit.
+        var page = await repo.ReadTurnEventsAsync(conversation.Id, afterSeq: 1, limit: 2);
+        page.Select(e => e.Seq).Should().Equal(2, 3);
+        page[0].PayloadJson.Should().Contain("chunk-2");
+
+        var tail = await repo.ReadTurnEventsAsync(conversation.Id, afterSeq: 3, limit: 10);
+        tail.Select(e => e.Seq).Should().Equal(4);
+
+        (await repo.ReadTurnEventsAsync(conversation.Id, afterSeq: 4, limit: 10)).Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task UpdateMessageStream_flushes_content_and_keeps_token_count_when_null()
+    {
+        await using var root = new TempDataRoot();
+        var provider = ProviderFixture.ProviderFor(root);
+        await provider.EnsureProvisionedAsync(ProviderFixture.ExpectedIssuer, Sub);
+
+        var conversation = NewConversation();
+        var message = NewMessage(conversation.Id, MessageRole.Assistant, "", DateTimeOffset.UtcNow) with
+        {
+            Seq = 1,
+            Status = MessageStatus.Streaming,
+        };
+
+        await using var repo = await provider.OpenChatAsync(ProviderFixture.ExpectedIssuer, Sub, "default");
+        await repo.InsertConversationAsync(conversation);
+        await repo.InsertMessageAsync(message);
+
+        // Intermediate flush: still streaming, no token count yet.
+        await repo.UpdateMessageStreamAsync(message.Id, "partial", MessageStatus.Streaming, null);
+        var mid = (await repo.ListMessagesAsync(conversation.Id)).Single();
+        mid.Content.Should().Be("partial");
+        mid.Status.Should().Be(MessageStatus.Streaming);
+        mid.Seq.Should().Be(1);
+
+        // Finalize with a token count…
+        await repo.UpdateMessageStreamAsync(message.Id, "full answer", MessageStatus.Complete, 42);
+        // …then a hypothetical later null-token update must NOT erase it (COALESCE).
+        await repo.UpdateMessageStreamAsync(message.Id, "full answer", MessageStatus.Complete, null);
+
+        var final = (await repo.ListMessagesAsync(conversation.Id)).Single();
+        final.Content.Should().Be("full answer");
+        final.Status.Should().Be(MessageStatus.Complete);
+        final.TokenCount.Should().Be(42);
+    }
+
+    [Fact]
+    public async Task Messages_order_by_seq_before_created_at()
+    {
+        await using var root = new TempDataRoot();
+        var provider = ProviderFixture.ProviderFor(root);
+        await provider.EnsureProvisionedAsync(ProviderFixture.ExpectedIssuer, Sub);
+
+        var conversation = NewConversation();
+        var now = DateTimeOffset.UtcNow;
+
+        await using var repo = await provider.OpenChatAsync(ProviderFixture.ExpectedIssuer, Sub, "default");
+        await repo.InsertConversationAsync(conversation);
+
+        // Same created_at, distinct seq — seq decides; insertion order is shuffled.
+        await repo.InsertMessageAsync(NewMessage(conversation.Id, MessageRole.Assistant, "second", now) with { Seq = 2 });
+        await repo.InsertMessageAsync(NewMessage(conversation.Id, MessageRole.User, "first", now) with { Seq = 1 });
+
+        var messages = await repo.ListMessagesAsync(conversation.Id);
+        messages.Select(m => m.Content).Should().Equal("first", "second");
+    }
+
+    [Fact]
+    public async Task Citation_tool_call_id_round_trips_through_thread()
+    {
+        await using var root = new TempDataRoot();
+        var provider = ProviderFixture.ProviderFor(root);
+        await provider.EnsureProvisionedAsync(ProviderFixture.ExpectedIssuer, Sub);
+
+        var conversation = NewConversation();
+        var now = DateTimeOffset.UtcNow;
+        var message = NewMessage(conversation.Id, MessageRole.Assistant, "answer [1]", now);
+        var toolCallId = Guid.NewGuid().ToString("D");
+
+        await using var repo = await provider.OpenChatAsync(ProviderFixture.ExpectedIssuer, Sub, "default");
+        await repo.InsertConversationAsync(conversation);
+        await repo.InsertMessageAsync(message);
+        await repo.InsertToolCallAsync(new ToolCall
+        {
+            Id = toolCallId,
+            MessageId = message.Id,
+            Kind = "rag",
+            Status = ToolCallStatus.Done,
+            CreatedAt = now,
+        });
+        await repo.InsertCitationsAsync(new[]
+        {
+            new Citation
+            {
+                Id = Guid.NewGuid().ToString("D"),
+                MessageId = message.Id,
+                ToolCallId = toolCallId,
+                Ordinal = 1,
+                SourceType = CitationSourceType.Document,
+                DocId = "doc-1",
+                Label = "spec.pdf · p.2",
+            },
+        });
+
+        var thread = await repo.GetThreadAsync(conversation.Id);
+
+        thread!.Citations.Should().ContainSingle()
+            .Which.ToolCallId.Should().Be(toolCallId);
+    }
+
     private static Conversation NewConversation() => new()
     {
         Id = Guid.NewGuid().ToString("D"),
