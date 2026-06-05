@@ -27,6 +27,13 @@
         "Gert__Vllm__BaseUrl": "http://127.0.0.1:8000",
         "Gert__Search__BaseUrl": "http://127.0.0.1:8080",
 
+        "Gert__Models__0__Id": "default",
+        "Gert__Models__0__Name": "Echo Server",
+        "Gert__Models__0__Default": "true",
+        "Gert__Models__0__Endpoint": ":8000",
+        "Gert__Models__0__Capabilities__0": "text only",
+        "Gert__Models__0__Context": "0",
+
         "Storage__DataRoot": ".dev/e2e-data",
         "Storage__ExpectedIssuer": "https://id.dev.local",
 

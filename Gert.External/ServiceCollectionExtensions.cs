@@ -41,6 +41,14 @@ public static class ServiceCollectionExtensions
         AddSandbox(services);
         AddIsolatedExtractor(services);
 
+        // The operator model catalog (Gert:Models + vLLM fallback) — feeds both
+        // GET /api/models and the TurnPlanner tool-capability gate. Closes over
+        // the configuration parameter: not every host (Console) puts
+        // IConfiguration in the container.
+        services.AddSingleton<IModelCatalog>(sp => new ConfigModelCatalog(
+            configuration,
+            sp.GetRequiredService<IOptions<VllmOptions>>()));
+
         return services;
     }
 

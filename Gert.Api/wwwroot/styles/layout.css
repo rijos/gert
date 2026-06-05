@@ -38,13 +38,12 @@
   .drawer-close{display:grid;}
   .brand{padding-right:14px;}
   .expand-btn{display:none;}            /* pane is already an overlay */
-  .topbar{padding:11px 14px; gap:8px;}
+  .topbar{padding:0 14px; gap:8px;}
   .conv-title{font-size:16px; display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
   .title-wrap .edit{display:none;}
   .menu{width:312px; max-width:calc(100vw - 28px);}
   .thread{padding:0 18px;}
   .composer-wrap{padding:12px 14px 18px;}
-  .chint{padding:0 8px;}
   .legend{display:none;}
 }
 

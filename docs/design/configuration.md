@@ -267,7 +267,7 @@ the user's own.
 
 ## 8. Impact on the SPA
 
-New surface in `Gert.Web` ([ui-components](ui-components.md)):
+New surface in the SPA (`Gert.Api/wwwroot`, [ui-components](ui-components.md)):
 
 - **Project picker** — switch/create/delete projects (the sidebar gains a project context above
   the conversation list).

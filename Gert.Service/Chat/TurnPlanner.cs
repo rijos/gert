@@ -27,6 +27,7 @@ public sealed class TurnPlanner : ITurnPlanner
     private readonly IValidationProvider _validation;
     private readonly IReadOnlyList<ITool> _tools;
     private readonly IProjectInstructionsReader? _instructions;
+    private readonly IModelCatalog _catalog;
     private readonly TurnOptions _options;
 
     public TurnPlanner(
@@ -35,7 +36,8 @@ public sealed class TurnPlanner : ITurnPlanner
         IValidationProvider validation,
         IEnumerable<ITool> tools,
         IOptions<TurnOptions> options,
-        IProjectInstructionsReader? instructions)
+        IProjectInstructionsReader? instructions,
+        IModelCatalog? catalog = null)
     {
         _databases = databases ?? throw new ArgumentNullException(nameof(databases));
         _user = user ?? throw new ArgumentNullException(nameof(user));
@@ -44,6 +46,7 @@ public sealed class TurnPlanner : ITurnPlanner
         _tools = tools.ToList();
         _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
         _instructions = instructions;
+        _catalog = catalog ?? new NullModelCatalog();
     }
 
     /// <inheritdoc />
@@ -142,9 +145,13 @@ public sealed class TurnPlanner : ITurnPlanner
         var systemPrompt = await ResolveSystemPromptAsync(pid, cancellationToken).ConfigureAwait(false);
 
         // 6. The offered tool set: requested ∩ conversation-enabled ∩ entitlement
-        // ∩ registry (auth.md § the claim is the ceiling) — and the entitlement
-        // SNAPSHOT for the off-thread execution-time re-check.
-        var offered = ResolveOfferedTools(request, conversation);
+        // ∩ registry (auth.md § the claim is the ceiling) ∩ MODEL CAPABILITY —
+        // a model the catalog marks as not tool-capable is never advertised
+        // tools, whatever the toggles say. Plus the entitlement SNAPSHOT for
+        // the off-thread execution-time re-check.
+        var offered = _catalog.SupportsTools(assistantMessage.ModelId!)
+            ? ResolveOfferedTools(request, conversation)
+            : Array.Empty<ITool>();
 
         return new TurnJob
         {

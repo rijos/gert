@@ -51,7 +51,12 @@ public sealed class VllmChatModelClient : IChatModelClient
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        var body = VllmChatRequestBuilder.Build(request, _options.ChatModelId);
+        // Honor the per-request model from the picker; the "default" sentinel
+        // (and an unset id) means the operator-configured chat model.
+        var modelId = string.IsNullOrWhiteSpace(request.ModelId) || request.ModelId == "default"
+            ? _options.ChatModelId
+            : request.ModelId;
+        var body = VllmChatRequestBuilder.Build(request, modelId);
 
         using var httpRequest = new HttpRequestMessage(HttpMethod.Post, "/v1/chat/completions")
         {

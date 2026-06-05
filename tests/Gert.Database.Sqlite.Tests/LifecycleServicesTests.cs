@@ -86,10 +86,10 @@ public class LifecycleServicesTests
         Guid.TryParseExact(created.Id, "D", out _).Should().BeTrue();
 
         var list = await h.Projects.ListAsync();
-        list.Select(p => p.Meta.Id).Should().Contain([SqliteDatabasePaths.DefaultProjectId, created.Id]);
+        list.Select(p => p.Id).Should().Contain([SqliteDatabasePaths.DefaultProjectId, created.Id]);
 
         var got = await h.Projects.GetAsync(created.Id);
-        got!.Meta.Name.Should().Be("Research");
+        got!.Name.Should().Be("Research");
         got.ConversationCount.Should().Be(0);
         got.DocumentCount.Should().Be(0);
         got.MemoryCount.Should().Be(0);

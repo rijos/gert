@@ -1,18 +1,21 @@
 // components/ui/modal.js — generic centered modal over a scrim. Imperative
 // open/close since modals are transient, not part of a persistent store.
 //
-// Modal({ title, body, confirmLabel?, onConfirm?, actions?, dismissable? })
+// Modal({ title, body, confirmLabel?, onConfirm?, actions?, dismissable?, closable? })
 //   title       — heading (omit for none)
 //   body        — string (wrapped in <p>) or any node
 //   actions     — escape hatch: a node, or fn(close) => node, replacing the
 //                 default footer. Use for non-confirm layouts.
 //   confirmLabel/onConfirm — default footer: Cancel + a primary button.
 //   dismissable — backdrop click / Esc closes (default true).
+//   closable    — show a ✕ in the top-right corner; the caller decides
+//                 (default false).
 // Returns close().
 import van from "van";
 import { Button } from "./button.js";
+import { Icon } from "../../icons/icons.js";
 
-const { div, h2, p } = van.tags;
+const { div, h2, p, button } = van.tags;
 
 export const Modal = ({
   title,
@@ -21,6 +24,7 @@ export const Modal = ({
   onConfirm,
   actions,
   dismissable = true,
+  closable = false,
 } = {}) => {
   const close = () => {
     host.remove();
@@ -50,6 +54,12 @@ export const Modal = ({
     { class: "modal-scrim", onclick: (e) => dismissable && e.target === host && close() },
     div(
       { class: "modal" },
+      closable
+        ? button(
+            { class: "ghost modal-close", title: "Close", onclick: close },
+            Icon("close", { size: 15, strokeWidth: 2.2 }),
+          )
+        : null,
       title ? h2(title) : null,
       typeof body === "string" ? p(body) : body,
       footer,

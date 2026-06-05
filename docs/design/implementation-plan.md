@@ -198,10 +198,10 @@ real-SQLite isolation, lazy provisioning) into one proven thread before any feat
 - **Design:** [tech-stack § architecture](tech-stack.md#architecture), [testing §7](testing.md#7-console-tests--gertconsoletests).
 - **Acceptance:** stream renders to stdout; inline ingestion ends `Ready`; **same invalid input the API rejects is rejected here** (service-layer guarantee); compiles with **no** `Gert.Authentication` reference.
 
-### U12 — `Gert.Web` SPA
+### U12 — Web SPA
 - **Goal:** Build the SPA from [`uistyle.html`](../../uistyle.html) into the `wwwroot` layout: vendored `lib/` (van, van-x, router), `state/`, `services/`, `components/`, `pages/`, split `styles/`. Wire auth (PKCE), SSE streaming, project picker, settings.
 - **Depends:** U9b (contracts stable)
-- **Touches:** `Gert.Web/`.
+- **Touches:** `Gert.Api/wwwroot/`.
 - **Design:** [ui-components](ui-components.md), [configuration §8](configuration.md#8-impact-on-the-spa).
 - **Hardens:** **F2** (access token **in-memory only**), **F3** (HTML **and SVG** artifacts in sandboxed `srcdoc` iframe, no `allow-same-origin`), **F4** (sanitized markdown, safe links).
 - **Acceptance:** app loads via import map and streams a message against the Fake host (verified by U13); no token in `localStorage`; SVG/HTML artifacts render sandboxed.

@@ -30,9 +30,9 @@ public sealed class VllmChatModelClientTests
         return (new VllmChatModelClient(http, options, NullLogger<VllmChatModelClient>.Instance), handler);
     }
 
-    private static ChatCompletionRequest Request() => new()
+    private static ChatCompletionRequest Request(string modelId = "default") => new()
     {
-        ModelId = "ignored",
+        ModelId = modelId,
         Messages = [new ChatModelMessage { Role = "user", Content = "hello" }],
     };
 
@@ -41,6 +41,7 @@ public sealed class VllmChatModelClientTests
     {
         var (client, handler) = NewClient("data: [DONE]\n\n");
 
+        // the "default" sentinel resolves to the configured chat model
         await foreach (var _ in client.StreamAsync(Request()))
         {
             // drain
@@ -51,6 +52,21 @@ public sealed class VllmChatModelClientTests
         body["model"]!.GetValue<string>().Should().Be("qwen-test");
         body["stream"]!.GetValue<bool>().Should().BeTrue();
         body["messages"]!.AsArray()[0]!["content"]!.GetValue<string>().Should().Be("hello");
+    }
+
+    [Fact]
+    public async Task StreamAsync_HonorsPerRequestModelId()
+    {
+        var (client, handler) = NewClient("data: [DONE]\n\n");
+
+        // a concrete id from the catalog/picker overrides the configured default
+        await foreach (var _ in client.StreamAsync(Request("llama-3.3-70b-instruct")))
+        {
+            // drain
+        }
+
+        var body = JsonNode.Parse(handler.LastRequestBody!)!;
+        body["model"]!.GetValue<string>().Should().Be("llama-3.3-70b-instruct");
     }
 
     [Fact]

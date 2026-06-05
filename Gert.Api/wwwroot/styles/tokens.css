@@ -12,6 +12,7 @@
   --sans:'Hanken Grotesk',-apple-system,sans-serif;
   --mono:'JetBrains Mono',ui-monospace,monospace;
   --r:12px; --r-sm:8px;
+  --head-h:56px;   /* shared pane-header height: brand, topbar, canvas-bar align */
 }
 /* ---- warm dark theme: manual override ---- */
 :root[data-theme="dark"]{

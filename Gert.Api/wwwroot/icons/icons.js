@@ -124,7 +124,7 @@ export const BrandMark = () =>
       r: "3.4",
       stroke: "#bf4727",
       "stroke-width": "2",
-      fill: "#fbf7ef",
+      fill: "none",
     }),
     path({
       d: "M8 10.4v9.2M8 12 Q8 15 12 15 L18.6 15M8 18 Q8 15 12 15",

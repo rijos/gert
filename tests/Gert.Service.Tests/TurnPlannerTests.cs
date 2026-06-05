@@ -4,6 +4,7 @@ using Gert.Model.Chat;
 using Gert.Model.Dtos;
 using Gert.Service.Chat;
 using Gert.Service.Database;
+using Gert.Service.External;
 using Gert.Service.Tools;
 using Gert.Service.Validation;
 using Gert.Testing.Fakes;
@@ -53,14 +54,16 @@ public sealed class TurnPlannerTests
     private TurnPlanner NewPlanner(
         TestUserContext? user = null,
         IEnumerable<ITool>? tools = null,
-        IProjectInstructionsReader? instructions = null) =>
+        IProjectInstructionsReader? instructions = null,
+        IModelCatalog? catalog = null) =>
         new(
             _provider,
             user ?? new TestUserContext(),
             _validation,
             tools ?? [],
             Options.Create(_options),
-            instructions);
+            instructions,
+            catalog);
 
     private void SeedConversation(params (string Id, bool On)[] toggles)
     {
@@ -201,6 +204,30 @@ public sealed class TurnPlannerTests
         job.AllowedToolIds.Should().BeEquivalentTo(["rag"]);
         job.Iss.Should().Be(user.Iss);
         job.Sub.Should().Be(user.Sub);
+    }
+
+    [Fact]
+    public async Task Model_without_tool_capability_is_offered_no_tools()
+    {
+        var user = new TestUserContext { AllowedTools = new HashSet<string>(["rag"], StringComparer.Ordinal) };
+        var rag = new RagTool(_provider, new FakeEmbeddings(), user);
+        SeedConversation(("rag", true));
+
+        var catalog = Substitute.For<IModelCatalog>();
+        catalog.SupportsTools("default").Returns(false);
+
+        var request = new SendMessageRequest
+        {
+            Content = "search my documents",
+            Tools = new ToolToggles(new Dictionary<string, bool> { ["rag"] = true }),
+        };
+
+        var job = await NewPlanner(user, [rag], catalog: catalog).PlanAsync(Pid, Conv, request);
+
+        // Requested + enabled + entitled — but the model can't call tools, so
+        // nothing is advertised upstream.
+        job.ToolIds.Should().BeEmpty();
+        job.Tools.Should().BeEmpty();
     }
 
     [Fact]

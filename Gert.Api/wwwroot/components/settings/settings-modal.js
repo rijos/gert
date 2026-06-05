@@ -1,6 +1,6 @@
 // components/settings/settings-modal.js — user settings as a centered popup
-// (theme, default reply language, default model). Opened from the user chip;
-// reuses the shared Modal scaffold (scrim + Cancel/Save actions).
+// (theme, default reply language, default model, build line). Opened from the
+// user chip; reuses the shared Modal scaffold (scrim + ✕ + Cancel/Save actions).
 import van from "van";
 import { Modal } from "../ui/modal.js";
 import { toast } from "../ui/toast.js";
@@ -64,24 +64,27 @@ export const openSettings = () => {
                   ...models.models.map((m) => option({ value: m.id }, m.name)),
                 );
                 sel.value =
-                  loaded.val.default_model || models.selectedId.val || "";
+                  loaded.val.default_model_id || models.selectedId.val || "";
                 sel.id = "default_model";
                 return sel;
               })(),
             ),
+            div({ class: "ver" }, "v0 · homelab · 20u"),
           ),
   );
 
   Modal({
     title: "Settings",
+    closable: true,
     body,
     confirmLabel: "Save",
     onConfirm: () => {
       settingsSvc
         .update({
-          reply_language: document.getElementById("reply_lang")?.value,
-          default_model: document.getElementById("default_model")?.value,
-          theme: ui.theme.val || "system",
+          // empty string = "leave unchanged" — the API treats null/absent as no-op
+          reply_language: document.getElementById("reply_lang")?.value || undefined,
+          default_model_id: document.getElementById("default_model")?.value || undefined,
+          theme: ui.theme.val || "auto", // wire enum: light | dark | auto
         })
         .then(() => toast("Settings saved", "ok"))
         .catch(() => toast("Could not save settings", "err"));

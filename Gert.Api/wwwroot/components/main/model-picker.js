@@ -32,7 +32,7 @@ const ModelItem = (m) =>
     div(
       { class: "badges" },
       ...(m.capabilities || []).map((c) => Badge({ label: c, cap: true })),
-      m.context
+      m.context != null
         ? Badge({ label: Math.round(m.context / 1024) + "K ctx" })
         : null,
     ),

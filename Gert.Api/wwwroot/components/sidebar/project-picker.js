@@ -39,7 +39,11 @@ export const ProjectPicker = () => {
       confirmLabel: "Create",
       onConfirm: () => {
         const name = nameInput.value.trim();
-        if (name) attempt(() => svc.create({ name }), "Couldn't create the project");
+        if (name)
+          attempt(async () => {
+            const p = await svc.create({ name });
+            if (p?.id) await svc.select(p.id); // land in the new project right away
+          }, "Couldn't create the project");
       },
     });
   };

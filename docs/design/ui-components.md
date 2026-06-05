@@ -1,10 +1,10 @@
 # UI components & `wwwroot` layout
 
-How the **VanJS SPA** (`Gert.Web/` → served from `Gert.Api/wwwroot`) is organised on
+How the **VanJS SPA** (`Gert.Api/wwwroot`) is organised on
 disk: the folder structure, the component conventions, where state and I/O live, the
 CSS split, and the **no-npm** dev/release pipeline.
 
-This expands the `Gert.Web/` node from [Tech stack → Solution layout](tech-stack.md#solution-layout-projects).
+This expands the `Gert.Api/wwwroot` node from [Tech stack → Solution layout](tech-stack.md#solution-layout-projects).
 It derives directly from the interface in [`uistyle.html`](../../uistyle.html) — every
 moving part in that mockup maps to a file here (see [Feature → component map](#feature--component-map)).
 
@@ -32,7 +32,7 @@ moving part in that mockup maps to a file here (see [Feature → component map](
 
 ## 2. Directory layout
 
-`Gert.Web/` is the authoring root and mirrors the served `wwwroot` **1:1** — the same
+`Gert.Api/wwwroot` is the authoring root and what is served — the same
 files are what ship (minified) on publish.
 
 ```
@@ -287,7 +287,7 @@ The whole point of native ESM: **the dev build is "no build."** Minification is 
 publish-time concern handled entirely by .NET.
 
 ### Development — raw source
-- `Gert.Api` serves `Gert.Web/` as its web root in `Development` (`UseStaticFiles`,
+- `Gert.Api` serves `wwwroot/` directly in `Development` (`UseStaticFiles`,
   no-cache, `MapFallbackToFile("index.html")`).
 - The browser loads `app.js` as a module and resolves every `import` by path. The bare
   specifier `van` resolves through the **import map** in `index.html`:

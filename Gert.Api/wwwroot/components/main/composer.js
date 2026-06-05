@@ -78,9 +78,5 @@ export const Composer = () => {
         ),
       ),
     ),
-    div(
-      { class: "chint" },
-      "Gert can search the web, run Python in a gVisor sandbox, and read your private documents. It can make mistakes — check sources.",
-    ),
   );
 };

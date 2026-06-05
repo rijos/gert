@@ -88,7 +88,7 @@ public sealed class ApiBreadthTests : IClassFixture<GertApiFactory>
         meta!.Name.Should().Be("Research");
 
         var list = await client.GetFromJsonAsync<IReadOnlyList<ProjectSummary>>("/api/projects", Json);
-        list!.Select(p => p.Meta.Id).Should().Contain(meta.Id);
+        list!.Select(p => p.Id).Should().Contain(meta.Id);
 
         var get = await client.GetAsync($"/api/projects/{meta.Id}");
         get.StatusCode.Should().Be(HttpStatusCode.OK);

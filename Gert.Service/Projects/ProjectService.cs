@@ -188,12 +188,6 @@ public sealed class ProjectService : IProjectService
             memoryCount = memories.Count;
         }
 
-        return new ProjectSummary
-        {
-            Meta = meta,
-            ConversationCount = conversationCount,
-            DocumentCount = documentCount,
-            MemoryCount = memoryCount,
-        };
+        return ProjectSummary.From(meta, conversationCount, documentCount, memoryCount);
     }
 }

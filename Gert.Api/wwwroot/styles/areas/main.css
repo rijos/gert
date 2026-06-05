@@ -1,9 +1,10 @@
 /* areas/main.css — main column: top bar, title, tool chips, model picker, message stream, messages. */
 .main{display:flex; flex-direction:column; min-width:0; background:var(--paper); position:relative;}
-.topbar{display:flex; align-items:center; gap:12px; padding:13px 22px; border-bottom:1px solid var(--line); background:color-mix(in srgb, var(--paper) 80%, transparent); backdrop-filter:blur(6px);}
+.topbar{height:var(--head-h); flex:none; display:flex; align-items:center; gap:12px; padding:0 22px; border-bottom:1px solid var(--line); background:color-mix(in srgb, var(--paper) 80%, transparent); backdrop-filter:blur(6px);}
 .collapse-btn{margin-right:2px;}
 .title-wrap{flex:1; min-width:0;}
-.conv-title{font-family:var(--display); font-size:18px; font-weight:500; letter-spacing:-.01em; display:flex; align-items:center; gap:8px; cursor:text;}
+.conv-title{font-family:var(--display); font-size:18px; font-weight:500; letter-spacing:-.01em; display:flex; align-items:center; gap:8px; cursor:text; min-width:0;}
+.conv-title .title-text{white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
 .conv-title .edit{opacity:0; width:13px; height:13px; color:var(--ink-faint); transition:.14s;}
 .title-wrap:hover .edit{opacity:1;}
 .conv-title input{font-family:var(--display); font-size:18px; font-weight:500; color:var(--ink); background:var(--surface); border:1px solid var(--accent); border-radius:var(--r-sm); padding:2px 8px; outline:none;}
@@ -13,6 +14,7 @@
 .tool-chip .dot{width:6px; height:6px; border-radius:50%; background:var(--ink-faint);}
 .tool-chip.on{color:var(--sage); border-color:var(--sage-soft); background:var(--sage-soft);}
 .tool-chip.on .dot{background:var(--sage);}
+.tool-chip.disabled{opacity:.4; cursor:not-allowed;}
 
 .model-picker{position:relative;}
 .model-btn{display:flex; align-items:center; gap:9px; padding:7px 11px; border:1px solid var(--line-strong); background:var(--surface); border-radius:var(--r-sm); cursor:pointer; font-family:var(--sans); font-weight:600; font-size:13px; color:var(--ink); transition:.14s;}

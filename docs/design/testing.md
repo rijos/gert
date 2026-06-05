@@ -127,7 +127,7 @@ tools/
   jwt/                          #   dev RSA keypair + dev-jwks.json (trusted only in Dev/Test)
 ```
 
-`Gert.Web` is exercised by the browser tier (`tools/smoke`) rather than a JS unit runner —
+The SPA (`Gert.Api/wwwroot`) is exercised by the browser tier (`tools/smoke`) rather than a JS unit runner —
 see [§8](#8-web-tests). Each `*.Tests` project references its target plus `Gert.Testing`.
 
 ---
@@ -390,7 +390,7 @@ fakes, redirect `Console.Out`, and assert:
 
 ## 8. Web tests
 
-`Gert.Web` is no-build native ESM ([ui-components](ui-components.md)); we keep the **no-npm**
+The SPA (`Gert.Api/wwwroot`) is no-build native ESM ([ui-components](ui-components.md)); we keep the **no-npm**
 rule into testing too. Both web tiers run on the **same Python + Playwright** stack — no Node,
 no jsdom, no test-runner package. The browser is the DOM/JS engine; Python is the runner.
 

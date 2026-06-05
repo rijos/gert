@@ -34,8 +34,6 @@ Services are exposed two ways: **granular interfaces** (`IChatService`, `IConver
 Arrows are project references. Everything points inward to `Gert.Service` → `Gert.Model`; nothing the service layer touches depends on a host, which is what lets the Console drive the services without the API.
 
 ```
-     Gert.Web ┈┈ build ┈┈▶ Gert.Api/wwwroot            SPA assets — no project reference
-
   ── hosts ───────────────────────────────────────────────────────────────────
      Gert.Api                                          Gert.Console
        refs: Service, Authentication,                    refs: Service, Database.Sqlite,
@@ -132,15 +130,13 @@ Gert.sln
 │  │                          #   / a secret store — never committed (security F8).
 │  ├─ Controllers/            # thin — Models, Conversations, Messages(SSE), Documents, Artifacts, Admin
 │  ├─ Ingestion/              # Channel queue + IngestionWorker (BackgroundService) → IIngestionService
-│  └─ wwwroot/                # SPA assets from Gert.Web (raw in dev, minified on publish)
+│  └─ wwwroot/                # VanJS SPA source (no .NET ref, no npm) — native ES modules served
+│                             #   raw in dev, minified in place on publish (NUglify).
+│                             #   Layout & component conventions: docs/design/ui-components.md
 │
 ├─ Gert.Console/              # CLI host — references Service, Database.Sqlite, External (bypasses the Api)
 │  ├─ Program.cs              # wires LocalUserContext (single user, tools = "*"), inline ingestion
 │  └─ …                       # renders the ChatEvent stream to stdout; isolated-testing entry point
-│
-├─ Gert.Web/                  # VanJS SPA source (no .NET ref, no npm) — native ES modules served
-│                             #   raw in dev, minified into Gert.Api/wwwroot on publish (NUglify).
-│                             #   Layout & component conventions: docs/design/ui-components.md
 │
 ├─ tests/                     # test projects — see docs/design/testing.md
 │  ├─ Gert.Testing/           #   shared infra: fakes (vLLM/SearXNG/sandbox), GertApiFactory, JWT mint

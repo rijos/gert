@@ -1,4 +1,5 @@
-// components/sidebar/brand.js — mark + title + version + drawer-close.
+// components/sidebar/brand.js — mark + title + drawer-close (the pane header).
+// The version line lives in the settings modal.
 import van from "van";
 import { BrandMark, Icon } from "../../icons/icons.js";
 import * as ui from "../../state/ui.js";
@@ -9,7 +10,7 @@ export const Brand = () =>
   div(
     { class: "brand" },
     div({ class: "mark" }, BrandMark()),
-    div(h1("Gert"), div({ class: "ver" }, "v0 · homelab · 20u")),
+    h1("Gert"),
     button(
       {
         class: "ghost drawer-close",

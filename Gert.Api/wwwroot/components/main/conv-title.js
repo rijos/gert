@@ -35,7 +35,7 @@ export const ConvTitle = () => {
           })
         : div(
             { class: "conv-title", onclick: () => (editing.val = true) },
-            chat.title.val,
+            van.tags.span({ class: "title-text" }, chat.title.val),
             Icon("edit", { size: 13, class: "edit", strokeWidth: 2 }),
           ),
   );

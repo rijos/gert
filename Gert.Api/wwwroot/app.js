@@ -36,7 +36,7 @@ const boot = async () => {
   });
 
   // load initial data (services update state; views react)
-  modelsSvc.load().catch(() => {});
+  modelsSvc.loadWithUserDefault().catch(() => {});
   projectsSvc.list().catch(() => {});
   conversationsSvc.list().catch(() => {});
 
