@@ -1,7 +1,7 @@
 """pages.py — page objects for the Gert SPA regions.
 
 Thin wrappers over Playwright locators that target the REAL selectors/classes in
-``Gert.Api/wwwroot`` (the mockup class names: ``.composer``, ``.convo``,
+``src/Gert.Api/wwwroot`` (the mockup class names: ``.composer``, ``.convo``,
 ``.tcard``, ``.kb-view``, ``.ctab``, ``.art-doc``, etc.). Keeping the selectors in
 one place means a markup rename is a one-file edit, not a scatter across scenarios.
 

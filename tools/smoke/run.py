@@ -53,10 +53,10 @@ type MatrixResult = tuple[str, str, str, bool, str]
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 ARTIFACTS_DIR = Path(__file__).resolve().parent / "artifacts"
-# The FakeE2E host's user-data root (Storage__DataRoot, resolved against Gert.Api/).
+# The FakeE2E host's user-data root (Storage__DataRoot, resolved against src/Gert.Api/).
 # Wiped on every harness-owned boot — NOT the sibling .dev/jwt keypair, which is
 # meant to be reused across runs.
-DATA_ROOT = REPO_ROOT / "Gert.Api" / ".dev" / "e2e-data"
+DATA_ROOT = REPO_ROOT / "src" / "Gert.Api" / ".dev" / "e2e-data"
 
 DEFAULT_HOST = "http://127.0.0.1:5217"
 BROWSERS = ["chromium", "firefox"]
@@ -103,7 +103,7 @@ def _boot_host() -> subprocess.Popen[bytes]:
             "dotnet",
             "run",
             "--project",
-            str(REPO_ROOT / "Gert.Api"),
+            str(REPO_ROOT / "src" / "Gert.Api"),
             "--launch-profile",
             "FakeE2E",
         ],

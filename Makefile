@@ -57,14 +57,14 @@ coverage: ## Run tests with coverage + generate an HTML report (needs coverlet.c
 
 .PHONY: run
 run: ## Run the API host (real adapters arrive in U10; chat needs the mocked env via `make dev`)
-	dotnet run --project Gert.Api -c $(CONFIG)
+	dotnet run --project src/Gert.Api -c $(CONFIG)
 
 .PHONY: dev
 dev: ## Run the host against the MOCKED world: Python mock upstreams + FakeE2E profile (requires U13)
 	@if [ -d "$(SMOKE_DIR)/mocks" ]; then \
 		echo "Booting python mock upstreams + FakeE2E host…"; \
 		uv run --directory $(SMOKE_DIR) python -m mocks & \
-		dotnet run --project Gert.Api --launch-profile FakeE2E -c $(CONFIG); \
+		dotnet run --project src/Gert.Api --launch-profile FakeE2E -c $(CONFIG); \
 	else \
 		echo "make dev needs tools/smoke/mocks (U13) — not built yet."; exit 1; \
 	fi

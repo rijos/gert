@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 
 import httpx
 from starlette.applications import Starlette
@@ -92,9 +93,13 @@ def make_proxy_app(upstream: str, token: str) -> Starlette:
         )
 
     # Aborting the harness (Ctrl+C) drives uvicorn's graceful shutdown, which runs
-    # this lifespan hook — close the upstream client so its pooled keep-alive
+    # the lifespan exit — close the upstream client so its pooled keep-alive
     # connections (timeout=None, so they never expire on their own) don't leak.
-    async def _close_client() -> None:
+    # (This Starlette version dropped the on_startup/on_shutdown kwargs; lifespan
+    # is the supported hook.)
+    @asynccontextmanager
+    async def lifespan(_: Starlette) -> AsyncIterator[None]:
+        yield
         await client.aclose()
 
     return Starlette(
@@ -102,5 +107,5 @@ def make_proxy_app(upstream: str, token: str) -> Starlette:
             Route("/__dev_token.js", dev_token),
             Route("/{path:path}", proxy, methods=_PROXY_METHODS),
         ],
-        on_shutdown=[_close_client],
+        lifespan=lifespan,
     )

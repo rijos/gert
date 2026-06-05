@@ -14,7 +14,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\Gert.Authentication\Gert.Authentication.csproj" />
+    <ProjectReference Include="..\..\src\Gert.Authentication\Gert.Authentication.csproj" />
     <ProjectReference Include="..\Gert.Testing\Gert.Testing.csproj" />
   </ItemGroup>
 

@@ -8,10 +8,10 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\Gert.Console\Gert.Console.csproj" />
+    <ProjectReference Include="..\..\src\Gert.Console\Gert.Console.csproj" />
     <!-- The storage seam types (StorageOptions / SqliteDatabaseProvider / UserPaths)
          the wiring test provisions a temp DataRoot against. -->
-    <ProjectReference Include="..\..\Gert.Database.Sqlite\Gert.Database.Sqlite.csproj" />
+    <ProjectReference Include="..\..\src\Gert.Database.Sqlite\Gert.Database.Sqlite.csproj" />
     <ProjectReference Include="..\Gert.Testing\Gert.Testing.csproj" />
   </ItemGroup>
 
