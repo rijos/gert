@@ -1,14 +1,25 @@
 // components/ui/pill.js — status pill (ready / proc / fail).
 import van from "van";
+import { component } from "../../lib/component.js";
 
 const { span } = van.tags;
 
 const LABELS = { ready: "Ready", proc: "Processing", fail: "Failed" };
 
-// kind: "ready" | "proc" | "fail"; label optional override.
-export const Pill = ({ kind = "ready", label } = {}) =>
-  span(
-    { class: "pill " + kind },
-    span({ class: "pd" }),
-    label || LABELS[kind] || kind,
-  );
+export const Pill = component({
+  name: "pill",
+  css: `
+    .pill{font-family:var(--mono); font-size:9.5px; padding:3px 7px; border-radius:20px; font-weight:500; display:flex; align-items:center; gap:4px; flex:none;}
+    .pill .pd{width:5px; height:5px; border-radius:50%;}
+    .pill.ready{background:var(--sage-soft); color:var(--ready-fg);} .pill.ready .pd{background:var(--sage);}
+    .pill.proc{background:var(--proc-bg); color:var(--proc-fg);} .pill.proc .pd{background:var(--amber); animation:pulse 1.1s infinite;}
+    .pill.fail{background:var(--fail-bg); color:var(--fail-fg);} .pill.fail .pd{background:var(--brick);}
+  `,
+  // kind: "ready" | "proc" | "fail"; label optional override.
+  view: ({ kind = "ready", label } = {}) =>
+    span(
+      { class: "pill " + kind },
+      span({ class: "pd" }),
+      label || LABELS[kind] || kind,
+    ),
+});

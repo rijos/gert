@@ -7,6 +7,14 @@
   --accent:#bf4727; --accent-deep:#9c3417; --accent-soft:#ecd6c9;
   --sage:#5e7350; --sage-soft:#dde2d0; --amber:#bb8526; --amber-soft:#eedec6;
   --brick:#a02f1c;
+  --on-accent:#fff;   /* text/thumb on accent or other saturated fills */
+  /* status pills (ready/processing/failed) — fg + the two non-token soft fills */
+  --ready-fg:#46583a; --proc-bg:#f1e4c8; --proc-fg:#83611f; --fail-bg:#f0d8d1; --fail-fg:#8a2917;
+  --code-bg:#2a241b; --code-fg:#e9dfcb;   /* code blocks read dark in both themes */
+  --type-md:#3f7d8f;   /* markdown artifact-tab type chip (html/svg/py reuse accent/amber/sage) */
+  --usein-line:#cfd9bf; --usein-fg:#3f5235;   /* "use in chat" sage box border + label */
+  --preview-bg:#fff;   /* html artifact preview backdrop — a page, always on white */
+  --sun-display:none; --moon-display:block;   /* theme-toggle icon swap, flipped in dark */
   --scrim:rgba(36,26,16,.42);
   --display:'Fraunces',Georgia,serif;
   --sans:'Hanken Grotesk',-apple-system,sans-serif;
@@ -22,6 +30,13 @@
   --accent:#e2613d; --accent-deep:#f2855f; --accent-soft:#3b2419;
   --sage:#92ab78; --sage-soft:#2a331e; --amber:#d8a44d; --amber-soft:#392c17;
   --brick:#df5b41;
+  --on-accent:#fff;
+  --ready-fg:#b9cda3; --proc-bg:#392c17; --proc-fg:#d8a44d; --fail-bg:#3a201a; --fail-fg:#df5b41;
+  --code-bg:#2a241b; --code-fg:#e9dfcb;
+  --type-md:#3f7d8f;
+  --usein-line:#3a4a2c; --usein-fg:#bcd0a4;
+  --preview-bg:#fff;
+  --sun-display:block; --moon-display:none;
   --scrim:rgba(0,0,0,.6);
 }
 /* ---- follow OS preference when not manually set ---- */
@@ -33,6 +48,13 @@
     --accent:#e2613d; --accent-deep:#f2855f; --accent-soft:#3b2419;
     --sage:#92ab78; --sage-soft:#2a331e; --amber:#d8a44d; --amber-soft:#392c17;
     --brick:#df5b41;
+    --on-accent:#fff;
+    --ready-fg:#b9cda3; --proc-bg:#392c17; --proc-fg:#d8a44d; --fail-bg:#3a201a; --fail-fg:#df5b41;
+    --code-bg:#2a241b; --code-fg:#e9dfcb;
+    --type-md:#3f7d8f;
+    --usein-line:#3a4a2c; --usein-fg:#bcd0a4;
+    --preview-bg:#fff;
+    --sun-display:block; --moon-display:none;
     --scrim:rgba(0,0,0,.6);
   }
 }

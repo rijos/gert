@@ -153,6 +153,26 @@ export const toggleTheme = () => {
 }
 ```
 
+### What legitimately stays global
+
+A component's `css` owns the rules namespaced under its own root class. Three kinds
+of rule belong in global stylesheets instead, because they aren't owned by any one
+component:
+
+- **Tokens** (`tokens.css`) — all colors/spacing values + the dark/OS overrides.
+- **Reset & document chrome** (`base.css`) — body, scrollbars, keyframes.
+- **App-frame layout + responsiveness** (`layout.css`) — the top-level grid and
+  **all `@media`** (see §3).
+- **Shared utilities applied by bare class-string** (`primitives.css`) — e.g.
+  `.btn`, `.ghost`, `.trash`, form/`.field` scaffolding. These are used across many
+  components and have no single owner; a component using `class:"btn"` may render
+  before any `Button` does, so the rule can't co-locate without a flash.
+
+Everything else co-locates. When a parent styles into a child it composes
+(`.model-picker.open .menu`), that rule lives with the **parent** — it owns that
+relationship, and the higher specificity makes it order-independent of the child's
+base rule.
+
 ---
 
 ## 3. Responsiveness — media queries are global, and only touch tokens
@@ -224,52 +244,39 @@ Notes:
 
 ## 5. Routing
 
-VanJS is unopinionated about routing, so we keep a tiny dependency-free router: a
-`route` state driven by `hashchange`, a routes map, and a `Router` component.
+We use a tiny dependency-free **History-API** router (`lib/router.js`, ~40 lines):
+real paths (not hashes), pattern matching with `:params`, and same-origin
+`<a data-link>` interception so links navigate without a full page load. It renders
+the matched handler's node into a host element.
 
 ```js
-// lib/router.js
-import van from "vanjs-core"
-const { a, div } = van.tags
+// lib/router.js — define(pattern, handler) builds a regex per route;
+// handlers receive matched params and return a VanJS node.
+import { navigate, mountRouter } from "./lib/router.js"
 
-const current = () => location.hash.slice(1) || "/"
-
-export const route = van.state(current())
-window.addEventListener("hashchange", () => route.val = current())
-
-// <Link href="/about">About</Link>
-export const Link = (href, ...children) => a({ href: `#${href}` }, ...children)
-
-// Renders the component matching the current route.
-export const Router = (routes, NotFound = () => div("404")) =>
-  div(() => (routes[route.val] ?? NotFound)())
+// navigate("/c/123") — programmatic navigation (history.pushState + re-resolve).
+// <a href="/about" data-link>About</a> — intercepted; no full reload.
 ```
 
-Routing rules are a plain object — one place to see the whole app map:
-
-```js
-// routes.js
-import { Home }  from "./components/Home.js"
-import { About } from "./components/About.js"
-
-export const routes = {
-  "/":      Home,
-  "/about": About,
-}
-```
+Routing rules are declared in one place, when the router is mounted — the whole
+app map at a glance:
 
 ```js
 // app.js
-import van from "vanjs-core"
-import { Router } from "./lib/router.js"
-import { routes } from "./routes.js"
-
-van.add(document.body, Router(routes))
+mountRouter({
+  host: mainHost,                       // the element pages render into
+  render: (node) => mainHost.replaceChildren(node),
+  routes: (route) => {
+    route("/",            () => ChatPage({}))
+    route("/c/:id",       (p) => ChatPage(p))   // p.id is the matched param
+    route("/admin/users", () => AdminUsersPage())
+  },
+})
 ```
 
-> Need params (`/user/:id`) or guards? Either extend the matcher in `Router`, or
-> adopt the community [`vanjs-router`](https://github.com/iuroc/vanjs-router) add-on.
-> Keep routing rules declarative and in one file regardless.
+> Params (`/c/:id`) and same-origin link interception are built in. Need guards or
+> nested routes? Extend the matcher in `lib/router.js`. Keep routing rules
+> declarative and in the one `mountRouter` call regardless.
 
 ---
 

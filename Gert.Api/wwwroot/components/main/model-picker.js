@@ -1,6 +1,7 @@
 // components/main/model-picker.js — dropdown of models + capability badges.
 // Binds to state/models (van-x list + selected). Uses ui/menu + badge.
 import van from "van";
+import { component } from "../../lib/component.js";
 import { Icon } from "../../icons/icons.js";
 import { Menu } from "../ui/menu.js";
 import { Badge } from "../ui/badge.js";
@@ -38,29 +39,51 @@ const ModelItem = (m) =>
     ),
   );
 
-export const ModelPicker = () => {
-  const open = van.state(false);
+export const ModelPicker = component({
+  name: "model-picker",
+  css: `
+    .model-picker{position:relative;}
+    .model-btn{display:flex; align-items:center; gap:9px; padding:7px 11px; border:1px solid var(--line-strong); background:var(--surface); border-radius:var(--r-sm); cursor:pointer; font-family:var(--sans); font-weight:600; font-size:13px; color:var(--ink); transition:.14s;}
+    .model-btn:hover{border-color:var(--accent); background:var(--accent-soft);}
+    .model-btn .mdot{width:7px; height:7px; border-radius:50%; background:var(--sage); box-shadow:0 0 0 3px var(--sage-soft);}
+    .model-btn .chev{width:13px; height:13px; color:var(--ink-faint); transition:.2s;}
+    .model-picker.open .chev{transform:rotate(180deg);}
+    .model-picker.open .menu{opacity:1; transform:none; pointer-events:auto;}
+    .m-item{padding:9px 10px; border-radius:var(--r-sm); cursor:pointer; transition:.12s;}
+    .m-item:hover{background:var(--inset);}
+    .m-item.sel{background:var(--accent-soft);}
+    .m-top{display:flex; align-items:center; gap:8px;}
+    .m-name{font-weight:600; font-size:13px;}
+    .m-name .star{color:var(--accent); font-size:11px;}
+    .m-id{font-family:var(--mono); font-size:11px; color:var(--ink-faint); margin:3px 0 6px;}
+    .badges{display:flex; gap:5px; flex-wrap:wrap;}
+  `,
+  view: () => {
+    // ── logic ───────────────────────────────────
+    const open = van.state(false);
 
-  const trigger = button(
-    {
-      class: "model-btn",
-      onclick: (e) => {
-        e.stopPropagation();
-        open.val = !open.val;
+    const trigger = button(
+      {
+        class: "model-btn",
+        onclick: (e) => {
+          e.stopPropagation();
+          open.val = !open.val;
+        },
       },
-    },
-    span({ class: "mdot" }),
-    span({ class: "mname" }, () => models.selected.val?.name || "Model"),
-    Icon("chevron", { size: 13, class: "chev", strokeWidth: 2.4 }),
-  );
+      span({ class: "mdot" }),
+      span({ class: "mname" }, () => models.selected.val?.name || "Model"),
+      Icon("chevron", { size: 13, class: "chev", strokeWidth: 2.4 }),
+    );
 
-  return Menu({
-    wrapClass: "model-picker",
-    open,
-    trigger,
-    children: [
-      div({ class: "menu-h" }, "Models · vLLM"),
-      () => div(...models.models.map((m) => ModelItem(m))),
-    ],
-  });
-};
+    // ── content ─────────────────────────────────
+    return Menu({
+      wrapClass: "model-picker",
+      open,
+      trigger,
+      children: [
+        div({ class: "menu-h" }, "Models · vLLM"),
+        () => div(...models.models.map((m) => ModelItem(m))),
+      ],
+    });
+  },
+});

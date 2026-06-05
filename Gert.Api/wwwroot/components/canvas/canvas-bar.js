@@ -1,13 +1,24 @@
 // components/canvas/canvas-bar.js — artifact tab strip + bar tools
 // (KB toggle, expand, close drawer).
 import van from "van";
+import { component } from "../../lib/component.js";
 import { Icon } from "../../icons/icons.js";
 import { ArtifactTabs } from "./artifact-tabs.js";
 import * as ui from "../../state/ui.js";
 
 const { div, button } = van.tags;
 
-export const CanvasBar = () =>
+export const CanvasBar = component({
+  name: "canvas-bar",
+  css: `
+    .canvas-bar{height:var(--head-h); flex:none; display:flex; align-items:center; gap:6px; padding:0 10px 0 12px; border-bottom:1px solid var(--line); background:var(--surface-2);}
+    .canvas-bar .bar-tools{display:flex; gap:2px; flex:none;}
+    .kbtn{background:none; border:1px solid transparent; color:var(--ink-faint); cursor:pointer; padding:5px; border-radius:6px; display:grid; place-items:center; transition:.13s;}
+    .kbtn:hover{background:var(--inset); color:var(--ink);}
+    .kbtn.active{color:var(--accent-deep); background:var(--accent-soft);}
+    .kbtn svg{width:15px; height:15px;}
+  `,
+  view: () =>
   div(
     { class: "canvas-bar" },
     ArtifactTabs(),
@@ -34,4 +45,5 @@ export const CanvasBar = () =>
         Icon("close", { size: 15, strokeWidth: 2.2 }),
       ),
     ),
-  );
+  ),
+});

@@ -3,10 +3,17 @@
 // `allow-same-origin`, so the document runs at an opaque origin and cannot reach
 // the app's cookies, storage, or DOM.
 import van from "van";
+import { component } from "../../../lib/component.js";
 
 const { div, iframe } = van.tags;
 
-export const HtmlArtifact = ({ artifact } = {}) =>
+export const HtmlArtifact = component({
+  name: "html-artifact",
+  css: `
+    .html-stage{height:100%; background:var(--preview-bg); display:flex;}
+    .html-stage iframe{width:100%; height:100%; border:none; background:var(--preview-bg);}
+  `,
+  view: ({ artifact } = {}) =>
   div(
     { class: "art-body" },
     div(
@@ -24,4 +31,5 @@ export const HtmlArtifact = ({ artifact } = {}) =>
       { class: "source" },
       div({ class: "source-view" }, () => artifact.content || ""),
     ),
-  );
+  ),
+});

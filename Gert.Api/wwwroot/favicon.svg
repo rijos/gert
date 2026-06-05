@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 30 30" width="30" height="30">
+  <!-- Gert brand mark: the git-graph motif (two commit nodes + a branch). Paper
+       tile adapts to the tab's colour scheme; the mark stays accent in both. -->
+  <style>
+    .tile { fill: #f4efe4; }
+    @media (prefers-color-scheme: dark) { .tile { fill: #201a13; } }
+  </style>
+  <rect class="tile" width="30" height="30" rx="6" />
+  <circle cx="8" cy="7" r="3.4" fill="#bf4727" />
+  <circle cx="8" cy="23" r="3.4" fill="#bf4727" />
+  <circle cx="22" cy="15" r="3.4" stroke="#bf4727" stroke-width="2" fill="none" />
+  <path d="M8 10.4v9.2M8 12 Q8 15 12 15 L18.6 15M8 18 Q8 15 12 15"
+        stroke="#bf4727" stroke-width="2" fill="none" stroke-linecap="round" />
+</svg>

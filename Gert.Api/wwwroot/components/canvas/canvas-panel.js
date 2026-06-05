@@ -2,6 +2,7 @@
 // the artifact stage (one Artifact per tab), and the knowledge view. Drawer
 // behaviour comes from the .app state classes (app-shell.js).
 import van from "van";
+import { component } from "../../lib/component.js";
 import { CanvasBar } from "./canvas-bar.js";
 import { Artifact } from "./artifact.js";
 import { KnowledgePanel } from "./knowledge-panel.js";
@@ -26,7 +27,17 @@ const startResize = (e) => {
   window.addEventListener("pointerup", onUp);
 };
 
-export const CanvasPanel = () =>
+export const CanvasPanel = component({
+  name: "canvas-panel",
+  css: `
+    .panel{background:var(--surface); border-left:1px solid var(--line); display:flex; flex-direction:column; overflow:hidden; min-width:0; position:relative;}
+    .canvas-stage{flex:1; min-height:0; overflow:hidden; display:flex; flex-direction:column;}
+    /* the stage's two pane kinds (artifact viewer / knowledge view) show one at a time */
+    .art-doc,.kb-view{display:none; flex:1; min-height:0; flex-direction:column;}
+    .art-doc.active,.kb-view.active{display:flex;}
+    .canvas-empty{flex:1; display:grid; place-items:center; color:var(--ink-faint); font-family:var(--mono); font-size:11px; padding:24px; text-align:center;}
+  `,
+  view: () =>
   aside(
     { class: "panel" },
     div({ class: "resize-handle", title: "Drag to resize", onpointerdown: startResize }),
@@ -55,4 +66,5 @@ export const CanvasPanel = () =>
           : div(),
       KnowledgePanel(),
     ),
-  );
+  ),
+});

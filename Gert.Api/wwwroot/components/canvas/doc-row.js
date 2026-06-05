@@ -2,6 +2,7 @@
 // Binds to one reactive document; the filename node uses unicode-bidi:isolate
 // (CSS) for anti-spoofing — it is a van text node, XSS-safe by construction.
 import van from "van";
+import { component } from "../../lib/component.js";
 import { Icon } from "../../icons/icons.js";
 import { Pill } from "../ui/pill.js";
 import * as svc from "../../services/documents.js";
@@ -24,7 +25,19 @@ const subText = (d) => {
   return `${sizeStr} · ${d.chunk_count ?? 0} chunks`;
 };
 
-export const DocRow = (d) =>
+export const DocRow = component({
+  name: "doc-row",
+  css: `
+    .doc{display:flex; align-items:center; gap:10px; padding:10px; border-radius:var(--r-sm); transition:.12s; cursor:default;}
+    .doc:hover{background:var(--inset);}
+    .doc .fi{width:16px; height:16px; flex:none; color:var(--ink-faint);}
+    .doc .meta{flex:1; min-width:0;}
+    .doc .dname{font-size:12.5px; font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; unicode-bidi:isolate;}
+    .doc .dsub{font-family:var(--mono); font-size:10px; color:var(--ink-faint); margin-top:1px;}
+    .doc:hover .trash{opacity:1;}
+  `,
+  // `d` is one reactive document: { name, status, size, chunk_count, progress, error }
+  view: (d) =>
   div(
     { class: "doc" },
     Icon("file", { size: 16, class: "fi", strokeWidth: 1.9 }),
@@ -42,4 +55,5 @@ export const DocRow = (d) =>
       },
       Icon("trash", { size: 14, strokeWidth: 2 }),
     ),
-  );
+  ),
+});
