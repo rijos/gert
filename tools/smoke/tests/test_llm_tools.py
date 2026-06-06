@@ -50,6 +50,37 @@ def test_named_fence_opens_a_canvas_artifact(page: Page, base_url: str) -> None:
     )
 
 
+def test_html_artifact_renders_cross_origin_and_runs_scripts(
+    page: Page, base_url: str
+) -> None:
+    """F3 served-document hardening: the HTML artifact is framed from the SEPARATE
+    artifact origin (a distinct port in dev/CI), so it gets its own non-inherited
+    CSP — which both (a) restores inline-script fidelity that srcdoc inheritance
+    silently blocked, and (b) keeps it cross-origin + opaque from the app."""
+    from urllib.parse import urlparse
+
+    app = _open(page, base_url)
+    app.composer.send("make me an interactive html page")
+
+    expect(app.canvas.tab("html")).to_be_visible(timeout=15000)
+    frame = app.canvas.html_iframe
+    expect(frame).to_be_visible(timeout=15000)
+    # F3: never same-origin-capable, regardless of how it's framed.
+    assert "allow-same-origin" not in (frame.get_attribute("sandbox") or "")
+
+    # Fidelity: the inline <script> ran and mutated the DOM. Under the old srcdoc
+    # render the inherited app CSP (script-src 'self') blocked this outright.
+    cf = frame.content_frame
+    expect(cf.locator("#out")).to_have_text("SCRIPT-RAN", timeout=15000)
+
+    # Served from the separate artifact origin (ticketed /raw), NOT the app origin.
+    src = frame.get_attribute("src") or ""
+    assert "/artifacts/raw?t=" in src, f"expected a ticketed raw URL, got {src!r}"
+    assert urlparse(src).netloc != urlparse(base_url).netloc, (
+        f"artifact must render cross-origin; app={base_url} frame={src}"
+    )
+
+
 def test_artifact_persists_across_reload(page: Page, base_url: str) -> None:
     # InsertArtifactAsync persisted the row; the thread GET returns it, so a
     # fresh SPA boot of the same conversation rebuilds the canvas tab.

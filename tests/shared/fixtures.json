@@ -122,6 +122,21 @@
       "usage": { "completion_tokens": 14 }
     },
     {
+      "$comment": "Interactive HTML artifact (F3 served-origin fidelity): the fence carries an INLINE SCRIPT that mutates the DOM. Under the old srcdoc render the inherited app CSP (script-src 'self') silently blocked it; served from the separate artifact origin with its own script-src 'unsafe-inline', it runs — the e2e asserts the mutated text appears.",
+      "match": "contains",
+      "when": "make me an interactive html page",
+      "deltas": [
+        "Here you go:\n\n",
+        "```html name=interactive.html\n",
+        "<h1 id=\"out\">static</h1>\n",
+        "<script>document.getElementById('out').textContent='SCRIPT-RAN';</script>\n",
+        "```",
+        "\n\nI opened it in the canvas."
+      ],
+      "finish": "stop",
+      "usage": { "completion_tokens": 16 }
+    },
+    {
       "$comment": "Python artifact fixture (the py kind), fence split across deltas like the html one.",
       "match": "contains",
       "when": "write a python fibonacci script",

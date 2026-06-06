@@ -7,6 +7,8 @@ HTML artifact iframe and the Problems panel on the code artifact.
 
 from __future__ import annotations
 
+import re
+
 import pytest
 from playwright.sync_api import Page, expect
 
@@ -36,12 +38,15 @@ def test_html_artifact_iframe_is_sandboxed(page: Page, base_url: str) -> None:
     assert "allow-same-origin" not in sandbox
 
 
-def test_html_artifact_carries_restrictive_csp(page: Page, base_url: str) -> None:
-    """F3 (egress half): the rendered srcdoc embeds a per-document CSP that denies
-    network/forms, so a prompt-injected page can't beacon out or phish — even
-    though scripts run for fidelity."""
+def test_html_artifact_fallback_srcdoc_carries_restrictive_csp(
+    page: Page, base_url: str
+) -> None:
+    """F3 FALLBACK half: when the served-origin ticket can't be obtained (here the
+    artifact id isn't persisted → 404), the viewer drops to an in-place srcdoc that
+    still embeds a per-document CSP denying network/forms while keeping scripts for
+    fidelity. (The PREFERRED served-origin path is covered by the e2e suite.)"""
     page.goto(f"{base_url}/tests/harness.html")
-    srcdoc = page.evaluate(
+    page.evaluate(
         """async () => {
             const { Artifact } = await import('/components/canvas/artifact.js');
             const node = Artifact({
@@ -50,12 +55,12 @@ def test_html_artifact_carries_restrictive_csp(page: Page, base_url: str) -> Non
                 active: () => true,
             });
             window.__mount(node);
-            return node.querySelector("iframe").srcdoc;
         }"""
     )
-    # The CSP <meta> is present, denies by default, allows inline scripts (fidelity)
-    # but no network egress and no form posts.
-    assert 'http-equiv="Content-Security-Policy"' in srcdoc
+    frame = page.locator(".art-doc[data-type='html'] iframe")
+    # The ticket fetch 404s for this unpersisted id → async fallback sets srcdoc.
+    expect(frame).to_have_attribute("srcdoc", re.compile(r"Content-Security-Policy"))
+    srcdoc = frame.get_attribute("srcdoc") or ""
     assert "default-src 'none'" in srcdoc
     assert "script-src 'unsafe-inline'" in srcdoc
     assert "form-action 'none'" in srcdoc

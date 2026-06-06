@@ -15,7 +15,7 @@
       "commandName": "Project",
       "dotnetRunMessages": true,
       "launchBrowser": false,
-      "applicationUrl": "http://127.0.0.1:5217",
+      "applicationUrl": "http://127.0.0.1:5217;http://127.0.0.1:5218",
       "environmentVariables": {
         "ASPNETCORE_ENVIRONMENT": "Development",
         "DOTNET_ENVIRONMENT": "Development",
@@ -23,6 +23,9 @@
         "Auth__Authority": "https://id.dev.local",
         "Auth__Audience": "gert-api",
         "Gert__Dev__JwksPath": ".dev/jwt/dev-jwks.json",
+
+        "$comment_artifacts": "F3: HTML artifacts render on a SEPARATE origin. In prod this is a sandbox subdomain; in dev/CI a second Kestrel port (:5218) is a genuinely distinct origin, so the browser enforces the real cross-origin boundary.",
+        "Artifacts__Origin": "http://127.0.0.1:5218",
 
         "Gert__Vllm__BaseUrl": "http://127.0.0.1:8000",
         "Gert__Search__BaseUrl": "http://127.0.0.1:8080",

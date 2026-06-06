@@ -17,6 +17,13 @@ public sealed class SecurityHeadersOptions
     public string PocketIdOrigin { get; set; } = string.Empty;
 
     /// <summary>
+    /// The separate origin that serves rendered HTML artifacts (F3), added to
+    /// <c>frame-src</c> so the SPA may embed it. Empty → artifacts are framed
+    /// same-origin and <c>frame-src</c> stays <c>'self'</c>.
+    /// </summary>
+    public string ArtifactOrigin { get; set; } = string.Empty;
+
+    /// <summary>
     /// Derive the scheme+host+port origin of a configured authority URL, or an empty
     /// string when it is missing/unparseable. Strips any path/query so only the
     /// origin lands in <c>connect-src</c>.

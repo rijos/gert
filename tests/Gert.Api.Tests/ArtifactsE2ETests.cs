@@ -5,6 +5,7 @@ using System.Text;
 using System.Text.Json;
 using FluentAssertions;
 using Gert.Api.Contracts;
+using Gert.Api.Controllers;
 using Gert.Model;
 using Gert.Model.Chat;
 using Gert.Model.Dtos;
@@ -112,6 +113,93 @@ public sealed class ArtifactsE2ETests : IClassFixture<GertApiFactory>
 
         // And the fence body never leaks the name= token into the artifact.
         artifactEvent.Content.Should().NotContain("name=");
+    }
+
+    [Fact]
+    public async Task Html_artifact_renders_via_signed_ticket_on_the_raw_endpoint()
+    {
+        var client = Authed();
+        var artifactId = await SeedHtmlArtifactAsync(client);
+
+        // 1) Authed, pid-scoped mint → a signed render URL (origin-relative here,
+        //    since no Artifacts:Origin is configured in Testing).
+        var ticket = await client.GetFromJsonAsync<ArtifactTicketResponse>(
+            $"/api/projects/default/artifacts/{artifactId}/ticket", Json);
+        ticket!.Url.Should().StartWith("/artifacts/raw?t=");
+
+        // 2) The raw endpoint is ANONYMOUS (a cross-origin iframe can't send the
+        //    bearer); the ticket is the only authority. Render it with a token-less
+        //    client to prove that.
+        var anon = _factory.CreateClient();
+        var rendered = await anon.GetAsync(ticket.Url);
+
+        rendered.StatusCode.Should().Be(HttpStatusCode.OK);
+        rendered.Content.Headers.ContentType!.MediaType.Should().Be("text/html");
+        (await rendered.Content.ReadAsStringAsync()).Should().Contain("<h1>Demo</h1>");
+
+        // 3) The per-document CSP is the F3 egress brake: inline scripts run
+        //    (fidelity) but there's no network/forms, and it self-sandboxes.
+        rendered.Headers.TryGetValues("Content-Security-Policy", out var cspValues)
+            .Should().BeTrue();
+        var csp = cspValues!.Single();
+        csp.Should().Contain("default-src 'none'");
+        csp.Should().Contain("script-src 'unsafe-inline'");
+        csp.Should().Contain("form-action 'none'");
+        csp.Should().Contain("sandbox allow-scripts");
+        csp.Should().NotContain("connect-src"); // falls back to default-src 'none'
+        rendered.Headers.TryGetValues("X-Content-Type-Options", out var nosniff)
+            .Should().BeTrue();
+        nosniff!.Single().Should().Be("nosniff");
+    }
+
+    [Theory]
+    [InlineData("/artifacts/raw")] // no ticket
+    [InlineData("/artifacts/raw?t=garbage")] // not a ticket
+    [InlineData("/artifacts/raw?t=Zm9v.YmFy")] // well-formed b64url, bad signature
+    public async Task Raw_endpoint_rejects_missing_or_forged_tickets(string path)
+    {
+        var anon = _factory.CreateClient();
+        var response = await anon.GetAsync(path);
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [Fact]
+    public async Task Ticket_endpoint_requires_auth_and_a_real_artifact()
+    {
+        var anon = _factory.CreateClient();
+        (await anon.GetAsync("/api/projects/default/artifacts/whatever/ticket"))
+            .StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+
+        var client = Authed();
+        (await client.GetAsync("/api/projects/default/artifacts/does-not-exist/ticket"))
+            .StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    /// <summary>Run the html-fence fixture to completion and return the persisted
+    /// artifact id (the canvas list reproduces it once the detached turn ends).</summary>
+    private async Task<string> SeedHtmlArtifactAsync(HttpClient client)
+    {
+        var createResponse = await client.PostAsJsonAsync(
+            "/api/projects/default/conversations",
+            new CreateConversationRequest { Title = "Render ticket" },
+            Json);
+        var conversation = await createResponse.Content.ReadFromJsonAsync<Conversation>(Json);
+
+        var post = await client.PostAsJsonAsync(
+            $"/api/projects/default/conversations/{conversation!.Id}/messages",
+            new SendMessageRequest { Content = "make me a demo html page" },
+            Json);
+        var accepted = await post.Content.ReadFromJsonAsync<TurnAccepted>(Json);
+
+        // Drain the stream so the detached turn finishes and the artifact persists.
+        using var stream = await client.GetAsync(
+            $"/api/projects/default/conversations/{conversation.Id}/stream?after={accepted!.Seq}",
+            HttpCompletionOption.ResponseHeadersRead);
+        _ = await ReadUntilTerminalAsync(stream);
+
+        var listed = await client.GetFromJsonAsync<IReadOnlyList<Artifact>>(
+            $"/api/projects/default/conversations/{conversation.Id}/artifacts", Json);
+        return listed.Should().ContainSingle().Subject.Id;
     }
 
     // --- SSE helpers (same shape as WalkingSkeletonTests) ---------------------

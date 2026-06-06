@@ -26,7 +26,7 @@ public sealed class SecurityHeadersMiddleware
     {
         _next = next ?? throw new ArgumentNullException(nameof(next));
         ArgumentNullException.ThrowIfNull(options);
-        _contentSecurityPolicy = BuildCsp(options.Value.PocketIdOrigin);
+        _contentSecurityPolicy = BuildCsp(options.Value.PocketIdOrigin, options.Value.ArtifactOrigin);
     }
 
     public Task InvokeAsync(HttpContext context)
@@ -40,8 +40,12 @@ public sealed class SecurityHeadersMiddleware
 
             // Only HTML responses carry the CSP + frame controls. The browser applies
             // CSP to documents it renders; JSON/SSE/downloads don't need it.
+            // Skip when the endpoint already set its OWN CSP — the served-artifact
+            // /raw response ships a deliberately different, per-document policy (F3)
+            // that the app shell's policy must not clobber.
             if (contentType is not null &&
-                contentType.Contains("text/html", StringComparison.OrdinalIgnoreCase))
+                contentType.Contains("text/html", StringComparison.OrdinalIgnoreCase) &&
+                !ctx.Response.Headers.ContainsKey("Content-Security-Policy"))
             {
                 var headers = ctx.Response.Headers;
                 headers["Content-Security-Policy"] = csp;
@@ -59,15 +63,19 @@ public sealed class SecurityHeadersMiddleware
     }
 
     /// <summary>
-    /// Build the CSP, splicing the Pocket ID origin into <c>connect-src</c> (and
-    /// nothing else). When no origin is configured, <c>connect-src</c> is just
-    /// <c>'self'</c>.
+    /// Build the CSP, splicing the Pocket ID origin into <c>connect-src</c> and the
+    /// artifact origin into <c>frame-src</c> (and nothing else). When an origin is
+    /// unconfigured the corresponding directive is just <c>'self'</c>.
     /// </summary>
-    private static string BuildCsp(string pocketIdOrigin)
+    private static string BuildCsp(string pocketIdOrigin, string artifactOrigin)
     {
         var connect = string.IsNullOrWhiteSpace(pocketIdOrigin)
             ? "'self'"
             : $"'self' {pocketIdOrigin}";
+
+        var frame = string.IsNullOrWhiteSpace(artifactOrigin)
+            ? "'self'"
+            : $"'self' {artifactOrigin}";
 
         // The SPA's inline <script type="importmap"> is the one inline script we permit,
         // via its SHA-256 (CSP forbids inline scripts otherwise; import maps must be
@@ -82,7 +90,7 @@ public sealed class SecurityHeadersMiddleware
             "style-src 'self'",
             "img-src 'self' data:",
             $"connect-src {connect}",
-            "frame-src 'self'",
+            $"frame-src {frame}",
             "object-src 'none'",
             "base-uri 'none'",
             "form-action 'self'",
