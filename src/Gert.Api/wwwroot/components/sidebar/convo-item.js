@@ -31,10 +31,11 @@ export const ConvoItem = component({
     {
       class: () => "convo" + (chat.activeId.val === convo.id ? " active" : ""),
       "data-id": convo.id,
-      onclick: () => {
-        attempt(() => svc.open(convo.id), "Couldn't open this chat");
-        navigate("/c/" + convo.id);
-      },
+      // Navigate only — ChatPage opens the thread for its route. Calling
+      // svc.open() here too would race a SECOND open from the route render
+      // (activeId hasn't flipped yet), and the loser's detach() could kill the
+      // winner's in-flight resume of a streaming turn.
+      onclick: () => navigate("/c/" + convo.id),
     },
     span({ class: "node" }),
     span({ class: "t" }, () => convo.title || "Untitled"),

@@ -95,6 +95,58 @@ def test_new_conversation_appears_in_sidebar_without_reload(
     expect(page.locator(f'.convo[data-id="{cid}"]')).to_have_count(1, timeout=10000)
 
 
+def test_switch_conversations_mid_stream_keeps_both_chats(
+    page: Page, base_url: str
+) -> None:
+    # Regression guard: starting a NEW chat and clicking an older conversation
+    # mid-stream used to lose the new chat — it wasn't in the sidebar yet (the
+    # list only refreshed at turn end) and the still-attached consumer kept the
+    # streaming flag pinned, locking the composer on the older thread. Now the
+    # sidebar lists the new thread on POST-accept, switching detaches the client
+    # (the server turn keeps running), and switching back re-attaches.
+    app = _open(page, base_url)
+
+    # Conversation A, completed.
+    app.composer.send("hello")
+    expect(app.thread.last_bot_body).to_contain_text("How can I help", timeout=15000)
+    cid_a = page.evaluate("async () => (await import('/state/chat.js')).activeId.val")
+    assert cid_a
+
+    # New chat B: the slow fixture (6 deltas x 500ms) keeps the turn streaming
+    # while we click around.
+    app.sidebar.new_chat.click()
+    app.composer.send("count slowly")
+    expect(app.thread.user_messages.last).to_contain_text("count slowly")
+    cid_b = page.evaluate("async () => (await import('/state/chat.js')).activeId.val")
+    assert cid_b and cid_b != cid_a
+
+    # Mid-stream: B is ALREADY in the sidebar (no reload, turn not finished).
+    expect(page.locator(f'.convo[data-id="{cid_b}"]')).to_have_count(1, timeout=10000)
+
+    # Switch to A mid-stream — A's thread renders…
+    page.locator(f'.convo[data-id="{cid_a}"]').click()
+    expect(app.thread.bot_messages.last).to_contain_text(
+        "How can I help", timeout=10000
+    )
+    # …and the composer is UNLOCKED for A: a send round-trips (previously the
+    # pinned streaming flag silently swallowed it).
+    app.composer.send("hello again")
+    expect(app.thread.user_messages.last).to_contain_text("hello again", timeout=10000)
+    expect(app.thread.bot_messages).to_have_count(2, timeout=15000)
+
+    # Switch back to B: the thread re-attaches (or reads the finished row) and
+    # carries the full slow-count text — nothing was lost while detached.
+    page.locator(f'.convo[data-id="{cid_b}"]').click()
+    expect(app.thread.bot_messages.last).to_contain_text(
+        "six — done counting.", timeout=20000
+    )
+    # B's turn ran with B detached part of the time — its bubble must not have
+    # leaked into A. A reopen of A shows exactly its two exchanges.
+    page.locator(f'.convo[data-id="{cid_a}"]').click()
+    expect(app.thread.user_messages).to_have_count(2, timeout=10000)
+    expect(app.thread.bot_messages.last).to_contain_text("Echo: hello again")
+
+
 def test_delete_conversation_from_sidebar(page: Page, base_url: str) -> None:
     # The per-row trash button removes a conversation. Send a turn so a row
     # exists, reload so the sidebar lists it, then hover + click its trash.

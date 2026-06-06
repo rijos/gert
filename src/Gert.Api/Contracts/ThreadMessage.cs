@@ -49,11 +49,22 @@ public sealed record ThreadMessage
 
     public IReadOnlyList<ThreadCitation> Citations { get; init; } = [];
 
-    /// <summary>Project a <see cref="Message"/> plus the citations bound to it.</summary>
-    public static ThreadMessage From(Message message, IReadOnlyList<Citation> citations)
+    /// <summary>
+    /// The message's tool calls projected back into card shape (<c>tool_calls</c>
+    /// rows + their citations), so reloading reproduces the cards the live
+    /// stream drew. Wire: <c>tools</c>.
+    /// </summary>
+    public IReadOnlyList<ThreadToolCall> Tools { get; init; } = [];
+
+    /// <summary>Project a <see cref="Message"/> plus the citations and tool calls bound to it.</summary>
+    public static ThreadMessage From(
+        Message message,
+        IReadOnlyList<Citation> citations,
+        IReadOnlyList<ThreadToolCall> tools)
     {
         ArgumentNullException.ThrowIfNull(message);
         ArgumentNullException.ThrowIfNull(citations);
+        ArgumentNullException.ThrowIfNull(tools);
 
         return new ThreadMessage
         {
@@ -73,6 +84,7 @@ public sealed record ThreadMessage
                 .OrderBy(c => c.Ordinal)
                 .Select(ThreadCitation.From)
                 .ToList(),
+            Tools = tools,
         };
     }
 }

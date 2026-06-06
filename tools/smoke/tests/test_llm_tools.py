@@ -192,6 +192,40 @@ def test_todo_card_collapses_when_all_steps_done(page: Page, base_url: str) -> N
     expect(app.thread.last_bot_body).to_contain_text("All done", timeout=15000)
 
 
+def test_todo_card_survives_reload(page: Page, base_url: str) -> None:
+    """The checklist must come back on a thread GET — reconstructed from the
+    persisted tool_calls row (ThreadToolCall → toCards), not only the live
+    tool_call/tool_result stream. Regression guard for the "todo card vanishes
+    when you re-open the conversation" bug."""
+    app = _open(page, base_url)
+    app.composer.send("plan the homelab upgrade")
+    expect(app.thread.todo_rows).to_have_count(3, timeout=15000)
+    expect(app.thread.last_bot_body).to_contain_text("Plan is up", timeout=15000)
+
+    cid = page.evaluate("async () => (await import('/state/chat.js')).activeId.val")
+    assert cid, "sending should have set an active conversation id"
+
+    # Fresh SPA state, same thread — the card is rebuilt from persistence.
+    app.goto(base_url, f"/c/{cid}")
+    app.wait_ready()
+
+    # Mid-list the header reads "Now: <active step>" (todoLabel), so select the
+    # card itself — there is exactly one on this thread.
+    card = app.thread.tool_cards.first
+    expect(card).to_be_visible(timeout=15000)
+    expect(card.locator(".lab")).to_have_text("Now: Migrate rag.db to the new disk")
+    # Rebuilt cards come back collapsed; the checklist is intact underneath.
+    app.thread.expand_tool_card(card)
+    rows = app.thread.todo_rows
+    expect(rows).to_have_count(3)
+    expect(rows.nth(0)).to_have_class(re.compile(r"\bdone\b"))
+    expect(rows.nth(0)).to_contain_text("Order the new SSD")
+    expect(rows.nth(1)).to_have_class(re.compile(r"\bactive\b"))
+    expect(rows.nth(2)).to_have_class(re.compile(r"\bpending\b"))
+    # The header count + progress survive too (1 of 3 done).
+    expect(card.locator(".tcount")).to_have_text("1/3")
+
+
 def test_todo_tool_is_refused_without_the_entitlement(
     user_page: Page, base_url: str
 ) -> None:

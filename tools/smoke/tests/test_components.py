@@ -196,6 +196,47 @@ def test_tool_card_renders_stdout(page: Page, base_url: str) -> None:
     )
 
 
+def test_markdown_renders_gfm_table(page: Page, base_url: str) -> None:
+    # GFM tables (the shape qwen likes for summaries) become real <table> DOM —
+    # not a pipe-soup paragraph. Cells go through inline(), alignment through
+    # the delimiter row; the no-raw-HTML stance holds (markdown.js).
+    page.goto(f"{base_url}/tests/harness.html")
+    result = page.evaluate(
+        """async () => {
+            const { renderMarkdown } = await import('/lib/markdown.js');
+            const host = document.createElement('div');
+            host.append(renderMarkdown([
+                'A quick summary:',
+                '| Script | What it does | Size |',
+                '|---|:---:|---:|',
+                '| `file_organizer.py` | Sorts files | 12kb |',
+                '| <b>bold?</b> | **really** | 3kb |',
+            ].join('\\n')));
+            return {
+                tables: host.querySelectorAll('table').length,
+                ths: [...host.querySelectorAll('th')].map(n => n.textContent),
+                rows: host.querySelectorAll('tbody tr').length,
+                codeCells: host.querySelectorAll('td code').length,
+                strongCells: host.querySelectorAll('td strong').length,
+                rawHtml: host.querySelectorAll('td b').length,
+                center: host.querySelector('tbody td:nth-child(2)').style.textAlign,
+                right: host.querySelector('tbody td:nth-child(3)').style.textAlign,
+                paragraph: host.querySelector('p')?.textContent,
+            };
+        }"""
+    )
+    assert result["tables"] == 1
+    assert result["ths"] == ["Script", "What it does", "Size"]
+    assert result["rows"] == 2
+    assert result["codeCells"] == 1  # `file_organizer.py`
+    assert result["strongCells"] == 1  # **really**
+    assert result["rawHtml"] == 0  # <b> stays literal text (security F4)
+    assert result["center"] == "center"
+    assert result["right"] == "right"
+    # the preceding paragraph didn't swallow the table's header row
+    assert result["paragraph"] == "A quick summary:"
+
+
 def test_tool_card_error_state(page: Page, base_url: str) -> None:
     # A refused/failed tool call styles the card as an error (the entitlement
     # ceiling surfaces visibly instead of pretending the tool ran).

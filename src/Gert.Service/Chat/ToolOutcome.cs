@@ -56,7 +56,7 @@ internal sealed record ToolOutcome
             LatencyMs = latencyMs,
             ResponseJson = result.ResultJson,
             Citations = result.Citations,
-            Hits = ToHits(result.Citations),
+            Hits = ToolResultHit.FromCitations(result.Citations),
             Stdout = result.Stdout,
             Todos = result.Todos,
         };
@@ -70,32 +70,4 @@ internal sealed record ToolOutcome
         LatencyMs = latencyMs,
         ResponseJson = JsonSerializer.Serialize(new { error }),
     };
-
-    private static IReadOnlyList<ToolResultHit> ToHits(IReadOnlyList<Citation> citations)
-    {
-        var hits = new List<ToolResultHit>(citations.Count);
-        foreach (var citation in citations)
-        {
-            if (citation.SourceType == CitationSourceType.Web)
-            {
-                hits.Add(new ToolResultHit
-                {
-                    Title = citation.Label,
-                    Url = citation.Locator,
-                    Score = citation.Score,
-                });
-            }
-            else
-            {
-                hits.Add(new ToolResultHit
-                {
-                    Doc = citation.Label,
-                    Page = citation.Locator,
-                    Score = citation.Score,
-                });
-            }
-        }
-
-        return hits;
-    }
 }

@@ -128,7 +128,9 @@ const apply = (assistant, event, data) => {
   }
 };
 
-const labelFor = (kind) =>
+// Card headline per tool kind — shared with the thread-reload card rebuild
+// in services/conversations.js.
+export const labelFor = (kind) =>
   ({
     rag: "Retrieving from your documents",
     search: "Searching the web",
@@ -371,7 +373,13 @@ export const resume = async (cid, threadMessage) => {
   const assistant = chat.messages.find((m) => m.id === threadMessage.id);
   if (!assistant) return;
 
+  // The replay carries the WHOLE turn (deltas, reasoning, tool events,
+  // citations), so reset everything the thread GET pre-filled — otherwise
+  // replayed tool_call events would duplicate the rebuilt cards.
   assistant.text = "";
+  assistant.reasoning = "";
+  assistant.tools.length = 0;
+  assistant.citations.length = 0;
   assistant.streaming = true;
   chat.streaming.val = true;
 

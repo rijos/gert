@@ -10,9 +10,10 @@ namespace Gert.Api.Contracts;
 /// (each carrying its own citations) and artifacts, so the SPA consumes it directly —
 /// <c>conv.id</c>, <c>conv.title</c>, <c>conv.messages[].text</c> — with no remapping.
 /// <para>
-/// Note: a message's tool-call cards are <b>not</b> reconstructed here; the live cards
-/// come from the SSE <c>tool_call</c>/<c>tool_result</c> stream. Reloading a thread shows
-/// the text + citations (reconstructing cards from persisted calls is a separate concern).
+/// Each message also carries its tool-call cards (<see cref="ThreadToolCall"/>),
+/// reconstructed from the persisted <c>tool_calls</c> rows + their citations, so a
+/// reload reproduces the same cards the live <c>tool_call</c>/<c>tool_result</c>
+/// stream drew.
 /// </para>
 /// </summary>
 public sealed record ThreadResponse
@@ -52,6 +53,22 @@ public sealed record ThreadResponse
             .GroupBy(c => c.MessageId)
             .ToDictionary(g => g.Key, g => (IReadOnlyList<Citation>)[.. g]);
 
+        // Hits ride the Message → ToolCall → Citations provenance tree back up:
+        // each card's rows come from the citations its call produced.
+        var citationsByCall = thread.Citations
+            .Where(c => c.ToolCallId is not null)
+            .GroupBy(c => c.ToolCallId!)
+            .ToDictionary(g => g.Key, g => (IReadOnlyList<Citation>)[.. g.OrderBy(c => c.Ordinal)]);
+
+        var toolsByMessage = thread.ToolCalls
+            .GroupBy(t => t.MessageId)
+            .ToDictionary(
+                g => g.Key,
+                g => (IReadOnlyList<ThreadToolCall>)g
+                    .OrderBy(t => t.CreatedAt)
+                    .Select(t => ThreadToolCall.From(t, citationsByCall.GetValueOrDefault(t.Id) ?? []))
+                    .ToList());
+
         var conversation = thread.Conversation;
         return new ThreadResponse
         {
@@ -69,7 +86,8 @@ public sealed record ThreadResponse
             Messages = thread.Messages
                 .Select(m => ThreadMessage.From(
                     m,
-                    citationsByMessage.GetValueOrDefault(m.Id) ?? []))
+                    citationsByMessage.GetValueOrDefault(m.Id) ?? [],
+                    toolsByMessage.GetValueOrDefault(m.Id) ?? []))
                 .ToList(),
         };
     }

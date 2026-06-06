@@ -23,7 +23,7 @@ class Sidebar:
 
     @property
     def new_chat(self) -> Locator:
-        return self.root.locator(".new-chat, [class*='new-chat']").first
+        return self.root.locator(".newchat")
 
     @property
     def convos(self) -> Locator:

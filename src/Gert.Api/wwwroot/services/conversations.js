@@ -7,6 +7,33 @@ import * as chatSvc from "./chat.js";
 
 const pid = () => chat.activeProjectId.val;
 
+// Rebuild a message's tool cards from the thread GET's persisted calls — the
+// reload twin of the live tool_call/tool_result mapping in services/chat.js.
+// Successive set_todos calls fold into ONE card exactly like the live stream:
+// the latest call replaces the first todo card in place (position kept).
+const toCards = (tools) => {
+  const cards = [];
+  for (const t of tools || []) {
+    const card = {
+      id: t.id,
+      kind: t.kind,
+      status: t.status || "done",
+      label: chatSvc.labelFor(t.kind),
+      tag: t.latency_ms != null ? `${t.kind} · ${t.latency_ms}ms` : t.kind,
+      query: t.query || "",
+      hits: t.hits || [],
+      code: t.code || "",
+      stdout: t.stdout ?? "",
+      todos: t.todos || [],
+      open: false,
+    };
+    const fold = t.kind === "todo" ? cards.findIndex((c) => c.kind === "todo") : -1;
+    if (fold >= 0) cards[fold] = card;
+    else cards.push(card);
+  }
+  return cards;
+};
+
 export const list = async () => {
   const items = await http.get(`/projects/${pid()}/conversations`);
   chat.setConversations(items || []);
@@ -17,15 +44,25 @@ export const list = async () => {
   return items;
 };
 
+// Monotonic ticket for open(): rapid switches leave several GETs in flight and
+// only the NEWEST may apply — a stale one landing last would render the wrong
+// thread (and its resume would fight the live one).
+let openTicket = 0;
+
 export const open = async (id) => {
+  const ticket = ++openTicket;
   // Switching mid-stream: detach the client consumer first (the server turn
   // keeps running detached). Without this the old consumer keeps the global
   // streaming flag pinned — locking the composer, mistargeting stop(), and
   // blocking the resume below. Re-opening the streaming thread re-attaches.
   chatSvc.detach();
   // GET thread returns the flattened contract: { id, title, tools, messages:[{ id,
-  // role, text, status, seq, citations }], artifacts } — consumed directly, no remapping.
+  // role, text, status, seq, citations, tools }], artifacts }.
   const conv = await http.get(`/projects/${pid()}/conversations/${id}`);
+  if (ticket !== openTicket) return conv; // superseded by a newer open
+  // Tool cards (incl. the todo checklist) come back as persisted calls — map
+  // them to card shape BEFORE setConversation wraps the messages reactively.
+  for (const m of conv.messages || []) m.tools = toCards(m.tools);
   chat.setConversation(conv);
   artifacts.setArtifacts(conv.artifacts || []);
   // `tools` is the ToolToggles map { rag, search, sandbox, todo, clock }.

@@ -6,7 +6,7 @@
 //
 // This is intentionally small: it covers the constructs the assistant + md
 // artifacts use (headings, bold/italic/code, links, lists, blockquote, fenced
-// code, paragraphs). It produces nodes, never an HTML string. Fenced code is
+// code, GFM tables, paragraphs). It produces nodes, never an HTML string. Fenced code is
 // tinted by lib/highlight.js (same node-only stance; the fence info string
 // picks the language, with a cheap sniff as fallback).
 import { highlight } from "./highlight.js";
@@ -68,6 +68,20 @@ const inline = (text) => {
   }
   return out;
 };
+
+// --- GFM tables ---------------------------------------------------------------
+// split a `|`-delimited row into trimmed cells (edge pipes optional, \| escaped)
+const splitRow = (line) =>
+  line
+    .trim()
+    .replace(/^\|/, "")
+    .replace(/\|$/, "")
+    .split(/(?<!\\)\|/)
+    .map((c) => c.trim().replace(/\\\|/g, "|"));
+
+// the |---|:---:|---:| separator row that marks the line above as a header
+const isTableDelim = (line) =>
+  line.includes("-") && line.includes("|") && splitRow(line).every((c) => /^:?-+:?$/.test(c));
 
 // --- block parsing ----------------------------------------------------------
 // renderMarkdown(src) -> DocumentFragment of sanitized nodes.
@@ -164,13 +178,43 @@ export const renderMarkdown = (src) => {
       continue;
     }
 
+    // GFM table: a header row with pipes followed by a delimiter row. Cells go
+    // through inline() like any other text, so the no-raw-HTML stance holds.
+    if (line.includes("|") && i + 1 < lines.length && isTableDelim(lines[i + 1])) {
+      const aligns = splitRow(lines[i + 1]).map((c) =>
+        /^:-+:$/.test(c) ? "center" : /^-+:$/.test(c) ? "right" : null,
+      );
+      const row = (cells, tag) => {
+        const tr = document.createElement("tr");
+        cells.forEach((cell, ci) => {
+          const el = document.createElement(tag);
+          if (aligns[ci]) el.style.textAlign = aligns[ci];
+          el.append(...inline(cell));
+          tr.appendChild(el);
+        });
+        return tr;
+      };
+      const table = document.createElement("table");
+      const thead = document.createElement("thead");
+      thead.appendChild(row(splitRow(line), "th"));
+      const tbody = document.createElement("tbody");
+      i += 2; // header + delimiter
+      while (i < lines.length && lines[i].trim() && lines[i].includes("|"))
+        tbody.appendChild(row(splitRow(lines[i++]), "td"));
+      table.append(thead, tbody);
+      frag.appendChild(table);
+      continue;
+    }
+
     // paragraph (gather until blank line)
     const buf = [line];
     i++;
     while (
       i < lines.length &&
       lines[i].trim() &&
-      !/^(#{1,6}\s|>|[-*+]\s|\d+\.\s|```)/.test(lines[i])
+      !/^(#{1,6}\s|>|[-*+]\s|\d+\.\s|```)/.test(lines[i]) &&
+      // stop when the next line opens a table (its successor is a delimiter row)
+      !(lines[i].includes("|") && i + 1 < lines.length && isTableDelim(lines[i + 1]))
     )
       buf.push(lines[i++]);
     const p = document.createElement("p");

@@ -279,6 +279,11 @@ export const Message = component({
     .copy-btn.copied .ck{display:block; color:var(--green);}
     .msg.bot .body ul,.msg.bot .body ol{margin:0 0 12px; padding-left:24px;}
     .msg.bot .body li{margin-bottom:5px;}
+    /* GFM tables (mirrors .md-render's table skin in the canvas) */
+    .msg.bot .body table{border-collapse:collapse; width:100%; margin:0 0 14px; font-size:13px;}
+    .msg.bot .body th{text-align:left; font-family:var(--mono); font-size:10.5px; letter-spacing:.04em; text-transform:uppercase; color:var(--ink-3); padding:7px 10px; border-bottom:1.5px solid var(--line);}
+    .msg.bot .body td{padding:8px 10px; border-bottom:1px solid var(--line); vertical-align:top;}
+    .msg.bot .body tr:hover td{background:var(--surface-2);}
 
     .cite{font-family:var(--mono); font-size:10px; vertical-align:super; color:var(--coral-deep); background:var(--surface-2); border:1px solid var(--line); border-radius:5px; padding:1px 5px; margin:0 2px; cursor:pointer; line-height:1; transition:.12s;}
     .cite:hover{background:var(--coral-soft); border-color:var(--coral);}
