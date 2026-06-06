@@ -2,7 +2,7 @@ using Gert.Database.Sqlite;
 using Gert.External;
 using Gert.Storage;
 using Gert.Service;
-using Gert.Service.Database;
+using Gert.Database;
 using Gert.Service.Storage;
 using Gert.Service.Tools;
 using Microsoft.Extensions.Configuration;

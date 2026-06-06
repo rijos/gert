@@ -1,6 +1,6 @@
 using Gert.Model.Dtos;
 using Gert.Model.Projects;
-using Gert.Service.Database;
+using Gert.Database;
 using Gert.Service.Storage;
 using Gert.Service.Validation;
 

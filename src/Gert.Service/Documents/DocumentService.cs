@@ -1,7 +1,7 @@
 using System.Text;
 using Gert.Model;
 using Gert.Model.Rag;
-using Gert.Service.Database;
+using Gert.Database;
 using Gert.Service.Ingestion;
 using Gert.Service.Storage;
 using Gert.Service.Validation;

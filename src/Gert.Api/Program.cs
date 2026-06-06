@@ -9,7 +9,7 @@ using Gert.Database.Sqlite;
 using Gert.External;
 using Gert.Storage;
 using Gert.Service;
-using Gert.Service.Database;
+using Gert.Database;
 using Gert.Service.Ingestion;
 using Gert.Service.Observability;
 using Gert.Service.Storage;

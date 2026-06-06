@@ -1,4 +1,4 @@
-using Gert.Service.Database;
+using Gert.Database;
 using Microsoft.Data.Sqlite;
 
 namespace Gert.Database.Sqlite;

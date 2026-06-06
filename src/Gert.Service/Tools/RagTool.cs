@@ -3,7 +3,7 @@ using System.Text.Json;
 using Gert.Model;
 using Gert.Model.Chat;
 using Gert.Model.Rag;
-using Gert.Service.Database;
+using Gert.Database;
 using Gert.Service.External;
 
 namespace Gert.Service.Tools;

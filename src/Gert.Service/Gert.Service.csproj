@@ -2,6 +2,10 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Gert.Model\Gert.Model.csproj" />
+    <!-- Persistence contracts (IChatRepository, IDatabaseProvider, …) live in
+         Gert.Database; the service layer consumes them, the Gert.Database.*
+         adapters implement them. -->
+    <ProjectReference Include="..\Gert.Database\Gert.Database.csproj" />
   </ItemGroup>
 
   <ItemGroup>

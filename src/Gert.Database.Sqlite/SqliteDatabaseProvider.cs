@@ -1,6 +1,5 @@
 using System.Text.RegularExpressions;
 using Gert.Database;
-using Gert.Service.Database;
 using Gert.Service.Storage;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Options;

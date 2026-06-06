@@ -1,4 +1,4 @@
-namespace Gert.Service.Database;
+namespace Gert.Database;
 
 /// <summary>
 /// The persistence/provisioning seam (tech-stack.md § Architecture / Engine

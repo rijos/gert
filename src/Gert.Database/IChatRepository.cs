@@ -1,6 +1,6 @@
 using Gert.Model.Chat;
 
-namespace Gert.Service.Database;
+namespace Gert.Database;
 
 /// <summary>
 /// Per-project <c>chat.db</c> persistence (storage-and-data.md § chat.db). One

@@ -1,7 +1,7 @@
 using Gert.Model;
 using Gert.Model.Rag;
 
-namespace Gert.Service.Database;
+namespace Gert.Database;
 
 /// <summary>
 /// Per-project <c>rag.db</c> persistence — documents, memory, chunks, the

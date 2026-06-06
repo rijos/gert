@@ -6,7 +6,7 @@ using Gert.Model.Chat;
 using Gert.Model.Events;
 using Gert.Model.Json;
 using Gert.Service.Chat.Bus;
-using Gert.Service.Database;
+using Gert.Database;
 using Gert.Service.External;
 using Gert.Service.Tools;
 using Microsoft.Extensions.Options;

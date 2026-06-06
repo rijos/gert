@@ -1,7 +1,7 @@
 using Gert.Model;
 using Gert.Model.Chat;
 using Gert.Model.Dtos;
-using Gert.Service.Database;
+using Gert.Database;
 using Gert.Service.External;
 using Gert.Service.Tools;
 using Gert.Service.Validation;

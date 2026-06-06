@@ -1,4 +1,4 @@
-namespace Gert.Service.Database;
+namespace Gert.Database;
 
 /// <summary>
 /// A chunk plus its embedding vector, written together into <c>chunks</c> +

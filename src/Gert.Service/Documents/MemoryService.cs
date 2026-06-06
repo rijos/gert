@@ -2,7 +2,7 @@ using System.Text;
 using Gert.Model;
 using Gert.Model.Dtos;
 using Gert.Model.Rag;
-using Gert.Service.Database;
+using Gert.Database;
 using Gert.Service.External;
 using Gert.Service.Ingestion;
 using Gert.Service.Storage;

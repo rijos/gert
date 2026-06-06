@@ -1,14 +1,14 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <!-- Database-agnostic persistence building blocks shared by every database
-       adapter (Gert.Database.Sqlite today, e.g. Gert.Database.Postgres tomorrow):
-       the filesystem layout (UserPaths), the storage options, the user/project
-       config-file store (FileSystemUserStore), the blob store (LocalObjectStore),
-       and the fail-closed provisioning-gate exception. Nothing in here may
-       reference a concrete database driver. -->
+  <!-- Database-agnostic persistence contracts shared by every database adapter
+       (Gert.Database.Sqlite today, e.g. Gert.Database.Postgres tomorrow): the
+       repository interfaces (IChatRepository, IRagRepository), the provisioning
+       seam (IDatabaseProvider, IDatabaseHandleReleaser), their row DTOs
+       (ChunkInsert, RetrievedChunk), and the fail-closed provisioning-gate
+       exception. Consumed by Gert.Service (never the reverse); nothing in here
+       may reference a concrete database driver. -->
 
   <ItemGroup>
-    <ProjectReference Include="..\Gert.Service\Gert.Service.csproj" />
     <ProjectReference Include="..\Gert.Model\Gert.Model.csproj" />
   </ItemGroup>
 

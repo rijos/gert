@@ -127,7 +127,7 @@ public sealed class ConsoleWiringTests
     /// <summary>Provision the fixed local user's folder + default project (lazy gate, U5).</summary>
     private static async Task ProvisionAsync(IServiceProvider provider)
     {
-        var dbProvider = provider.GetRequiredService<Gert.Service.Database.IDatabaseProvider>();
+        var dbProvider = provider.GetRequiredService<Gert.Database.IDatabaseProvider>();
         await dbProvider.EnsureProvisionedAsync(
             LocalUserContext.ConsoleIssuer, LocalUserContext.ConsoleSubject);
     }

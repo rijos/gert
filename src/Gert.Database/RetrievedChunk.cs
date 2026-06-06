@@ -1,6 +1,6 @@
 using Gert.Model.Rag;
 
-namespace Gert.Service.Database;
+namespace Gert.Database;
 
 /// <summary>
 /// A fused hybrid-search hit — the <see cref="Chunk"/> joined back to its

@@ -1,4 +1,4 @@
-using Gert.Service.Database;
+using Gert.Database;
 using Gert.Service.Storage;
 using Microsoft.Extensions.Options;
 

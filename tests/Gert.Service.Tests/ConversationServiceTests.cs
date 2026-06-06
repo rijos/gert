@@ -2,7 +2,7 @@ using FluentAssertions;
 using Gert.Model.Chat;
 using Gert.Model.Dtos;
 using Gert.Service.Conversations;
-using Gert.Service.Database;
+using Gert.Database;
 using NSubstitute;
 using Xunit;
 

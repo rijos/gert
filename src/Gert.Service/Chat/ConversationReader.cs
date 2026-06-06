@@ -3,7 +3,7 @@ using Gert.Model.Chat;
 using Gert.Model.Dtos;
 using Gert.Model.Events;
 using Gert.Model.Json;
-using Gert.Service.Database;
+using Gert.Database;
 using Microsoft.Extensions.Options;
 
 namespace Gert.Service.Chat;

@@ -4,7 +4,7 @@ using Dapper;
 using Gert.Model;
 using Gert.Model.Chat;
 using Gert.Model.Dtos;
-using Gert.Service.Database;
+using Gert.Database;
 using Microsoft.Data.Sqlite;
 
 namespace Gert.Database.Sqlite;

@@ -1,5 +1,5 @@
 using Gert.Model.Chat;
-using Gert.Service.Database;
+using Gert.Database;
 
 namespace Gert.Service.Documents;
 

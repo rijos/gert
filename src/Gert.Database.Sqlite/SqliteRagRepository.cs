@@ -3,7 +3,7 @@ using System.Globalization;
 using Dapper;
 using Gert.Model;
 using Gert.Model.Rag;
-using Gert.Service.Database;
+using Gert.Database;
 using Microsoft.Data.Sqlite;
 
 namespace Gert.Database.Sqlite;

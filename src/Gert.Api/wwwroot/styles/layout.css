@@ -2,7 +2,10 @@
 /* grid-template-rows pins the single row to the viewport — without it the implicit
    auto row grows with the thread, body{overflow:hidden} clips it, and the composer
    drifts off-screen instead of .stream scrolling internally. */
-.app{display:grid; grid-template-columns:264px 1fr var(--panel-w,372px); grid-template-rows:minmax(0,1fr); height:100vh; transition:grid-template-columns .28s cubic-bezier(.2,.8,.2,1);}
+/* Columns come from two internal vars so each state class overrides only its
+   own column — nav and panel state stay independent. (--panel-w is set inline
+   on .app by app-shell.js, so collapse/wide go through --panel-col instead.) */
+.app{--nav-col:264px; --panel-col:var(--panel-w,372px); display:grid; grid-template-columns:var(--nav-col) 1fr var(--panel-col); grid-template-rows:minmax(0,1fr); height:100vh; transition:grid-template-columns .28s cubic-bezier(.2,.8,.2,1);}
 /* while dragging the panel edge: kill the column transition so it tracks the cursor 1:1 */
 .app.resizing{transition:none; user-select:none; cursor:col-resize;}
 
@@ -11,12 +14,9 @@
 .resize-handle{position:absolute; left:0; top:0; bottom:0; width:6px; cursor:col-resize; z-index:5; touch-action:none;}
 .resize-handle::after{content:""; position:absolute; left:0; top:0; bottom:0; width:2px; background:transparent; transition:background .14s;}
 .resize-handle:hover::after,.app.resizing .resize-handle::after{background:var(--accent);}
-.app.nav-collapsed{grid-template-columns:0 1fr 372px;}
-.app.panel-collapsed{grid-template-columns:264px 1fr 0;}
-.app.nav-collapsed.panel-collapsed{grid-template-columns:0 1fr 0;}
-.app.panel-wide{grid-template-columns:264px 1fr 588px;}
-.app.nav-collapsed.panel-wide{grid-template-columns:0 1fr 588px;}
-.app.panel-collapsed.panel-wide{grid-template-columns:264px 1fr 0;}
+.app.nav-collapsed{--nav-col:0px;}
+.app.panel-wide{--panel-col:588px;}
+.app.panel-collapsed{--panel-col:0px;} /* after panel-wide: collapsed wins when both are set */
 
 /* scrim behind mobile drawers */
 .scrim{position:fixed; inset:0; background:var(--scrim); backdrop-filter:blur(2px); opacity:0; pointer-events:none; transition:.26s; z-index:50; display:none;}

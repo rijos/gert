@@ -1,4 +1,4 @@
-namespace Gert.Service.Database;
+namespace Gert.Database;
 
 /// <summary>
 /// Releases any OS file handles the database engine still holds under the data

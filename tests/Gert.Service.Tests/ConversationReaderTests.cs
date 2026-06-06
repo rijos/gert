@@ -5,7 +5,7 @@ using Gert.Model.Chat;
 using Gert.Model.Events;
 using Gert.Model.Json;
 using Gert.Service.Chat;
-using Gert.Service.Database;
+using Gert.Database;
 using Microsoft.Extensions.Options;
 using NSubstitute;
 using Xunit;
