@@ -126,8 +126,11 @@ public sealed class VllmStreamParser
             delta.ValueKind == JsonValueKind.Object)
         {
             // Reasoning ("thinking") delta — emitted by --reasoning-parser
-            // before the answer's content deltas.
-            if (delta.TryGetProperty("reasoning_content", out var reasoningContent) &&
+            // before the answer's content deltas. vLLM 0.22 renamed the output
+            // field `reasoning_content` → `reasoning`; accept both so the
+            // parser works against either server generation.
+            if ((delta.TryGetProperty("reasoning", out var reasoningContent)
+                 || delta.TryGetProperty("reasoning_content", out reasoningContent)) &&
                 reasoningContent.ValueKind == JsonValueKind.String)
             {
                 var thought = reasoningContent.GetString();

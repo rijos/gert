@@ -129,6 +129,21 @@ public sealed class VllmStreamParserTests
     }
 
     [Fact]
+    public void Parse_ReasoningDeltas_Vllm022FieldName_SurfaceAsReasoningChunks()
+    {
+        // vLLM 0.22 renamed the output field `reasoning_content` → `reasoning`.
+        var parser = new VllmStreamParser();
+        var chunks = Run(
+            parser,
+            """{"choices":[{"delta":{"reasoning":"thinking…"},"finish_reason":null}]}""",
+            """{"choices":[{"delta":{"content":"Answer."},"finish_reason":null}]}""",
+            """{"choices":[{"delta":{},"finish_reason":"stop"}]}""");
+
+        chunks[0].ReasoningDelta.Should().Be("thinking…");
+        chunks[1].TextDelta.Should().Be("Answer.");
+    }
+
+    [Fact]
     public void Parse_TrailingUsage_SurfacesPromptAndCompletionTokens()
     {
         var parser = new VllmStreamParser();

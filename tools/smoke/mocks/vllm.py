@@ -75,8 +75,10 @@ async def chat_completions(request: Request) -> StreamingResponse:
         return chunk
 
     async def stream() -> AsyncIterator[bytes]:
-        # 0) Reasoning deltas (reasoning_content), BEFORE tool calls/content —
-        # what --reasoning-parser qwen3 emits. Suppressed when the request sent
+        # 0) Reasoning deltas BEFORE tool calls/content — what
+        # --reasoning-parser qwen3 emits. The field is `reasoning` (the vLLM
+        # 0.22 output name; the parser also accepts the legacy
+        # `reasoning_content`). Suppressed when the request sent
         # chat_template_kwargs.enable_thinking=false (the thinking toggle).
         template_kwargs = body.get("chat_template_kwargs") or {}
         thinking_enabled = template_kwargs.get("enable_thinking", True)
@@ -89,7 +91,7 @@ async def chat_completions(request: Request) -> StreamingResponse:
                         [
                             {
                                 "index": 0,
-                                "delta": {"reasoning_content": thought},
+                                "delta": {"reasoning": thought},
                                 "finish_reason": None,
                             }
                         ]
