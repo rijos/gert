@@ -39,6 +39,23 @@ jobs:
       - name: Embedding conformance
         run: make smoke-unit
 
+  api-auth:
+    name: API auth smoke (gate)
+    # Boots the python mocks + the FakeE2E host (NO browsers) and proves every
+    # /api endpoint rejects missing/invalid bearer tokens — the full bad-token
+    # taxonomy in tools/smoke/tests/test_auth_smoke.py. The e2e job's component
+    # suite runs the same tests, but this gate is much cheaper (no Playwright
+    # install) and keeps the auth signal alive even when browser setup breaks.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+      - uses: astral-sh/setup-uv@v5
+      - name: Boot mocks + FakeE2E host, run the auth smoke
+        run: make smoke-auth
+
   e2e:
     name: Browser E2E smoke (gate)
     # Gating: boots the python mocks + the FakeE2E host and drives the real SPA across

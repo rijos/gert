@@ -38,6 +38,11 @@ lint-fix: ## Auto-fix ruff lint + format on the Python harness
 smoke-unit: ## Run the non-browser Python checks (embedding conformance) — no Playwright needed
 	PYTHONPATH=. $(SMOKE_DIR)/.venv/bin/python -m pytest $(SMOKE_DIR)/tests/test_embeddings_conformance.py -q
 
+.PHONY: smoke-auth
+smoke-auth: ## Boot mocks + FakeE2E host and run the API auth smoke (httpx only, no browsers)
+	cd $(SMOKE_DIR) && uv sync
+	PYTHONPATH=. $(SMOKE_DIR)/.venv/bin/python -m tools.smoke.run --api-smoke
+
 .PHONY: serve-mock
 serve-mock: ## Boot python mocks + FakeE2E host + a dev proxy; open the printed URL in YOUR browser (no Playwright). ROLE=admin|user|limited
 	cd $(SMOKE_DIR) && uv sync

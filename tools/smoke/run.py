@@ -25,7 +25,8 @@ stays mocked — see ``make serve-mock-vllm``.
 
 This launcher needs browsers installed (``uv run playwright install chromium
 firefox``) — only the CI/staging web job has them. The non-browser parts (token
-mint, specs conformance, mocks boot) run without browsers; see the README.
+mint, specs conformance, mocks boot, ``--api-smoke``) run without browsers; see
+the README.
 """
 
 from __future__ import annotations
@@ -506,6 +507,27 @@ def _run_pytest(base_url: str, browsers: list[str]) -> int:
     return proc.returncode
 
 
+def _run_api_smoke(base_url: str) -> int:
+    """Run ONLY the browserless API auth smoke (``tests/test_auth_smoke.py``)
+    against the booted host — no Playwright, no matrix. The cheap CI gate proving
+    every ``/api`` endpoint rejects missing/invalid bearer tokens. Returns the
+    pytest exit code (0 = pass)."""
+    print("\nRunning API auth smoke (tests/test_auth_smoke.py)…")
+    proc = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "pytest",
+            str(Path(__file__).resolve().parent / "tests" / "test_auth_smoke.py"),
+            f"--gert-base-url={base_url}",
+            "-q",
+        ],
+        cwd=str(REPO_ROOT),
+        check=False,
+    )
+    return proc.returncode
+
+
 def _report(results: list[MatrixResult]) -> int:
     failures = [r for r in results if not r[3]]
     for browser, role, name, ok, detail in results:
@@ -530,6 +552,13 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="After the matrix, run the richer tests/*.py assertions against the "
         "same booted host. The gate fails if either the matrix or pytest fails.",
+    )
+    parser.add_argument(
+        "--api-smoke",
+        action="store_true",
+        help="Boot mocks + host and run ONLY the browserless API auth smoke "
+        "(tests/test_auth_smoke.py) — no Playwright, no matrix. The cheap CI "
+        "gate for the auth surface.",
     )
     parser.add_argument("--keep-open", action="store_true")
     parser.add_argument(
@@ -647,6 +676,9 @@ def main(argv: list[str] | None = None) -> int:
         if args.serve:
             _serve(base_url, args.role if args.role != "all" else "admin")
             return 0
+
+        if args.api_smoke:
+            return _run_api_smoke(base_url)
 
         print("Running scenario matrix…")
         results = _run_matrix(base_url, browsers, roles, args.headed, args.keep_open)
