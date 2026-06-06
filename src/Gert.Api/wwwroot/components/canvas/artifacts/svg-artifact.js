@@ -4,6 +4,7 @@
 // as the HTML viewer, minus script execution.
 import van from "van";
 import { component } from "../../../lib/component.js";
+import { highlight } from "../../../lib/highlight.js";
 
 const { div, iframe } = van.tags;
 
@@ -19,18 +20,23 @@ export const SvgArtifact = component({
   view: ({ artifact } = {}) =>
   div(
     { class: "art-body" },
-    div(
-      { class: "render" },
-      div({ class: "svg-stage" }, () => {
-        const f = iframe({ title: (artifact.name || "SVG") + " preview" });
-        f.setAttribute("sandbox", ""); // fully sandboxed: no scripts, opaque origin
-        f.srcdoc = artifact.content || "";
-        return f;
-      }),
-    ),
+    // the stage IS the .render wrapper: its height:100% must resolve against
+    // .art-body (definite, flex) — an intermediate auto-height div would
+    // collapse the iframe to its default size instead of filling the pane.
+    div({ class: "render svg-stage" }, () => {
+      const f = iframe({ title: (artifact.name || "SVG") + " preview" });
+      f.setAttribute("sandbox", ""); // fully sandboxed: no scripts, opaque origin
+      f.srcdoc = artifact.content || "";
+      return f;
+    }),
     div(
       { class: "source" },
-      div({ class: "source-view" }, () => artifact.content || ""),
+      // tinted markup source — DOM nodes from textContent, never interpreted.
+      div({ class: "source-view" }, () => {
+        const host = div();
+        host.append(...highlight(artifact.content || "", "svg"));
+        return host;
+      }),
     ),
   ),
 });

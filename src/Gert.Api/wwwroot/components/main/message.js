@@ -12,6 +12,8 @@ import { component } from "../../lib/component.js";
 import { renderMarkdown } from "../../lib/markdown.js";
 import { Icon } from "../../icons/icons.js";
 import { ToolCard } from "./tool-card.js";
+import * as artifacts from "../../state/artifacts.js";
+import * as ui from "../../state/ui.js";
 
 const { div, span, a, button } = van.tags;
 
@@ -188,6 +190,25 @@ const decorateCodeBlocks = (body) => {
   }
 };
 
+// Dress the renderer's bare artifact-chip placeholders (a named fence collapsed
+// out of the bubble): file icon + name + hint, click opens the canvas tab. The
+// artifact lookup is LAZY (at click time) because the artifact event lands
+// after the deltas that drew the chip.
+const decorateArtifactChips = (body, streaming) => {
+  for (const chip of body.querySelectorAll(".artifact-chip")) {
+    const name = chip.dataset.name;
+    chip.replaceChildren(
+      Icon("file", { size: 13, strokeWidth: 2 }),
+      span({ class: "ac-name" }, name),
+      span({ class: "ac-hint" }, streaming ? "writing…" : "open in canvas"),
+    );
+    chip.onclick = () => {
+      const a = artifacts.artifacts.find((x) => x.name === name);
+      if (a) ui.openArtifact(a.id);
+    };
+  }
+};
+
 // Replace [n] markers in text nodes with Citation chips when a matching
 // citation ordinal exists. Walks only text nodes, so it never re-parses HTML.
 const injectCitations = (root, citations) => {
@@ -295,6 +316,13 @@ export const Message = component({
     /* generation stats under the answer */
     .msg-meta{margin-top:7px; font-family:var(--mono); font-size:11px; color:var(--ink-faint);}
 
+    /* artifact chip: a named fence collapsed to a clickable file card */
+    .artifact-chip{display:flex; align-items:center; gap:8px; width:fit-content; max-width:100%; margin:0 0 12px; padding:8px 13px; background:var(--surface); border:1px solid var(--line-strong); border-radius:10px; cursor:pointer; font-family:var(--mono); font-size:12.5px; color:var(--ink); transition:.14s;}
+    .artifact-chip:hover{border-color:var(--accent); background:var(--accent-soft); transform:translateY(-1px);}
+    .artifact-chip svg{color:var(--accent); flex:none;}
+    .artifact-chip .ac-name{overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+    .artifact-chip .ac-hint{color:var(--ink-faint); font-family:var(--sans); font-size:11px; flex:none;}
+
     /* toolzone: git-graph spine that holds the tool-call cards */
     .toolzone{position:relative; padding-left:26px; margin:14px 0 16px;}
     .toolzone::before{content:""; position:absolute; left:10px; top:-4px; bottom:-4px; width:1.5px; background:var(--line-strong);}
@@ -327,6 +355,7 @@ export const Message = component({
         body.append(renderMarkdown(m.text));
         injectCitations(body, m.citations);
         decorateCodeBlocks(body);
+        decorateArtifactChips(body, m.streaming);
         if (m.streaming) body.append(Caret());
         return body;
       },

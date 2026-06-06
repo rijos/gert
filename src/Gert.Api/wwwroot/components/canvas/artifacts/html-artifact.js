@@ -4,6 +4,7 @@
 // the app's cookies, storage, or DOM.
 import van from "van";
 import { component } from "../../../lib/component.js";
+import { highlight } from "../../../lib/highlight.js";
 
 const { div, iframe } = van.tags;
 
@@ -16,20 +17,27 @@ export const HtmlArtifact = component({
   view: ({ artifact } = {}) =>
   div(
     { class: "art-body" },
-    div(
-      { class: "render" },
-      div({ class: "html-stage" }, () => {
-        const f = iframe({
-          sandbox: "allow-scripts",
-          title: (artifact.name || "HTML") + " preview",
-        });
-        f.srcdoc = artifact.content || "";
-        return f;
-      }),
-    ),
+    // the stage IS the .render wrapper: its height:100% must resolve against
+    // .art-body (definite, flex) — an intermediate auto-height div would
+    // collapse the iframe to its default size instead of filling the pane.
+    div({ class: "render html-stage" }, () => {
+      const f = iframe({
+        sandbox: "allow-scripts",
+        title: (artifact.name || "HTML") + " preview",
+      });
+      f.srcdoc = artifact.content || "";
+      return f;
+    }),
     div(
       { class: "source" },
-      div({ class: "source-view" }, () => artifact.content || ""),
+      // tinted markup source — highlight() emits DOM nodes from textContent,
+      // so the document is never interpreted here (the iframe stays the only
+      // place it runs, sandboxed).
+      div({ class: "source-view" }, () => {
+        const host = div();
+        host.append(...highlight(artifact.content || "", "html"));
+        return host;
+      }),
     ),
   ),
 });

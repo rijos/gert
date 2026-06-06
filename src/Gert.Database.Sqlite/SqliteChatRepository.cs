@@ -647,6 +647,10 @@ public sealed class SqliteChatRepository(SqliteConnection connection) : IChatRep
         ArtifactKind.Html => "html",
         ArtifactKind.Svg => "svg",
         ArtifactKind.Py => "py",
+        ArtifactKind.Cs => "cs",
+        ArtifactKind.Cpp => "cpp",
+        ArtifactKind.Js => "js",
+        ArtifactKind.Rs => "rs",
         _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, null),
     };
 
@@ -656,6 +660,10 @@ public sealed class SqliteChatRepository(SqliteConnection connection) : IChatRep
         "html" => ArtifactKind.Html,
         "svg" => ArtifactKind.Svg,
         "py" => ArtifactKind.Py,
+        "cs" => ArtifactKind.Cs,
+        "cpp" => ArtifactKind.Cpp,
+        "js" => ArtifactKind.Js,
+        "rs" => ArtifactKind.Rs,
         _ => throw new InvalidOperationException($"Unknown artifact kind '{value}'."),
     };
 

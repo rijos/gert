@@ -73,9 +73,16 @@ public sealed class VllmChatModelClient : IChatModelClient
 
         if (!response.IsSuccessStatusCode)
         {
+            // The error body carries the actual diagnostic (template/validation
+            // message) — a bare status code is undebuggable from the event log.
+            var detail = await ReadErrorDetailAsync(response, cancellationToken).ConfigureAwait(false);
             _logger.LogWarning(
-                "vLLM chat completion failed with status {Status}.", (int)response.StatusCode);
-            response.EnsureSuccessStatusCode();
+                "vLLM chat completion failed with status {Status}: {Detail}.",
+                (int)response.StatusCode, detail);
+            throw new HttpRequestException(
+                $"vLLM chat completion failed with status {(int)response.StatusCode}: {detail}",
+                inner: null,
+                response.StatusCode);
         }
 
         await using var stream = await response.Content
@@ -110,6 +117,30 @@ public sealed class VllmChatModelClient : IChatModelClient
         foreach (var chunk in parser.Flush())
         {
             yield return chunk;
+        }
+    }
+
+    /// <summary>
+    /// Best-effort read of an error response body, bounded so a misbehaving
+    /// server can't balloon the exception message.
+    /// </summary>
+    private static async Task<string> ReadErrorDetailAsync(
+        HttpResponseMessage response, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            body = body.Trim();
+            return body.Length switch
+            {
+                0 => "(empty body)",
+                > 512 => body[..512] + "…",
+                _ => body,
+            };
+        }
+        catch (Exception ex) when (ex is HttpRequestException or IOException or OperationCanceledException)
+        {
+            return "(unreadable body)";
         }
     }
 }

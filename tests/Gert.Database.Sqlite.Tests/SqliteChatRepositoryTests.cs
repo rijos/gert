@@ -167,6 +167,40 @@ public class SqliteChatRepositoryTests
     }
 
     [Fact]
+    public async Task Every_artifact_kind_round_trips_through_persistence()
+    {
+        // Both kind mappers throw on an unmapped value — enumerating the enum
+        // here means a future ArtifactKind missing from either mapper fails in
+        // tests instead of at runtime.
+        await using var root = new TempDataRoot();
+        var provider = ProviderFixture.ProviderFor(root);
+        await provider.EnsureProvisionedAsync(ProviderFixture.ExpectedIssuer, Sub);
+
+        var conversation = NewConversation();
+        var now = DateTimeOffset.UtcNow;
+
+        await using var repo = await provider.OpenChatAsync(ProviderFixture.ExpectedIssuer, Sub, "default");
+        await repo.InsertConversationAsync(conversation);
+        foreach (var kind in Enum.GetValues<ArtifactKind>())
+        {
+            await repo.InsertArtifactAsync(new Artifact
+            {
+                Id = Guid.NewGuid().ToString("D"),
+                ConversationId = conversation.Id,
+                MessageId = null,
+                Kind = kind,
+                Name = $"a.{kind}",
+                Content = "body",
+                CreatedAt = now,
+            });
+        }
+
+        var artifacts = await repo.ListArtifactsAsync(conversation.Id);
+
+        artifacts.Select(a => a.Kind).Should().BeEquivalentTo(Enum.GetValues<ArtifactKind>());
+    }
+
+    [Fact]
     public async Task Delete_conversation_cascades_to_children()
     {
         await using var root = new TempDataRoot();

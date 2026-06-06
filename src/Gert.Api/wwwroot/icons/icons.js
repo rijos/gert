@@ -102,6 +102,14 @@ const GLYPHS = {
     }),
     path({ d: "M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" }),
   ],
+  download: () => [
+    path({
+      d: "M12 4v12M7 11l5 5 5-5",
+      "stroke-linecap": "round",
+      "stroke-linejoin": "round",
+    }),
+    path({ d: "M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" }),
+  ],
   user: () => [
     circle({ cx: "12", cy: "8", r: "4" }),
     path({ d: "M4 21a8 8 0 0 1 16 0" }),

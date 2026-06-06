@@ -3,7 +3,7 @@
 // re-rendering the others. No DOM, no fetch.
 import { reactive } from "van-x";
 
-export const artifacts = reactive([]); // [{ id, kind: "md"|"html"|"svg"|"py", name, content, problems? }]
+export const artifacts = reactive([]); // [{ id, kind: "md"|"html"|"svg"|"py"|"cs"|"cpp"|"js"|"rs", name, content, problems? }]
 
 export const setArtifacts = (list) => {
   artifacts.length = 0;

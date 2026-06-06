@@ -81,6 +81,69 @@ public sealed class VllmStreamParserTests
     }
 
     [Fact]
+    public void Parse_UnterminatedToolCallArguments_DegradeToEmptyObject()
+    {
+        // Captured live from vLLM 0.22.1 + qwen3 tool parser with
+        // chat_template_kwargs.enable_thinking=false and a no-argument call:
+        // the arguments stream is a lone "{" that is never closed (the final
+        // chunk carries finish_reason, an empty content delta, and no closing
+        // fragment). Passing the fragment through poisons the turn twice —
+        // the tool rejects it, and echoing it back inside the next round's
+        // assistant tool_calls message makes the server 400 on its own output.
+        var parser = new VllmStreamParser();
+        var chunks = Run(
+            parser,
+            """{"choices":[{"index":0,"delta":{"role":"assistant","content":""},"finish_reason":null}]}""",
+            """{"choices":[{"index":0,"delta":{"tool_calls":[{"id":"call_1ee8120e235a4baeb37c043e","type":"function","index":0,"function":{"name":"get_datetime","arguments":""}}]},"finish_reason":null}]}""",
+            """{"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{"}}]},"finish_reason":null}]}""",
+            """{"choices":[{"index":0,"delta":{"content":""},"finish_reason":"tool_calls"}]}""",
+            """{"choices":[],"usage":{"prompt_tokens":296,"total_tokens":310,"completion_tokens":14}}""");
+
+        var toolChunk = chunks.Single(c => c.ToolCall is not null);
+        toolChunk.ToolCall!.Name.Should().Be("get_datetime");
+        toolChunk.ToolCall.ArgumentsJson.Should().Be("{}",
+            "unparseable argument fragments must degrade to an empty object, never flow downstream");
+
+        chunks.Single(c => c.FinishReason is not null).FinishReason.Should().Be("tool_calls");
+    }
+
+    [Theory]
+    [InlineData("{\"timezone\"")] // truncated mid-key
+    [InlineData("\"not-an-object\"")] // valid JSON, wrong shape
+    [InlineData("[1,2]")] // valid JSON, wrong shape
+    [InlineData("not json at all")]
+    public void Parse_MalformedToolCallArguments_DegradeToEmptyObject(string fragment)
+    {
+        // The fragment arrives as the wire-format arguments *string*.
+        var encoded = System.Text.Json.JsonSerializer.Serialize(fragment);
+        var line =
+            """{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"c1","function":{"name":"get_datetime","arguments":"""
+            + encoded
+            + """}}]},"finish_reason":null}]}""";
+
+        var parser = new VllmStreamParser();
+        var chunks = Run(
+            parser,
+            line,
+            """{"choices":[{"delta":{},"finish_reason":"tool_calls"}]}""");
+
+        chunks.Single(c => c.ToolCall is not null).ToolCall!.ArgumentsJson.Should().Be("{}");
+    }
+
+    [Fact]
+    public void Parse_WellFormedToolCallArguments_PassThroughVerbatim()
+    {
+        var parser = new VllmStreamParser();
+        var chunks = Run(
+            parser,
+            """{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"c1","function":{"name":"get_datetime","arguments":"{\"timezone\": \"Europe/Amsterdam\"}"}}]},"finish_reason":null}]}""",
+            """{"choices":[{"delta":{},"finish_reason":"tool_calls"}]}""");
+
+        chunks.Single(c => c.ToolCall is not null).ToolCall!.ArgumentsJson
+            .Should().Be("""{"timezone": "Europe/Amsterdam"}""");
+    }
+
+    [Fact]
     public void Parse_MultipleToolCalls_EmittedByIndexOrder()
     {
         var parser = new VllmStreamParser();

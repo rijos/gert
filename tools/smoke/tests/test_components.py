@@ -49,7 +49,9 @@ def test_composer_renders_send_and_attach(page: Page, base_url: str) -> None:
     )
     expect(page.locator(".composer textarea")).to_be_visible()
     expect(page.locator(".composer button.send")).to_be_visible()
-    expect(page.locator(".composer button.cbtn")).to_have_count(2)
+    # Attach + Tools + the Thinking toggle (reasoning on/off, composer.js).
+    expect(page.locator(".composer button.cbtn")).to_have_count(3)
+    expect(page.locator(".composer button.cbtn").nth(2)).to_contain_text("Thinking")
 
 
 def test_tool_card_expands(page: Page, base_url: str) -> None:

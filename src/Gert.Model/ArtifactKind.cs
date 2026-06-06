@@ -10,4 +10,8 @@ public enum ArtifactKind
     Html,
     Svg,
     Py,
+    Cs,
+    Cpp,
+    Js,
+    Rs,
 }

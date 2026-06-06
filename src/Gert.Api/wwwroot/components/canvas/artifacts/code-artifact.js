@@ -1,10 +1,11 @@
-// components/canvas/artifacts/code-artifact.js — linted source view: numbered
-// lines with warn/err gutter dots + a Problems panel. The default viewer for
-// `py` and any unknown kind. No Rendered/Source toggle — the head shows a
-// problem count instead (see artifact-head.js). problems: [{ severity, message,
-// code, line, col }].
+// components/canvas/artifacts/code-artifact.js — linted source view: numbered,
+// syntax-highlighted lines with warn/err gutter dots + a Problems panel. The
+// viewer for the code kinds (py/cs/cpp/js/rs) and any unknown kind. No
+// Rendered/Source toggle — the head shows a problem count instead (see
+// artifact.js). problems: [{ severity, message, code, line, col }].
 import van from "van";
 import { component } from "../../../lib/component.js";
+import { highlightLines } from "../../../lib/highlight.js";
 
 const { div, span } = van.tags;
 
@@ -52,15 +53,17 @@ export const CodeArtifact = component({
           const c = sevClass(p.severity);
           if (c === "err" || lineSev[p.line] !== "err") lineSev[p.line] = c;
         }
-        const lines = String(artifact.content ?? "").split("\n");
+        // per-line token nodes — kind doubles as the language hint (the
+        // highlighter aliases py→python, cs→csharp, …; unknown stays plain).
+        const lines = highlightLines(String(artifact.content ?? ""), artifact.kind);
         return div(
           { class: "code-wrap" },
-          ...lines.map((text, i) => {
+          ...lines.map((nodes, i) => {
             const sev = lineSev[i + 1];
             return div(
               { class: "cline" + (sev ? " " + sev : "") },
               span({ class: "lnum" }, String(i + 1)),
-              span({ class: "lcode" }, text),
+              span({ class: "lcode" }, ...nodes),
             );
           }),
         );

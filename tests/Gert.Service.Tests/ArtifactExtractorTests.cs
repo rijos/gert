@@ -36,6 +36,16 @@ public sealed class ArtifactExtractorTests
     [InlineData("svg", ArtifactKind.Svg)]
     [InlineData("py", ArtifactKind.Py)]
     [InlineData("python", ArtifactKind.Py)]
+    [InlineData("cs", ArtifactKind.Cs)]
+    [InlineData("csharp", ArtifactKind.Cs)]
+    [InlineData("cpp", ArtifactKind.Cpp)]
+    [InlineData("c++", ArtifactKind.Cpp)]
+    [InlineData("cc", ArtifactKind.Cpp)]
+    [InlineData("cxx", ArtifactKind.Cpp)]
+    [InlineData("js", ArtifactKind.Js)]
+    [InlineData("javascript", ArtifactKind.Js)]
+    [InlineData("rs", ArtifactKind.Rs)]
+    [InlineData("rust", ArtifactKind.Rs)]
     public void Language_token_maps_onto_the_closed_kind_set(string lang, ArtifactKind expected)
     {
         var artifacts = ArtifactExtractor.Extract($"```{lang} name=a.out\nbody\n```");
@@ -48,7 +58,7 @@ public sealed class ArtifactExtractorTests
     {
         var content =
             "```python\nprint(1)\n```\n\n" + // no name= → inline code block
-            "```rust name=main.rs\nfn main() {}\n```"; // unknown kind → inline
+            "```cobol name=main.cob\nDISPLAY 1.\n```"; // unknown kind → inline
 
         ArtifactExtractor.Extract(content).Should().BeEmpty();
     }
@@ -91,5 +101,18 @@ public sealed class ArtifactExtractorTests
     {
         ArtifactExtractor.Extract(string.Empty).Should().BeEmpty();
         ArtifactExtractor.Extract("just prose, no fences").Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Unnamed_complete_html_document_stays_inline_by_design()
+    {
+        // STRICT opt-in, deliberately: a complete-document fallback was tried and
+        // removed (chat-and-tools.md § artifacts) — SystemPrompts.Canvas teaches
+        // the model the name= convention instead, and Qwen3.6 follows it
+        // (measured 5/5 with thinking on, default sampling).
+        var content =
+            "```html\n<!DOCTYPE html>\n<html><head><title>t</title></head><body/></html>\n```";
+
+        ArtifactExtractor.Extract(content).Should().BeEmpty();
     }
 }

@@ -2,6 +2,7 @@ using FluentAssertions;
 using Gert.External.Vllm;
 using Gert.Service.Chat;
 using Gert.Service.External;
+using Gert.Service.Tools;
 using Gert.Model;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -118,6 +119,99 @@ public sealed class VllmLiveIntegrationTests
         artifacts.Single(a => a.Kind == ArtifactKind.Html).Content.Should().Contain("<h1");
         artifacts.Single(a => a.Kind == ArtifactKind.Py).Content.Should().Contain("def ");
         artifacts.Should().OnlyContain(a => a.Name.Length > 0);
+    }
+
+    [Fact]
+    public async Task Live_tool_round_trip_with_thinking_disabled_completes()
+    {
+        var client = CreateClient(out _);
+        Assert.SkipWhen(client is null, "GERT_VLLM_URL is not set — live vLLM integration skipped.");
+
+        // The clock-tool crash (2026-06-06): with enable_thinking=false the
+        // qwen3 tool parser on vLLM 0.22 streams a lone, unterminated "{" for a
+        // no-argument get_datetime call. Unnormalized, that fragment fails the
+        // tool AND 400s the second round when echoed back inside the assistant
+        // tool_calls message. This drives the REAL wire path through both
+        // rounds: the parsed arguments must be valid JSON, and the follow-up
+        // request carrying them must complete.
+        var clock = new ClockTool(TimeProvider.System);
+        var tools = new List<ChatToolSpec>
+        {
+            new()
+            {
+                Name = clock.Name,
+                Description = clock.Description,
+                ParametersSchema = clock.ParametersSchema,
+            },
+        };
+
+        var messages = new List<ChatModelMessage>
+        {
+            // The exact user phrasing that reproduced the unterminated fragment.
+            new() { Role = "user", Content = "what is the local time?" },
+        };
+
+        // Round 1: the model must call the tool, and the accumulated arguments
+        // must come out of the parser as a well-formed JSON object.
+        var round1 = new ChatCompletionRequest
+        {
+            ModelId = "default",
+            Messages = messages,
+            Tools = tools,
+            Temperature = 0,
+            MaxTokens = 400,
+            EnableThinking = false,
+        };
+
+        var toolCalls = new List<ChatModelToolCall>();
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(170));
+        await foreach (var chunk in client!.StreamAsync(round1, cts.Token))
+        {
+            if (chunk.ToolCall is not null)
+            {
+                toolCalls.Add(chunk.ToolCall);
+            }
+        }
+
+        var call = toolCalls.Should().ContainSingle("the model should call get_datetime").Subject;
+        call.Name.Should().Be("get_datetime");
+        var parsed = System.Text.Json.JsonDocument.Parse(call.ArgumentsJson);
+        parsed.RootElement.ValueKind.Should().Be(
+            System.Text.Json.JsonValueKind.Object,
+            "the parser must never surface an argument fragment");
+
+        // The real tool executes the normalized arguments without erroring.
+        var outcome = await clock.ExecuteAsync(
+            new ToolInvocation { Pid = "default", ArgumentsJson = call.ArgumentsJson }, cts.Token);
+        outcome.Success.Should().BeTrue("'{}' means UTC-by-default, not invalid arguments");
+
+        // Round 2: echo the assistant tool_calls + tool result back, exactly as
+        // the tool loop does — the request must not 400.
+        messages.Add(new ChatModelMessage { Role = "assistant", Content = null, ToolCalls = toolCalls });
+        messages.Add(new ChatModelMessage
+        {
+            Role = "tool",
+            Content = outcome.ResultJson ?? string.Empty,
+            ToolCallId = call.Id,
+        });
+
+        var round2 = new ChatCompletionRequest
+        {
+            ModelId = "default",
+            Messages = messages,
+            Tools = tools,
+            Temperature = 0,
+            MaxTokens = 400,
+            EnableThinking = false,
+        };
+
+        var answer = new System.Text.StringBuilder();
+        await foreach (var chunk in client.StreamAsync(round2, cts.Token))
+        {
+            answer.Append(chunk.TextDelta);
+        }
+
+        answer.Length.Should().BeGreaterThan(0, "the second round must complete with an answer");
     }
 
     [Fact]

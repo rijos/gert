@@ -5,7 +5,11 @@
 /* Columns come from two internal vars so each state class overrides only its
    own column — nav and panel state stay independent. (--panel-w is set inline
    on .app by app-shell.js, so collapse/wide go through --panel-col instead.) */
-.app{--nav-col:264px; --panel-col:var(--panel-w,372px); display:grid; grid-template-columns:var(--nav-col) 1fr var(--panel-col); grid-template-rows:minmax(0,1fr); height:100vh; transition:grid-template-columns .28s cubic-bezier(.2,.8,.2,1);}
+/* The chat column floors at 500px (composer row: Attach + Tools + Thinking +
+   ring + send, with breathing room) — the panel column shrinks below its set
+   width first (minmax(0,…)). ui.js clamps the drag-resize to the same floor
+   (MAIN_MIN). */
+.app{--nav-col:264px; --panel-col:var(--panel-w,372px); display:grid; grid-template-columns:var(--nav-col) minmax(500px,1fr) minmax(0,var(--panel-col)); grid-template-rows:minmax(0,1fr); height:100vh; transition:grid-template-columns .28s cubic-bezier(.2,.8,.2,1);}
 /* while dragging the panel edge: kill the column transition so it tracks the cursor 1:1 */
 .app.resizing{transition:none; user-select:none; cursor:col-resize;}
 

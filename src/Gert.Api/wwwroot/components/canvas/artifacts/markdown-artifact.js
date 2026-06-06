@@ -5,6 +5,7 @@
 import van from "van";
 import { component } from "../../../lib/component.js";
 import { renderMarkdown } from "../../../lib/markdown.js";
+import { highlight } from "../../../lib/highlight.js";
 
 const { div } = van.tags;
 
@@ -41,7 +42,13 @@ export const MarkdownArtifact = component({
     }),
     div(
       { class: "source" },
-      div({ class: "source-view" }, () => artifact.content || ""),
+      // tinted raw source (headings, fences, links) — highlight() emits DOM
+      // nodes from textContent, so this stays XSS-safe.
+      div({ class: "source-view" }, () => {
+        const host = div();
+        host.append(...highlight(artifact.content || "", "md"));
+        return host;
+      }),
     ),
   ),
 });

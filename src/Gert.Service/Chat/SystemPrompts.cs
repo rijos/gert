@@ -15,8 +15,9 @@ public static class SystemPrompts
     /// emit plain fences and complete files never reach the canvas.
     /// </summary>
     public const string Canvas =
-        "When you produce a complete, self-contained file — an HTML page, a Python script, " +
-        "a Markdown document, or an SVG — put it in its own fenced code block and include a " +
+        "When you produce a complete, self-contained file — an HTML page, a code file " +
+        "(Python, JavaScript, C#, C++, Rust), a Markdown document, or an SVG — put it in its " +
+        "own fenced code block and include a " +
         "name in the fence's info string, e.g. ```html name=page.html``` or ```python name=tool.py```. " +
         "Named blocks open in the user's canvas as artifacts. Use ordinary unnamed fences for " +
         "fragments, examples, and snippets that should stay inline in the conversation.";

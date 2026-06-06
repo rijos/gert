@@ -35,6 +35,74 @@ const RULES = {
     ],
     [/\b\d[\d_]*(?:\.[\d_]+)?(?:[eE][+-]?\d+)?n?\b/y, "num"],
   ],
+  csharp: [
+    [/\/\/.*/y, "com"],
+    [/\/\*[\s\S]*?\*\//y, "com"],
+    // verbatim / verbatim-interpolated first ("" escapes, may span lines),
+    // then ordinary + interpolated (backslash escapes), then char.
+    [/[@$]{2}"(?:[^"]|"")*"|@"(?:[^"]|"")*"/y, "str"],
+    [/\$?"(?:[^"\\\n]|\\.)*"/y, "str"],
+    [/'(?:[^'\\\n]|\\.)'/y, "str"],
+    [
+      /\b(?:abstract|as|async|await|base|bool|break|byte|case|catch|char|checked|class|const|continue|decimal|default|delegate|do|double|else|enum|event|explicit|extern|false|finally|fixed|float|for|foreach|get|goto|if|implicit|in|init|int|interface|internal|is|lock|long|nameof|namespace|new|null|object|operator|out|override|params|partial|private|protected|public|readonly|record|ref|required|return|sbyte|sealed|set|short|sizeof|static|string|struct|switch|this|throw|true|try|typeof|uint|ulong|unchecked|unsafe|ushort|using|var|virtual|void|volatile|when|where|while|yield)\b/y,
+      "kw",
+    ],
+    [/\b\d[\d_]*(?:\.[\d_]+)?(?:[eE][+-]?\d+)?[fFdDmMuUlL]*\b/y, "num"],
+  ],
+  cpp: [
+    [/\/\/.*/y, "com"],
+    [/\/\*[\s\S]*?\*\//y, "com"],
+    // sticky+m: ^ only matches when the cursor sits at a line start, so this
+    // fires for real directives and never on a stray mid-line '#'.
+    [/^[ \t]*#[ \t]*\w+/my, "dec"],
+    [/R"([^(\s]*)\(([\s\S]*?)\)\1"/y, "str"],
+    [/(?:u8|[uUL])?"(?:[^"\\\n]|\\.)*"/y, "str"],
+    [/(?:u8|[uUL])?'(?:[^'\\\n]|\\.)*'/y, "str"],
+    [
+      /\b(?:alignas|alignof|auto|bool|break|case|catch|char|char8_t|char16_t|char32_t|class|co_await|co_return|co_yield|concept|const|const_cast|consteval|constexpr|constinit|continue|decltype|default|delete|do|double|dynamic_cast|else|enum|explicit|export|extern|false|final|float|for|friend|goto|if|inline|int|long|mutable|namespace|new|noexcept|nullptr|operator|override|private|protected|public|reinterpret_cast|requires|return|short|signed|sizeof|static|static_assert|static_cast|struct|switch|template|this|thread_local|throw|true|try|typedef|typeid|typename|union|unsigned|using|virtual|void|volatile|wchar_t|while)\b/y,
+      "kw",
+    ],
+    [
+      /\b(?:0[xX][\da-fA-F'_]+|0[bB][01'_]+|\d[\d'_]*(?:\.[\d'_]*)?(?:[eE][+-]?\d+)?)[uUlLfF]*\b/y,
+      "num",
+    ],
+  ],
+  rust: [
+    [/\/\/.*/y, "com"],
+    [/\/\*[\s\S]*?\*\//y, "com"],
+    [/#!?\[[^\]\n]*\]/y, "dec"],
+    [/[A-Za-z_]\w*!(?=\s*[({[])/y, "dec"],
+    [/b?r(#*)"[\s\S]*?"\1/y, "str"],
+    [/b?"(?:[^"\\]|\\[\s\S])*"/y, "str"],
+    // char literal needs its closing quote, so lifetimes ('a) stay plain.
+    [/b?'(?:[^'\\\n]|\\.)'/y, "str"],
+    [
+      /\b(?:as|async|await|break|const|continue|crate|dyn|else|enum|extern|false|fn|for|if|impl|in|let|loop|match|mod|move|mut|pub|ref|return|self|Self|static|struct|super|trait|true|type|union|unsafe|use|where|while)\b/y,
+      "kw",
+    ],
+    [
+      /\b(?:0[xob][\da-fA-F_]+|\d[\d_]*(?:\.[\d_]+)?(?:[eE][+-]?\d+)?)(?:[iu](?:8|16|32|64|128|size)|f32|f64)?\b/y,
+      "num",
+    ],
+  ],
+  // markup, for html/svg artifact source views. Attr values match only right
+  // after '=' (lookbehind), so quoted prose in body text stays plain.
+  xml: [
+    [/<!--[\s\S]*?-->/y, "com"],
+    [/<!\[CDATA\[[\s\S]*?\]\]>/y, "str"],
+    [/<!DOCTYPE[^>]*>/iy, "dec"],
+    [/<\/?[A-Za-z][\w.:-]*|\/?>/y, "kw"],
+    [/[A-Za-z_][\w.:-]*(?==)/y, "key"],
+    [/(?<==)"[^"]*"|(?<==)'[^']*'/y, "str"],
+  ],
+  // just enough structure for the md artifact source view.
+  markdown: [
+    [/^#{1,6}[ \t].*/my, "kw"],
+    [/^(?:```|~~~).*/my, "dec"],
+    [/`[^`\n]+`/y, "str"],
+    [/^>.*/my, "com"],
+    [/\[[^\]\n]*\]\([^)\n]*\)/y, "key"],
+  ],
 };
 
 const ALIASES = {
@@ -46,6 +114,20 @@ const ALIASES = {
   typescript: "javascript",
   jsonc: "json",
   json5: "json",
+  cs: "csharp",
+  "c#": "csharp",
+  "c++": "cpp",
+  c: "cpp",
+  cc: "cpp",
+  cxx: "cpp",
+  h: "cpp",
+  hpp: "cpp",
+  rs: "rust",
+  html: "xml",
+  htm: "xml",
+  svg: "xml",
+  xhtml: "xml",
+  md: "markdown",
 };
 
 const resolve = (lang) => {
@@ -114,4 +196,27 @@ export const highlight = (code, langHint) => {
   }
   flush();
   return out;
+};
+
+// highlightLines(code, langHint) -> one node array per line. Tokens that span
+// lines (block comments, raw/verbatim strings) are split at each newline, so
+// numbered-line views (code-artifact.js) keep token tinting on every row.
+export const highlightLines = (code, langHint) => {
+  const lines = [[]];
+  for (const node of highlight(code, langHint)) {
+    const cls = node.nodeType === Node.ELEMENT_NODE ? node.className : null;
+    node.textContent.split("\n").forEach((text, j) => {
+      if (j) lines.push([]);
+      if (!text) return;
+      if (!cls) {
+        lines[lines.length - 1].push(document.createTextNode(text));
+        return;
+      }
+      const s = document.createElement("span");
+      s.className = cls;
+      s.textContent = text;
+      lines[lines.length - 1].push(s);
+    });
+  }
+  return lines;
 };

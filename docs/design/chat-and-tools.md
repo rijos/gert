@@ -31,12 +31,30 @@ clock reads only through the injected `TimeProvider`, so tests pin the instant.
 The model opts a fenced block into the canvas by **naming it in the fence info
 string** — ` ```html name=demo.html ` … ` ``` `. When the turn's final content is
 assembled, the runner extracts every named fence whose language maps onto the
-closed artifact-kind set (`md`/`markdown`, `html`/`htm`, `svg`, `py`/`python`),
+closed artifact-kind set (`md`/`markdown`, `html`/`htm`, `svg`, `py`/`python`,
+`cs`/`csharp`, `cpp`/`c++`/`cc`/`cxx`, `js`/`javascript`, `rs`/`rust`),
 persists each as an `artifacts` row (provenance: conversation + producing
 message), and emits an `artifact` event before `message_end` — the canvas tab
 opens live, and a reload gets the same artifacts back through the thread GET.
 Unnamed fences and unknown languages stay inline in the bubble; extraction is
 additive (the fence text remains part of the message).
+
+**How the model learns the convention.** Real models don't know `name=` on
+their own — the built-in `SystemPrompts.Canvas` fragment rides first in every
+turn's system prompt (before project pinned instructions) and teaches the
+opt-in. Measured against Qwen3.6-27B-FP8 on vLLM 0.22 (2026-06-06): **5/5
+compliance** for "make me a demo html page" with thinking ON and default
+sampling — the convention is reliable when the prompt actually reaches the
+model.
+
+**Deliberately NO unnamed-fence fallback.** A complete-document heuristic
+(auto-extracting unnamed ` ```html ` fences starting at `<!doctype>`) was tried
+and removed: it blurs the opt-in contract and invents filenames the model never
+chose. If artifacts stop appearing for prompts that should produce them,
+debug in this order: (1) is the running host built from current code —
+`SystemPrompts.Canvas` present in the upstream request? (2) did the model emit
+the fence unnamed anyway (a model/template regression — capture the completion
+and re-measure compliance)? Do not relax the extractor.
 
 ### Detached turns
 

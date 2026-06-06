@@ -223,12 +223,41 @@ public sealed class VllmStreamParser
                 {
                     Id = buffer.Id ?? $"call_{buffer.Name}",
                     Name = buffer.Name,
-                    ArgumentsJson = buffer.Arguments.Length == 0 ? "{}" : buffer.Arguments.ToString(),
+                    ArgumentsJson = NormalizeArguments(buffer.Arguments),
                 },
             });
         }
 
         _toolCalls.Clear();
+    }
+
+    /// <summary>
+    /// The accumulated arguments must be a parseable JSON object, or they degrade
+    /// to <c>{}</c>. vLLM 0.22's qwen3 tool parser streams an unterminated
+    /// <c>{</c> (and nothing else) for a no-argument call when thinking is
+    /// disabled; passing that fragment through poisons the whole turn — the tool
+    /// rejects it, and echoing it back inside the next round's assistant
+    /// <c>tool_calls</c> message makes the server 400 on its own output
+    /// (<c>from_json</c> in the chat template). <c>{}</c> preserves the call —
+    /// truncated arguments become a readable tool error, never a dead turn.
+    /// </summary>
+    private static string NormalizeArguments(System.Text.StringBuilder buffer)
+    {
+        if (buffer.Length == 0)
+        {
+            return "{}";
+        }
+
+        var args = buffer.ToString();
+        try
+        {
+            using var doc = JsonDocument.Parse(args);
+            return doc.RootElement.ValueKind == JsonValueKind.Object ? args : "{}";
+        }
+        catch (JsonException)
+        {
+            return "{}";
+        }
     }
 
     private void EmitFinish(List<ChatModelChunk> chunks)

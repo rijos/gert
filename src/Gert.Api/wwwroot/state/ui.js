@@ -11,8 +11,19 @@ export const PANEL_MIN = 300;
 export const DEFAULT_PANEL_W = 372;
 export const panelWidth = van.state(DEFAULT_PANEL_W);
 
-const clampPanelWidth = (px) =>
-  Math.max(PANEL_MIN, Math.min(px, Math.round(window.innerWidth * 0.6)));
+// The chat column's floor — mirrors the grid's minmax(500px,1fr) (layout.css):
+// below this the composer row (Attach/Tools/Thinking/ring/send) gets cramped.
+export const MAIN_MIN = 500;
+const NAV_W = 264; // --nav-col (layout.css)
+
+// Dragging may never squeeze the chat below MAIN_MIN; the nav only counts
+// while expanded. PANEL_MIN wins the tug-of-war on tiny windows — the grid's
+// minmax(0,…) panel column absorbs the difference visually.
+const clampPanelWidth = (px) => {
+  const nav = navCollapsed.val ? 0 : NAV_W;
+  const max = window.innerWidth - nav - MAIN_MIN;
+  return Math.max(PANEL_MIN, Math.min(px, max));
+};
 
 export const restorePanelWidth = () => {
   const v = parseInt(localStorage.getItem(PANEL_W_KEY), 10);
@@ -83,9 +94,11 @@ export const closeDrawers = () => {
   panelOpen.val = false;
 };
 
-export const openKnowledge = () => {
-  showKnowledge.val = true;
-  activeArtifact.val = null;
+// activeArtifact stays untouched: the canvas dispatch keys on
+// (activeArtifact && !showKnowledge), so untoggling restores the tab that was
+// open before the knowledge view.
+export const toggleKnowledge = () => {
+  showKnowledge.val = !showKnowledge.val;
 };
 
 export const openArtifact = (id) => {

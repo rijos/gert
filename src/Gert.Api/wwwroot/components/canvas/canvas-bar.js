@@ -28,7 +28,7 @@ export const CanvasBar = component({
         {
           class: () => "kbtn" + (ui.showKnowledge.val ? " active" : ""),
           title: "Knowledge base",
-          onclick: ui.openKnowledge,
+          onclick: ui.toggleKnowledge,
         },
         Icon("book", { size: 15, strokeWidth: 2 }),
       ),

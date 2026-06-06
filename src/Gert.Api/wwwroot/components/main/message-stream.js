@@ -11,7 +11,9 @@ const { div } = van.tags;
 export const MessageStream = component({
   name: "message-stream",
   css: `
-    .stream{flex:1; overflow-y:auto; padding:30px 0 24px;}
+    /* bottom padding clears the composer-wrap's 48px fade strip (composer.js)
+       so a bottom-pinned message sits above the gradient, never obscured by it */
+    .stream{flex:1; overflow-y:auto; padding:30px 0 68px;}
     .thread{max-width:760px; margin:0 auto; padding:0 30px;}
   `,
   view: () => {

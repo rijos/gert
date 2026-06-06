@@ -15,10 +15,15 @@ namespace Gert.Service.Chat;
 /// </code>
 ///
 /// Only fences that carry a <c>name=</c> token become artifacts — an ordinary
-/// code block stays inline in the bubble. The language token maps onto the
-/// closed <see cref="ArtifactKind"/> set (md/html/svg/py); an unknown language
-/// is left inline too, never guessed. Pure and deterministic: same content in,
-/// same artifacts out — which is what lets the fixture-driven E2E assert on it.
+/// code block stays inline in the bubble, NEVER guessed (a complete-document
+/// heuristic was tried and deliberately removed; see chat-and-tools.md
+/// § artifacts). The model learns the opt-in from <see cref="SystemPrompts.Canvas"/>,
+/// which Qwen3.6 follows reliably (measured 5/5 with thinking on, default
+/// sampling) — if artifacts stop appearing, verify the system prompt actually
+/// reaches the upstream request before suspecting this extractor. The language
+/// token maps onto the closed <see cref="ArtifactKind"/> set (md/html/svg/py/cs/cpp/js/rs);
+/// an unknown language is left inline too. Pure and deterministic: same content
+/// in, same artifacts out — which is what lets the fixture-driven E2E assert on it.
 /// </summary>
 public static partial class ArtifactExtractor
 {
@@ -85,6 +90,10 @@ public static partial class ArtifactExtractor
             "html" or "htm" => ArtifactKind.Html,
             "svg" => ArtifactKind.Svg,
             "py" or "python" => ArtifactKind.Py,
+            "cs" or "csharp" => ArtifactKind.Cs,
+            "cpp" or "c++" or "cc" or "cxx" => ArtifactKind.Cpp,
+            "js" or "javascript" => ArtifactKind.Js,
+            "rs" or "rust" => ArtifactKind.Rs,
             _ => null,
         };
 }

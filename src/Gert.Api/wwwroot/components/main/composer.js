@@ -20,7 +20,13 @@ const autogrow = (t) => {
 export const Composer = component({
   name: "composer",
   css: `
-    .composer-wrap{padding:14px 30px 22px; background:linear-gradient(to top, var(--paper) 64%, transparent);}
+    .composer-wrap{padding:14px 30px 22px; background:var(--paper); position:relative; z-index:1;}
+    /* fade strip: hangs 48px ABOVE the wrap, over the stream's last lines —
+       solid paper at its base (exactly where the stream clips, hiding the hard
+       edge) fading to transparent upward. Click-through; the stream keeps its
+       own scroll/clicks. Stream bottom padding (message-stream.js) keeps a
+       bottom-pinned message clear of the strip. */
+    .composer-wrap::before{content:""; position:absolute; left:0; right:0; bottom:100%; height:48px; background:linear-gradient(to top, var(--paper), transparent); pointer-events:none;}
     .composer{max-width:760px; margin:0 auto; background:var(--surface); border:1px solid var(--line-strong); border-radius:16px; padding:13px 15px 11px; box-shadow:0 6px 22px -12px rgba(60,46,28,.22); transition:.16s;}
     .composer:focus-within{border-color:var(--accent); box-shadow:0 8px 26px -12px rgba(191,71,39,.32);}
     .composer textarea{width:100%; border:none; background:none; resize:none; outline:none; font-family:var(--sans); font-size:15px; color:var(--ink); line-height:1.5; min-height:24px;}
