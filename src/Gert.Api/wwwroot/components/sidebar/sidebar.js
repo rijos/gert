@@ -50,17 +50,17 @@ const NewChat = () =>
 export const Sidebar = component({
   name: "sidebar",
   css: `
-    .sidebar{background:var(--surface); border-right:1px solid var(--line); display:flex; flex-direction:column; overflow:hidden; min-width:0;}
+    .sidebar{background:var(--side-bg); border-right:1px solid var(--line); display:flex; flex-direction:column; overflow:hidden; min-width:0;}
 
     .brand{height:var(--head-h); flex:none; padding:0 20px; display:flex; align-items:center; gap:11px; border-bottom:1px solid var(--line);}
     .mark{width:30px; height:30px; flex:none; position:relative;}
     .mark svg{display:block;}
     .brand h1{font-family:var(--display); font-weight:600; font-size:25px; letter-spacing:-.01em; line-height:1;}
 
-    .newchat{margin:4px 16px 14px; padding:10px 14px; border:1px solid var(--line-strong); background:var(--surface-2);
-      border-radius:var(--r-sm); font-family:var(--sans); font-weight:600; font-size:13px; color:var(--ink);
+    .newchat{margin:4px 16px 14px; padding:10px 14px; border:1px solid var(--line); background:var(--surface); box-shadow:var(--lift);
+      border-radius:var(--r); font-family:var(--sans); font-weight:600; font-size:13px; color:var(--ink);
       display:flex; align-items:center; gap:9px; cursor:pointer; transition:.16s; width:calc(100% - 32px);}
-    .newchat:hover{border-color:var(--accent); color:var(--accent-deep); background:var(--accent-soft);}
+    .newchat:hover{border-color:var(--coral); color:var(--coral-deep); background:var(--coral-soft);}
     .newchat svg{width:15px; height:15px;}
   `,
   view: () =>

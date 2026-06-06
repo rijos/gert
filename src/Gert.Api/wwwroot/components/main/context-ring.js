@@ -23,7 +23,7 @@ const fmtK = (n) =>
   n >= 1000 ? (n / 1000).toFixed(1).replace(/\.0$/, "") + "K" : String(n);
 
 const colorFor = (pct) =>
-  pct > 0.9 ? "var(--accent-deep)" : pct > 0.75 ? "var(--amber)" : "var(--accent)";
+  pct > 0.9 ? "var(--coral-deep)" : pct > 0.75 ? "var(--amber)" : "var(--coral)";
 
 const StatRow = (label, value) =>
   div({ class: "cx-row" }, span({ class: "cx-l" }, label), span({ class: "cx-v" }, value));
@@ -36,12 +36,12 @@ export const ContextRing = component({
     .ctx-ring .menu{top:auto; bottom:calc(100% + 10px); left:auto; right:-44px; width:232px; transform-origin:bottom right; transform:translateY(6px) scale(.98);}
     .ctx-ring.open .menu{opacity:1; transform:none; pointer-events:auto;}
     .ctx-btn{display:grid; place-items:center; width:30px; height:30px; flex:none; border:none; background:none; padding:0; cursor:pointer; border-radius:9px; transition:.13s;}
-    .ctx-btn:hover{background:var(--inset);}
+    .ctx-btn:hover{background:var(--surface-2);}
     .ctx-btn svg{display:block;}
-    .ctx-btn .track{stroke:var(--line-strong); fill:none;}
+    .ctx-btn .track{stroke:var(--line); fill:none;}
     .ctx-btn .fill{fill:none; stroke-linecap:round; transform:rotate(-90deg); transform-origin:center; transition:stroke-dashoffset .35s ease, stroke .35s ease;}
     .cx-row{display:flex; align-items:baseline; justify-content:space-between; gap:12px; padding:5px 10px; font-size:12.5px;}
-    .cx-row .cx-l{color:var(--ink-soft);}
+    .cx-row .cx-l{color:var(--ink-2);}
     .cx-row .cx-v{font-family:var(--mono); font-size:12px; color:var(--ink); text-align:right;}
     .pbar.cx-bar{height:5px; border-radius:3px; margin:7px 10px 9px;}
     .pbar.cx-bar > i{border-radius:3px;}

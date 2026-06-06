@@ -14,8 +14,8 @@ const { div, p, label, input } = van.tags;
 
 const THEMES = [
   { value: "system", label: "Follow system" },
-  { value: "light", label: "Light" },
-  { value: "dark", label: "Dark" },
+  { value: "manila", label: "Manila (paper)" },
+  { value: "ember", label: "Ember (dark)" },
 ];
 
 export const openSettings = () => {

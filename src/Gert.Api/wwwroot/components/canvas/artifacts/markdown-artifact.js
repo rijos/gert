@@ -19,17 +19,17 @@ export const MarkdownArtifact = component({
     .md-render p{font-size:14px; line-height:1.66; color:var(--ink); margin:0 0 12px;}
     .md-render ul,.md-render ol{margin:0 0 13px; padding-left:20px;}
     .md-render li{font-size:14px; line-height:1.6; margin-bottom:5px;}
-    .md-render li::marker{color:var(--accent);}
-    .md-render strong{font-weight:700;} .md-render em{font-style:italic; color:var(--ink-soft);}
-    .md-render a{color:var(--accent-deep); text-decoration:underline;}
+    .md-render li::marker{color:var(--coral);}
+    .md-render strong{font-weight:700;} .md-render em{font-style:italic; color:var(--ink-2);}
+    .md-render a{color:var(--coral-deep); text-decoration:underline;}
     .md-render code{font-family:var(--mono); font-size:12px; background:var(--surface-2); border:1px solid var(--line); border-radius:4px; padding:1px 5px;}
     .md-render pre{background:var(--code-bg); color:var(--code-fg); border-radius:8px; padding:12px 14px; margin:0 0 14px; overflow-x:auto;}
     .md-render pre code{background:none; border:none; padding:0; color:inherit; font-size:12px;}
-    .md-render blockquote{border-left:3px solid var(--accent); background:var(--accent-soft); border-radius:0 8px 8px 0; padding:10px 14px; margin:0 0 14px; font-style:italic; color:var(--accent-deep);}
+    .md-render blockquote{border-left:3px solid var(--coral); background:var(--coral-soft); border-radius:0 8px 8px 0; padding:10px 14px; margin:0 0 14px; font-style:italic; color:var(--coral-deep);}
     .md-render table{border-collapse:collapse; width:100%; margin:0 0 14px; font-size:12.5px;}
-    .md-render th{text-align:left; font-family:var(--mono); font-size:10px; letter-spacing:.04em; text-transform:uppercase; color:var(--ink-faint); padding:7px 10px; border-bottom:1.5px solid var(--line-strong);}
+    .md-render th{text-align:left; font-family:var(--mono); font-size:10px; letter-spacing:.04em; text-transform:uppercase; color:var(--ink-3); padding:7px 10px; border-bottom:1.5px solid var(--line);}
     .md-render td{padding:8px 10px; border-bottom:1px solid var(--line); vertical-align:top;}
-    .md-render tr:hover td{background:var(--inset);}
+    .md-render tr:hover td{background:var(--surface-2);}
   `,
   view: ({ artifact } = {}) =>
   div(

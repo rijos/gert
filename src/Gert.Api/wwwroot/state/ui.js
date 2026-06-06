@@ -47,17 +47,22 @@ export const panelOpen = van.state(false); // mobile drawer
 export const activeArtifact = van.state(null);
 export const showKnowledge = van.state(false);
 
-// theme: null = follow OS, "light" | "dark" = explicit
+// theme: null = follow OS, "manila" (paper) | "ember" (dark) = explicit.
 export const theme = van.state(null);
 
 export const isMobile = () =>
   window.matchMedia("(max-width:1079px)").matches;
 
+// Pre-rename saves ("light"/"dark") migrate to the theme names they meant.
+const MIGRATE = { light: "manila", dark: "ember" };
+
 export const restoreTheme = () => {
   const saved = localStorage.getItem(THEME_KEY);
-  if (saved === "light" || saved === "dark") {
-    theme.val = saved;
-    document.documentElement.setAttribute("data-theme", saved);
+  const name = MIGRATE[saved] || saved;
+  if (name === "manila" || name === "ember") {
+    theme.val = name;
+    document.documentElement.setAttribute("data-theme", name);
+    if (name !== saved) localStorage.setItem(THEME_KEY, name);
   }
 };
 
@@ -65,9 +70,9 @@ export const toggleTheme = () => {
   const root = document.documentElement;
   const current = root.getAttribute("data-theme");
   const dark =
-    current === "dark" ||
+    current === "ember" ||
     (!current && window.matchMedia("(prefers-color-scheme: dark)").matches);
-  const next = dark ? "light" : "dark";
+  const next = dark ? "manila" : "ember";
   root.setAttribute("data-theme", next);
   theme.val = next;
   localStorage.setItem(THEME_KEY, next);

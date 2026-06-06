@@ -24,9 +24,9 @@ export const ConvoList = component({
   name: "convo-list",
   css: `
     .convos{flex:1; min-height:0; overflow-y:auto; padding:4px 0 12px;}
-    .convo-group{padding:14px 22px 6px; font-family:var(--mono); font-size:10px; letter-spacing:.09em; text-transform:uppercase; color:var(--ink-faint);}
+    .convo-group{padding:14px 22px 6px; font-family:var(--mono); font-size:10px; letter-spacing:.09em; text-transform:uppercase; color:var(--ink-3);}
     .branch{position:relative; padding-left:30px; margin:0 12px;}
-    .branch::before{content:""; position:absolute; left:13px; top:0; bottom:0; width:1.5px; background:var(--line-strong);}
+    .branch::before{content:""; position:absolute; left:13px; top:0; bottom:0; width:1.5px; background:var(--line);}
   `,
   view: () =>
     div(

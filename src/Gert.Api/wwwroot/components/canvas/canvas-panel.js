@@ -30,12 +30,12 @@ const startResize = (e) => {
 export const CanvasPanel = component({
   name: "canvas-panel",
   css: `
-    .panel{background:var(--surface); border-left:1px solid var(--line); display:flex; flex-direction:column; overflow:hidden; min-width:0; position:relative;}
+    .panel{background:var(--canvas-bg); border-left:1px solid var(--line); display:flex; flex-direction:column; overflow:hidden; min-width:0; position:relative;}
     .canvas-stage{flex:1; min-height:0; overflow:hidden; display:flex; flex-direction:column;}
     /* the stage's two pane kinds (artifact viewer / knowledge view) show one at a time */
     .art-doc,.kb-view{display:none; flex:1; min-height:0; flex-direction:column;}
     .art-doc.active,.kb-view.active{display:flex;}
-    .canvas-empty{flex:1; display:grid; place-items:center; color:var(--ink-faint); font-family:var(--mono); font-size:11px; padding:24px; text-align:center;}
+    .canvas-empty{flex:1; display:grid; place-items:center; color:var(--ink-3); font-family:var(--mono); font-size:11px; padding:24px; text-align:center;}
   `,
   view: () =>
   aside(

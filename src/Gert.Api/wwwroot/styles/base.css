@@ -2,17 +2,22 @@
 *{box-sizing:border-box; margin:0; padding:0;}
 html,body{height:100%;}
 body{
-  font-family:var(--sans); color:var(--ink); background:var(--paper);
+  font-family:var(--sans); color:var(--ink); background:var(--bg);
   font-size:14px; line-height:1.5; -webkit-font-smoothing:antialiased;
   background-image:
-    radial-gradient(circle at 12% 8%, rgba(191,71,39,.04), transparent 38%),
-    radial-gradient(circle at 90% 92%, rgba(94,115,80,.05), transparent 42%);
+    radial-gradient(circle at 12% 8%, color-mix(in srgb, var(--coral) 4%, transparent), transparent 38%),
+    radial-gradient(circle at 90% 92%, color-mix(in srgb, var(--green) 5%, transparent), transparent 42%);
   overflow:hidden;
 }
-/* faint paper grain */
+/* grain: a subtle dot texture over the app background for warmth. currentColor
+   is the body's ink, the level comes from the theme's --grain token, and the
+   overlay is non-interactive behind content. */
 body::before{
-  content:""; position:fixed; inset:0; pointer-events:none; z-index:9; opacity:.5;
-  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.025'/%3E%3C/svg%3E");
+  content:""; position:fixed; inset:0; pointer-events:none; z-index:9;
+  opacity:calc(var(--grain) * .09);
+  color:var(--ink);
+  background-image:radial-gradient(currentColor 1px, transparent 1px);
+  background-size:18px 18px;
 }
 
 /* fenced-code token tints (lib/highlight.js). Code blocks always sit on

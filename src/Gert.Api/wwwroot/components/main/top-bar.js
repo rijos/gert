@@ -17,7 +17,7 @@ export const TopBar = component({
        one, trapping the model/tools dropdowns' own z-index) above the sibling
        canvas .panel — without it an open dropdown overhanging the panel paints
        UNDER the panel's content. Below the scrim (50) / drawers (60). */
-    .topbar{height:var(--head-h); flex:none; display:flex; align-items:center; gap:12px; padding:0 22px; border-bottom:1px solid var(--line); background:color-mix(in srgb, var(--paper) 80%, transparent); backdrop-filter:blur(6px); position:relative; z-index:20;}
+    .topbar{height:var(--head-h); flex:none; display:flex; align-items:center; gap:12px; padding:0 22px; border-bottom:1px solid var(--line); background:color-mix(in srgb, var(--bg) 80%, transparent); backdrop-filter:blur(6px); position:relative; z-index:20;}
     .collapse-btn{margin-right:2px;}
   `,
   view: () =>

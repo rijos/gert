@@ -90,13 +90,13 @@ export const Artifact = component({
   css: `
     .art-head{display:flex; align-items:center; gap:9px; padding:11px 13px; border-bottom:1px solid var(--line); flex:none;}
     .art-head .atype{font-family:var(--mono); font-size:9px; font-weight:700; letter-spacing:.04em; padding:3px 6px; border-radius:5px; color:var(--on-accent);}
-    .atype.md{background:var(--type-md);} .atype.html{background:var(--accent);} .atype.svg{background:var(--amber);} .atype.py{background:var(--sage);}
+    .atype.md{background:var(--type-md);} .atype.html{background:var(--coral);} .atype.svg{background:var(--amber);} .atype.py{background:var(--green);}
     .atype.cs{background:var(--type-cs);} .atype.cpp{background:var(--type-cpp);} .atype.js{background:var(--type-js);} .atype.rs{background:var(--type-rs);}
     .art-head .aname{font-family:var(--mono); font-size:12.5px; font-weight:500; color:var(--ink); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; flex:1; min-width:0; unicode-bidi:isolate;}
-    .art-head .gen{font-family:var(--mono); font-size:9.5px; color:var(--ink-faint); display:flex; align-items:center; gap:4px; flex:none;}
-    .art-head .gen .gd{width:5px; height:5px; border-radius:50%; background:var(--accent);}
-    .art-head .art-dl{display:flex; align-items:center; justify-content:center; width:26px; height:26px; flex:none; background:none; border:1px solid var(--line); border-radius:7px; color:var(--ink-soft); cursor:pointer; transition:.14s;}
-    .art-head .art-dl:hover{border-color:var(--accent); color:var(--accent);}
+    .art-head .gen{font-family:var(--mono); font-size:9.5px; color:var(--ink-3); display:flex; align-items:center; gap:4px; flex:none;}
+    .art-head .gen .gd{width:5px; height:5px; border-radius:50%; background:var(--coral);}
+    .art-head .art-dl{display:flex; align-items:center; justify-content:center; width:26px; height:26px; flex:none; background:none; border:1px solid var(--line); border-radius:7px; color:var(--ink-2); cursor:pointer; transition:.14s;}
+    .art-head .art-dl:hover{border-color:var(--coral); color:var(--coral);}
     .art-doc[data-mode="source"] .render{display:none;}
     .art-doc[data-mode="render"] .source{display:none;}
     .art-body{flex:1; min-height:0; overflow:auto; position:relative;}

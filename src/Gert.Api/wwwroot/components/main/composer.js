@@ -20,33 +20,34 @@ const autogrow = (t) => {
 export const Composer = component({
   name: "composer",
   css: `
-    .composer-wrap{padding:14px 30px 22px; background:var(--paper); position:relative; z-index:1;}
+    .composer-wrap{padding:14px 30px 22px; background:var(--bg); position:relative; z-index:1;}
     /* fade strip: hangs 48px ABOVE the wrap, over the stream's last lines —
        solid paper at its base (exactly where the stream clips, hiding the hard
        edge) fading to transparent upward. Click-through; the stream keeps its
        own scroll/clicks. Stream bottom padding (message-stream.js) keeps a
        bottom-pinned message clear of the strip. */
-    .composer-wrap::before{content:""; position:absolute; left:0; right:0; bottom:100%; height:48px; background:linear-gradient(to top, var(--paper), transparent); pointer-events:none;}
-    .composer{max-width:760px; margin:0 auto; background:var(--surface); border:1px solid var(--line-strong); border-radius:16px; padding:13px 15px 11px; box-shadow:0 6px 22px -12px rgba(60,46,28,.22); transition:.16s;}
-    .composer:focus-within{border-color:var(--accent); box-shadow:0 8px 26px -12px rgba(191,71,39,.32);}
+    .composer-wrap::before{content:""; position:absolute; left:0; right:0; bottom:100%; height:48px; background:linear-gradient(to top, var(--bg), transparent); pointer-events:none;}
+    .composer{max-width:760px; margin:0 auto; background:var(--surface); border:1px solid var(--line); border-radius:16px; padding:13px 15px 11px; box-shadow:var(--lift); transition:.16s;}
+    .composer:focus-within{border-color:var(--coral-line); box-shadow:var(--lift), 0 0 0 3px var(--coral-soft);}
     .composer textarea{width:100%; border:none; background:none; resize:none; outline:none; font-family:var(--sans); font-size:15px; color:var(--ink); line-height:1.5; min-height:24px;}
-    .composer textarea::placeholder{color:var(--ink-faint);}
+    .composer textarea::placeholder{color:var(--ink-3);}
     .crow{display:flex; align-items:center; gap:9px; margin-top:9px;}
-    .cbtn{background:none; border:1px solid var(--line-strong); border-radius:8px; padding:6px 10px; cursor:pointer; color:var(--ink-soft); font-family:var(--sans); font-size:12px; font-weight:500; display:flex; align-items:center; gap:6px; transition:.14s;}
-    .cbtn:hover{border-color:var(--accent); color:var(--accent-deep); background:var(--accent-soft);}
+    .cbtn{background:none; border:1px solid var(--line); border-radius:8px; padding:6px 10px; cursor:pointer; color:var(--ink-2); font-family:var(--sans); font-size:12px; font-weight:500; display:flex; align-items:center; gap:6px; transition:.14s;}
+    .cbtn:hover{border-color:var(--coral); color:var(--coral-deep); background:var(--coral-soft);}
     .cbtn svg{width:14px; height:14px;}
-    .cbtn.toggle.on{border-color:var(--sage-soft); color:var(--sage); background:var(--sage-soft);}
+    /* "active" pills (Tools with a count, Thinking on): green treatment */
+    .cbtn.toggle.on{border-color:var(--green-line); color:var(--green); background:var(--green-soft);}
     /* right cluster: context ring + send/stop pinned to the corner */
     .cright{margin-left:auto; display:flex; align-items:center; gap:9px;}
-    .send{width:36px; height:36px; border-radius:10px; border:none; background:var(--accent); color:var(--on-accent); cursor:pointer; display:grid; place-items:center; transition:.16s;}
-    .send:hover{background:var(--accent-deep); transform:translateY(-1px);}
+    .send{width:36px; height:36px; border-radius:10px; border:1px solid var(--coral-line); background:var(--coral-soft); color:var(--coral); cursor:pointer; display:grid; place-items:center; transition:.16s;}
+    .send:hover{background:var(--coral); color:var(--on-accent); transform:translateY(-1px);}
     /* empty textbox → inert grey button (no faded-accent look) */
-    .send:disabled{background:var(--line-strong); color:var(--ink-faint); cursor:default; transform:none;}
-    .send:disabled:hover{background:var(--line-strong);}
+    .send:disabled{background:var(--surface-2); border-color:var(--line); color:var(--ink-3); cursor:default; transform:none;}
+    .send:disabled:hover{background:var(--surface-2);}
     .send svg{width:17px; height:17px;}
     /* shown while the turn streams — click to detach (stop) */
-    .stop{width:36px; height:36px; border-radius:10px; border:none; background:var(--accent); color:var(--on-accent); cursor:pointer; display:grid; place-items:center; transition:.16s; animation:pulse 1.4s ease-in-out infinite;}
-    .stop:hover{background:var(--accent-deep);}
+    .stop{width:36px; height:36px; border-radius:10px; border:none; background:var(--coral); color:var(--on-accent); cursor:pointer; display:grid; place-items:center; transition:.16s; animation:pulse 1.4s ease-in-out infinite;}
+    .stop:hover{background:var(--coral-deep);}
     .stop svg{width:15px; height:15px;}
   `,
   view: () => {

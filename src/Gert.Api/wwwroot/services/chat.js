@@ -59,15 +59,20 @@ const apply = (assistant, event, data) => {
           data.latency_ms != null
             ? `${data.kind} · ${data.latency_ms}ms`
             : data.kind;
-        // The todo card auto-collapses once every step is checked off (the
-        // header progress bar stays visible). Only this transition collapses —
+        // The todo card auto-collapses to its summary row once every step is
+        // checked off (header + progress bar stay visible) — after a short
+        // beat so the last ✓ is seen landing. Only this transition collapses;
         // the user is free to re-open/collapse at any point and isn't fought.
         if (
           card.kind === "todo" &&
           card.todos.length &&
           card.todos.every((t) => t.status === "done")
         )
-          card.open = false;
+          setTimeout(() => {
+            // still all-done? (a newer update may have added steps meanwhile)
+            if (card.todos.length && card.todos.every((t) => t.status === "done"))
+              card.open = false;
+          }, 1200);
       }
       break;
     }

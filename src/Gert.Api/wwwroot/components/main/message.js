@@ -245,19 +245,19 @@ export const Message = component({
 
     .role{display:flex; align-items:center; gap:9px; margin-bottom:9px;}
     .role .rb{width:23px; height:23px; border-radius:7px; display:grid; place-items:center; font-family:var(--display); font-size:12px; font-weight:600;}
-    .role.you .rb{background:var(--surface-2); color:var(--ink-soft); border:1px solid var(--line-strong);}
-    .role.gert .rb{background:linear-gradient(140deg,var(--accent),var(--accent-deep)); color:var(--on-accent);}
+    .role.you .rb{background:var(--surface-2); color:var(--ink-2); border:1px solid var(--line);}
+    .role.gert .rb{background:linear-gradient(135deg,var(--coral),var(--coral-2)); color:var(--on-coral);}
     .role .rl{font-weight:700; font-size:12px; letter-spacing:.02em;}
-    .role.gert .rl{color:var(--accent-deep);}
+    .role.gert .rl{color:var(--coral-deep);}
 
     /* long unbroken tokens (URLs, hashes) wrap instead of overflowing the thread */
     .msg .body{min-width:0; overflow-wrap:anywhere;}
-    .msg.user .body{background:var(--inset); border:1px solid var(--line); border-left:2.5px solid var(--line-strong); border-radius:var(--r); padding:13px 16px; color:var(--ink); font-size:14.5px;}
+    .msg.user .body{background:var(--bubble); border:1px solid var(--line); border-radius:var(--r); padding:13px 16px; color:var(--ink); font-size:14.5px; box-shadow:var(--lift);}
     .msg.bot .body{font-size:15px; line-height:1.62; color:var(--ink);}
     .msg.bot .body p{margin-bottom:12px;}
     .msg.bot .body strong{font-weight:700;}
     .msg.bot .body em{font-style:italic;}
-    .msg.bot .body a{color:var(--accent-deep); text-decoration:underline;}
+    .msg.bot .body a{color:var(--coral-deep); text-decoration:underline;}
     .msg.bot .body code{font-family:var(--mono); font-size:12.5px; background:var(--surface-2); padding:1.5px 5px; border-radius:5px; border:1px solid var(--line);}
     /* fenced code blocks: scroll horizontally inside the bubble (same look as
        .md-render pre in the canvas) instead of stretching the thread */
@@ -267,65 +267,65 @@ export const Message = component({
     .codewrap{position:relative; margin:0 0 12px;}
     .copy-btn{position:absolute; top:7px; right:7px; display:grid; place-items:center; width:26px; height:26px; border-radius:7px; border:1px solid color-mix(in srgb, var(--code-fg) 22%, transparent); background:color-mix(in srgb, var(--code-bg) 82%, var(--code-fg)); color:var(--code-fg); cursor:pointer; opacity:0; transition:.15s;}
     .codewrap:hover .copy-btn,.copy-btn:focus-visible{opacity:1;}
-    .copy-btn:hover{border-color:var(--accent); color:#fff;}
+    .copy-btn:hover{border-color:var(--coral); color:var(--on-accent);}
     .copy-btn .ck{display:none;}
     .copy-btn.copied svg{display:none;}
-    .copy-btn.copied .ck{display:block; color:#9fc487;}
+    .copy-btn.copied .ck{display:block; color:var(--green);}
     .msg.bot .body ul,.msg.bot .body ol{margin:0 0 12px; padding-left:24px;}
     .msg.bot .body li{margin-bottom:5px;}
 
-    .cite{font-family:var(--mono); font-size:10px; vertical-align:super; color:var(--accent-deep); background:var(--surface-2); border:1px solid var(--line); border-radius:5px; padding:1px 5px; margin:0 2px; cursor:pointer; line-height:1; transition:.12s;}
-    .cite:hover{background:var(--accent-soft); border-color:var(--accent);}
+    .cite{font-family:var(--mono); font-size:10px; vertical-align:super; color:var(--coral-deep); background:var(--surface-2); border:1px solid var(--line); border-radius:5px; padding:1px 5px; margin:0 2px; cursor:pointer; line-height:1; transition:.12s;}
+    .cite:hover{background:var(--coral-soft); border-color:var(--coral);}
 
     /* sources card: collapsed header bar + expandable source list */
-    .sources{margin-top:14px; border:1px solid var(--line-strong); border-radius:13px; background:var(--surface); overflow:hidden;}
+    .sources{margin-top:14px; border:1px solid var(--line); border-radius:13px; background:var(--surface); overflow:hidden;}
     .s-head{display:flex; align-items:center; gap:10px; width:100%; padding:11px 14px; background:none; border:none; cursor:pointer; font-family:var(--sans); color:var(--ink); font-size:13.5px; font-weight:700; text-align:left;}
-    .s-head .s-mark{color:var(--accent); flex:none;}
-    .s-count{font-family:var(--mono); font-size:11px; font-weight:500; color:var(--accent-deep); background:var(--surface-2); border:1px solid var(--line); border-radius:6px; padding:1.5px 7px;}
+    .s-head .s-mark{color:var(--coral); flex:none;}
+    .s-count{font-family:var(--mono); font-size:11px; font-weight:500; color:var(--coral-deep); background:var(--surface-2); border:1px solid var(--line); border-radius:6px; padding:1.5px 7px;}
     .s-stack{display:flex; margin-left:3px;}
     .s-stack .s-avatar{margin-left:-7px; box-shadow:0 0 0 2px var(--surface);}
     .s-stack .s-avatar:first-child{margin-left:0;}
-    .s-chev{margin-left:auto; color:var(--ink-faint); flex:none; transition:transform .2s;}
+    .s-chev{margin-left:auto; color:var(--ink-3); flex:none; transition:transform .2s;}
     .sources.open .s-chev{transform:rotate(180deg);}
     .s-avatar{width:22px; height:22px; border-radius:7px; display:grid; place-items:center; font-size:11px; font-weight:600; color:var(--ink); border:1px solid var(--line); flex:none;}
     .s-list{padding:2px 8px 10px;}
     .s-row{display:flex; align-items:center; gap:11px; padding:8px 9px; border-radius:9px; text-decoration:none; color:inherit; transition:.13s;}
     .s-row .s-avatar{width:27px; height:27px; font-size:12.5px; border-radius:8px;}
-    a.s-row:hover{background:var(--inset);}
-    .s-ord{font-family:var(--mono); font-size:11.5px; color:var(--accent); min-width:14px; text-align:right; flex:none;}
+    a.s-row:hover{background:var(--surface-2);}
+    .s-ord{font-family:var(--mono); font-size:11.5px; color:var(--coral); min-width:14px; text-align:right; flex:none;}
     .s-meta{min-width:0;}
     .s-title{font-size:13.5px; font-weight:600; color:var(--ink); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
-    .s-domain{font-size:11.5px; color:var(--ink-faint); margin-top:1.5px;}
-    .s-ext{margin-left:auto; color:var(--ink-faint); opacity:0; flex:none; transition:.13s;}
+    .s-domain{font-size:11.5px; color:var(--ink-3); margin-top:1.5px;}
+    .s-ext{margin-left:auto; color:var(--ink-3); opacity:0; flex:none; transition:.13s;}
     a.s-row:hover .s-ext{opacity:1;}
 
-    .caret{display:inline-block; width:8px; height:16px; background:var(--accent); margin-left:2px; vertical-align:-2px; animation:blink 1.05s steps(2,start) infinite; border-radius:1px;}
+    .caret{display:inline-block; width:8px; height:16px; background:var(--coral); margin-left:2px; vertical-align:-2px; animation:blink 1.05s steps(2,start) infinite; border-radius:1px;}
 
     /* user-stopped turn: quiet meta line under the partial text */
-    .stopped{margin-top:8px; font-size:12px; color:var(--ink-faint); font-style:italic;}
+    .stopped{margin-top:8px; font-size:12px; color:var(--ink-3); font-style:italic;}
 
-    /* thinking block: collapsible scratchpad above the answer */
-    .thinking{margin:0 0 12px; border:1px solid var(--line); border-radius:11px; background:var(--inset); overflow:hidden;}
-    .t-head{display:flex; align-items:center; gap:9px; width:100%; padding:8px 12px; background:none; border:none; cursor:pointer; font-family:var(--sans); color:var(--ink-soft); font-size:12.5px; font-weight:700; text-align:left;}
-    .t-head .t-mark{color:var(--ink-faint); flex:none;}
-    .t-live{color:var(--accent); font-weight:700;}
-    .t-chev{margin-left:auto; color:var(--ink-faint); flex:none; transition:transform .2s;}
+    /* thinking block: collapsible scratchpad above the answer (raised surface) */
+    .thinking{margin:0 0 12px; border:1px solid var(--line); border-radius:var(--r); background:var(--surface); box-shadow:var(--lift); overflow:hidden;}
+    .t-head{display:flex; align-items:center; gap:9px; width:100%; padding:8px 12px; background:none; border:none; cursor:pointer; font-family:var(--sans); color:var(--ink-2); font-size:12.5px; font-weight:700; text-align:left;}
+    .t-head .t-mark{color:var(--ink-3); flex:none;}
+    .t-live{color:var(--coral); font-weight:700;}
+    .t-chev{margin-left:auto; color:var(--ink-3); flex:none; transition:transform .2s;}
     .thinking.open .t-chev{transform:rotate(180deg);}
-    .t-body{padding:2px 13px 11px; font-size:12.5px; line-height:1.55; color:var(--ink-soft); white-space:pre-wrap; overflow-wrap:anywhere;}
+    .t-body{padding:2px 13px 11px; font-size:12.5px; line-height:1.55; color:var(--ink-2); white-space:pre-wrap; overflow-wrap:anywhere;}
 
     /* generation stats under the answer */
-    .msg-meta{margin-top:7px; font-family:var(--mono); font-size:11px; color:var(--ink-faint);}
+    .msg-meta{margin-top:7px; font-family:var(--mono); font-size:11px; color:var(--ink-3);}
 
     /* artifact chip: a named fence collapsed to a clickable file card */
-    .artifact-chip{display:flex; align-items:center; gap:8px; width:fit-content; max-width:100%; margin:0 0 12px; padding:8px 13px; background:var(--surface); border:1px solid var(--line-strong); border-radius:10px; cursor:pointer; font-family:var(--mono); font-size:12.5px; color:var(--ink); transition:.14s;}
-    .artifact-chip:hover{border-color:var(--accent); background:var(--accent-soft); transform:translateY(-1px);}
-    .artifact-chip svg{color:var(--accent); flex:none;}
+    .artifact-chip{display:flex; align-items:center; gap:8px; width:fit-content; max-width:100%; margin:0 0 12px; padding:8px 13px; background:var(--surface); border:1px solid var(--line); border-radius:10px; box-shadow:var(--lift); cursor:pointer; font-family:var(--mono); font-size:12.5px; color:var(--ink); transition:.14s;}
+    .artifact-chip:hover{border-color:var(--coral); background:var(--coral-soft); transform:translateY(-1px);}
+    .artifact-chip svg{color:var(--coral); flex:none;}
     .artifact-chip .ac-name{overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
-    .artifact-chip .ac-hint{color:var(--ink-faint); font-family:var(--sans); font-size:11px; flex:none;}
+    .artifact-chip .ac-hint{color:var(--ink-3); font-family:var(--sans); font-size:11px; flex:none;}
 
     /* toolzone: git-graph spine that holds the tool-call cards */
     .toolzone{position:relative; padding-left:26px; margin:14px 0 16px;}
-    .toolzone::before{content:""; position:absolute; left:10px; top:-4px; bottom:-4px; width:1.5px; background:var(--line-strong);}
+    .toolzone::before{content:""; position:absolute; left:10px; top:-4px; bottom:-4px; width:1.5px; background:var(--line);}
   `,
   // `m` is a reactive message: { role, text, streaming, tools, citations }
   view: (m) => {

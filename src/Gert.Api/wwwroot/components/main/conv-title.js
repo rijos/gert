@@ -14,9 +14,9 @@ export const ConvTitle = component({
     .title-wrap{flex:1; min-width:0;}
     .conv-title{font-family:var(--display); font-size:18px; font-weight:500; letter-spacing:-.01em; display:flex; align-items:center; gap:8px; cursor:text; min-width:0;}
     .conv-title .title-text{white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
-    .conv-title .edit{opacity:0; width:13px; height:13px; color:var(--ink-faint); transition:.14s;}
+    .conv-title .edit{opacity:0; width:13px; height:13px; color:var(--ink-3); transition:.14s;}
     .title-wrap:hover .edit{opacity:1;}
-    .conv-title input{font-family:var(--display); font-size:18px; font-weight:500; color:var(--ink); background:var(--surface); border:1px solid var(--accent); border-radius:var(--r-sm); padding:2px 8px; outline:none;}
+    .conv-title input{font-family:var(--display); font-size:18px; font-weight:500; color:var(--ink); background:var(--surface); border:1px solid var(--coral); border-radius:var(--r-sm); padding:2px 8px; outline:none;}
   `,
   view: () => {
     // ── logic ───────────────────────────────────

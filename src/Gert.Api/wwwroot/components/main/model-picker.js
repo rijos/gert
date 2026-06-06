@@ -25,7 +25,7 @@ const ModelItem = (m) =>
         m.default ? span({ class: "star" }, " ★ default") : null,
         m.fast
           ? span(
-              { style: "color:var(--ink-faint);font-weight:400;font-size:11px" },
+              { style: "color:var(--ink-3);font-weight:400;font-size:11px" },
               " · fast",
             )
           : null,
@@ -56,22 +56,23 @@ export const ModelPicker = component({
   name: "model-picker",
   css: `
     .model-picker{position:relative;}
-    .model-btn{display:flex; align-items:center; gap:9px; padding:7px 11px; border:1px solid var(--line-strong); background:var(--surface); border-radius:var(--r-sm); cursor:pointer; font-family:var(--sans); font-weight:600; font-size:13px; color:var(--ink); transition:.14s;}
-    .model-btn:hover{border-color:var(--accent); background:var(--accent-soft);}
-    .model-btn .mdot{width:7px; height:7px; border-radius:50%; background:var(--sage); box-shadow:0 0 0 3px var(--sage-soft);}
-    .model-btn .chev{width:13px; height:13px; color:var(--ink-faint); transition:.2s;}
+    .model-btn{display:flex; align-items:center; gap:9px; padding:7px 11px; border:1px solid var(--line); background:var(--surface); border-radius:var(--r-sm); box-shadow:var(--lift); cursor:pointer; font-family:var(--sans); font-weight:600; font-size:13px; color:var(--ink); transition:.14s;}
+    .model-btn:hover{border-color:var(--coral); background:var(--coral-soft);}
+    /* status dot: green with a soft glow ring */
+    .model-btn .mdot{width:7px; height:7px; border-radius:50%; background:var(--green); box-shadow:0 0 0 3px var(--green-soft);}
+    .model-btn .chev{width:13px; height:13px; color:var(--ink-3); transition:.2s;}
     .model-picker.open .chev{transform:rotate(180deg);}
     .model-picker.open .menu{opacity:1; transform:none; pointer-events:auto;}
     .m-item{padding:9px 10px; border-radius:var(--r-sm); cursor:pointer; transition:.12s;}
-    .m-item:hover{background:var(--inset);}
-    .m-item.sel{background:var(--accent-soft);}
+    .m-item:hover{background:var(--surface-2);}
+    .m-item.sel{background:var(--coral-soft);}
     .m-top{display:flex; align-items:center; gap:8px;}
-    .m-gear{margin-left:auto; display:grid; place-items:center; width:24px; height:24px; border:none; border-radius:7px; background:none; color:var(--ink-faint); cursor:pointer; opacity:0; transition:.13s; flex:none;}
+    .m-gear{margin-left:auto; display:grid; place-items:center; width:24px; height:24px; border:none; border-radius:7px; background:none; color:var(--ink-3); cursor:pointer; opacity:0; transition:.13s; flex:none;}
     .m-item:hover .m-gear,.m-gear:focus-visible{opacity:1;}
-    .m-gear:hover{background:var(--surface-2); color:var(--accent-deep);}
+    .m-gear:hover{background:var(--surface-2); color:var(--coral-deep);}
     .m-name{font-weight:600; font-size:13px;}
-    .m-name .star{color:var(--accent); font-size:11px;}
-    .m-id{font-family:var(--mono); font-size:11px; color:var(--ink-faint); margin:3px 0 6px;}
+    .m-name .star{color:var(--coral); font-size:11px;}
+    .m-id{font-family:var(--mono); font-size:11px; color:var(--ink-3); margin:3px 0 6px;}
     .badges{display:flex; gap:5px; flex-wrap:wrap;}
   `,
   view: () => {

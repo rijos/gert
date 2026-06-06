@@ -22,9 +22,23 @@ def test_theme_toggle_persists(page: Page, base_url: str) -> None:
     app.chrome.toggle_theme()
     after = app.chrome.current_theme()
     assert after != before
+    # The two named themes: Ember (dark) / Manila (paper).
+    assert after in ("ember", "manila"), f"unexpected theme {after!r}"
     # Theme persists to localStorage (the one thing that does — never the token).
     stored = page.evaluate("() => localStorage.getItem('gert.theme')")
     assert stored == after
+
+
+def test_theme_swap_reskins_via_tokens(page: Page, base_url: str) -> None:
+    """data-theme is the single reskin switch: the body background (token-driven)
+    must actually change between ember and manila."""
+    _open(page, base_url)
+    bg = "() => getComputedStyle(document.body).backgroundColor"
+    page.evaluate("() => document.documentElement.setAttribute('data-theme','manila')")
+    manila = page.evaluate(bg)
+    page.evaluate("() => document.documentElement.setAttribute('data-theme','ember')")
+    ember = page.evaluate(bg)
+    assert manila != ember, "tokens did not reskin on data-theme swap"
 
 
 def test_model_picker_selects(page: Page, base_url: str) -> None:

@@ -13,9 +13,9 @@ export const CanvasBar = component({
   css: `
     .canvas-bar{height:var(--head-h); flex:none; display:flex; align-items:center; gap:6px; padding:0 10px 0 12px; border-bottom:1px solid var(--line); background:var(--surface-2);}
     .canvas-bar .bar-tools{display:flex; gap:2px; flex:none;}
-    .kbtn{background:none; border:1px solid transparent; color:var(--ink-faint); cursor:pointer; padding:5px; border-radius:6px; display:grid; place-items:center; transition:.13s;}
-    .kbtn:hover{background:var(--inset); color:var(--ink);}
-    .kbtn.active{color:var(--accent-deep); background:var(--accent-soft);}
+    .kbtn{background:none; border:1px solid transparent; color:var(--ink-3); cursor:pointer; padding:5px; border-radius:6px; display:grid; place-items:center; transition:.13s;}
+    .kbtn:hover{background:var(--surface-2); color:var(--ink);}
+    .kbtn.active{color:var(--coral-deep); background:var(--coral-soft);}
     .kbtn svg{width:15px; height:15px;}
   `,
   view: () =>

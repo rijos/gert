@@ -32,9 +32,9 @@ export const ToolsMenu = component({
     .tools-menu.open .menu{opacity:1; transform:none; pointer-events:auto;}
     .tools-menu .chev{transition:.2s;}
     .tools-menu.open .chev{transform:rotate(180deg);}
-    .tools-menu .tcount{min-width:16px; height:16px; padding:0 4px; border-radius:9px; background:var(--sage-soft); color:var(--sage); font-family:var(--mono); font-size:10px; font-weight:600; display:grid; place-items:center;}
+    .tools-menu .tcount{min-width:16px; height:16px; padding:0 4px; border-radius:9px; background:var(--green-soft); color:var(--green); font-family:var(--mono); font-size:10px; font-weight:600; display:grid; place-items:center;}
     .t-row{display:flex; align-items:center; gap:9px; padding:7px 10px; border-radius:var(--r-sm); cursor:pointer; transition:.12s; font-size:12.5px; font-weight:500;}
-    .t-row:hover{background:var(--inset);}
+    .t-row:hover{background:var(--surface-2);}
     .t-row .t-label{flex:1;}
     .t-row.disabled{opacity:.4; cursor:not-allowed;}
     .t-docs-wrap{border-top:1px solid var(--line); margin-top:5px; padding-top:5px;}

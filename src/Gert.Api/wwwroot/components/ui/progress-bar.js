@@ -13,8 +13,8 @@ const { div, i } = van.tags;
 export const ProgressBar = component({
   name: "progress-bar",
   css: `
-    .pbar{height:4px; background:var(--inset); overflow:hidden;}
-    .pbar > i{display:block; height:100%; background:var(--accent); transition:width .3s ease, background .35s ease;}
+    .pbar{height:4px; background:var(--surface-2); overflow:hidden;}
+    .pbar > i{display:block; height:100%; background:var(--coral); transition:width .3s ease, background .35s ease;}
   `,
   view: ({ value = 0, max = 1, color = "", class: cls = "" } = {}) => {
     const pct = max > 0 ? Math.min(Math.max(value / max, 0), 1) * 100 : 0;
