@@ -4,6 +4,7 @@
 import van from "van";
 import { component } from "../../lib/component.js";
 import { Icon } from "../../icons/icons.js";
+import { ProgressBar } from "../ui/progress-bar.js";
 
 const { div, span, pre } = van.tags;
 
@@ -42,7 +43,10 @@ export const ToolCard = component({
     .thead{display:flex; align-items:center; gap:9px; padding:10px 13px; cursor:pointer;}
     .thead .ic{width:15px; height:15px; color:var(--accent-deep);}
     .thead .lab{font-family:var(--mono); font-size:12px; font-weight:500; color:var(--ink);}
+    .thead .tcount{font-family:var(--mono); font-size:10.5px; color:var(--ink-faint);}
     .thead .tag{font-family:var(--mono); font-size:10px; color:var(--ink-faint); margin-left:auto; border:1px solid var(--line); border-radius:5px; padding:2px 6px;}
+    .pbar.tprog{height:3px;}
+    .pbar.tprog > i{background:linear-gradient(90deg, var(--accent-deep), var(--accent));}
     .tbody{padding:0 13px 13px 13px; border-top:1px dashed var(--line); margin-top:0; font-size:13px; color:var(--ink-soft);}
     .tbody.hide{display:none;}
     .tbody .q{font-family:var(--mono); font-size:12px; background:var(--inset); border:1px solid var(--line); border-radius:6px; padding:7px 10px; margin:11px 0; color:var(--ink);}
@@ -78,8 +82,23 @@ export const ToolCard = component({
         { class: "thead", onclick: () => (card.open = !card.open) },
         Icon(iconFor(card.kind), { size: 15, class: "ic", strokeWidth: 2 }),
         span({ class: "lab" }, () => card.label || card.kind),
+        // done/total — the at-a-glance state when the checklist is collapsed.
+        () => {
+          const ts = card.todos || [];
+          if (!ts.length) return "";
+          const done = ts.filter((t) => t.status === "done").length;
+          return span({ class: "tcount" }, `${done}/${ts.length}`);
+        },
         span({ class: "tag" }, () => card.tag || card.kind),
       ),
+      // Checklist progress. Lives OUTSIDE the collapsible body so a collapsed
+      // (e.g. auto-collapsed-on-done) card still shows how far the work got.
+      () => {
+        const ts = card.todos || [];
+        if (!ts.length) return "";
+        const done = ts.filter((t) => t.status === "done").length;
+        return ProgressBar({ value: done, max: ts.length, class: "tprog" });
+      },
       div(
         { class: () => "tbody" + (card.open ? "" : " hide") },
         () => (card.query ? div({ class: "q" }, card.query) : div()),

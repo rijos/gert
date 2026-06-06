@@ -20,7 +20,17 @@ const apply = (assistant, event, data) => {
       if (data?.message_id) assistant.id = data.message_id;
       break;
 
-    case "tool_call":
+    case "tool_call": {
+      // Successive set_todos calls fold into ONE card per message: re-point the
+      // existing card at the new call id so its result updates the checklist in
+      // place. The card keeps its position and the user's open/collapsed choice.
+      const existing =
+        data.kind === "todo" && assistant.tools.find((t) => t.kind === "todo");
+      if (existing) {
+        existing.id = data.id;
+        existing.status = data.status || "running";
+        break;
+      }
       assistant.tools.push({
         id: data.id,
         kind: data.kind,
@@ -36,6 +46,7 @@ const apply = (assistant, event, data) => {
         open: data.kind === "todo",
       });
       break;
+    }
 
     case "tool_result": {
       const card = assistant.tools.find((t) => t.id === data.id);
@@ -48,6 +59,15 @@ const apply = (assistant, event, data) => {
           data.latency_ms != null
             ? `${data.kind} · ${data.latency_ms}ms`
             : data.kind;
+        // The todo card auto-collapses once every step is checked off (the
+        // header progress bar stays visible). Only this transition collapses —
+        // the user is free to re-open/collapse at any point and isn't fought.
+        if (
+          card.kind === "todo" &&
+          card.todos.length &&
+          card.todos.every((t) => t.status === "done")
+        )
+          card.open = false;
       }
       break;
     }

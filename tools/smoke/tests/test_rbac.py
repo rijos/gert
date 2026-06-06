@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from playwright.sync_api import Page, expect
 
+from tools.smoke import tokens
 from tools.smoke.pages import AppPage
 
 
@@ -50,9 +51,13 @@ def test_idor_cannot_open_other_users_document(user_page: Page, base_url: str) -
     """A doc id from another user resolves only under the requester's folder → 404."""
     # A well-formed-but-foreign doc id under the default project. The server keys the
     # folder off the token's sub, so this can only ever hit the requester's own data.
+    # NOTE: context.request does NOT carry the SPA's in-memory bearer (security F2 —
+    # the token never touches storage), so the probe authenticates explicitly: an
+    # anonymous 401 would prove nothing about IDOR.
     foreign_doc = "00000000-0000-0000-0000-0000deadbeef"
     response = user_page.request.get(
-        f"{base_url}/api/projects/default/documents/{foreign_doc}"
+        f"{base_url}/api/projects/default/documents/{foreign_doc}",
+        headers={"Authorization": f"Bearer {tokens.mint('user')}"},
     )
     assert response.status in (404, 400), f"expected 404/400, got {response.status}"
 

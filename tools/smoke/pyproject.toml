@@ -18,11 +18,12 @@ dependencies = [
 # Tests import `tools.smoke.*`; run pytest from the repo root so that resolves.
 testpaths = ["tests"]
 markers = [
-    # Deterministic component/harness mount tests (no LLM/backend round-trip). The
-    # CI gate runs exactly these via `run.py --pytest -m component`; the integration
-    # tests (chat/knowledge/rbac) stay covered by the run.py scenario matrix until
-    # their mock-flow timing is hardened.
-    "component: deterministic component/harness mount tests, safe for the CI gate",
+    # Deterministic component/harness mount tests (no LLM/backend round-trip).
+    # The CI gate (`run.py --pytest`) runs the FULL suite — component AND the
+    # integration tests (chat/knowledge/rbac/llm-tools): the security-relevant
+    # RBAC/SSRF/IDOR assertions must gate. The marker remains for selecting the
+    # fast deterministic subset locally (`-m component`).
+    "component: deterministic component/harness mount tests (fast local subset)",
 ]
 
 [tool.ruff]

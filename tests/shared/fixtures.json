@@ -51,6 +51,21 @@
       }
     },
     {
+      "$comment": "SSRF-adversarial driver (A.4 / security F5): web_search against the 'internal metadata' result set, whose second result is a link-local metadata URL — the adapter's fetch step must refuse it so it never surfaces in the thread. The deltas deliberately avoid the forbidden strings the E2E asserts on.",
+      "match": "contains",
+      "when": "search the web for internal metadata",
+      "tool_call": {
+        "name": "web_search",
+        "arguments": "{\"query\":\"internal metadata\",\"k\":5}"
+      },
+      "finish": "tool_calls",
+      "after_tool": {
+        "deltas": ["Only the public result ", "was fetched; the private address was refused."],
+        "finish": "stop",
+        "usage": { "completion_tokens": 11 }
+      }
+    },
+    {
       "$comment": "Sandbox tool-call fixture, exercises run_python through the tool loop.",
       "match": "contains",
       "when": "run python to add two and two",
@@ -166,6 +181,21 @@
       "finish": "tool_calls",
       "after_tool": {
         "deltas": ["Plan is up — ", "working through it now."],
+        "finish": "stop",
+        "usage": { "completion_tokens": 6 }
+      }
+    },
+    {
+      "$comment": "All-done todo fixture: every step comes back done, so the single todo card auto-collapses (the header count + progress bar stay visible; the user can re-open it).",
+      "match": "contains",
+      "when": "finish the homelab upgrade",
+      "tool_call": {
+        "name": "set_todos",
+        "arguments": "{\"todos\":[{\"text\":\"Order the new SSD\",\"status\":\"done\"},{\"text\":\"Migrate rag.db to the new disk\",\"status\":\"done\"}]}"
+      },
+      "finish": "tool_calls",
+      "after_tool": {
+        "deltas": ["All done — ", "the upgrade is complete."],
         "finish": "stop",
         "usage": { "completion_tokens": 6 }
       }

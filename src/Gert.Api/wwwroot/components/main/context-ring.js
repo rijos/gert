@@ -9,10 +9,11 @@
 import van from "van";
 import { component } from "../../lib/component.js";
 import { Menu } from "../ui/menu.js";
+import { ProgressBar } from "../ui/progress-bar.js";
 import * as chat from "../../state/chat.js";
 import * as models from "../../state/models.js";
 
-const { div, button, span, i } = van.tags;
+const { div, button, span } = van.tags;
 const { svg, circle } = van.tags("http://www.w3.org/2000/svg");
 
 const R = 8; // ring radius inside a 22px viewbox
@@ -42,8 +43,8 @@ export const ContextRing = component({
     .cx-row{display:flex; align-items:baseline; justify-content:space-between; gap:12px; padding:5px 10px; font-size:12.5px;}
     .cx-row .cx-l{color:var(--ink-soft);}
     .cx-row .cx-v{font-family:var(--mono); font-size:12px; color:var(--ink); text-align:right;}
-    .cx-bar{height:5px; border-radius:3px; background:var(--inset); margin:7px 10px 9px; overflow:hidden;}
-    .cx-bar i{display:block; height:100%; border-radius:3px; transition:width .35s ease, background .35s ease;}
+    .pbar.cx-bar{height:5px; border-radius:3px; margin:7px 10px 9px;}
+    .pbar.cx-bar > i{border-radius:3px;}
   `,
   view: () => {
     const open = van.state(false);
@@ -111,12 +112,12 @@ export const ContextRing = component({
             StatRow("Window", fmtK(u.max) + " tok"),
             StatRow("Used", `${fmtK(u.used)} (${Math.round(u.pct * 100)}%)`),
             StatRow("Free", fmtK(Math.max(u.max - u.used, 0)) + " tok"),
-            div(
-              { class: "cx-bar" },
-              i({
-                style: `width:${(u.pct * 100).toFixed(1)}%; background:${colorFor(u.pct)};`,
-              }),
-            ),
+            ProgressBar({
+              value: u.used,
+              max: u.max,
+              color: colorFor(u.pct),
+              class: "cx-bar",
+            }),
             last
               ? StatRow(
                   "Last reply",

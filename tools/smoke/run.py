@@ -349,6 +349,11 @@ def _scenario_todos(app: AppPage, role: str) -> None:
         expect(app.thread.root.locator(".tcard .todo-row.active")).to_contain_text(
             "Migrate rag.db"
         )
+        # The single card's header shows done/total + the progress bar (1 of 3).
+        expect(app.thread.root.locator(".tcard .tcount")).to_have_text("1/3")
+        expect(app.thread.root.locator(".tcard .pbar")).to_have_attribute(
+            "aria-valuenow", "1"
+        )
     else:
         # `user` carries gert_tools "rag search": set_todos is refused at
         # execution time, the card errors, and the turn still finishes.
@@ -481,13 +486,14 @@ def _serve(base_url: str, role: str) -> None:
 
 
 def _run_pytest(base_url: str, browsers: list[str]) -> int:
-    """Drive the deterministic component/harness assertions (``-m component``) in
-    tests/*.py against the already-booted host, then fold their result into the gate.
-    Runs from the repo root (so ``tools.smoke`` imports resolve) against the same
-    FakeE2E host the matrix used. The integration tests (chat/knowledge/rbac) are not
-    selected here — the scenario matrix above already covers that ground, and their
-    mock-flow timing isn't gate-stable yet. Returns the pytest exit code (0 = pass)."""
-    print("\nRunning pytest component suite (-m component)…")
+    """Drive the FULL tests/*.py suite — component/harness mounts AND the
+    integration assertions (chat, knowledge, rbac, llm-tools) — against the
+    already-booted host, then fold the result into the gate. Runs from the repo
+    root (so ``tools.smoke`` imports resolve) against the same FakeE2E host the
+    matrix used. The security-relevant integration tests (RBAC/SSRF/IDOR) MUST
+    gate: they once sat outside the gate behind ``-m component`` and silently
+    rotted. Returns the pytest exit code (0 = pass)."""
+    print("\nRunning pytest suite (component + integration)…")
     browser_flags = [f"--browser={b}" for b in browsers]
     proc = subprocess.run(
         [
@@ -495,8 +501,6 @@ def _run_pytest(base_url: str, browsers: list[str]) -> int:
             "-m",
             "pytest",
             str(Path(__file__).resolve().parent / "tests"),
-            "-m",
-            "component",
             f"--gert-base-url={base_url}",
             *browser_flags,
             "-q",

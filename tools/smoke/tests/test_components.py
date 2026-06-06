@@ -115,6 +115,65 @@ def test_tool_card_renders_todo_checklist(page: Page, base_url: str) -> None:
     expect(rows.nth(1)).to_have_class("todo-row active")
     expect(rows.nth(2)).to_have_class("todo-row pending")
     expect(rows.nth(1)).to_contain_text("Migrate rag.db")
+    # The header count + progress bar reflect done/total (1 of 3) and live
+    # OUTSIDE the collapsible body, so they stay visible when collapsed.
+    expect(page.locator(".tcard .tcount")).to_have_text("1/3")
+    bar = page.locator(".tcard .pbar")
+    expect(bar).to_have_attribute("aria-valuenow", "1")
+    expect(bar).to_have_attribute("aria-valuemax", "3")
+
+
+def test_todo_card_progress_tracks_status_changes(page: Page, base_url: str) -> None:
+    # Checking off the remaining steps drives the bar to 100% reactively.
+    page.goto(f"{base_url}/tests/harness.html")
+    page.evaluate(
+        """async () => {
+            const { ToolCard } = await import('/components/main/tool-card.js');
+            const { reactive } = await import('van-x');
+            const card = reactive({
+                kind: 'todo', status: 'done', label: 'Updating the todo list',
+                tag: 'todo', query: '', hits: [], stdout: '', open: true,
+                todos: [
+                    { text: 'Order the new SSD', status: 'done' },
+                    { text: 'Migrate rag.db', status: 'active' },
+                ],
+            });
+            window.__mount(ToolCard(card));
+            window.__card = card;
+        }"""
+    )
+    expect(page.locator(".tcard .tcount")).to_have_text("1/2")
+    page.evaluate(
+        """async () => {
+            window.__card.todos = [
+                { text: 'Order the new SSD', status: 'done' },
+                { text: 'Migrate rag.db', status: 'done' },
+            ];
+            await new Promise(r => setTimeout(r));   // let van flush batched updates
+        }"""
+    )
+    expect(page.locator(".tcard .tcount")).to_have_text("2/2")
+    bar = page.locator(".tcard .pbar")
+    expect(bar).to_have_attribute("aria-valuenow", "2")
+    expect(bar.locator("i")).to_have_attribute("style", re.compile(r"width:\s*100"))
+
+
+def test_progress_bar_renders_value(page: Page, base_url: str) -> None:
+    # The shared ui/progress-bar.js: ARIA contract + width % from value/max.
+    page.goto(f"{base_url}/tests/harness.html")
+    page.evaluate(
+        """async () => {
+            const { ProgressBar } = await import('/components/ui/progress-bar.js');
+            window.__mount(ProgressBar({ value: 2, max: 4 }));
+        }"""
+    )
+    bar = page.locator(".pbar")
+    expect(bar).to_have_attribute("role", "progressbar")
+    expect(bar).to_have_attribute("aria-valuenow", "2")
+    expect(bar).to_have_attribute("aria-valuemax", "4")
+    expect(bar.locator("i")).to_have_attribute(
+        "style", re.compile(r"width:\s*50(\.0)?%")
+    )
 
 
 def test_tool_card_renders_stdout(page: Page, base_url: str) -> None:

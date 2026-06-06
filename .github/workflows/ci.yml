@@ -59,10 +59,11 @@ jobs:
   e2e:
     name: Browser E2E smoke (gate)
     # Gating: boots the python mocks + the FakeE2E host and drives the real SPA across
-    # chromium+firefox × admin/user/limited (the matrix), then runs the richer
-    # component/integration assertions in tools/smoke/tests/*.py against the same host
-    # (--pytest). Heavier than the other jobs (installs browsers) but a required check —
-    # the smoke is what catches SPA/CSP/seam bugs.
+    # chromium+firefox × admin/user/limited (the matrix), then runs the FULL pytest
+    # suite in tools/smoke/tests/*.py against the same host (--pytest) — component
+    # mounts AND the integration tests, including the security-relevant RBAC/SSRF/IDOR
+    # assertions. Heavier than the other jobs (installs browsers) but a required
+    # check — the smoke is what catches SPA/CSP/seam bugs.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

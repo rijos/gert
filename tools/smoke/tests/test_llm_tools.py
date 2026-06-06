@@ -129,6 +129,31 @@ def test_todo_checklist_renders_with_statuses(page: Page, base_url: str) -> None
     expect(app.thread.last_bot_body).to_contain_text("Plan is up", timeout=15000)
 
 
+def test_todo_card_collapses_when_all_steps_done(page: Page, base_url: str) -> None:
+    """All steps done → the single todo card auto-collapses; the header count +
+    progress bar stay visible, and the user can re-open the checklist."""
+    app = _open(page, base_url)
+    app.composer.send("finish the homelab upgrade")
+
+    card = app.thread.tool_card("Updating the todo list")
+    expect(card.locator(".tcount")).to_have_text("2/2", timeout=15000)
+    # Auto-collapsed on the all-done update; the bar shows 100% while closed.
+    expect(card.locator(".tbody")).to_have_class("tbody hide")
+    expect(card.locator(".pbar")).to_have_attribute("aria-valuenow", "2")
+    expect(card.locator(".pbar i")).to_have_attribute(
+        "style", re.compile(r"width:\s*100")
+    )
+    # The user is free to re-open it after the work…
+    card.locator(".thead").click()
+    expect(card.locator(".tbody")).not_to_have_class("tbody hide")
+    expect(app.thread.todo_rows).to_have_count(2)
+    # …and collapse it again.
+    card.locator(".thead").click()
+    expect(card.locator(".tbody")).to_have_class("tbody hide")
+
+    expect(app.thread.last_bot_body).to_contain_text("All done", timeout=15000)
+
+
 def test_todo_tool_is_refused_without_the_entitlement(
     user_page: Page, base_url: str
 ) -> None:

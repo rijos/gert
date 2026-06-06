@@ -8,6 +8,7 @@ obj/
 # User-specific / IDE
 *.user
 .vs/
+.claude/
 
 # Local config overrides (may contain secrets)
 appsettings.*.local.json
