@@ -31,6 +31,44 @@ public sealed class ConfigModelCatalogTests
     }
 
     [Fact]
+    public void Fallback_entry_declares_the_qwen_instruct_sampling()
+    {
+        // The single-vLLM fallback serves Qwen3.6, whose generation_config
+        // only carries thinking-mode sampling — the catalog must declare the
+        // card's instruct set for thinking-off turns.
+        var instruct = Catalog().InstructParams("default");
+
+        instruct.Should().NotBeNull();
+        instruct!.Temperature.Should().Be(0.7);
+        instruct.TopP.Should().Be(0.8);
+        instruct.PresencePenalty.Should().Be(1.5);
+    }
+
+    [Fact]
+    public void Configured_models_bind_and_scope_their_instruct_sampling()
+    {
+        var catalog = Catalog(new Dictionary<string, string?>
+        {
+            ["Gert:Models:0:Id"] = "qwen",
+            ["Gert:Models:0:Name"] = "Qwen",
+            ["Gert:Models:0:InstructParams:Temperature"] = "0.7",
+            ["Gert:Models:0:InstructParams:TopP"] = "0.8",
+            ["Gert:Models:0:InstructParams:PresencePenalty"] = "1.5",
+            ["Gert:Models:1:Id"] = "other",
+            ["Gert:Models:1:Name"] = "No instruct set",
+        });
+
+        var instruct = catalog.InstructParams("qwen");
+        instruct.Should().NotBeNull();
+        instruct!.Temperature.Should().Be(0.7);
+        instruct.TopP.Should().Be(0.8);
+        instruct.PresencePenalty.Should().Be(1.5);
+
+        catalog.InstructParams("other").Should().BeNull("no declared instruct set");
+        catalog.InstructParams("unknown-id").Should().BeNull();
+    }
+
+    [Fact]
     public void Declared_capabilities_without_tools_gate_tool_calling()
     {
         var catalog = Catalog(new Dictionary<string, string?>

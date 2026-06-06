@@ -74,6 +74,8 @@ public sealed record TurnJob
 
     public double? TopP { get; init; }
 
+    public double? PresencePenalty { get; init; }
+
     public int? MaxTokens { get; init; }
 
     public IReadOnlyList<string>? Stop { get; init; }

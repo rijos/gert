@@ -264,6 +264,17 @@ public sealed class ToolsTests
 
         // …and the model-facing echo (snake_case statuses) for the follow-up call.
         result.ResultJson.Should().Contain("\"status\":\"active\"").And.Contain("Migrate rag.db");
+
+        // An open list carries the keep-going nudge (2 steps not done)…
+        result.ResultJson.Should().Contain("2 step(s) remain");
+
+        // …and a finished list says to wrap up instead.
+        var done = await tool.ExecuteAsync(new ToolInvocation
+        {
+            Pid = "default",
+            ArgumentsJson = "{\"todos\":[{\"text\":\"Order the new SSD\",\"status\":\"done\"}]}",
+        });
+        done.ResultJson.Should().Contain("All steps are done");
     }
 
     [Fact]

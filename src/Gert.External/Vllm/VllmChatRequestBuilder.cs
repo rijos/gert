@@ -110,6 +110,11 @@ public static class VllmChatRequestBuilder
             body["top_p"] = topP;
         }
 
+        if (request.PresencePenalty is { } presencePenalty)
+        {
+            body["presence_penalty"] = presencePenalty;
+        }
+
         if (request.MaxTokens is { } maxTokens)
         {
             body["max_tokens"] = maxTokens;

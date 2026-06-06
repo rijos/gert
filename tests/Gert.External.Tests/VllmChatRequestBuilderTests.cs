@@ -89,6 +89,7 @@ public sealed class VllmChatRequestBuilderTests
         {
             Temperature = 0.2,
             TopP = 0.9,
+            PresencePenalty = 1.5,
             MaxTokens = 128,
             Seed = 42,
             Stop = ["END"],
@@ -97,9 +98,21 @@ public sealed class VllmChatRequestBuilderTests
         var body = VllmChatRequestBuilder.Build(request, "m");
         body["temperature"]!.GetValue<double>().Should().Be(0.2);
         body["top_p"]!.GetValue<double>().Should().Be(0.9);
+        body["presence_penalty"]!.GetValue<double>().Should().Be(1.5);
         body["max_tokens"]!.GetValue<int>().Should().Be(128);
         body["seed"]!.GetValue<int>().Should().Be(42);
         body["stop"]!.AsArray()[0]!.GetValue<string>().Should().Be("END");
+    }
+
+    [Fact]
+    public void Build_OmitsUnsetSamplingParams()
+    {
+        // Omitted fields let vLLM fall back to the model's generation_config
+        // defaults (Qwen3.6 thinking-mode sampling) — never send zeros.
+        var body = VllmChatRequestBuilder.Build(BaseRequest(), "m");
+        body.AsObject().ContainsKey("temperature").Should().BeFalse();
+        body.AsObject().ContainsKey("top_p").Should().BeFalse();
+        body.AsObject().ContainsKey("presence_penalty").Should().BeFalse();
     }
 
     [Fact]

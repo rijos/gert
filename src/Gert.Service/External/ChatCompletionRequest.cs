@@ -14,6 +14,9 @@ public sealed record ChatCompletionRequest
 
     public double? TopP { get; init; }
 
+    /// <summary>OpenAI-style presence penalty (-2..2); null omits the field.</summary>
+    public double? PresencePenalty { get; init; }
+
     public int? MaxTokens { get; init; }
 
     public IReadOnlyList<string>? Stop { get; init; }

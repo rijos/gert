@@ -30,8 +30,10 @@ public sealed class TodoTool : ITool
     /// <inheritdoc />
     public string Description =>
         "Replace your visible todo list for this conversation. Send the FULL list every "
-        + "time (not a diff) with one entry per step; mark the step you are working on "
-        + "'active' and finished steps 'done'. Use it to plan and track multi-step work.";
+        + "time (not a diff) with one entry per step. Keep exactly ONE step 'active' — the "
+        + "one you are doing right now — and mark a step 'done' only AFTER its result "
+        + "already appears in your reply, never in advance. Use it to plan and track "
+        + "multi-step work.";
 
     /// <inheritdoc />
     public string ParametersSchema =>
@@ -83,6 +85,10 @@ public sealed class TodoTool : ITool
 
         // Echo the accepted list back as the model-facing payload, snake_case like
         // every other wire shape, so the follow-up call sees what the card shows.
+        // The reminder is the within-turn "keep going" nudge: qwen's instruct
+        // mode likes to yield after one step ("here's your FIRST file…"), so an
+        // open list explicitly tells it to continue in the SAME reply.
+        var open = todos.Count(t => t.Status != TodoStatus.Done);
         var resultJson = JsonSerializer.Serialize(new
         {
             todos = todos.Select(t => new
@@ -90,6 +96,11 @@ public sealed class TodoTool : ITool
                 text = t.Text,
                 status = t.Status.ToString().ToLowerInvariant(),
             }),
+            reminder = open > 0
+                ? $"{open} step(s) remain. Continue with the next step in this same reply, "
+                  + "updating statuses as you finish each — do not end your reply while "
+                  + "steps remain unless you are blocked or need user input."
+                : "All steps are done — wrap up your reply.",
         });
 
         return new ToolResult

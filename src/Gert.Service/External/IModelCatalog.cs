@@ -1,4 +1,5 @@
 using Gert.Model;
+using Gert.Model.Dtos;
 
 namespace Gert.Service.External;
 
@@ -19,6 +20,15 @@ public interface IModelCatalog
     /// catalog entry that declares capabilities without <c>tools</c> gates.
     /// </summary>
     bool SupportsTools(string modelId);
+
+    /// <summary>
+    /// The model's declared sampling for thinking-OFF turns, or null. Models
+    /// whose checkpoint <c>generation_config.json</c> only carries the
+    /// thinking-mode set (Qwen3.6) need the instruct set sent explicitly, or
+    /// vLLM decodes with the wrong mode's sampling. Applied by the planner as
+    /// the last fallback — conversation and user settings always win.
+    /// </summary>
+    GenerationParams? InstructParams(string modelId);
 }
 
 /// <summary>Empty, permissive catalog — the default when no host wires a real one.</summary>
@@ -29,4 +39,7 @@ public sealed class NullModelCatalog : IModelCatalog
 
     /// <inheritdoc />
     public bool SupportsTools(string modelId) => true;
+
+    /// <inheritdoc />
+    public GenerationParams? InstructParams(string modelId) => null;
 }

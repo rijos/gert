@@ -12,6 +12,12 @@ public sealed record GenerationParams
 
     public double? TopP { get; init; }
 
+    /// <summary>
+    /// OpenAI-style presence penalty (-2..2). Qwen3.6's instruct (non-thinking)
+    /// mode prescribes 1.5 to suppress repetition loops; thinking mode wants 0.
+    /// </summary>
+    public double? PresencePenalty { get; init; }
+
     public int? MaxTokens { get; init; }
 
     /// <summary>Stop sequences.</summary>

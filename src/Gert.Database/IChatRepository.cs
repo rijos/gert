@@ -83,6 +83,17 @@ public interface IChatRepository : IAsyncDisposable
     // Tool calls
     Task InsertToolCallAsync(ToolCall toolCall, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// The conversation's newest successful (<c>done</c>) tool call of
+    /// <paramref name="kind"/>, or null. The read behind the cross-turn todo
+    /// reminder: the latest accepted <c>set_todos</c> echo is the list's truth,
+    /// so the planner can revive it after history drops the tool messages.
+    /// </summary>
+    Task<ToolCall?> GetLatestToolCallAsync(
+        string conversationId,
+        string kind,
+        CancellationToken cancellationToken = default);
+
     // Citations
     Task InsertCitationsAsync(IReadOnlyList<Citation> citations, CancellationToken cancellationToken = default);
 

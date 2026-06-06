@@ -21,4 +21,24 @@ public static class SystemPrompts
         "name in the fence's info string, e.g. ```html name=page.html``` or ```python name=tool.py```. " +
         "Named blocks open in the user's canvas as artifacts. Use ordinary unnamed fences for " +
         "fragments, examples, and snippets that should stay inline in the conversation.";
+
+    /// <summary>
+    /// Cross-turn todo revival: the planner rebuilds history as role+content
+    /// only, so a list set via <c>set_todos</c> in an earlier turn would
+    /// otherwise vanish from the prompt. When the conversation's latest
+    /// snapshot still has unfinished items, this block rides at the TAIL of
+    /// the rendered prompt (appended after the new user message's content) —
+    /// never the system prompt (that prefix must stay stable for the vLLM
+    /// prefix cache) and never the persisted user row (UI truth). The JSON is
+    /// the tool-result echo shape (snake_case statuses), so the model sees the
+    /// exact payload its last accepted call produced.
+    /// </summary>
+    public static string TodoReminder(string todosJson) =>
+        "<system-reminder>\n"
+        + "The todo list you maintain with set_todos is still open. Current state:\n"
+        + todosJson + "\n"
+        + "Continue the remaining items unless the user asks for something else, and keep "
+        + "statuses current by calling set_todos as you make progress. Do not mention this "
+        + "reminder to the user.\n"
+        + "</system-reminder>";
 }

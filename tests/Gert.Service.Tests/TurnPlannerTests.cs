@@ -329,6 +329,166 @@ public sealed class TurnPlannerTests
         job.AssistantMessageId.Should().NotBeNullOrEmpty();
     }
 
+    private void SeedTodoSnapshot(string responseJson) =>
+        _repo.GetLatestToolCallAsync(Conv, "todo", Arg.Any<CancellationToken>())
+            .Returns(new ToolCall
+            {
+                Id = Guid.NewGuid().ToString("D"),
+                MessageId = Guid.NewGuid().ToString("D"),
+                Kind = "todo",
+                Status = ToolCallStatus.Done,
+                ResponseJson = responseJson,
+                CreatedAt = DateTimeOffset.UtcNow,
+            });
+
+    [Fact]
+    public async Task Open_todo_snapshot_appends_the_reminder_to_the_rendered_user_message_only()
+    {
+        var user = new TestUserContext { AllowedTools = new HashSet<string>(["todo"], StringComparer.Ordinal) };
+        SeedConversation(("todo", true));
+        SeedExisting(MessageStatus.Complete, DateTimeOffset.UtcNow.AddMinutes(-1), content: "earlier turn");
+        const string snapshot = """{"todos":[{"text":"step 2","status":"pending"}]}""";
+        SeedTodoSnapshot(snapshot);
+
+        var request = new SendMessageRequest
+        {
+            Content = "continue",
+            Tools = new ToolToggles(new Dictionary<string, bool> { ["todo"] = true }),
+        };
+
+        var job = await NewPlanner(user, [new TodoTool()]).PlanAsync(Pid, Conv, request);
+
+        // The reminder rides at the TAIL of the rendered prompt; prior history
+        // keeps its exact bytes (prefix cache) and the persisted user row keeps
+        // the user's actual words (UI truth).
+        job.History[^1].Content.Should().Be("continue\n\n" + SystemPrompts.TodoReminder(snapshot));
+        job.History[0].Content.Should().Be("earlier turn");
+        _persisted.Single(m => m.Role == MessageRole.User).Content.Should().Be("continue");
+    }
+
+    [Fact]
+    public async Task Finished_todo_snapshot_appends_no_reminder()
+    {
+        var user = new TestUserContext { AllowedTools = new HashSet<string>(["todo"], StringComparer.Ordinal) };
+        SeedConversation(("todo", true));
+        SeedTodoSnapshot("""{"todos":[{"text":"step 1","status":"done"}]}""");
+
+        var request = new SendMessageRequest
+        {
+            Content = "thanks!",
+            Tools = new ToolToggles(new Dictionary<string, bool> { ["todo"] = true }),
+        };
+
+        var job = await NewPlanner(user, [new TodoTool()]).PlanAsync(Pid, Conv, request);
+
+        // A finished list needs no revival — no prompt tokens spent on it.
+        job.History[^1].Content.Should().Be("thanks!");
+    }
+
+    [Fact]
+    public async Task No_reminder_when_the_todo_tool_is_not_offered()
+    {
+        // Snapshot exists, but the tool was toggled off for this turn — the
+        // model could not update statuses, so the reminder would only mislead.
+        var user = new TestUserContext { AllowedTools = new HashSet<string>(["todo"], StringComparer.Ordinal) };
+        SeedConversation(("todo", false));
+        SeedTodoSnapshot("""{"todos":[{"text":"step 2","status":"active"}]}""");
+
+        var request = new SendMessageRequest
+        {
+            Content = "continue",
+            Tools = new ToolToggles(new Dictionary<string, bool> { ["todo"] = true }),
+        };
+
+        var job = await NewPlanner(user, [new TodoTool()]).PlanAsync(Pid, Conv, request);
+
+        job.History[^1].Content.Should().Be("continue");
+    }
+
+    [Fact]
+    public async Task Broken_todo_snapshot_read_never_fails_the_turn()
+    {
+        var user = new TestUserContext { AllowedTools = new HashSet<string>(["todo"], StringComparer.Ordinal) };
+        SeedConversation(("todo", true));
+        _repo.GetLatestToolCallAsync(Conv, "todo", Arg.Any<CancellationToken>())
+            .Returns<ToolCall?>(_ => throw new InvalidOperationException("disk on fire"));
+
+        var request = new SendMessageRequest
+        {
+            Content = "continue",
+            Tools = new ToolToggles(new Dictionary<string, bool> { ["todo"] = true }),
+        };
+
+        var job = await NewPlanner(user, [new TodoTool()]).PlanAsync(Pid, Conv, request);
+
+        // Best-effort: the reminder is a nicety, never a turn-blocker.
+        job.History[^1].Content.Should().Be("continue");
+    }
+
+    /// <summary>A catalog declaring the Qwen3.6 instruct sampling for "default".</summary>
+    private static IModelCatalog InstructCatalog()
+    {
+        var catalog = Substitute.For<IModelCatalog>();
+        catalog.SupportsTools(Arg.Any<string>()).Returns(true);
+        catalog.InstructParams("default").Returns(new GenerationParams
+        {
+            Temperature = 0.7,
+            TopP = 0.8,
+            PresencePenalty = 1.5,
+        });
+        return catalog;
+    }
+
+    [Fact]
+    public async Task Thinking_off_applies_the_catalogs_instruct_sampling()
+    {
+        var job = await NewPlanner(catalog: InstructCatalog()).PlanAsync(
+            Pid, Conv, new SendMessageRequest { Content = "hi", Thinking = false });
+
+        // generation_config.json only ships the thinking-mode set, so a
+        // thinking-off turn must carry the model's declared instruct sampling.
+        job.Temperature.Should().Be(0.7);
+        job.TopP.Should().Be(0.8);
+        job.PresencePenalty.Should().Be(1.5);
+    }
+
+    [Fact]
+    public async Task Thinking_on_or_default_leaves_sampling_to_the_model_defaults()
+    {
+        var jobDefault = await NewPlanner(catalog: InstructCatalog()).PlanAsync(
+            Pid, Conv, new SendMessageRequest { Content = "hi" });
+        var jobThinking = await NewPlanner(catalog: InstructCatalog()).PlanAsync(
+            Pid, "conv-think", new SendMessageRequest { Content = "hi", Thinking = true });
+
+        // Omitted fields let vLLM apply generation_config (the thinking set).
+        jobDefault.Temperature.Should().BeNull();
+        jobDefault.TopP.Should().BeNull();
+        jobDefault.PresencePenalty.Should().BeNull();
+        jobThinking.Temperature.Should().BeNull();
+        jobThinking.PresencePenalty.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Explicit_params_beat_the_instruct_fallback_field_by_field()
+    {
+        SeedConversation(new Conversation
+        {
+            Id = Conv,
+            Title = "t",
+            ModelId = "default",
+            Params = new GenerationParams { Temperature = 0.3 },
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow,
+        });
+
+        var job = await NewPlanner(catalog: InstructCatalog()).PlanAsync(
+            Pid, Conv, new SendMessageRequest { Content = "hi", Thinking = false });
+
+        job.Temperature.Should().Be(0.3, "the conversation's explicit value wins");
+        job.TopP.Should().Be(0.8, "unset fields still get the instruct fallback");
+        job.PresencePenalty.Should().Be(1.5);
+    }
+
     [Fact]
     public async Task Entitlement_ceiling_filters_unentitled_tools_and_snapshots_the_claim()
     {

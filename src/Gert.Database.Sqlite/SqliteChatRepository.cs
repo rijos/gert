@@ -380,6 +380,26 @@ public sealed class SqliteChatRepository(SqliteConnection connection) : IChatRep
         }, cancellationToken: cancellationToken)).ConfigureAwait(false);
     }
 
+    /// <inheritdoc />
+    public async Task<ToolCall?> GetLatestToolCallAsync(
+        string conversationId,
+        string kind,
+        CancellationToken cancellationToken = default)
+    {
+        const string sql =
+            "SELECT tc.id, tc.message_id, tc.kind, tc.status, tc.request_json, tc.response_json, " +
+            "       tc.latency_ms, tc.created_at " +
+            "FROM tool_calls tc JOIN messages m ON m.id = tc.message_id " +
+            "WHERE m.conversation_id = @cid AND tc.kind = @kind AND tc.status = 'done' " +
+            "ORDER BY tc.created_at DESC, tc.id DESC LIMIT 1;";
+
+        var row = await _connection.QuerySingleOrDefaultAsync<ToolCallRow>(
+            new CommandDefinition(sql, new { cid = conversationId, kind }, cancellationToken: cancellationToken))
+            .ConfigureAwait(false);
+
+        return row is null ? null : MapToolCall(row);
+    }
+
     // ---- citations ---------------------------------------------------------
 
     /// <inheritdoc />

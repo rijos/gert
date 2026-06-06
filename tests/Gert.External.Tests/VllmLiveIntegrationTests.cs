@@ -215,6 +215,247 @@ public sealed class VllmLiveIntegrationTests
     }
 
     [Fact]
+    public async Task Live_model_plans_multi_step_work_with_set_todos()
+    {
+        var client = CreateClient(out _);
+        Assert.SkipWhen(client is null, "GERT_VLLM_URL is not set — live vLLM integration skipped.");
+
+        // The planning contract: a natural multi-step request plus the bare
+        // tool description must steer the model into set_todos, and the REAL
+        // TodoTool must accept whatever arguments the parser assembled. This
+        // is the within-turn half of the todo story (the cross-turn half is
+        // the reminder test below).
+        var todo = new TodoTool();
+        var tools = ToolSpecs(todo);
+
+        var messages = new List<ChatModelMessage>
+        {
+            new() { Role = "system", Content = SystemPrompts.Canvas },
+            new()
+            {
+                Role = "user",
+                Content =
+                    "Write three very short haiku: one about spring, one about summer, one " +
+                    "about winter. Plan the steps with your todo list before you start.",
+            },
+        };
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(170));
+        var (answer, todoCalls, log) = await RunTodoLoopAsync(client!, messages, tools, todo, cts.Token);
+
+        // The model planned with the tool and still produced the actual work.
+        todoCalls.Should().NotBeEmpty("a multi-step request with the todo tool offered should be planned");
+        answer.Should().NotBeEmpty("the turn must end in a final answer, not a tool call");
+
+        // Every accepted call round-tripped the real tool; the last list should
+        // carry the three planned steps (the cap test: short, ordered, valid).
+        var lastArgs = System.Text.Json.JsonDocument.Parse(todoCalls[^1].ArgumentsJson);
+        lastArgs.RootElement.GetProperty("todos").GetArrayLength().Should().BeGreaterThanOrEqualTo(2);
+    }
+
+    [Fact]
+    public async Task Live_todo_reminder_revives_unfinished_list_across_turns()
+    {
+        var client = CreateClient(out _);
+        Assert.SkipWhen(client is null, "GERT_VLLM_URL is not set — live vLLM integration skipped.");
+
+        // The cross-turn gap: TurnPlanner rebuilds history as role+content only,
+        // so the todo list set via tool calls in turn 1 is INVISIBLE in turn 2.
+        // This renders turn 2 exactly as the planner would — assistant content
+        // without its tool_calls — and appends SystemPrompts.TodoReminder to the
+        // new user message. The assistant content is deliberately vague about
+        // which steps are done: ONLY the reminder says winter is the one left,
+        // so a winter haiku in the answer proves the snapshot was read.
+        var todo = new TodoTool();
+        var tools = ToolSpecs(todo);
+
+        const string snapshot =
+            """{"todos":[{"text":"write the spring haiku","status":"done"},{"text":"write the summer haiku","status":"done"},{"text":"write the winter haiku","status":"pending"}]}""";
+
+        var messages = new List<ChatModelMessage>
+        {
+            new() { Role = "system", Content = SystemPrompts.Canvas },
+            new()
+            {
+                Role = "user",
+                Content =
+                    "Write three haiku — spring, summer, winter — one at a time, and track " +
+                    "the steps with your todo list.",
+            },
+            new()
+            {
+                Role = "assistant",
+                Content = "I'm tracking the haiku in my todo list and have made progress. " +
+                          "Say 'continue' for the next one.",
+            },
+            new()
+            {
+                Role = "user",
+                Content = "continue\n\n" + SystemPrompts.TodoReminder(snapshot),
+            },
+        };
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(170));
+        var (answer, todoCalls, log) = await RunTodoLoopAsync(client!, messages, tools, todo, cts.Token);
+
+        // The reminder is the only place winter is marked as the remaining step.
+        answer.Should().NotBeEmpty("the turn must end in a final answer");
+        answer.Should().ContainEquivalentOf("winter", "the pending item lives only in the reminder snapshot");
+
+        // If the model also updated its list (the reminder asks it to), the new
+        // list must be a continuation of the snapshot — not a fresh start.
+        if (todoCalls.Count > 0)
+        {
+            todoCalls[^1].ArgumentsJson.Should().ContainEquivalentOf("winter",
+                "an updated list continues the snapshot rather than replacing the plan");
+        }
+    }
+
+    [Fact]
+    public async Task Live_todo_turn_with_files_does_not_restart_the_answer()
+    {
+        var client = CreateClient(out _);
+        Assert.SkipWhen(client is null, "GERT_VLLM_URL is not set — live vLLM integration skipped.");
+
+        // The 2026-06-06 user repro: "using todo, generate three random files".
+        // qwen narrates AND calls set_todos in the same round; before the runner
+        // echoed that narration back, the model saw a done-marked list with no
+        // files in its own (empty) turn, concluded it had skipped the work, and
+        // restarted the answer every round ("oops, I jumped the gun" ×3, files
+        // generated twice). With the narration echoed, each file is produced
+        // exactly once.
+        var todo = new TodoTool();
+        var tools = ToolSpecs(todo);
+
+        var messages = new List<ChatModelMessage>
+        {
+            new() { Role = "system", Content = SystemPrompts.Canvas },
+            new() { Role = "user", Content = "using todo, generate three random files for me." },
+        };
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(170));
+        var (answer, todoCalls, log) = await RunTodoLoopAsync(client!, messages, tools, todo, cts.Token);
+
+        todoCalls.Should().NotBeEmpty("the user explicitly asked for the todo list");
+        answer.Should().NotBeEmpty();
+
+        // The restart bug's fingerprint is duplicated files and an abandoned
+        // list — so assert the turn is COHERENT: each emitted file appears
+        // exactly once, and the last accepted set_todos call finished the plan.
+        // (Exactly-3-artifacts would be at the mercy of fence typos the strict
+        // extractor rightly ignores, e.g. "name/notes.md" — sampling noise,
+        // not a loop defect.)
+        var artifacts = ArtifactExtractor.Extract(answer);
+        artifacts.Should().NotBeEmpty($"files were requested (rounds: {log}; got: {answer})");
+        artifacts.Select(a => a.Name).Should().OnlyHaveUniqueItems(
+            $"a coherent turn emits each file once (rounds: {log}; got: {answer})");
+        todoCalls[^1].ArgumentsJson.Should().NotContainAny(["pending", "active"],
+            $"the turn must end with the plan completed, not abandoned (rounds: {log})");
+    }
+
+    /// <summary>Offer a single tool the way TurnPlanner's ToSpec does.</summary>
+    private static List<ChatToolSpec> ToolSpecs(ITool tool) =>
+        [new() { Name = tool.Name, Description = tool.Description, ParametersSchema = tool.ParametersSchema }];
+
+    /// <summary>
+    /// Drive the model through the tool loop exactly as TurnRunner does: stream
+    /// a round; on tool calls append ONE assistant message carrying the round's
+    /// calls (content omitted) plus one tool-result message per call, executing
+    /// the REAL TodoTool; stop when a round ends with no calls (the answer).
+    /// </summary>
+    private static async Task<(string Answer, List<ChatModelToolCall> TodoCalls, string Log)> RunTodoLoopAsync(
+        VllmChatModelClient client,
+        List<ChatModelMessage> messages,
+        List<ChatToolSpec> tools,
+        TodoTool todo,
+        CancellationToken token)
+    {
+        var todoCalls = new List<ChatModelToolCall>();
+        var answer = new System.Text.StringBuilder();
+        var log = new System.Text.StringBuilder();
+
+        // TurnRunner allows 5 tool rounds plus the final answer round; a model
+        // pacing itself one step per round (work → set_todos → work) needs them.
+        for (var round = 0; round < 6; round++)
+        {
+            // Thinking is off, so use the card's INSTRUCT sampling (what the
+            // planner now applies): temp 0.7 / top_p 0.8 / presence 1.5.
+            // Greedy (temp 0) decoding is explicitly advised against — it sent
+            // qwen into "ask you to ask you to…" repetition loops here. The
+            // fixed seed keeps runs comparable.
+            var request = new ChatCompletionRequest
+            {
+                ModelId = "default",
+                Messages = messages,
+                Tools = tools,
+                Temperature = 0.7,
+                TopP = 0.8,
+                PresencePenalty = 1.5,
+                Seed = 42,
+                MaxTokens = 2200,
+                EnableThinking = false,
+            };
+
+            var roundText = new System.Text.StringBuilder();
+            var roundCalls = new List<ChatModelToolCall>();
+            await foreach (var chunk in client.StreamAsync(request, token))
+            {
+                roundText.Append(chunk.TextDelta);
+                if (chunk.ToolCall is not null)
+                {
+                    roundCalls.Add(chunk.ToolCall);
+                }
+            }
+
+            // TurnRunner accumulates content across rounds — a model may stream
+            // text AND tool calls in the same round, and that text is part of
+            // the answer.
+            answer.Append(roundText);
+            log.Append($"[round {round}: text {roundText.Length} chars, calls: ")
+                .AppendJoin("; ", roundCalls.Select(c => $"{c.Name}({c.ArgumentsJson})"))
+                .Append("]\n");
+
+            if (roundCalls.Count == 0)
+            {
+                return (answer.ToString(), todoCalls, log.ToString());
+            }
+
+            // Mirror TurnRunner: the round's narration rides back with the calls,
+            // so the model sees its own words next round.
+            messages.Add(new ChatModelMessage
+            {
+                Role = "assistant",
+                Content = roundText.Length > 0 ? roundText.ToString() : null,
+                ToolCalls = roundCalls,
+            });
+            foreach (var call in roundCalls)
+            {
+                call.Name.Should().Be("set_todos", "the todo tool is the only one offered");
+                var outcome = await todo.ExecuteAsync(
+                    new ToolInvocation { Pid = "default", ArgumentsJson = call.ArgumentsJson }, token);
+
+                // Mirror production: a failed call feeds {"error":…} back and
+                // the model retries next round — bad args are not a dead turn.
+                if (outcome.Success)
+                {
+                    todoCalls.Add(call);
+                }
+
+                messages.Add(new ChatModelMessage
+                {
+                    Role = "tool",
+                    Content = outcome.Success
+                        ? outcome.ResultJson ?? string.Empty
+                        : System.Text.Json.JsonSerializer.Serialize(new { error = outcome.Error }),
+                    ToolCallId = call.Id,
+                });
+            }
+        }
+
+        return (answer.ToString(), todoCalls, log.ToString());
+    }
+
+    [Fact]
     public async Task Live_model_streams_reasoning_when_thinking_is_on()
     {
         var client = CreateClient(out _);

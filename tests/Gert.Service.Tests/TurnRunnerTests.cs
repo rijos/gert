@@ -424,6 +424,24 @@ public sealed class TurnRunnerTests
     }
 
     [Fact]
+    public async Task Round_narration_rides_back_in_the_assistant_tool_call_message()
+    {
+        var stub = new StubTool();
+        var model = new NarratingToolModel();
+
+        await NewRunner(model, [stub]).RunAsync(NewJob("make files", [stub]));
+
+        // The text streamed alongside a round's tool calls is part of the
+        // assistant turn (qwen narrates while it calls set_todos). Dropping it
+        // makes the model believe its own work never happened and restart the
+        // answer next round ("oops, I jumped the gun").
+        model.Requests.Should().HaveCount(2);
+        var assistant = model.Requests[1].Single(m => m.Role == "assistant" && m.ToolCalls is not null);
+        assistant.Content.Should().Be("Here is file one.");
+        assistant.ToolCalls.Should().ContainSingle();
+    }
+
+    [Fact]
     public async Task Deltas_within_the_flush_window_coalesce_into_one_event()
     {
         // A clock that never advances: neither the time nor (with the default
@@ -710,6 +728,34 @@ public sealed class TurnRunnerTests
             else
             {
                 yield return new ChatModelChunk { TextDelta = "done" };
+            }
+
+            await Task.Yield();
+        }
+    }
+
+    /// <summary>Round 1 streams narration text AND a tool call; round 2 finishes.</summary>
+    private sealed class NarratingToolModel : IChatModelClient
+    {
+        public List<List<ChatModelMessage>> Requests { get; } = [];
+
+        public async IAsyncEnumerable<ChatModelChunk> StreamAsync(
+            ChatCompletionRequest request,
+            [EnumeratorCancellation] CancellationToken cancellationToken = default)
+        {
+            Requests.Add(request.Messages.ToList());
+
+            if (!request.Messages.Any(m => m.Role == "tool"))
+            {
+                yield return new ChatModelChunk { TextDelta = "Here is file one." };
+                yield return new ChatModelChunk
+                {
+                    ToolCall = new ChatModelToolCall { Id = "call_a", Name = "stub_tool", ArgumentsJson = "{}" },
+                };
+            }
+            else
+            {
+                yield return new ChatModelChunk { TextDelta = " And file two." };
             }
 
             await Task.Yield();

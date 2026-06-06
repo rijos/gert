@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Gert.Model;
 using Gert.Model.Chat;
 using Gert.Model.Dtos;
@@ -22,6 +23,9 @@ public sealed class TurnPlanner : ITurnPlanner
 {
     /// <summary>Fallback model id when neither the request nor conversation supplies one.</summary>
     private const string DefaultModelId = "default";
+
+    /// <summary>Tool id whose persisted snapshots the cross-turn reminder revives (TodoTool).</summary>
+    private const string TodoToolId = "todo";
 
     private readonly IDatabaseProvider _databases;
     private readonly IUserContext _user;
@@ -182,11 +186,41 @@ public sealed class TurnPlanner : ITurnPlanner
             ? ResolveOfferedTools(request, conversation)
             : Array.Empty<ITool>();
 
+        // 6.5 Cross-turn todo revival: the history above is role+content only,
+        // so a list the model set via set_todos in an earlier turn has already
+        // vanished from the prompt. When the todo tool is offered this turn and
+        // the latest accepted snapshot still has unfinished items, a reminder
+        // carrying that snapshot rides at the TAIL of the rendered prompt
+        // (appended to the new user message) — never the system prompt, whose
+        // bytes must stay stable for the vLLM prefix cache, and never the
+        // persisted user row, which keeps the user's actual words. Best-effort:
+        // a broken read or unparseable snapshot must not fail the turn.
+        if (offered.Any(t => t.Id == TodoToolId))
+        {
+            var todosJson = await ReadOpenTodosJsonAsync(repo, conversationId, cancellationToken)
+                .ConfigureAwait(false);
+            if (todosJson is not null)
+            {
+                history = AppendTodoReminder(history, todosJson);
+            }
+        }
+
         // 7. Per-model user defaults (the picker's cogwheel): conversation params
         // win field-by-field; settings are best-effort — a broken settings read
         // must not fail the turn.
         var modelParams = await ResolveModelParamsAsync(assistantMessage.ModelId!, cancellationToken)
             .ConfigureAwait(false);
+
+        // 7.5 Mode-correct sampling: with thinking OFF, a model whose
+        // generation_config.json only ships the thinking-mode set (Qwen3.6)
+        // must get its declared instruct sampling explicitly — otherwise vLLM
+        // fills omitted fields with the wrong mode's values (and without the
+        // presence penalty the decode repetition-loops). Catalog-declared,
+        // field-by-field, the LAST fallback: conversation and user settings
+        // always win.
+        var instruct = thinking == false
+            ? _catalog.InstructParams(assistantMessage.ModelId!)
+            : null;
 
         return new TurnJob
         {
@@ -207,8 +241,10 @@ public sealed class TurnPlanner : ITurnPlanner
             SystemPrompt = systemPrompt,
             Thinking = thinking,
             PreserveThinking = preserveThinking,
-            Temperature = conversation.Params.Temperature ?? modelParams?.Temperature,
-            TopP = conversation.Params.TopP ?? modelParams?.TopP,
+            Temperature = conversation.Params.Temperature ?? modelParams?.Temperature ?? instruct?.Temperature,
+            TopP = conversation.Params.TopP ?? modelParams?.TopP ?? instruct?.TopP,
+            PresencePenalty = conversation.Params.PresencePenalty ?? modelParams?.PresencePenalty
+                ?? instruct?.PresencePenalty,
             MaxTokens = conversation.Params.MaxTokens ?? modelParams?.MaxTokens,
             Stop = conversation.Params.Stop ?? modelParams?.Stop,
             Seed = conversation.Params.Seed ?? modelParams?.Seed,
@@ -311,6 +347,66 @@ public sealed class TurnPlanner : ITurnPlanner
             // Best-effort (step 0): a broken reader must not fail the turn.
             return SystemPrompts.Canvas;
         }
+    }
+
+    /// <summary>
+    /// The latest accepted todo snapshot's JSON when it still has unfinished
+    /// (pending/active) items, else null. A finished or empty list needs no
+    /// revival — no prompt tokens spent nagging about done work. Best-effort:
+    /// any read/parse failure means "no reminder", never a failed turn.
+    /// </summary>
+    private static async Task<string?> ReadOpenTodosJsonAsync(
+        IChatRepository repo,
+        string conversationId,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var latest = await repo.GetLatestToolCallAsync(conversationId, TodoToolId, cancellationToken)
+                .ConfigureAwait(false);
+            if (string.IsNullOrWhiteSpace(latest?.ResponseJson))
+            {
+                return null;
+            }
+
+            using var doc = JsonDocument.Parse(latest.ResponseJson);
+            if (!doc.RootElement.TryGetProperty("todos", out var todos)
+                || todos.ValueKind != JsonValueKind.Array)
+            {
+                return null;
+            }
+
+            var hasOpenItems = todos.EnumerateArray().Any(t =>
+                t.TryGetProperty("status", out var s) && s.GetString() is "pending" or "active");
+            return hasOpenItems ? latest.ResponseJson : null;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Re-render the tail user message with the todo reminder appended. The
+    /// reminder exists ONLY in this turn's rendered prompt: prior turns keep
+    /// their exact bytes (prefix-cache reuse up to the previous tail), and the
+    /// persisted user row stays clean for the UI.
+    /// </summary>
+    private static IReadOnlyList<ChatModelMessage> AppendTodoReminder(
+        IReadOnlyList<ChatModelMessage> history,
+        string todosJson)
+    {
+        var rendered = history.ToList();
+        var last = rendered[^1];
+        rendered[^1] = last with
+        {
+            Content = last.Content + "\n\n" + SystemPrompts.TodoReminder(todosJson),
+        };
+        return rendered;
     }
 
     private static ChatToolSpec ToSpec(ITool tool) => new()

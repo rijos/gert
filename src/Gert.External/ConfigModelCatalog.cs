@@ -39,6 +39,18 @@ public sealed class ConfigModelCatalog : IModelCatalog
         Name = chatModelId == "default" ? "Default" : chatModelId,
         Default = true,
         Capabilities = [ModelInfo.ToolsCapability],
+        // The single-vLLM deployment this fallback exists for serves Qwen3.6,
+        // whose generation_config.json carries only the thinking-mode sampling
+        // — declare the card's instruct set so thinking-off turns don't decode
+        // with the wrong mode's parameters (and repetition-loop without the
+        // presence penalty). An operator who configures Gert:Models takes
+        // over completely, this entry included.
+        InstructParams = new Gert.Model.Dtos.GenerationParams
+        {
+            Temperature = 0.7,
+            TopP = 0.8,
+            PresencePenalty = 1.5,
+        },
     };
 
     /// <inheritdoc />
@@ -47,4 +59,8 @@ public sealed class ConfigModelCatalog : IModelCatalog
     /// <inheritdoc />
     public bool SupportsTools(string modelId) =>
         _models.FirstOrDefault(m => m.Id == modelId)?.SupportsTools ?? true;
+
+    /// <inheritdoc />
+    public Gert.Model.Dtos.GenerationParams? InstructParams(string modelId) =>
+        _models.FirstOrDefault(m => m.Id == modelId)?.InstructParams;
 }

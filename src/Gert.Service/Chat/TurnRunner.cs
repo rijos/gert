@@ -199,6 +199,7 @@ public sealed class TurnRunner : ITurnRunner
                     Tools = toolSpecs,
                     Temperature = job.Temperature,
                     TopP = job.TopP,
+                    PresencePenalty = job.PresencePenalty,
                     MaxTokens = job.MaxTokens,
                     Stop = job.Stop,
                     Seed = job.Seed,
@@ -207,6 +208,7 @@ public sealed class TurnRunner : ITurnRunner
                 };
 
                 var toolCalls = new List<ChatModelToolCall>();
+                var roundContentStart = content.Length;
 
                 // Pure generation time: spans cover stream consumption only —
                 // tool execution happens between rounds, outside this span.
@@ -287,11 +289,16 @@ public sealed class TurnRunner : ITurnRunner
                 // The assistant turn that asked for the tools must precede their
                 // results in the upstream history: ONE assistant message carrying the
                 // whole round's tool_calls (OpenAI wire format), then one tool-role
-                // result message per call, in call order.
+                // result message per call, in call order. The text the model streamed
+                // THIS round rides along as content — a model that narrates while it
+                // calls tools (qwen does) must see its own words next round, or it
+                // believes the work never happened and restarts the answer ("oops, I
+                // jumped the gun"). Content stays null for a narration-free round.
+                var roundContent = content.ToString(roundContentStart, content.Length - roundContentStart);
                 messages.Add(new ChatModelMessage
                 {
                     Role = "assistant",
-                    Content = null,
+                    Content = roundContent.Length > 0 ? roundContent : null,
                     ToolCalls = toolCalls,
                 });
 

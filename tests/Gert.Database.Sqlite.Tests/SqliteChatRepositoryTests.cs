@@ -409,6 +409,52 @@ public class SqliteChatRepositoryTests
             .Which.ToolCallId.Should().Be(toolCallId);
     }
 
+    [Fact]
+    public async Task Latest_tool_call_returns_newest_done_row_of_the_kind_scoped_to_the_conversation()
+    {
+        await using var root = new TempDataRoot();
+        var provider = ProviderFixture.ProviderFor(root);
+        await provider.EnsureProvisionedAsync(ProviderFixture.ExpectedIssuer, Sub);
+
+        var conversation = NewConversation();
+        var other = NewConversation();
+        var now = DateTimeOffset.UtcNow;
+        var message = NewMessage(conversation.Id, MessageRole.Assistant, "planned", now);
+        var otherMessage = NewMessage(other.Id, MessageRole.Assistant, "elsewhere", now);
+
+        await using var repo = await provider.OpenChatAsync(ProviderFixture.ExpectedIssuer, Sub, "default");
+        await repo.InsertConversationAsync(conversation);
+        await repo.InsertConversationAsync(other);
+        await repo.InsertMessageAsync(message);
+        await repo.InsertMessageAsync(otherMessage);
+
+        ToolCall NewTodoCall(string messageId, ToolCallStatus status, string response, DateTimeOffset at, string kind = "todo") => new()
+        {
+            Id = Guid.NewGuid().ToString("D"),
+            MessageId = messageId,
+            Kind = kind,
+            Status = status,
+            RequestJson = "{}",
+            ResponseJson = response,
+            CreatedAt = at,
+        };
+
+        // The newest DONE todo row is the truth; an older snapshot, a newer
+        // errored call, another kind, and another conversation never win.
+        await repo.InsertToolCallAsync(NewTodoCall(message.Id, ToolCallStatus.Done, "{\"todos\":[\"old\"]}", now.AddSeconds(1)));
+        await repo.InsertToolCallAsync(NewTodoCall(message.Id, ToolCallStatus.Done, "{\"todos\":[\"latest\"]}", now.AddSeconds(2)));
+        await repo.InsertToolCallAsync(NewTodoCall(message.Id, ToolCallStatus.Error, "{\"todos\":[\"failed\"]}", now.AddSeconds(3)));
+        await repo.InsertToolCallAsync(NewTodoCall(message.Id, ToolCallStatus.Done, "{\"now\":\"x\"}", now.AddSeconds(4), kind: "clock"));
+        await repo.InsertToolCallAsync(NewTodoCall(otherMessage.Id, ToolCallStatus.Done, "{\"todos\":[\"other\"]}", now.AddSeconds(5)));
+
+        var latest = await repo.GetLatestToolCallAsync(conversation.Id, "todo");
+
+        latest.Should().NotBeNull();
+        latest!.ResponseJson.Should().Be("{\"todos\":[\"latest\"]}");
+
+        (await repo.GetLatestToolCallAsync(conversation.Id, "rag")).Should().BeNull();
+    }
+
     private static Conversation NewConversation() => new()
     {
         Id = Guid.NewGuid().ToString("D"),

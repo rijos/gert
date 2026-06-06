@@ -26,6 +26,50 @@ replace-not-patch (the latest call is the truth, rendered as a checklist on its
 tool card and persisted with the `tool_calls` row — no extra storage), and the
 clock reads only through the injected `TimeProvider`, so tests pin the instant.
 
+**Round narration rides back.** A model that narrates while it calls tools
+(qwen streams "here's file one…" AND `set_todos` in the same round) must see
+its own words next round — the tool-loop echoes each round's streamed text as
+the `content` of the assistant tool-calls message. Dropping it (the old
+`content: null`) made the model find a done-marked list with no work in its
+own empty turn, conclude it had skipped the steps, and restart the answer
+every round ("oops, I jumped the gun" ×3, files generated twice — the
+2026-06-06 repro). The `set_todos` result also carries a `reminder` field:
+with open items it says "N step(s) remain — continue in this same reply",
+because qwen's instruct mode otherwise yields to the user after one step;
+when all items are done it says to wrap up.
+
+**Mode-correct sampling (Qwen3.6).** The checkpoint's
+`generation_config.json` carries only the thinking-mode set (temperature 1.0,
+top_p 0.95, top_k 20) — that is what vLLM applies to omitted fields. The
+card's instruct (thinking-off) set — temperature 0.7, top_p 0.8,
+**presence_penalty 1.5** — must ride the request explicitly, or thinking-off
+turns decode with the wrong mode's sampling and, without the presence
+penalty, fall into repetition loops ("ask you to ask you to…"; greedy temp 0
+is worse and explicitly advised against). Declared per-model in the catalog
+(`Gert:Models[].InstructParams`; the single-vLLM fallback entry ships the
+Qwen3.6 values) and applied by the planner as the LAST field-by-field
+fallback when `thinking == false` — conversation params and per-model user
+settings always win.
+
+**Cross-turn todo revival.** The planner rebuilds upstream history as
+role+content only (tool calls and results never re-enter the prompt), so a
+list set via `set_todos` in turn N is invisible in turn N+1 — the model would
+silently abandon its own plan. The fix follows the pattern Claude Code and
+Cline use (dynamic state re-injected into the *message array*, never the
+system prompt): when the todo tool is offered and the conversation's newest
+accepted snapshot (`GetLatestToolCallAsync(conv, "todo")`, newest `done` row's
+`response_json`) still has `pending`/`active` items, the planner appends
+`SystemPrompts.TodoReminder(snapshot)` — a `<system-reminder>` block carrying
+the snapshot JSON plus "continue the remaining items, keep statuses current,
+don't mention this" — to the new user message in the *rendered* prompt only.
+Tail placement is deliberate: the system prompt and prior turns keep their
+exact bytes, so vLLM prefix-cache reuse survives up to the previous tail. The
+persisted user row stays clean (UI truth), a finished/empty list injects
+nothing (no nagging about done work), and the read is best-effort — a broken
+snapshot never fails the turn. Verified live against Qwen3.6 on vLLM 0.22
+(2026-06-06): with the reminder, turn 2 picks up the one remaining `pending`
+item that only the snapshot names (`Live_todo_reminder_revives…`).
+
 ### Artifacts (canvas tabs)
 
 The model opts a fenced block into the canvas by **naming it in the fence info

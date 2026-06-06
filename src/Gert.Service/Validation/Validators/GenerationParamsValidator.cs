@@ -35,6 +35,12 @@ public sealed class GenerationParamsValidator : AbstractValidator<GenerationPara
             .WithMessage("top_p must be between 0 and 1.")
             .WithErrorCode("params.top_p");
 
+        RuleFor(p => p.PresencePenalty)
+            .Must(t => t is >= -2.0 and <= 2.0)
+            .When(p => p.PresencePenalty.HasValue)
+            .WithMessage("presence_penalty must be between -2 and 2.")
+            .WithErrorCode("params.presence_penalty");
+
         RuleFor(p => p.MaxTokens)
             .Must(m => m is >= 1 and <= MaxTokensCeiling)
             .When(p => p.MaxTokens.HasValue)
