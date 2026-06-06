@@ -380,7 +380,7 @@ public sealed class TurnPlannerTests
     }
 
     [Fact]
-    public async Task Instructions_resolve_into_the_system_prompt()
+    public async Task Instructions_append_after_the_builtin_canvas_prompt()
     {
         var reader = Substitute.For<IProjectInstructionsReader>();
         reader.GetInstructionsAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
@@ -389,6 +389,18 @@ public sealed class TurnPlannerTests
         var job = await NewPlanner(instructions: reader)
             .PlanAsync(Pid, Conv, new SendMessageRequest { Content = "hello" });
 
-        job.SystemPrompt.Should().Be("Always answer in haiku.");
+        job.SystemPrompt.Should().StartWith(SystemPrompts.Canvas);
+        job.SystemPrompt.Should().EndWith("Always answer in haiku.");
+    }
+
+    [Fact]
+    public async Task The_canvas_convention_rides_every_turn_even_without_instructions()
+    {
+        // No instructions reader at all: real models still must learn the
+        // name= fence opt-in, or complete files never reach the canvas.
+        var job = await NewPlanner().PlanAsync(Pid, Conv, new SendMessageRequest { Content = "hello" });
+
+        job.SystemPrompt.Should().Be(SystemPrompts.Canvas);
+        job.SystemPrompt.Should().Contain("name=");
     }
 }

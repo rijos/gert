@@ -60,26 +60,28 @@ public sealed class VllmLiveIntegrationTests
         var client = CreateClient(out var baseUrl);
         Assert.SkipWhen(client is null, "GERT_VLLM_URL is not set — live vLLM integration skipped.");
 
+        // The screenshot regression: a NATURAL request, with the name= fence
+        // convention taught ONLY by the built-in system prompt (exactly what
+        // TurnPlanner sends) — the model must opt its files into the canvas
+        // without the user ever mentioning the syntax.
         var request = new ChatCompletionRequest
         {
             ModelId = "default", // → VllmOptions.ChatModelId
             Messages =
             [
+                new ChatModelMessage { Role = "system", Content = SystemPrompts.Canvas },
                 new ChatModelMessage
                 {
                     Role = "user",
                     Content =
-                        "Reply with exactly three fenced code blocks and no other code blocks. " +
-                        "Each fence's info string must carry a name= token exactly as shown:\n" +
-                        "1. ```html name=demo.html``` — a minimal page with an <h1>\n" +
-                        "2. ```python name=fib.py``` — a fibonacci function\n" +
-                        "3. ```md name=notes.md``` — a one-line note\n" +
-                        "Keep each block under 10 lines.",
+                        "Make me three small standalone files: a minimal HTML5 starter page " +
+                        "with an <h1>, a Python script with a fibonacci function, and a short " +
+                        "Markdown note describing both. Keep each under 15 lines.",
                 },
             ],
             // Deterministic-ish + fast: no sampling spread, no thinking detour.
             Temperature = 0,
-            MaxTokens = 1200,
+            MaxTokens = 1600,
             EnableThinking = false,
         };
 
@@ -107,12 +109,15 @@ public sealed class VllmLiveIntegrationTests
         // enable_thinking=false reached the template: no reasoning streamed.
         reasoning.Length.Should().Be(0, "chat_template_kwargs.enable_thinking=false suppresses thinking");
 
-        // The extractor lifts all three kinds out of the real completion.
+        // The extractor lifts all three kinds out of the real completion — the
+        // model picked its own filenames; the system prompt supplied the syntax.
         var artifacts = ArtifactExtractor.Extract(content.ToString());
-        artifacts.Select(a => a.Kind).Should().Contain([ArtifactKind.Html, ArtifactKind.Py, ArtifactKind.Md]);
-        artifacts.Should().ContainSingle(a => a.Name == "demo.html").Which.Content.Should().Contain("<h1");
-        artifacts.Should().ContainSingle(a => a.Name == "fib.py").Which.Content.Should().Contain("def ");
-        artifacts.Should().ContainSingle(a => a.Name == "notes.md");
+        artifacts.Select(a => a.Kind).Should().Contain(
+            [ArtifactKind.Html, ArtifactKind.Py, ArtifactKind.Md],
+            $"the canvas convention must steer real fences (got: {content})");
+        artifacts.Single(a => a.Kind == ArtifactKind.Html).Content.Should().Contain("<h1");
+        artifacts.Single(a => a.Kind == ArtifactKind.Py).Content.Should().Contain("def ");
+        artifacts.Should().OnlyContain(a => a.Name.Length > 0);
     }
 
     [Fact]

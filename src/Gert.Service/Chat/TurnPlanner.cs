@@ -286,9 +286,11 @@ public sealed class TurnPlanner : ITurnPlanner
 
     private async Task<string?> ResolveSystemPromptAsync(string pid, CancellationToken cancellationToken)
     {
+        // The built-in canvas convention always rides first (real models don't
+        // know the name= opt-in otherwise); project instructions append after.
         if (_instructions is null)
         {
-            return null;
+            return SystemPrompts.Canvas;
         }
 
         try
@@ -296,7 +298,9 @@ public sealed class TurnPlanner : ITurnPlanner
             var instructions = await _instructions
                 .GetInstructionsAsync(_user.Iss, _user.Sub, pid, cancellationToken)
                 .ConfigureAwait(false);
-            return string.IsNullOrWhiteSpace(instructions) ? null : instructions;
+            return string.IsNullOrWhiteSpace(instructions)
+                ? SystemPrompts.Canvas
+                : SystemPrompts.Canvas + "\n\n" + instructions;
         }
         catch (OperationCanceledException)
         {
@@ -305,7 +309,7 @@ public sealed class TurnPlanner : ITurnPlanner
         catch (Exception)
         {
             // Best-effort (step 0): a broken reader must not fail the turn.
-            return null;
+            return SystemPrompts.Canvas;
         }
     }
 
