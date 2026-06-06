@@ -75,6 +75,39 @@ public class SqliteChatRepositoryTests
     }
 
     [Fact]
+    public async Task Message_attachments_round_trip_and_absent_stays_null()
+    {
+        await using var root = new TempDataRoot();
+        var provider = ProviderFixture.ProviderFor(root);
+        await provider.EnsureProvisionedAsync(ProviderFixture.ExpectedIssuer, Sub);
+
+        var conversation = NewConversation();
+        var now = DateTimeOffset.UtcNow;
+        var withImage = NewMessage(conversation.Id, MessageRole.User, "what is this?", now) with
+        {
+            Attachments =
+            [
+                new MessageAttachment { MimeType = "image/png", Data = "aGVsbG8=" },
+                new MessageAttachment { MimeType = "image/jpeg", Data = "d29ybGQ=" },
+            ],
+        };
+        var withoutImage = NewMessage(conversation.Id, MessageRole.Assistant, "a cat", now.AddSeconds(1));
+
+        await using var repo = await provider.OpenChatAsync(ProviderFixture.ExpectedIssuer, Sub, "default");
+        await repo.InsertConversationAsync(conversation);
+        await repo.InsertMessageAsync(withImage);
+        await repo.InsertMessageAsync(withoutImage);
+
+        var messages = await repo.ListMessagesAsync(conversation.Id);
+
+        var user = messages.Single(m => m.Role == MessageRole.User);
+        user.Attachments.Should().HaveCount(2);
+        user.Attachments![0].Should().Be(new MessageAttachment { MimeType = "image/png", Data = "aGVsbG8=" });
+        user.Attachments[1].MimeType.Should().Be("image/jpeg");
+        messages.Single(m => m.Role == MessageRole.Assistant).Attachments.Should().BeNull();
+    }
+
+    [Fact]
     public async Task Thread_loads_messages_tool_calls_citations_and_artifacts()
     {
         await using var root = new TempDataRoot();

@@ -5,6 +5,7 @@
 import van from "van";
 import { component } from "../../../lib/component.js";
 import { highlight } from "../../../lib/highlight.js";
+import { artifactSrcdoc } from "../../../lib/artifact-sandbox.js";
 
 const { div, iframe } = van.tags;
 
@@ -26,7 +27,9 @@ export const SvgArtifact = component({
     div({ class: "render svg-stage" }, () => {
       const f = iframe({ title: (artifact.name || "SVG") + " preview" });
       f.setAttribute("sandbox", ""); // fully sandboxed: no scripts, opaque origin
-      f.srcdoc = artifact.content || "";
+      // Even script-free, SVG can beacon via <image href>/<use href>/external
+      // CSS — the per-document CSP (no scripts, no external fetch) closes that.
+      f.srcdoc = artifactSrcdoc(artifact.content, { allowScripts: false });
       return f;
     }),
     div(

@@ -1,6 +1,9 @@
 // components/main/composer.js — autogrow textarea + attach + tools dropdown +
-// send + hint. Calls services/chat.send; never fetches directly.
+// send + hint. Pasted images queue as pending attachments (thumbnail strip)
+// and ride the next send for vision models. Calls services/chat.send; never
+// fetches directly.
 import van from "van";
+import { reactive } from "van-x";
 import { component } from "../../lib/component.js";
 import { Icon } from "../../icons/icons.js";
 import { ToolsMenu } from "./tools-menu.js";
@@ -10,11 +13,54 @@ import * as chat from "../../state/chat.js";
 import * as docsSvc from "../../services/documents.js";
 import { attempt } from "../../lib/action.js";
 
-const { div, textarea, button } = van.tags;
+const { div, textarea, button, img } = van.tags;
 
 const autogrow = (t) => {
   t.style.height = "auto";
   t.style.height = Math.min(t.scrollHeight, 160) + "px";
+};
+
+// --- pasted-image processing --------------------------------------------------
+const MAX_IMAGES = 6; // server cap (attachments.too_many)
+const MAX_DIM = 1568; // longest edge sent upstream
+const KEEP_BYTES = 512 * 1024; // small originals keep their exact bytes
+
+const readAsDataUrl = (blob) =>
+  new Promise((res, rej) => {
+    const r = new FileReader();
+    r.onload = () => res(r.result);
+    r.onerror = () => rej(r.error);
+    r.readAsDataURL(blob);
+  });
+
+// Bound a pasted image for the wire: a small original keeps its exact bytes
+// (and mime); anything big is downscaled to MAX_DIM and re-encoded as JPEG
+// over a white matte (transparency would otherwise go black). Returns
+// { mime_type, data, url } — wire fields + the preview data URL — or null
+// when the blob can't be decoded as an image.
+const processImage = async (file) => {
+  let bmp;
+  try {
+    bmp = await createImageBitmap(file);
+  } catch {
+    return null;
+  }
+  const scale = Math.min(1, MAX_DIM / Math.max(bmp.width, bmp.height));
+  if (scale === 1 && file.size <= KEEP_BYTES) {
+    bmp.close?.();
+    const url = await readAsDataUrl(file);
+    return { mime_type: file.type, data: url.slice(url.indexOf(",") + 1), url };
+  }
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.round(bmp.width * scale));
+  canvas.height = Math.max(1, Math.round(bmp.height * scale));
+  const ctx = canvas.getContext("2d");
+  ctx.fillStyle = "#fff";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(bmp, 0, 0, canvas.width, canvas.height);
+  bmp.close?.();
+  const url = canvas.toDataURL("image/jpeg", 0.85);
+  return { mime_type: "image/jpeg", data: url.slice(url.indexOf(",") + 1), url };
 };
 
 export const Composer = component({
@@ -49,11 +95,19 @@ export const Composer = component({
     .stop{width:36px; height:36px; border-radius:10px; border:none; background:var(--coral); color:var(--on-accent); cursor:pointer; display:grid; place-items:center; transition:.16s; animation:pulse 1.4s ease-in-out infinite;}
     .stop:hover{background:var(--coral-deep);}
     .stop svg{width:15px; height:15px;}
+    /* pasted-image strip: thumbnails pending on the next send */
+    .att-strip{display:flex; flex-wrap:wrap; gap:8px; margin-bottom:9px;}
+    .att-thumb{position:relative; width:56px; height:56px; border-radius:10px; overflow:hidden; border:1px solid var(--line); box-shadow:var(--lift);}
+    .att-thumb img{width:100%; height:100%; object-fit:cover; display:block;}
+    .att-x{position:absolute; top:3px; right:3px; width:18px; height:18px; border-radius:50%; border:none; background:rgba(0,0,0,.55); color:#fff; font-size:12px; line-height:1; cursor:pointer; display:grid; place-items:center; padding:0; transition:.13s;}
+    .att-x:hover{background:rgba(0,0,0,.8);}
   `,
   view: () => {
     // ── logic ───────────────────────────────────
     // mirror the textarea's emptiness reactively so the send button can grey out.
     const empty = van.state(true);
+    // images pasted into the textarea, pending on the next send
+    const pending = reactive([]); // [{ mime_type, data, url }]
 
     const ta = textarea({
       rows: 1,
@@ -68,12 +122,33 @@ export const Composer = component({
           submit();
         }
       },
+      // Pasted images queue as pending attachments; text pastes fall through
+      // to the default insert. A mixed clipboard (screenshot tools often ship
+      // image + html) attaches the image only.
+      onpaste: (e) => {
+        const files = [...(e.clipboardData?.items || [])]
+          .filter((i) => i.kind === "file" && i.type.startsWith("image/"))
+          .map((i) => i.getAsFile())
+          .filter(Boolean);
+        if (!files.length) return;
+        e.preventDefault();
+        attempt(async () => {
+          for (const f of files.slice(0, MAX_IMAGES - pending.length)) {
+            const image = await processImage(f);
+            if (image) pending.push(image);
+          }
+        }, "Couldn't read the pasted image");
+      },
     });
 
     const submit = () => {
       const text = ta.value;
-      if (!text.trim() || chat.streaming.val) return;
-      chatSvc.send(text);
+      if ((!text.trim() && !pending.length) || chat.streaming.val) return;
+      chatSvc.send(
+        text,
+        pending.map(({ mime_type, data }) => ({ mime_type, data })),
+      );
+      pending.length = 0;
       ta.value = "";
       empty.val = true;
       autogrow(ta);
@@ -94,6 +169,27 @@ export const Composer = component({
       { class: "composer-wrap" },
       div(
         { class: "composer" },
+        // pending pasted images (thumbnail strip with per-image remove)
+        () =>
+          pending.length
+            ? div(
+                { class: "att-strip" },
+                ...pending.map((p, i) =>
+                  div(
+                    { class: "att-thumb" },
+                    img({ src: p.url, alt: "pasted image" }),
+                    button(
+                      {
+                        class: "att-x",
+                        title: "Remove image",
+                        onclick: () => pending.splice(i, 1),
+                      },
+                      "×",
+                    ),
+                  ),
+                ),
+              )
+            : div(),
         ta,
         div(
           { class: "crow" },
@@ -128,7 +224,7 @@ export const Composer = component({
                     {
                       class: "send",
                       title: "Send",
-                      disabled: () => empty.val,
+                      disabled: () => empty.val && !pending.length,
                       onclick: submit,
                     },
                     Icon("send", { size: 17, strokeWidth: 2.2 }),

@@ -135,6 +135,7 @@ public sealed class TurnPlanner : ITurnPlanner
             ConversationId = conversationId,
             Role = MessageRole.User,
             Content = request.Content,
+            Attachments = request.Attachments is { Count: > 0 } ? request.Attachments : null,
             ModelId = null,
             TokenCount = null,
             Seq = await repo.AllocateSeqAsync(conversationId, cancellationToken).ConfigureAwait(false),
@@ -168,10 +169,14 @@ public sealed class TurnPlanner : ITurnPlanner
         // user-stopped row's partial content is a UI artifact, not conversation
         // truth — and a stable history maximises vLLM prefix-cache reuse).
         // With preserve_thinking on, assistant rows carry their persisted
-        // reasoning back upstream (Qwen3.6 interleaved thinking).
+        // reasoning back upstream (Qwen3.6 interleaved thinking). Image
+        // attachments ride user rows for vision-capable models only — a model
+        // the catalog gates keeps the text but never sees image parts (mirror
+        // of the tools gate; the prompt degrades, the turn never errors).
         var history = ToModelMessages(
             priorMessages.Where(m => m.Status == MessageStatus.Complete).Append(userMessage),
-            includeReasoning: preserveThinking == true);
+            includeReasoning: preserveThinking == true,
+            includeImages: _catalog.SupportsVision(assistantMessage.ModelId!));
 
         // Step 0: the project's pinned instructions (best-effort; a missing reader
         // or project means "no instructions", never a failed turn).
@@ -420,14 +425,22 @@ public sealed class TurnPlanner : ITurnPlanner
     /// Map persisted chat rows to the OpenAI-style upstream message list. With
     /// <paramref name="includeReasoning"/>, assistant rows carry their persisted
     /// thinking as <c>reasoning_content</c> (preserve_thinking interleaving).
+    /// With <paramref name="includeImages"/>, user rows carry their persisted
+    /// image attachments as vision content parts.
     /// </summary>
     private static IReadOnlyList<ChatModelMessage> ToModelMessages(
         IEnumerable<Message> messages,
-        bool includeReasoning = false) =>
+        bool includeReasoning = false,
+        bool includeImages = true) =>
         messages.Select(m => new ChatModelMessage
         {
             Role = ToOpenAiRole(m.Role),
             Content = m.Content,
+            Images = includeImages && m.Role == MessageRole.User && m.Attachments is { Count: > 0 }
+                ? m.Attachments
+                    .Select(a => new ChatModelImage { MimeType = a.MimeType, DataBase64 = a.Data })
+                    .ToList()
+                : null,
             ReasoningContent = includeReasoning && m.Role == MessageRole.Assistant && !string.IsNullOrEmpty(m.Reasoning)
                 ? m.Reasoning
                 : null,

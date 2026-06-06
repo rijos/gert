@@ -1,10 +1,13 @@
 // components/canvas/artifacts/html-artifact.js — sandboxed-iframe preview (render)
 // + raw source. F3: the iframe gets `allow-scripts` for fidelity but NEVER
 // `allow-same-origin`, so the document runs at an opaque origin and cannot reach
-// the app's cookies, storage, or DOM.
+// the app's cookies, storage, or DOM. artifactSrcdoc() adds the second half of
+// F3 — a per-document CSP so the page can't beacon data out or post a phishing
+// form (connect-src/form-action/img locked to nothing external).
 import van from "van";
 import { component } from "../../../lib/component.js";
 import { highlight } from "../../../lib/highlight.js";
+import { artifactSrcdoc } from "../../../lib/artifact-sandbox.js";
 
 const { div, iframe } = van.tags;
 
@@ -25,7 +28,7 @@ export const HtmlArtifact = component({
         sandbox: "allow-scripts",
         title: (artifact.name || "HTML") + " preview",
       });
-      f.srcdoc = artifact.content || "";
+      f.srcdoc = artifactSrcdoc(artifact.content, { allowScripts: true });
       return f;
     }),
     div(

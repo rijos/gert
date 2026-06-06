@@ -213,6 +213,72 @@ public sealed class VllmChatRequestBuilderTests
     }
 
     [Fact]
+    public void Build_EmitsContentArrayForUserMessageWithImages()
+    {
+        var request = BaseRequest() with
+        {
+            Messages =
+            [
+                new ChatModelMessage
+                {
+                    Role = "user",
+                    Content = "what's in this picture?",
+                    Images =
+                    [
+                        new ChatModelImage { MimeType = "image/png", DataBase64 = "aGVsbG8=" },
+                        new ChatModelImage { MimeType = "image/jpeg", DataBase64 = "d29ybGQ=" },
+                    ],
+                },
+            ],
+        };
+
+        var body = VllmChatRequestBuilder.Build(request, "m");
+        var parts = body["messages"]!.AsArray()[0]!["content"]!.AsArray();
+
+        // Text part first, then one image_url part per image as a data URL.
+        parts.Should().HaveCount(3);
+        parts[0]!["type"]!.GetValue<string>().Should().Be("text");
+        parts[0]!["text"]!.GetValue<string>().Should().Be("what's in this picture?");
+        parts[1]!["type"]!.GetValue<string>().Should().Be("image_url");
+        parts[1]!["image_url"]!["url"]!.GetValue<string>()
+            .Should().Be("data:image/png;base64,aGVsbG8=");
+        parts[2]!["image_url"]!["url"]!.GetValue<string>()
+            .Should().Be("data:image/jpeg;base64,d29ybGQ=");
+    }
+
+    [Fact]
+    public void Build_OmitsTextPartForImageOnlyMessage()
+    {
+        var request = BaseRequest() with
+        {
+            Messages =
+            [
+                new ChatModelMessage
+                {
+                    Role = "user",
+                    Content = "",
+                    Images = [new ChatModelImage { MimeType = "image/png", DataBase64 = "aGVsbG8=" }],
+                },
+            ],
+        };
+
+        var body = VllmChatRequestBuilder.Build(request, "m");
+        var parts = body["messages"]!.AsArray()[0]!["content"]!.AsArray();
+
+        parts.Should().HaveCount(1);
+        parts[0]!["type"]!.GetValue<string>().Should().Be("image_url");
+    }
+
+    [Fact]
+    public void Build_KeepsPlainStringContentWithoutImages()
+    {
+        var body = VllmChatRequestBuilder.Build(BaseRequest(), "m");
+        // No images → content stays the plain string form (prefix-cache parity
+        // with pre-vision conversations).
+        body["messages"]!.AsArray()[1]!["content"]!.GetValueKind().Should().Be(System.Text.Json.JsonValueKind.String);
+    }
+
+    [Fact]
     public void Build_KeepsContentOnAssistantToolCallTurnWhenPresent()
     {
         // A turn can carry both text and tool calls (the model "thought out loud").

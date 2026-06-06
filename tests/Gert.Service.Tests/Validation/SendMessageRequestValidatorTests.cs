@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using FluentValidation;
 using FluentValidation.TestHelper;
+using Gert.Model.Chat;
 using Gert.Model.Dtos;
 using Gert.Service.Validation;
 using Xunit;
@@ -67,6 +68,81 @@ public sealed class SendMessageRequestValidatorTests
             .ShouldNotHaveValidationErrorFor(r => r.ModelId);
         _validator.TestValidate(new SendMessageRequest { Content = "hi", ModelId = "bad model id" })
             .ShouldHaveValidationErrorFor(r => r.ModelId);
+    }
+
+    private static MessageAttachment Png(string data = "aGVsbG8=") =>
+        new() { MimeType = "image/png", Data = data };
+
+    [Fact]
+    public void Image_only_message_with_empty_content_passes()
+    {
+        var result = _validator.TestValidate(
+            new SendMessageRequest { Content = "", Attachments = [Png()] });
+        result.ShouldNotHaveAnyValidationErrors();
+    }
+
+    [Fact]
+    public void Empty_content_without_attachments_still_fails()
+    {
+        _validator.TestValidate(new SendMessageRequest { Content = "", Attachments = [] })
+            .ShouldHaveValidationErrorFor(r => r.Content);
+    }
+
+    [Fact]
+    public void Content_with_attachments_keeps_the_character_and_length_bar()
+    {
+        _validator.TestValidate(new SendMessageRequest
+        {
+            Content = "bad" + (char)0x202E,
+            Attachments = [Png()],
+        }).ShouldHaveValidationErrorFor(r => r.Content);
+
+        _validator.TestValidate(new SendMessageRequest
+        {
+            Content = new string('a', ValidationRules.LongTextMax + 1),
+            Attachments = [Png()],
+        }).ShouldHaveValidationErrorFor(r => r.Content);
+    }
+
+    [Fact]
+    public void Disallowed_attachment_mime_fails_and_allowed_passes()
+    {
+        var result = _validator.TestValidate(new SendMessageRequest
+        {
+            Content = "look",
+            Attachments = [new MessageAttachment { MimeType = "image/svg+xml", Data = "aGVsbG8=" }],
+        });
+        Assert.False(result.IsValid);
+
+        _validator.TestValidate(new SendMessageRequest
+        {
+            Content = "look",
+            Attachments = [new MessageAttachment { MimeType = "image/webp", Data = "aGVsbG8=" }],
+        }).ShouldNotHaveAnyValidationErrors();
+    }
+
+    [Fact]
+    public void Malformed_base64_attachment_fails()
+    {
+        var result = _validator.TestValidate(new SendMessageRequest
+        {
+            Content = "look",
+            Attachments = [Png("not base64!!")],
+        });
+        Assert.False(result.IsValid);
+    }
+
+    [Fact]
+    public void Too_many_attachments_fail()
+    {
+        var attachments = new List<MessageAttachment>();
+        for (var i = 0; i <= ValidationRules.AttachmentMaxCount; i++)
+        {
+            attachments.Add(Png());
+        }
+
+        _validator.TestValidate(new SendMessageRequest { Content = "x", Attachments = attachments })
+            .ShouldHaveValidationErrorFor(r => r.Attachments);
     }
 
     [Fact]

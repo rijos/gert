@@ -11,11 +11,41 @@ namespace Gert.Service.Validation.Validators;
 /// </summary>
 public sealed class SendMessageRequestValidator : AbstractValidator<SendMessageRequest>
 {
-    public SendMessageRequestValidator(ToolTogglesValidator toolsValidator)
+    public SendMessageRequestValidator(
+        ToolTogglesValidator toolsValidator,
+        MessageAttachmentValidator attachmentValidator)
     {
         ArgumentNullException.ThrowIfNull(toolsValidator);
+        ArgumentNullException.ThrowIfNull(attachmentValidator);
 
-        RuleFor(r => r.Content).SafeText(ValidationRules.LongTextMax);
+        // Text-only message: the full safe-text bar (non-empty included).
+        RuleFor(r => r.Content)
+            .SafeText(ValidationRules.LongTextMax)
+            .When(r => r.Attachments is not { Count: > 0 });
+
+        // With attachments an empty text is fine (an image alone is a message),
+        // but supplied text is still held to the same length/character bar.
+        RuleFor(r => r.Content)
+            .Must(v => v is not null && v.Length <= ValidationRules.LongTextMax)
+                .WithMessage($"Must be at most {ValidationRules.LongTextMax} characters.")
+                .WithErrorCode("text.too_long")
+            .Must(v => !ValidationRules.ContainsForbiddenControlChar(v))
+                .WithMessage("Must not contain control characters.")
+                .WithErrorCode("text.control_char")
+            .Must(v => !ValidationRules.ContainsBidiOverride(v))
+                .WithMessage("Must not contain bidirectional-override characters.")
+                .WithErrorCode("text.bidi_override")
+            .When(r => r.Attachments is { Count: > 0 });
+
+        RuleFor(r => r.Attachments!)
+            .Must(a => a.Count <= ValidationRules.AttachmentMaxCount)
+                .WithMessage($"At most {ValidationRules.AttachmentMaxCount} attachments per message.")
+                .WithErrorCode("attachments.too_many")
+            .When(r => r.Attachments is not null);
+
+        RuleForEach(r => r.Attachments!)
+            .SetValidator(attachmentValidator)
+            .When(r => r.Attachments is not null);
 
         RuleFor(r => r.ModelId!)
             .Must(ValidationRules.IsSafeIdentifier)

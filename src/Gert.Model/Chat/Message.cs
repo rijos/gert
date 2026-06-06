@@ -15,6 +15,12 @@ public sealed record Message
 
     public required string Content { get; init; }
 
+    /// <summary>
+    /// Inline image attachments (pasted into the composer); null/empty for
+    /// messages without images — assistant rows never carry any.
+    /// </summary>
+    public IReadOnlyList<MessageAttachment>? Attachments { get; init; }
+
     /// <summary>Model that produced this message; null for user/system rows.</summary>
     public string? ModelId { get; init; }
 

@@ -65,6 +65,15 @@ Body:
   "tools": { "rag": true, "search": true, "sandbox": false } }
 ```
 
+Optional `attachments` carry pasted images inline (vision input) — up to 6 of
+`{ "mime_type": "image/png|image/jpeg|image/webp|image/gif", "data": "<base64>" }`.
+With attachments present, `content` may be empty (an image alone is a message).
+They persist on the user row (`messages.attachments_json`), come back verbatim
+on the thread GET, and ride upstream as OpenAI-style `image_url` data-URL
+content parts — for models the catalog gates as non-vision (a declared
+capability list without `"vision"`), the prompt degrades to text-only rather
+than erroring the turn.
+
 Responds **202 Accepted** — the turn runs *detached* on a background worker
 ([chat-and-tools.md § detached turns](chat-and-tools.md#detached-turns)); the
 body carries the persisted ids and the **subscribe cursor**:

@@ -26,7 +26,33 @@ public static class VllmChatRequestBuilder
 
             // An assistant turn that only carries tool calls omits `content`
             // entirely (the strictest reading of the OpenAI wire format).
-            if (m.Content is not null || m.ToolCalls is not { Count: > 0 })
+            if (m.Images is { Count: > 0 })
+            {
+                // Vision input: the OpenAI content-array form — the text part
+                // (when present) followed by one image_url part per image, each
+                // a base64 data URL (vLLM fetches nothing; the bytes ride the
+                // request).
+                var parts = new JsonArray();
+                if (!string.IsNullOrEmpty(m.Content))
+                {
+                    parts.Add(new JsonObject { ["type"] = "text", ["text"] = m.Content });
+                }
+
+                foreach (var image in m.Images)
+                {
+                    parts.Add(new JsonObject
+                    {
+                        ["type"] = "image_url",
+                        ["image_url"] = new JsonObject
+                        {
+                            ["url"] = $"data:{image.MimeType};base64,{image.DataBase64}",
+                        },
+                    });
+                }
+
+                msg["content"] = parts;
+            }
+            else if (m.Content is not null || m.ToolCalls is not { Count: > 0 })
             {
                 msg["content"] = m.Content;
             }

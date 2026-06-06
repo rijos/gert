@@ -22,6 +22,14 @@ public interface IModelCatalog
     bool SupportsTools(string modelId);
 
     /// <summary>
+    /// Whether <paramref name="modelId"/> accepts image input. Same permissive
+    /// stance as <see cref="SupportsTools"/>: only a catalog entry that declares
+    /// capabilities without <c>vision</c> gates — the planner then drops images
+    /// from the upstream prompt rather than erroring the turn.
+    /// </summary>
+    bool SupportsVision(string modelId);
+
+    /// <summary>
     /// The model's declared sampling for thinking-OFF turns, or null. Models
     /// whose checkpoint <c>generation_config.json</c> only carries the
     /// thinking-mode set (Qwen3.6) need the instruct set sent explicitly, or
@@ -39,6 +47,9 @@ public sealed class NullModelCatalog : IModelCatalog
 
     /// <inheritdoc />
     public bool SupportsTools(string modelId) => true;
+
+    /// <inheritdoc />
+    public bool SupportsVision(string modelId) => true;
 
     /// <inheritdoc />
     public GenerationParams? InstructParams(string modelId) => null;

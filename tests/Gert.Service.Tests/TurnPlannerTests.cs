@@ -249,6 +249,68 @@ public sealed class TurnPlannerTests
     }
 
     [Fact]
+    public async Task Attachments_persist_on_the_user_row_and_ride_history_as_images()
+    {
+        SeedConversation();
+        var now = DateTimeOffset.UtcNow;
+        // A prior user turn with an image: its attachment must re-enter history
+        // so the model keeps seeing earlier images.
+        _existing.Add(new Message
+        {
+            Id = Guid.NewGuid().ToString("D"),
+            ConversationId = Conv,
+            Role = MessageRole.User,
+            Content = "earlier image",
+            Attachments = [new MessageAttachment { MimeType = "image/jpeg", Data = "b2xk" }],
+            Status = MessageStatus.Complete,
+            CreatedAt = now.AddMinutes(-1),
+        });
+
+        var request = new SendMessageRequest
+        {
+            Content = "what is this?",
+            Attachments = [new MessageAttachment { MimeType = "image/png", Data = "aGVsbG8=" }],
+        };
+
+        // Default catalog (NullModelCatalog) is vision-permissive.
+        var job = await NewPlanner().PlanAsync(Pid, Conv, request);
+
+        var userRow = _persisted.Single(m => m.Role == MessageRole.User);
+        userRow.Attachments.Should().ContainSingle()
+            .Which.MimeType.Should().Be("image/png");
+
+        var prior = job.History.Single(m => m.Content == "earlier image");
+        prior.Images.Should().ContainSingle().Which.DataBase64.Should().Be("b2xk");
+
+        var tail = job.History[^1];
+        tail.Images.Should().ContainSingle();
+        tail.Images![0].MimeType.Should().Be("image/png");
+        tail.Images[0].DataBase64.Should().Be("aGVsbG8=");
+    }
+
+    [Fact]
+    public async Task Images_are_dropped_from_history_for_a_catalog_gated_non_vision_model()
+    {
+        var catalog = Substitute.For<IModelCatalog>();
+        catalog.SupportsTools(Arg.Any<string>()).Returns(true);
+        catalog.SupportsVision(Arg.Any<string>()).Returns(false);
+
+        var request = new SendMessageRequest
+        {
+            Content = "what is this?",
+            Attachments = [new MessageAttachment { MimeType = "image/png", Data = "aGVsbG8=" }],
+        };
+
+        var job = await NewPlanner(catalog: catalog).PlanAsync(Pid, Conv, request);
+
+        // The row keeps the attachment (UI truth) but the prompt degrades to
+        // text-only rather than erroring the turn — mirror of the tools gate.
+        _persisted.Single(m => m.Role == MessageRole.User).Attachments.Should().NotBeNull();
+        job.History[^1].Images.Should().BeNull();
+        job.History[^1].Content.Should().Be("what is this?");
+    }
+
+    [Fact]
     public async Task Per_model_user_params_fill_fields_the_conversation_leaves_unset()
     {
         SeedConversation(new Conversation

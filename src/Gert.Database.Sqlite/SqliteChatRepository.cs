@@ -194,7 +194,7 @@ public sealed class SqliteChatRepository(SqliteConnection connection) : IChatRep
         // seq is the primary order; pre-v2 rows all have seq=0 and fall back to
         // created_at, so legacy threads keep their original order.
         const string sql =
-            "SELECT id, conversation_id, role, content, model_id, token_count, reasoning, duration_ms, context_tokens, seq, status, created_at " +
+            "SELECT id, conversation_id, role, content, attachments_json, model_id, token_count, reasoning, duration_ms, context_tokens, seq, status, created_at " +
             "FROM messages WHERE conversation_id = @cid ORDER BY seq ASC, created_at ASC, id ASC;";
 
         var rows = await _connection.QueryAsync<MessageRow>(
@@ -210,8 +210,8 @@ public sealed class SqliteChatRepository(SqliteConnection connection) : IChatRep
         ArgumentNullException.ThrowIfNull(message);
 
         const string sql =
-            "INSERT INTO messages (id, conversation_id, role, content, model_id, token_count, seq, status, created_at) " +
-            "VALUES (@Id, @ConversationId, @Role, @Content, @ModelId, @TokenCount, @Seq, @Status, @CreatedAt);";
+            "INSERT INTO messages (id, conversation_id, role, content, attachments_json, model_id, token_count, seq, status, created_at) " +
+            "VALUES (@Id, @ConversationId, @Role, @Content, @AttachmentsJson, @ModelId, @TokenCount, @Seq, @Status, @CreatedAt);";
 
         await _connection.ExecuteAsync(new CommandDefinition(sql, new
         {
@@ -219,6 +219,9 @@ public sealed class SqliteChatRepository(SqliteConnection connection) : IChatRep
             message.ConversationId,
             Role = RoleToString(message.Role),
             message.Content,
+            AttachmentsJson = message.Attachments is { Count: > 0 }
+                ? JsonSerializer.Serialize(message.Attachments, JsonOptions)
+                : null,
             message.ModelId,
             message.TokenCount,
             message.Seq,
@@ -528,6 +531,7 @@ public sealed class SqliteChatRepository(SqliteConnection connection) : IChatRep
         ConversationId = row.ConversationId,
         Role = RoleFromString(row.Role),
         Content = row.Content,
+        Attachments = Deserialize<IReadOnlyList<MessageAttachment>>(row.AttachmentsJson),
         ModelId = row.ModelId,
         TokenCount = row.TokenCount,
         Reasoning = row.Reasoning,
@@ -712,6 +716,7 @@ public sealed class SqliteChatRepository(SqliteConnection connection) : IChatRep
         public required string ConversationId { get; init; }
         public required string Role { get; init; }
         public required string Content { get; init; }
+        public string? AttachmentsJson { get; init; }
         public string? ModelId { get; init; }
         public int? TokenCount { get; init; }
         public string? Reasoning { get; init; }

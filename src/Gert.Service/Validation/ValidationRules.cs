@@ -24,6 +24,35 @@ public static class ValidationRules
     /// <summary>Hard upper bound on an identifier-shaped string (model id, language tag).</summary>
     public const int IdentifierMax = 128;
 
+    /// <summary>Max inline image attachments on one message.</summary>
+    public const int AttachmentMaxCount = 6;
+
+    /// <summary>
+    /// Max base64 length of one attachment (~6 MB decoded — far above what the
+    /// composer's client-side downscale produces; the DoS brake, not a target).
+    /// </summary>
+    public const int AttachmentDataMaxChars = 8_000_000;
+
+    /// <summary>Image MIME types an attachment may declare (the composer's paste set).</summary>
+    private static readonly HashSet<string> AllowedImageMimeTypes = new(StringComparer.Ordinal)
+    {
+        "image/png",
+        "image/jpeg",
+        "image/webp",
+        "image/gif",
+    };
+
+    /// <summary>True if <paramref name="value"/> is an allowed attachment image MIME type.</summary>
+    public static bool IsAllowedImageMime(string? value) =>
+        value is not null && AllowedImageMimeTypes.Contains(value);
+
+    /// <summary>
+    /// True if <paramref name="value"/> is non-empty, well-formed base64 — checked
+    /// without decoding (no large transient buffers on the validation hot path).
+    /// </summary>
+    public static bool IsWellFormedBase64(string? value) =>
+        !string.IsNullOrEmpty(value) && System.Buffers.Text.Base64.IsValid(value.AsSpan());
+
     /// <summary>
     /// True if <paramref name="value"/> contains a control character that is never
     /// legitimate in user text. Tab/newline/carriage-return are allowed (multi-line

@@ -13,6 +13,9 @@ public sealed record ModelInfo
     /// <summary>The capability token that marks a model as tool-calling capable.</summary>
     public const string ToolsCapability = "tools";
 
+    /// <summary>The capability token that marks a model as vision (image input) capable.</summary>
+    public const string VisionCapability = "vision";
+
     /// <summary>Model id sent upstream as <c>model</c> (or the literal <c>default</c>).</summary>
     public string Id { get; init; } = "";
 
@@ -48,4 +51,7 @@ public sealed record ModelInfo
 
     /// <summary>Tool-calling capable — declared, or undeclared (permissive).</summary>
     public bool SupportsTools => Capabilities is null || Capabilities.Contains(ToolsCapability);
+
+    /// <summary>Vision (image input) capable — declared, or undeclared (permissive).</summary>
+    public bool SupportsVision => Capabilities is null || Capabilities.Contains(VisionCapability);
 }

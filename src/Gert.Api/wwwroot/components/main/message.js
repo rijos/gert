@@ -15,7 +15,7 @@ import { ToolCard } from "./tool-card.js";
 import * as artifacts from "../../state/artifacts.js";
 import * as ui from "../../state/ui.js";
 
-const { div, span, a, button } = van.tags;
+const { div, span, a, button, img } = van.tags;
 
 // inline [n] superscript marker (exported for the component-unit harness)
 export const Citation = ({ ordinal, label } = {}) =>
@@ -253,6 +253,10 @@ export const Message = component({
     /* long unbroken tokens (URLs, hashes) wrap instead of overflowing the thread */
     .msg .body{min-width:0; overflow-wrap:anywhere;}
     .msg.user .body{background:var(--bubble); border:1px solid var(--line); border-radius:var(--r); padding:13px 16px; color:var(--ink); font-size:14.5px; box-shadow:var(--lift);}
+    /* pasted images on a user message: bounded thumbnails above the text */
+    .msg.user .att-grid{display:flex; flex-wrap:wrap; gap:8px;}
+    .msg.user .att-grid + .att-text{margin-top:10px;}
+    .msg.user .att-img{max-width:280px; max-height:220px; border-radius:10px; border:1px solid var(--line); cursor:zoom-in; display:block;}
     .msg.bot .body{font-size:15px; line-height:1.62; color:var(--ink);}
     .msg.bot .body p{margin-bottom:12px;}
     .msg.bot .body strong{font-weight:700;}
@@ -335,7 +339,31 @@ export const Message = component({
       return div(
         { class: "msg user" },
         RoleHeader(false),
-        div({ class: "body" }, () => m.text),
+        div(
+          { class: "body" },
+          // pasted images (our own data URLs, never model output) above the text
+          () =>
+            m.attachments?.length
+              ? div(
+                  { class: "att-grid" },
+                  ...m.attachments.map((att) =>
+                    img({
+                      class: "att-img",
+                      src: `data:${att.mime_type};base64,${att.data}`,
+                      alt: "attached image",
+                      // full-size view: blob URL in a new tab (a data: URL
+                      // can't be window.open'd directly)
+                      onclick: () =>
+                        fetch(`data:${att.mime_type};base64,${att.data}`)
+                          .then((r) => r.blob())
+                          .then((b) => window.open(URL.createObjectURL(b), "_blank"))
+                          .catch(() => {}),
+                    }),
+                  ),
+                )
+              : div(),
+          () => (m.text ? div({ class: "att-text" }, m.text) : div()),
+        ),
       );
     }
 

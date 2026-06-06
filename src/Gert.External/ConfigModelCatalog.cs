@@ -38,7 +38,9 @@ public sealed class ConfigModelCatalog : IModelCatalog
         Id = chatModelId,
         Name = chatModelId == "default" ? "Default" : chatModelId,
         Default = true,
-        Capabilities = [ModelInfo.ToolsCapability],
+        // Permissive like an undeclared entry: assume capable rather than
+        // silently cripple — a non-vision deployment errors the turn honestly.
+        Capabilities = [ModelInfo.ToolsCapability, ModelInfo.VisionCapability],
         // The single-vLLM deployment this fallback exists for serves Qwen3.6,
         // whose generation_config.json carries only the thinking-mode sampling
         // — declare the card's instruct set so thinking-off turns don't decode
@@ -59,6 +61,10 @@ public sealed class ConfigModelCatalog : IModelCatalog
     /// <inheritdoc />
     public bool SupportsTools(string modelId) =>
         _models.FirstOrDefault(m => m.Id == modelId)?.SupportsTools ?? true;
+
+    /// <inheritdoc />
+    public bool SupportsVision(string modelId) =>
+        _models.FirstOrDefault(m => m.Id == modelId)?.SupportsVision ?? true;
 
     /// <inheritdoc />
     public Gert.Model.Dtos.GenerationParams? InstructParams(string modelId) =>

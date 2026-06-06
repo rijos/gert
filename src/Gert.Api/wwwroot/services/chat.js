@@ -276,13 +276,15 @@ export const stop = () => {
     .catch(() => activeController?.abort());
 };
 
-// send(content) — append the user message, open an assistant bubble, POST
-// (202 + cursor), then consume the detached turn's events.
-export const send = async (content) => {
+// send(content, attachments) — append the user message, open an assistant
+// bubble, POST (202 + cursor), then consume the detached turn's events.
+// `attachments` is [{ mime_type, data }] (base64 images pasted into the
+// composer) — an image alone is a valid message, text optional.
+export const send = async (content, attachments = []) => {
   const text = content.trim();
-  if (!text || chat.streaming.val) return;
+  if ((!text && !attachments.length) || chat.streaming.val) return;
 
-  chat.addUserMessage(text);
+  chat.addUserMessage(text, attachments);
   const assistant = chat.addAssistantMessage();
   chat.streaming.val = true;
 
@@ -294,6 +296,7 @@ export const send = async (content) => {
   if (!activeId.val) activeId.val = cid;
   const body = {
     content: text,
+    attachments: attachments.length ? attachments : undefined,
     model_id: selectedId.val,
     tools: { ...chat.tools },
     thinking: chat.thinking.val,

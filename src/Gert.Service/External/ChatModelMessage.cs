@@ -9,6 +9,12 @@ public sealed record ChatModelMessage
     /// <summary>Message text; <c>null</c> for an assistant turn that only carries tool calls.</summary>
     public string? Content { get; init; }
 
+    /// <summary>
+    /// Images riding a user message (vision input). When set, the builder emits
+    /// the OpenAI content-array form instead of a plain content string.
+    /// </summary>
+    public IReadOnlyList<ChatModelImage>? Images { get; init; }
+
     /// <summary>For tool-result messages (<c>role:"tool"</c>): the id of the tool call this responds to.</summary>
     public string? ToolCallId { get; init; }
 

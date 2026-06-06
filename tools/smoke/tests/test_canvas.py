@@ -36,6 +36,54 @@ def test_html_artifact_iframe_is_sandboxed(page: Page, base_url: str) -> None:
     assert "allow-same-origin" not in sandbox
 
 
+def test_html_artifact_carries_restrictive_csp(page: Page, base_url: str) -> None:
+    """F3 (egress half): the rendered srcdoc embeds a per-document CSP that denies
+    network/forms, so a prompt-injected page can't beacon out or phish — even
+    though scripts run for fidelity."""
+    page.goto(f"{base_url}/tests/harness.html")
+    srcdoc = page.evaluate(
+        """async () => {
+            const { Artifact } = await import('/components/canvas/artifact.js');
+            const node = Artifact({
+                artifact: { id: 'a1', kind: 'html', name: 'demo.html',
+                            content: '<h1>hi</h1>' },
+                active: () => true,
+            });
+            window.__mount(node);
+            return node.querySelector("iframe").srcdoc;
+        }"""
+    )
+    # The CSP <meta> is present, denies by default, allows inline scripts (fidelity)
+    # but no network egress and no form posts.
+    assert 'http-equiv="Content-Security-Policy"' in srcdoc
+    assert "default-src 'none'" in srcdoc
+    assert "script-src 'unsafe-inline'" in srcdoc
+    assert "form-action 'none'" in srcdoc
+    # connect-src is never granted, so it falls back to default-src 'none'.
+    assert "connect-src" not in srcdoc
+    # The artifact body still renders.
+    assert "<h1>hi</h1>" in srcdoc
+
+
+def test_svg_artifact_csp_denies_scripts(page: Page, base_url: str) -> None:
+    """The SVG viewer is script-free AND its per-document CSP says so."""
+    page.goto(f"{base_url}/tests/harness.html")
+    srcdoc = page.evaluate(
+        """async () => {
+            const { Artifact } = await import('/components/canvas/artifact.js');
+            const node = Artifact({
+                artifact: { id: 's1', kind: 'svg', name: 'art.svg',
+                            content: '<svg xmlns=\\"http://www.w3.org/2000/svg\\"></svg>' },
+                active: () => true,
+            });
+            window.__mount(node);
+            return node.querySelector("iframe").srcdoc;
+        }"""
+    )
+    assert "script-src 'none'" in srcdoc
+    assert "default-src 'none'" in srcdoc
+
+
 def test_html_artifact_source_view(page: Page, base_url: str) -> None:
     page.goto(f"{base_url}/tests/harness.html")
     page.evaluate(

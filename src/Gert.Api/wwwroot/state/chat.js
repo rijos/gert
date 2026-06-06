@@ -37,6 +37,7 @@ export const contextTokens = van.state(null);
 
 // Message shape (van-x reactive object pushed onto `messages`):
 //   { id, role: "user"|"assistant", text, streaming,
+//     attachments: [ { mime_type, data } ],  // pasted images (base64), user rows only
 //     tools: reactive([ { id, kind, status, label, tag, query, hits, code, stdout,
 //                         todos: [{ text, status }], open } ]),
 //     citations: reactive([ { ordinal, label, doc_id, locator } ]) }
@@ -68,6 +69,7 @@ export const reactiveMessage = (m) =>
     id: m.id ?? crypto.randomUUID(),
     role: m.role,
     text: m.text ?? "",
+    attachments: m.attachments ?? [],
     reasoning: m.reasoning ?? "",
     streaming: m.streaming ?? false,
     // live flag, or the persisted row status from a thread GET after reload
@@ -78,8 +80,8 @@ export const reactiveMessage = (m) =>
     citations: reactive(m.citations ?? []),
   });
 
-export const addUserMessage = (text) => {
-  const m = reactiveMessage({ role: "user", text });
+export const addUserMessage = (text, attachments = []) => {
+  const m = reactiveMessage({ role: "user", text, attachments });
   messages.push(m);
   return m;
 };

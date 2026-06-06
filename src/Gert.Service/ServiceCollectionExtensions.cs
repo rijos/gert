@@ -183,6 +183,7 @@ public static class ServiceCollectionExtensions
         AddValidator<ToolToggles, ToolTogglesValidator>(services);
         AddValidator<GenerationParams, GenerationParamsValidator>(services);
         AddValidator<ProjectDefaults, ProjectDefaultsValidator>(services);
+        AddValidator<Gert.Model.Chat.MessageAttachment, MessageAttachmentValidator>(services);
 
         // Request DTOs every service method accepts.
         AddValidator<SendMessageRequest, SendMessageRequestValidator>(services);

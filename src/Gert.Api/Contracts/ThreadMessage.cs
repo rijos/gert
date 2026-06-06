@@ -16,6 +16,12 @@ public sealed record ThreadMessage
     /// <summary>The message body (the persisted <c>content</c>). Wire: <c>text</c>.</summary>
     public required string Text { get; init; }
 
+    /// <summary>
+    /// Inline image attachments on a user row (<c>[{mime_type, data}]</c>, base64) —
+    /// the SPA re-renders the bubble's images from these after a reload.
+    /// </summary>
+    public IReadOnlyList<MessageAttachment> Attachments { get; init; } = [];
+
     public string? ModelId { get; init; }
 
     /// <summary>
@@ -54,6 +60,7 @@ public sealed record ThreadMessage
             Id = message.Id,
             Role = message.Role,
             Text = message.Content,
+            Attachments = message.Attachments ?? [],
             ModelId = message.ModelId,
             Status = message.Status,
             Seq = message.Seq,

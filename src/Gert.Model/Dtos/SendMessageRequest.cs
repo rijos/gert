@@ -1,3 +1,5 @@
+using Gert.Model.Chat;
+
 namespace Gert.Model.Dtos;
 
 /// <summary>
@@ -8,6 +10,13 @@ namespace Gert.Model.Dtos;
 public sealed record SendMessageRequest
 {
     public required string Content { get; init; }
+
+    /// <summary>
+    /// Inline image attachments (pasted into the composer), sent upstream to
+    /// vision-capable models. With attachments present, <see cref="Content"/>
+    /// may be empty — an image alone is a valid message.
+    /// </summary>
+    public IReadOnlyList<MessageAttachment>? Attachments { get; init; }
 
     public string? ModelId { get; init; }
 
