@@ -12,9 +12,11 @@ public enum ChatEventType
     MessageStart,
     ToolCall,
     ToolResult,
+    Reasoning,
     Delta,
     Citation,
     Artifact,
     MessageEnd,
+    Cancelled,
     Error,
 }

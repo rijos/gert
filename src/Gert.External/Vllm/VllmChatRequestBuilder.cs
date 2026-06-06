@@ -22,14 +22,49 @@ public static class VllmChatRequestBuilder
         var messages = new JsonArray();
         foreach (var m in request.Messages)
         {
-            var msg = new JsonObject
+            var msg = new JsonObject { ["role"] = m.Role };
+
+            // An assistant turn that only carries tool calls omits `content`
+            // entirely (the strictest reading of the OpenAI wire format).
+            if (m.Content is not null || m.ToolCalls is not { Count: > 0 })
             {
-                ["role"] = m.Role,
-                ["content"] = m.Content,
-            };
+                msg["content"] = m.Content;
+            }
+
+            // Prior-turn thinking sent back for interleaved reasoning: the
+            // Qwen3.6 template re-wraps it as a <think> block when
+            // preserve_thinking is on. Never emit empty strings — empty
+            // <think> blocks drift the rendered prompt and invalidate the
+            // vLLM prefix cache (QwenLM/Qwen3.6#131).
+            if (!string.IsNullOrEmpty(m.ReasoningContent))
+            {
+                msg["reasoning_content"] = m.ReasoningContent;
+            }
+
             if (!string.IsNullOrEmpty(m.ToolCallId))
             {
                 msg["tool_call_id"] = m.ToolCallId;
+            }
+
+            if (m.ToolCalls is { Count: > 0 })
+            {
+                var calls = new JsonArray();
+                foreach (var c in m.ToolCalls)
+                {
+                    calls.Add(new JsonObject
+                    {
+                        ["id"] = c.Id,
+                        ["type"] = "function",
+                        ["function"] = new JsonObject
+                        {
+                            ["name"] = c.Name,
+                            // OpenAI wire format: arguments is the raw JSON *string*.
+                            ["arguments"] = c.ArgumentsJson,
+                        },
+                    });
+                }
+
+                msg["tool_calls"] = calls;
             }
 
             messages.Add(msg);
@@ -94,6 +129,26 @@ public static class VllmChatRequestBuilder
             }
 
             body["stop"] = stopArray;
+        }
+
+        // Template kwargs — only when explicitly set (omit = server default).
+        // NOTE: these change the rendered chat template, and so the vLLM
+        // prefix-cache key for the whole conversation; a mid-conversation
+        // toggle costs one full prefill.
+        if (request.EnableThinking is not null || request.PreserveThinking is not null)
+        {
+            var kwargs = new JsonObject();
+            if (request.EnableThinking is { } think)
+            {
+                kwargs["enable_thinking"] = think;
+            }
+
+            if (request.PreserveThinking is { } preserve)
+            {
+                kwargs["preserve_thinking"] = preserve;
+            }
+
+            body["chat_template_kwargs"] = kwargs;
         }
 
         return body;

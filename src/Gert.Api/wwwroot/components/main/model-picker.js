@@ -1,10 +1,12 @@
-// components/main/model-picker.js — dropdown of models + capability badges.
+// components/main/model-picker.js — dropdown of models + capability badges +
+// a per-model settings cogwheel (temperature/top-p/max-tokens via the modal).
 // Binds to state/models (van-x list + selected). Uses ui/menu + badge.
 import van from "van";
 import { component } from "../../lib/component.js";
 import { Icon } from "../../icons/icons.js";
 import { Menu } from "../ui/menu.js";
 import { Badge } from "../ui/badge.js";
+import { openModelSettings } from "../settings/model-settings-modal.js";
 import * as models from "../../state/models.js";
 
 const { div, button, span } = van.tags;
@@ -27,6 +29,17 @@ const ModelItem = (m) =>
               " · fast",
             )
           : null,
+      ),
+      button(
+        {
+          class: "m-gear",
+          title: "Model settings (temperature, top-p, max tokens)",
+          onclick: (e) => {
+            e.stopPropagation(); // don't select the model
+            openModelSettings(m);
+          },
+        },
+        Icon("gear", { size: 13, strokeWidth: 2 }),
       ),
     ),
     div({ class: "m-id" }, (m.id || "") + (m.endpoint ? " · " + m.endpoint : "")),
@@ -53,6 +66,9 @@ export const ModelPicker = component({
     .m-item:hover{background:var(--inset);}
     .m-item.sel{background:var(--accent-soft);}
     .m-top{display:flex; align-items:center; gap:8px;}
+    .m-gear{margin-left:auto; display:grid; place-items:center; width:24px; height:24px; border:none; border-radius:7px; background:none; color:var(--ink-faint); cursor:pointer; opacity:0; transition:.13s; flex:none;}
+    .m-item:hover .m-gear,.m-gear:focus-visible{opacity:1;}
+    .m-gear:hover{background:var(--surface-2); color:var(--accent-deep);}
     .m-name{font-weight:600; font-size:13px;}
     .m-name .star{color:var(--accent); font-size:11px;}
     .m-id{font-family:var(--mono); font-size:11px; color:var(--ink-faint); margin:3px 0 6px;}

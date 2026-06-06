@@ -17,9 +17,11 @@ namespace Gert.Service.Chat;
 /// <see cref="ITurnRunner"/> — the tool loop (chat-and-tools.md § the tool loop),
 /// detached from any transport. Replaces the old <c>ChatService.RunAsync</c>
 /// iterator: because nothing here <c>yield</c>s, the model stream is consumed
-/// inside ordinary <c>try/catch</c> and every chunk flows out the moment it
-/// arrives — no per-call buffering (the old <c>DrainModelCallAsync</c>), so
-/// time-to-first-token is the model's, not the turn's.
+/// inside ordinary <c>try/catch</c>. Text deltas coalesce into one event per
+/// <see cref="TurnOptions.DeltaFlushInterval"/> window (size-capped by
+/// <see cref="TurnOptions.DeltaFlushMaxChars"/>) — the window opens at stream
+/// start, so after a typical prefill the first token flushes immediately and
+/// time-to-first-token stays the model's, not the turn's.
 ///
 /// <para>
 /// The emit protocol is <b>persist, then publish</b>: allocate a seq, append the
@@ -46,13 +48,17 @@ public sealed class TurnRunner : ITurnRunner
     private readonly IConversationBus _bus;
     private readonly IReadOnlyList<ITool> _tools;
     private readonly TurnOptions _options;
+    private readonly TimeProvider _clock;
+    private readonly ITurnCancellation _cancellation;
 
     public TurnRunner(
         IDatabaseProvider databases,
         IChatModelClient model,
         IConversationBus bus,
         IEnumerable<ITool> tools,
-        IOptions<TurnOptions> options)
+        IOptions<TurnOptions> options,
+        TimeProvider clock,
+        ITurnCancellation cancellation)
     {
         _databases = databases ?? throw new ArgumentNullException(nameof(databases));
         _model = model ?? throw new ArgumentNullException(nameof(model));
@@ -60,6 +66,8 @@ public sealed class TurnRunner : ITurnRunner
         ArgumentNullException.ThrowIfNull(tools);
         _tools = tools.ToList();
         _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
+        _clock = clock ?? throw new ArgumentNullException(nameof(clock));
+        _cancellation = cancellation ?? throw new ArgumentNullException(nameof(cancellation));
     }
 
     /// <inheritdoc />
@@ -67,13 +75,17 @@ public sealed class TurnRunner : ITurnRunner
     {
         ArgumentNullException.ThrowIfNull(job);
 
-        // The turn's only clock: the host token (shutdown) + the wall-clock cap.
+        // The turn's clock: the host token (shutdown) + the wall-clock cap, then
+        // the user-cancel source the registry links in (rest-api.md § stop).
         using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         lifetime.CancelAfter(_options.MaxTurnDuration);
-        var token = lifetime.Token;
+
+        using var registration = _cancellation.Register(TurnKey.From(job), lifetime.Token);
+        var token = registration.Token;
 
         var topic = new ConversationTopic(job.Iss, job.Sub, job.Pid, job.ConversationId);
         var content = new StringBuilder();
+        var reasoning = new StringBuilder();
 
         try
         {
@@ -81,22 +93,28 @@ public sealed class TurnRunner : ITurnRunner
                 .OpenChatAsync(job.Iss, job.Sub, job.Pid, token)
                 .ConfigureAwait(false);
 
-            await ExecuteTurnAsync(job, repo, topic, content, token).ConfigureAwait(false);
+            await ExecuteTurnAsync(job, repo, topic, content, reasoning, token).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             // Host shutdown: best-effort error finalise (fresh repo, no token —
             // the orphan rule covers us if even this is cut short), then let the
             // worker observe the shutdown.
-            await FinalizeErrorAsync(job, topic, content, "turn interrupted by shutdown").ConfigureAwait(false);
+            await FinalizeErrorAsync(job, topic, content, reasoning, "turn interrupted by shutdown").ConfigureAwait(false);
             throw;
+        }
+        catch (OperationCanceledException) when (registration.IsUserCancelled)
+        {
+            // User stop: a normal outcome, not a fault — finalise cancelled with
+            // the partial content and do NOT rethrow.
+            await FinalizeCancelledAsync(job, topic, content, reasoning).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
             var reason = lifetime.IsCancellationRequested
                 ? $"turn exceeded the {_options.MaxTurnDuration} limit"
                 : ex.Message;
-            await FinalizeErrorAsync(job, topic, content, reason).ConfigureAwait(false);
+            await FinalizeErrorAsync(job, topic, content, reasoning, reason).ConfigureAwait(false);
         }
     }
 
@@ -105,6 +123,7 @@ public sealed class TurnRunner : ITurnRunner
         IChatRepository repo,
         ConversationTopic topic,
         StringBuilder content,
+        StringBuilder reasoning,
         CancellationToken token)
     {
         await EmitAsync(repo, topic, new MessageStartEvent { MessageId = job.AssistantMessageId }, token)
@@ -122,123 +141,234 @@ public sealed class TurnRunner : ITurnRunner
 
         var toolSpecs = job.Tools;
         int? tokenCount = null;
+        int? promptTokens = null;
+        long genElapsedTicks = 0;
         var collectedCitations = new List<Citation>();
         var round = 0;
 
-        while (true)
+        // Delta coalescing: chunks buffer in `pending` (answer text) and
+        // `pendingReasoning` (thinking text) and flush as ONE event each (one
+        // seq = one durable row = one publish) on the time/size thresholds and
+        // at every boundary. The splice stays exact — the streamer dedups by
+        // seq, not by token granularity — while turn_events write amplification
+        // drops by an order of magnitude. `content`/`reasoning` accumulate
+        // per-chunk independently, so finalize paths never depend on a flush.
+        // Reasoning always precedes content within a round, so its buffer
+        // flushes first at every boundary to preserve wire ordering.
+        var pending = new StringBuilder();
+        var pendingReasoning = new StringBuilder();
+        var lastFlushTs = _clock.GetTimestamp();
+        var lastReasoningFlushTs = _clock.GetTimestamp();
+
+        async Task FlushPendingReasoningAsync()
         {
-            var completion = new ChatCompletionRequest
+            if (pendingReasoning.Length == 0)
             {
-                ModelId = job.ModelId,
-                Messages = messages,
-                Tools = toolSpecs,
-                Temperature = job.Temperature,
-                TopP = job.TopP,
-                MaxTokens = job.MaxTokens,
-                Stop = job.Stop,
-                Seed = job.Seed,
-            };
-
-            // Stream the model call LIVE: each text delta is emitted the moment it
-            // arrives (per-chunk durable rows keep replay seq-exact with the live
-            // stream — coarser coalescing would desync the splice watermark).
-            var toolCalls = new List<ChatModelToolCall>();
-            await foreach (var chunk in _model.StreamAsync(completion, token).ConfigureAwait(false))
-            {
-                if (!string.IsNullOrEmpty(chunk.TextDelta))
-                {
-                    content.Append(chunk.TextDelta);
-                    await EmitAsync(repo, topic, new DeltaEvent { Text = chunk.TextDelta }, token)
-                        .ConfigureAwait(false);
-                }
-
-                if (chunk.ToolCall is not null)
-                {
-                    toolCalls.Add(chunk.ToolCall);
-                }
-
-                if (chunk.TokenCount is not null)
-                {
-                    tokenCount = chunk.TokenCount;
-                }
+                return;
             }
 
-            // No tool calls → the model produced its final answer; leave the loop.
-            if (toolCalls.Count == 0)
+            var text = pendingReasoning.ToString();
+            pendingReasoning.Clear();
+            lastReasoningFlushTs = _clock.GetTimestamp();
+            await EmitAsync(repo, topic, new ReasoningEvent { Text = text }, token).ConfigureAwait(false);
+        }
+
+        async Task FlushPendingAsync()
+        {
+            await FlushPendingReasoningAsync().ConfigureAwait(false);
+
+            if (pending.Length == 0)
             {
-                break;
+                return;
             }
 
-            // Round cap: stop offering tools and let the model answer with what it has.
-            if (round >= MaxToolRounds)
-            {
-                toolSpecs = [];
-                continue;
-            }
+            var text = pending.ToString();
+            pending.Clear();
+            lastFlushTs = _clock.GetTimestamp();
+            await EmitAsync(repo, topic, new DeltaEvent { Text = text }, token).ConfigureAwait(false);
+        }
 
-            round++;
-
-            foreach (var call in toolCalls)
+        try
+        {
+            while (true)
             {
-                // The assistant turn that asked for the tool must precede its
-                // result in the upstream history.
+                var completion = new ChatCompletionRequest
+                {
+                    ModelId = job.ModelId,
+                    Messages = messages,
+                    Tools = toolSpecs,
+                    Temperature = job.Temperature,
+                    TopP = job.TopP,
+                    MaxTokens = job.MaxTokens,
+                    Stop = job.Stop,
+                    Seed = job.Seed,
+                    EnableThinking = job.Thinking,
+                    PreserveThinking = job.PreserveThinking,
+                };
+
+                var toolCalls = new List<ChatModelToolCall>();
+
+                // Pure generation time: spans cover stream consumption only —
+                // tool execution happens between rounds, outside this span.
+                var roundStart = _clock.GetTimestamp();
+                await foreach (var chunk in _model.StreamAsync(completion, token).ConfigureAwait(false))
+                {
+                    if (!string.IsNullOrEmpty(chunk.ReasoningDelta))
+                    {
+                        reasoning.Append(chunk.ReasoningDelta);
+                        pendingReasoning.Append(chunk.ReasoningDelta);
+
+                        var dueReasoning = _options.DeltaFlushInterval <= TimeSpan.Zero
+                            || pendingReasoning.Length >= _options.DeltaFlushMaxChars
+                            || _clock.GetElapsedTime(lastReasoningFlushTs) >= _options.DeltaFlushInterval;
+                        if (dueReasoning)
+                        {
+                            await FlushPendingReasoningAsync().ConfigureAwait(false);
+                        }
+                    }
+
+                    if (!string.IsNullOrEmpty(chunk.TextDelta))
+                    {
+                        content.Append(chunk.TextDelta);
+                        pending.Append(chunk.TextDelta);
+
+                        var due = _options.DeltaFlushInterval <= TimeSpan.Zero
+                            || pending.Length >= _options.DeltaFlushMaxChars
+                            || _clock.GetElapsedTime(lastFlushTs) >= _options.DeltaFlushInterval;
+                        if (due)
+                        {
+                            await FlushPendingAsync().ConfigureAwait(false);
+                        }
+                    }
+
+                    if (chunk.ToolCall is not null)
+                    {
+                        toolCalls.Add(chunk.ToolCall);
+                    }
+
+                    if (chunk.TokenCount is not null)
+                    {
+                        tokenCount = chunk.TokenCount;
+                    }
+
+                    if (chunk.PromptTokenCount is not null)
+                    {
+                        // Last round wins — the largest prompt is the turn's
+                        // real context footprint.
+                        promptTokens = chunk.PromptTokenCount;
+                    }
+                }
+
+                genElapsedTicks += _clock.GetElapsedTime(roundStart).Ticks;
+
+                // Boundary flush: all of a round's text precedes its tool events,
+                // and the final round's text precedes citations/message_end.
+                await FlushPendingAsync().ConfigureAwait(false);
+
+                // No tool calls → the model produced its final answer; leave the loop.
+                if (toolCalls.Count == 0)
+                {
+                    break;
+                }
+
+                // Round cap: stop offering tools and let the model answer with what it
+                // has. (Clearing the tools array re-renders the templated system/tools
+                // region upstream and so invalidates the vLLM prefix cache for this
+                // final round — acceptable for a runaway loop; tool_choice:"none"
+                // would preserve the prefix if vLLM support is ever confirmed.)
+                if (round >= MaxToolRounds)
+                {
+                    toolSpecs = [];
+                    continue;
+                }
+
+                round++;
+
+                // The assistant turn that asked for the tools must precede their
+                // results in the upstream history: ONE assistant message carrying the
+                // whole round's tool_calls (OpenAI wire format), then one tool-role
+                // result message per call, in call order.
                 messages.Add(new ChatModelMessage
                 {
                     Role = "assistant",
-                    Content = string.Empty,
-                    ToolCallId = call.Id,
+                    Content = null,
+                    ToolCalls = toolCalls,
                 });
 
-                await EmitAsync(repo, topic, new ToolCallEvent
+                foreach (var call in toolCalls)
                 {
-                    Id = call.Id,
-                    Kind = ResolveKind(call.Name),
-                    Status = ToolCallStatus.Running,
-                    Request = ParseArgs(call.ArgumentsJson),
-                }, token).ConfigureAwait(false);
+                    await EmitAsync(repo, topic, new ToolCallEvent
+                    {
+                        Id = call.Id,
+                        Kind = ResolveKind(call.Name),
+                        Status = ToolCallStatus.Running,
+                        Request = ParseArgs(call.ArgumentsJson),
+                    }, token).ConfigureAwait(false);
 
-                var outcome = await ExecuteToolAsync(job, call, token).ConfigureAwait(false);
+                    var outcome = await ExecuteToolAsync(job, call, token).ConfigureAwait(false);
 
-                await EmitAsync(repo, topic, new ToolResultEvent
-                {
-                    Id = call.Id,
-                    Kind = outcome.Kind,
-                    Status = outcome.Status,
-                    LatencyMs = outcome.LatencyMs,
-                    Hits = outcome.Hits,
-                    Stdout = outcome.Stdout,
-                    Todos = outcome.Todos,
-                }, token).ConfigureAwait(false);
+                    await EmitAsync(repo, topic, new ToolResultEvent
+                    {
+                        Id = call.Id,
+                        Kind = outcome.Kind,
+                        Status = outcome.Status,
+                        LatencyMs = outcome.LatencyMs,
+                        Hits = outcome.Hits,
+                        Stdout = outcome.Stdout,
+                        Todos = outcome.Todos,
+                    }, token).ConfigureAwait(false);
 
-                // Tool rows persist LIVE (the tree read model grows as the turn
-                // runs), and citations keep their provenance: which call made them.
-                var toolCallRow = new ToolCall
-                {
-                    Id = Guid.NewGuid().ToString("D"),
-                    MessageId = job.AssistantMessageId,
-                    Kind = outcome.Kind,
-                    Status = outcome.Status,
-                    RequestJson = call.ArgumentsJson,
-                    ResponseJson = outcome.ResponseJson,
-                    LatencyMs = outcome.LatencyMs,
-                    CreatedAt = DateTimeOffset.UtcNow,
-                };
-                await repo.InsertToolCallAsync(toolCallRow, token).ConfigureAwait(false);
+                    // Tool rows persist LIVE (the tree read model grows as the turn
+                    // runs), and citations keep their provenance: which call made them.
+                    var toolCallRow = new ToolCall
+                    {
+                        Id = Guid.NewGuid().ToString("D"),
+                        MessageId = job.AssistantMessageId,
+                        Kind = outcome.Kind,
+                        Status = outcome.Status,
+                        RequestJson = call.ArgumentsJson,
+                        ResponseJson = outcome.ResponseJson,
+                        LatencyMs = outcome.LatencyMs,
+                        CreatedAt = DateTimeOffset.UtcNow,
+                    };
+                    await repo.InsertToolCallAsync(toolCallRow, token).ConfigureAwait(false);
 
-                collectedCitations.AddRange(outcome.Citations.Select(c => c with { ToolCallId = toolCallRow.Id }));
+                    collectedCitations.AddRange(outcome.Citations.Select(c => c with { ToolCallId = toolCallRow.Id }));
 
-                messages.Add(new ChatModelMessage
-                {
-                    Role = "tool",
-                    Content = outcome.ResponseJson ?? string.Empty,
-                    ToolCallId = call.Id,
-                });
+                    messages.Add(new ChatModelMessage
+                    {
+                        Role = "tool",
+                        Content = outcome.ResponseJson ?? string.Empty,
+                        ToolCallId = call.Id,
+                    });
+                }
+
+                // Tool boundary: flush accumulated text so thread reads see progress.
+                await repo.UpdateMessageStreamAsync(
+                    job.AssistantMessageId, content.ToString(), MessageStatus.Streaming, null, token)
+                    .ConfigureAwait(false);
             }
-
-            // Tool boundary: flush accumulated text so thread reads see progress.
-            await repo.UpdateMessageStreamAsync(
-                job.AssistantMessageId, content.ToString(), MessageStatus.Streaming, null, token)
-                .ConfigureAwait(false);
+        }
+        finally
+        {
+            // A fault mid-stream unwinds through here with text still buffered.
+            // `content`/`reasoning` reach the row via the error finalize
+            // regardless, but a REPLAYING client reads turn_events — flush the
+            // tails (best-effort, reasoning first) so the durable log carries
+            // everything that streamed. Skipped on a cancelled token: EmitAsync
+            // would throw, and the cancel finalize emits its own terminal event
+            // on a fresh token.
+            if ((pending.Length > 0 || pendingReasoning.Length > 0) && !token.IsCancellationRequested)
+            {
+                try
+                {
+                    await FlushPendingAsync().ConfigureAwait(false);
+                }
+                catch
+                {
+                    // Unwinding an exception already — the row's content is the backstop.
+                }
+            }
         }
 
         // Artifact extraction (implementation-plan U7b): named fences in the final
@@ -289,12 +419,22 @@ public sealed class TurnRunner : ITurnRunner
 
         // Finalise the row BEFORE the terminal event: a client that reacts to
         // message_end by re-reading the thread must see status=complete.
-        await repo.UpdateMessageStreamAsync(
-            job.AssistantMessageId, content.ToString(), MessageStatus.Complete, tokenCount, token)
+        var durationMs = (long)TimeSpan.FromTicks(genElapsedTicks).TotalMilliseconds;
+        var contextTokens = promptTokens is null && tokenCount is null
+            ? (int?)null
+            : (promptTokens ?? 0) + (tokenCount ?? 0);
+
+        await repo.FinalizeMessageAsync(
+            job.AssistantMessageId, content.ToString(), MessageStatus.Complete, tokenCount,
+            reasoning.Length > 0 ? reasoning.ToString() : null, durationMs, contextTokens, token)
             .ConfigureAwait(false);
 
-        await EmitAsync(repo, topic, new MessageEndEvent { TokenCount = tokenCount }, token)
-            .ConfigureAwait(false);
+        await EmitAsync(repo, topic, new MessageEndEvent
+        {
+            TokenCount = tokenCount,
+            DurationMs = durationMs,
+            ContextTokens = contextTokens,
+        }, token).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -330,6 +470,7 @@ public sealed class TurnRunner : ITurnRunner
         TurnJob job,
         ConversationTopic topic,
         StringBuilder content,
+        StringBuilder reasoning,
         string reason)
     {
         try
@@ -338,11 +479,44 @@ public sealed class TurnRunner : ITurnRunner
                 .OpenChatAsync(job.Iss, job.Sub, job.Pid, CancellationToken.None)
                 .ConfigureAwait(false);
 
-            await repo.UpdateMessageStreamAsync(
-                job.AssistantMessageId, content.ToString(), MessageStatus.Error, null, CancellationToken.None)
+            await repo.FinalizeMessageAsync(
+                job.AssistantMessageId, content.ToString(), MessageStatus.Error, null,
+                reasoning.Length > 0 ? reasoning.ToString() : null, null, null, CancellationToken.None)
                 .ConfigureAwait(false);
 
             await EmitAsync(repo, topic, new ErrorEvent { Message = reason }, CancellationToken.None)
+                .ConfigureAwait(false);
+        }
+        catch
+        {
+            // Orphan rule territory: the streaming row ages into an error.
+        }
+    }
+
+    /// <summary>
+    /// Best-effort cancelled finalise, mirroring <see cref="FinalizeErrorAsync"/>:
+    /// fresh repo, no cancellation (the turn's token IS the reason we are here),
+    /// the partial content persisted as <c>cancelled</c>, then the terminal
+    /// <c>cancelled</c> event.
+    /// </summary>
+    private async Task FinalizeCancelledAsync(
+        TurnJob job,
+        ConversationTopic topic,
+        StringBuilder content,
+        StringBuilder reasoning)
+    {
+        try
+        {
+            await using var repo = await _databases
+                .OpenChatAsync(job.Iss, job.Sub, job.Pid, CancellationToken.None)
+                .ConfigureAwait(false);
+
+            await repo.FinalizeMessageAsync(
+                job.AssistantMessageId, content.ToString(), MessageStatus.Cancelled, null,
+                reasoning.Length > 0 ? reasoning.ToString() : null, null, null, CancellationToken.None)
+                .ConfigureAwait(false);
+
+            await EmitAsync(repo, topic, new CancelledEvent(), CancellationToken.None)
                 .ConfigureAwait(false);
         }
         catch

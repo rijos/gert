@@ -27,6 +27,14 @@ export const tools = reactive({
   clock: true,
 });
 
+// per-conversation reasoning toggles (persisted server-side on send)
+export const thinking = van.state(true); // ON by default — the model's native behavior
+export const preserveThinking = van.state(false);
+
+// context usage of the conversation's last completed turn (prompt+completion
+// tokens of the final model round) — feeds the composer's ring.
+export const contextTokens = van.state(null);
+
 // Message shape (van-x reactive object pushed onto `messages`):
 //   { id, role: "user"|"assistant", text, streaming,
 //     tools: reactive([ { id, kind, status, label, tag, query, hits, code, stdout,
@@ -37,6 +45,9 @@ export const newConversation = () => {
   activeId.val = null;
   title.val = "New conversation";
   messages.length = 0;
+  thinking.val = true;
+  preserveThinking.val = false;
+  contextTokens.val = null;
 };
 
 export const setConversation = (conv) => {
@@ -44,6 +55,12 @@ export const setConversation = (conv) => {
   title.val = conv.title || "Untitled";
   messages.length = 0;
   (conv.messages || []).forEach((m) => messages.push(reactiveMessage(m)));
+  // Restore the reasoning toggles (null = server/model default).
+  thinking.val = conv.thinking ?? true;
+  preserveThinking.val = conv.preserve_thinking ?? false;
+  // The ring resumes from the last completed turn's context footprint.
+  contextTokens.val =
+    (conv.messages || []).findLast((m) => m.context_tokens != null)?.context_tokens ?? null;
 };
 
 export const reactiveMessage = (m) =>
@@ -51,7 +68,12 @@ export const reactiveMessage = (m) =>
     id: m.id ?? crypto.randomUUID(),
     role: m.role,
     text: m.text ?? "",
+    reasoning: m.reasoning ?? "",
     streaming: m.streaming ?? false,
+    // live flag, or the persisted row status from a thread GET after reload
+    cancelled: m.cancelled ?? m.status === "cancelled",
+    tokenCount: m.token_count ?? null,
+    durationMs: m.duration_ms ?? null,
     tools: reactive(m.tools ?? []),
     citations: reactive(m.citations ?? []),
   });

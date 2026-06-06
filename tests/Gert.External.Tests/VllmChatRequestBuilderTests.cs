@@ -123,4 +123,102 @@ public sealed class VllmChatRequestBuilderTests
         var body = VllmChatRequestBuilder.Build(request, "m");
         body["messages"]!.AsArray()[0]!["tool_call_id"]!.GetValue<string>().Should().Be("call_9");
     }
+
+    [Fact]
+    public void Build_SerializesAssistantToolCallsPerOpenAiWireFormat()
+    {
+        var request = BaseRequest() with
+        {
+            Messages =
+            [
+                new ChatModelMessage
+                {
+                    Role = "assistant",
+                    Content = null,
+                    ToolCalls =
+                    [
+                        new ChatModelToolCall { Id = "call_1", Name = "web_search", ArgumentsJson = """{"query":"x"}""" },
+                        new ChatModelToolCall { Id = "call_2", Name = "get_datetime", ArgumentsJson = "{}" },
+                    ],
+                },
+                new ChatModelMessage { Role = "tool", Content = "r1", ToolCallId = "call_1" },
+                new ChatModelMessage { Role = "tool", Content = "r2", ToolCallId = "call_2" },
+            ],
+        };
+
+        var body = VllmChatRequestBuilder.Build(request, "m");
+        var assistant = body["messages"]!.AsArray()[0]!.AsObject();
+
+        // Tool-call-only assistant turn: no content key, no tool_call_id, a
+        // tool_calls array in call order with `arguments` as the raw JSON string.
+        assistant.ContainsKey("content").Should().BeFalse();
+        assistant.ContainsKey("tool_call_id").Should().BeFalse();
+
+        var calls = assistant["tool_calls"]!.AsArray();
+        calls.Should().HaveCount(2);
+        calls[0]!["id"]!.GetValue<string>().Should().Be("call_1");
+        calls[0]!["type"]!.GetValue<string>().Should().Be("function");
+        calls[0]!["function"]!["name"]!.GetValue<string>().Should().Be("web_search");
+        calls[0]!["function"]!["arguments"]!.GetValue<string>().Should().Be("""{"query":"x"}""");
+        calls[1]!["function"]!["name"]!.GetValue<string>().Should().Be("get_datetime");
+    }
+
+    [Fact]
+    public void Build_EmitsChatTemplateKwargsOnlyWhenSet()
+    {
+        var plain = VllmChatRequestBuilder.Build(BaseRequest(), "m");
+        plain.ContainsKey("chat_template_kwargs").Should().BeFalse();
+
+        var thinkingOff = VllmChatRequestBuilder.Build(BaseRequest() with { EnableThinking = false }, "m");
+        thinkingOff["chat_template_kwargs"]!["enable_thinking"]!.GetValue<bool>().Should().BeFalse();
+        thinkingOff["chat_template_kwargs"]!.AsObject().ContainsKey("preserve_thinking").Should().BeFalse();
+
+        var both = VllmChatRequestBuilder.Build(
+            BaseRequest() with { EnableThinking = true, PreserveThinking = true }, "m");
+        both["chat_template_kwargs"]!["enable_thinking"]!.GetValue<bool>().Should().BeTrue();
+        both["chat_template_kwargs"]!["preserve_thinking"]!.GetValue<bool>().Should().BeTrue();
+    }
+
+    [Fact]
+    public void Build_CarriesReasoningContentOnAssistantHistoryButNeverEmpty()
+    {
+        var request = BaseRequest() with
+        {
+            Messages =
+            [
+                new ChatModelMessage { Role = "assistant", Content = "391", ReasoningContent = "17*23 = 391." },
+                new ChatModelMessage { Role = "assistant", Content = "ok", ReasoningContent = "" },
+            ],
+        };
+
+        var body = VllmChatRequestBuilder.Build(request, "m");
+        var messages = body["messages"]!.AsArray();
+        messages[0]!["reasoning_content"]!.GetValue<string>().Should().Be("17*23 = 391.");
+        // Empty reasoning must omit the key — empty <think> blocks drift the
+        // rendered prompt (QwenLM/Qwen3.6#131).
+        messages[1]!.AsObject().ContainsKey("reasoning_content").Should().BeFalse();
+    }
+
+    [Fact]
+    public void Build_KeepsContentOnAssistantToolCallTurnWhenPresent()
+    {
+        // A turn can carry both text and tool calls (the model "thought out loud").
+        var request = BaseRequest() with
+        {
+            Messages =
+            [
+                new ChatModelMessage
+                {
+                    Role = "assistant",
+                    Content = "let me check",
+                    ToolCalls = [new ChatModelToolCall { Id = "c", Name = "web_search", ArgumentsJson = "{}" }],
+                },
+            ],
+        };
+
+        var body = VllmChatRequestBuilder.Build(request, "m");
+        var assistant = body["messages"]!.AsArray()[0]!.AsObject();
+        assistant["content"]!.GetValue<string>().Should().Be("let me check");
+        assistant["tool_calls"]!.AsArray().Should().HaveCount(1);
+    }
 }

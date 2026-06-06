@@ -14,4 +14,7 @@ public abstract record ClientMessage
 
     /// <summary>Request one page of the event log over the socket (history backfill).</summary>
     public sealed record Range(long After, int Limit) : ClientMessage;
+
+    /// <summary>Stop the in-flight turn of this socket's conversation.</summary>
+    public sealed record Cancel : ClientMessage;
 }

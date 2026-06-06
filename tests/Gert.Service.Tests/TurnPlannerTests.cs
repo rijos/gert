@@ -55,7 +55,8 @@ public sealed class TurnPlannerTests
         TestUserContext? user = null,
         IEnumerable<ITool>? tools = null,
         IProjectInstructionsReader? instructions = null,
-        IModelCatalog? catalog = null) =>
+        IModelCatalog? catalog = null,
+        Gert.Service.Projects.ISettingsService? settings = null) =>
         new(
             _provider,
             user ?? new TestUserContext(),
@@ -63,30 +64,40 @@ public sealed class TurnPlannerTests
             tools ?? [],
             Options.Create(_options),
             instructions,
-            catalog);
+            catalog,
+            settings);
 
     private void SeedConversation(params (string Id, bool On)[] toggles)
     {
         var map = toggles.ToDictionary(t => t.Id, t => t.On, StringComparer.Ordinal);
-        _repo.GetConversationAsync(Conv, Arg.Any<CancellationToken>())
-            .Returns(new Conversation
-            {
-                Id = Conv,
-                Title = "t",
-                ModelId = "default",
-                Tools = new ToolToggles(map),
-                CreatedAt = DateTimeOffset.UtcNow,
-                UpdatedAt = DateTimeOffset.UtcNow,
-            });
+        SeedConversation(new Conversation
+        {
+            Id = Conv,
+            Title = "t",
+            ModelId = "default",
+            Tools = new ToolToggles(map),
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow,
+        });
     }
 
-    private void SeedExisting(MessageStatus status, DateTimeOffset createdAt, MessageRole role = MessageRole.Assistant, string content = "prior") =>
+    private void SeedConversation(Conversation conversation) =>
+        _repo.GetConversationAsync(Conv, Arg.Any<CancellationToken>())
+            .Returns(conversation);
+
+    private void SeedExisting(
+        MessageStatus status,
+        DateTimeOffset createdAt,
+        MessageRole role = MessageRole.Assistant,
+        string content = "prior",
+        string? reasoning = null) =>
         _existing.Add(new Message
         {
             Id = Guid.NewGuid().ToString("D"),
             ConversationId = Conv,
             Role = role,
             Content = content,
+            Reasoning = reasoning,
             Status = status,
             CreatedAt = createdAt,
         });
@@ -147,12 +158,150 @@ public sealed class TurnPlannerTests
         SeedExisting(MessageStatus.Complete, now.AddMinutes(-9), MessageRole.Assistant, "earlier answer");
         // An old failed turn: its partial content must never re-enter the prompt.
         SeedExisting(MessageStatus.Error, now.AddMinutes(-5), MessageRole.Assistant, "partial garbage");
+        // A user-stopped turn: same rule — the partial is UI context only.
+        SeedExisting(MessageStatus.Cancelled, now.AddMinutes(-3), MessageRole.Assistant, "stopped partial");
 
         var job = await NewPlanner().PlanAsync(Pid, Conv, new SendMessageRequest { Content = "follow-up" });
 
         job.History.Select(m => m.Content)
             .Should().Equal("earlier question", "earlier answer", "follow-up");
         job.History.Last().Role.Should().Be("user");
+    }
+
+    [Fact]
+    public async Task Thinking_request_overrides_conversation_and_persists_onto_it()
+    {
+        SeedConversation(new Conversation
+        {
+            Id = Conv,
+            Title = "t",
+            ModelId = "default",
+            Thinking = true,
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow,
+        });
+
+        var job = await NewPlanner().PlanAsync(
+            Pid, Conv, new SendMessageRequest { Content = "hi", Thinking = false });
+
+        job.Thinking.Should().BeFalse("the request wins over the conversation");
+        await _repo.Received(1).UpdateConversationAsync(
+            Arg.Is<Conversation>(c => c.Thinking == false),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task Thinking_falls_back_to_the_conversation_preference()
+    {
+        SeedConversation(new Conversation
+        {
+            Id = Conv,
+            Title = "t",
+            ModelId = "default",
+            Thinking = false,
+            PreserveThinking = true,
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow,
+        });
+
+        var job = await NewPlanner().PlanAsync(Pid, Conv, new SendMessageRequest { Content = "hi" });
+
+        job.Thinking.Should().BeFalse();
+        job.PreserveThinking.Should().BeTrue();
+        // Nothing changed → no conversation write.
+        await _repo.DidNotReceive().UpdateConversationAsync(
+            Arg.Any<Conversation>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task Preserve_thinking_carries_prior_assistant_reasoning_into_history()
+    {
+        SeedConversation(new Conversation
+        {
+            Id = Conv,
+            Title = "t",
+            ModelId = "default",
+            PreserveThinking = true,
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow,
+        });
+        var now = DateTimeOffset.UtcNow;
+        SeedExisting(MessageStatus.Complete, now.AddMinutes(-2), MessageRole.User, "q");
+        SeedExisting(MessageStatus.Complete, now.AddMinutes(-1), MessageRole.Assistant, "391", reasoning: "17*23 = 391.");
+
+        var job = await NewPlanner().PlanAsync(Pid, Conv, new SendMessageRequest { Content = "next" });
+
+        var assistant = job.History.Single(m => m.Role == "assistant");
+        assistant.ReasoningContent.Should().Be("17*23 = 391.");
+        job.History.Single(m => m.Content == "q").ReasoningContent.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Reasoning_stays_out_of_history_when_preserve_thinking_is_off()
+    {
+        SeedConversation();
+        var now = DateTimeOffset.UtcNow;
+        SeedExisting(MessageStatus.Complete, now.AddMinutes(-1), MessageRole.Assistant, "391", reasoning: "17*23 = 391.");
+
+        var job = await NewPlanner().PlanAsync(Pid, Conv, new SendMessageRequest { Content = "next" });
+
+        job.History.Single(m => m.Role == "assistant").ReasoningContent.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Per_model_user_params_fill_fields_the_conversation_leaves_unset()
+    {
+        SeedConversation(new Conversation
+        {
+            Id = Conv,
+            Title = "t",
+            ModelId = "default",
+            Params = new GenerationParams { Temperature = 0.7 },
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow,
+        });
+
+        var settings = Substitute.For<Gert.Service.Projects.ISettingsService>();
+        settings.GetAsync(Arg.Any<CancellationToken>()).Returns(new Gert.Model.Projects.UserSettings
+        {
+            ModelParams = new Dictionary<string, GenerationParams>(StringComparer.Ordinal)
+            {
+                ["default"] = new GenerationParams { Temperature = 0.3, TopP = 0.9, MaxTokens = 2048 },
+            },
+        });
+
+        var job = await NewPlanner(settings: settings).PlanAsync(Pid, Conv, new SendMessageRequest { Content = "hi" });
+
+        // Conversation wins field-by-field; settings fill the gaps.
+        job.Temperature.Should().Be(0.7);
+        job.TopP.Should().Be(0.9);
+        job.MaxTokens.Should().Be(2048);
+    }
+
+    [Fact]
+    public async Task A_broken_settings_read_never_fails_the_turn()
+    {
+        SeedConversation();
+        var settings = Substitute.For<Gert.Service.Projects.ISettingsService>();
+        settings.GetAsync(Arg.Any<CancellationToken>())
+            .Returns<Gert.Model.Projects.UserSettings>(_ => throw new InvalidOperationException("boom"));
+
+        var job = await NewPlanner(settings: settings).PlanAsync(Pid, Conv, new SendMessageRequest { Content = "hi" });
+
+        job.Temperature.Should().BeNull();
+        job.AssistantMessageId.Should().NotBeNullOrEmpty();
+    }
+
+    [Fact]
+    public async Task A_cancelled_turn_does_not_block_new_turns()
+    {
+        SeedConversation();
+        // Just stopped seconds ago: cancelled is terminal, never in-progress.
+        SeedExisting(MessageStatus.Cancelled, DateTimeOffset.UtcNow.AddSeconds(-2));
+
+        var job = await NewPlanner().PlanAsync(Pid, Conv, new SendMessageRequest { Content = "again" });
+
+        job.AssistantMessageId.Should().NotBeNullOrEmpty();
     }
 
     [Fact]

@@ -21,8 +21,8 @@ public class MigrationTests
 
             var applied = await SqliteMigrationRunner.ApplyAsync(connection, "chat");
 
-            applied.Should().Be(2);
-            (await UserVersionAsync(connection)).Should().Be(2);
+            applied.Should().Be(3);
+            (await UserVersionAsync(connection)).Should().Be(3);
 
             var tables = await TableNamesAsync(connection);
             tables.Should().Contain(new[] { "conversations", "messages", "tool_calls", "citations", "artifacts", "turn_events" });
@@ -45,7 +45,7 @@ public class MigrationTests
             await SqliteMigrationRunner.ApplyAsync(connection, "chat");
             var second = await SqliteMigrationRunner.ApplyAsync(connection, "chat");
 
-            second.Should().Be(2, "re-running an up-to-date DB is a no-op");
+            second.Should().Be(3, "re-running an up-to-date DB is a no-op");
         }
         finally
         {
@@ -75,13 +75,21 @@ public class MigrationTests
 
             var applied = await SqliteMigrationRunner.ApplyAsync(connection, "chat");
 
-            applied.Should().Be(2);
+            applied.Should().Be(3);
 
             // Legacy rows got the v2 defaults: seq=0, status='complete', next_seq=1.
             (await ScalarAsync(connection, "SELECT seq FROM messages WHERE id='m1';")).Should().Be(0L);
             (await ScalarAsync(connection, "SELECT status FROM messages WHERE id='m1';")).Should().Be("complete");
             (await ScalarAsync(connection, "SELECT next_seq FROM conversations WHERE id='c1';")).Should().Be(1L);
             (await ScalarAsync(connection, "SELECT COUNT(*) FROM turn_events;")).Should().Be(0L);
+
+            // …and the v3 columns exist, NULL on legacy rows (reasoning/metrics
+            // + the conversation reasoning toggles).
+            (await ScalarAsync(connection, "SELECT reasoning FROM messages WHERE id='m1';")).Should().Be(DBNull.Value);
+            (await ScalarAsync(connection, "SELECT duration_ms FROM messages WHERE id='m1';")).Should().Be(DBNull.Value);
+            (await ScalarAsync(connection, "SELECT context_tokens FROM messages WHERE id='m1';")).Should().Be(DBNull.Value);
+            (await ScalarAsync(connection, "SELECT thinking FROM conversations WHERE id='c1';")).Should().Be(DBNull.Value);
+            (await ScalarAsync(connection, "SELECT preserve_thinking FROM conversations WHERE id='c1';")).Should().Be(DBNull.Value);
         }
         finally
         {

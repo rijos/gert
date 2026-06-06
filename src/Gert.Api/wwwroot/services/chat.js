@@ -52,6 +52,10 @@ const apply = (assistant, event, data) => {
       break;
     }
 
+    case "reasoning":
+      assistant.reasoning += data.text || "";
+      break;
+
     case "delta":
       assistant.text += data.text || "";
       break;
@@ -79,6 +83,16 @@ const apply = (assistant, event, data) => {
 
     case "message_end":
       assistant.streaming = false;
+      if (data?.token_count != null) assistant.tokenCount = data.token_count;
+      if (data?.duration_ms != null) assistant.durationMs = data.duration_ms;
+      if (data?.context_tokens != null) chat.contextTokens.val = data.context_tokens;
+      break;
+
+    case "cancelled":
+      // User stop, confirmed by the server: the row is finalised `cancelled`
+      // with exactly the text we already rendered. Not an error.
+      assistant.streaming = false;
+      assistant.cancelled = true;
       break;
 
     case "error":
@@ -100,7 +114,7 @@ const labelFor = (kind) =>
 
 // --- the turn consumer: one cursor, three transports -------------------------
 
-const TERMINAL = new Set(["message_end", "error"]);
+const TERMINAL = new Set(["message_end", "cancelled", "error"]);
 const POLL_MS = 1500;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -213,14 +227,28 @@ const consume = async (pid, cid, after, assistant, signal) => {
   await consumePoll(pid, cid, cursor, assistant, signal);
 };
 
-// The in-flight turn's abort handle. stop() detaches the client from the current
-// turn (the server keeps generating; the row is persisted and re-attachable).
+// The in-flight turn's abort handle — the safety hatch: the normal stop path is
+// the server-side cancel below, with the consumer staying attached until the
+// terminal `cancelled` event renders the exact final partial.
 let activeController = null;
+
+// The in-flight turn's consumer promise. A new send() awaits it before POSTing:
+// a just-stopped turn settles on its terminal `cancelled` event, and the server
+// persists the row BEFORE publishing that event, so the next POST can never
+// race the cancel finalize into a 409.
+let activeTurn = null;
 
 export const stop = () => {
   if (!chat.streaming.val) return;
-  activeController?.abort();
   chat.streaming.val = false; // swap Stop → Send immediately; finally re-confirms
+
+  // Server-side cancel: the turn's vLLM stream is torn down, the row finalises
+  // as `cancelled`, and the still-attached consumer resolves on the terminal
+  // event. Only if the POST itself fails do we fall back to detaching the
+  // client (the orphan rule then ages the row out server-side).
+  http
+    .post(`/projects/${activeProjectId.val}/conversations/${activeId.val}/cancel`)
+    .catch(() => activeController?.abort());
 };
 
 // send(content) — append the user message, open an assistant bubble, POST
@@ -243,27 +271,46 @@ export const send = async (content) => {
     content: text,
     model_id: selectedId.val,
     tools: { ...chat.tools },
+    thinking: chat.thinking.val,
+    preserve_thinking: chat.preserveThinking.val,
   };
 
   const ac = new AbortController();
   activeController = ac;
+  let turn = null;
   try {
+    // Settle the previous turn first (stop → send): its consumer resolves on
+    // the terminal event, by which point the row is already finalised. Bounded
+    // so a wedged consumer (lost cancel POST, dead worker) can't block the
+    // composer forever — the worst case is then an honest 409 below.
+    if (activeTurn) await Promise.race([activeTurn, sleep(10_000)]);
+
     const accepted = await http.post(
       `/projects/${pid}/conversations/${cid}/messages`,
       body,
     );
     assistant.id = accepted.assistant_message_id;
-    await consume(pid, cid, accepted.seq, assistant, ac.signal);
+    turn = consume(pid, cid, accepted.seq, assistant, ac.signal);
+    activeTurn = turn;
+    await turn;
   } catch (e) {
     // A user-initiated stop is not an error — keep whatever text streamed in.
     if (!ac.signal.aborted) {
-      assistant.text +=
-        (assistant.text ? "\n\n" : "") + "_Error: " + (e.message || "stream failed") + "_";
+      const msg =
+        e.status === 409
+          ? "the previous response is still finishing — try again in a moment"
+          : e.message || "stream failed";
+      assistant.text += (assistant.text ? "\n\n" : "") + "_Error: " + msg + "_";
     }
   } finally {
-    if (activeController === ac) activeController = null;
+    if (activeTurn === turn) activeTurn = null;
+    // Ownership check: after a stop, a newer send() may have taken over the
+    // composer state already — only the current owner restores it.
+    if (activeController === ac) {
+      activeController = null;
+      chat.streaming.val = false;
+    }
     assistant.streaming = false;
-    chat.streaming.val = false;
     // The server materialised the conversation row on this first message; refresh
     // the sidebar so the new thread shows up without needing a page reload.
     if (isNew) conversationsSvc.list().catch(() => {});
@@ -286,11 +333,17 @@ export const resume = async (cid, threadMessage) => {
 
   const ac = new AbortController();
   activeController = ac;
+  let turn = null;
   try {
-    await consume(activeProjectId.val, cid, threadMessage.seq, assistant, ac.signal);
+    turn = consume(activeProjectId.val, cid, threadMessage.seq, assistant, ac.signal);
+    activeTurn = turn;
+    await turn;
   } finally {
-    if (activeController === ac) activeController = null;
+    if (activeTurn === turn) activeTurn = null;
+    if (activeController === ac) {
+      activeController = null;
+      chat.streaming.val = false;
+    }
     assistant.streaming = false;
-    chat.streaming.val = false;
   }
 };

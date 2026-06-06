@@ -19,13 +19,25 @@ public sealed record ThreadMessage
     public string? ModelId { get; init; }
 
     /// <summary>
-    /// Lifecycle (<c>streaming|complete|error</c>, orphan rule pre-applied by the
-    /// reader). A reload that finds <c>streaming</c> resubscribes from <see cref="Seq"/>.
+    /// Lifecycle (<c>streaming|complete|error|cancelled</c>, orphan rule pre-applied
+    /// by the reader). A reload that finds <c>streaming</c> resubscribes from <see cref="Seq"/>.
     /// </summary>
     public required MessageStatus Status { get; init; }
 
     /// <summary>The row's seq — the resume cursor for a streaming assistant row.</summary>
     public long Seq { get; init; }
+
+    /// <summary>The model's thinking text, when the turn ran with reasoning on. Wire: <c>reasoning</c>.</summary>
+    public string? Reasoning { get; init; }
+
+    /// <summary>Completion tokens of the turn. Wire: <c>token_count</c>.</summary>
+    public int? TokenCount { get; init; }
+
+    /// <summary>Pure generation wall-clock in ms (tools excluded). Wire: <c>duration_ms</c>.</summary>
+    public long? DurationMs { get; init; }
+
+    /// <summary>Context window occupied by the final model round. Wire: <c>context_tokens</c>.</summary>
+    public int? ContextTokens { get; init; }
 
     public required DateTimeOffset CreatedAt { get; init; }
 
@@ -45,6 +57,10 @@ public sealed record ThreadMessage
             ModelId = message.ModelId,
             Status = message.Status,
             Seq = message.Seq,
+            Reasoning = message.Reasoning,
+            TokenCount = message.TokenCount,
+            DurationMs = message.DurationMs,
+            ContextTokens = message.ContextTokens,
             CreatedAt = message.CreatedAt,
             Citations = citations
                 .OrderBy(c => c.Ordinal)

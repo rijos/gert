@@ -1,4 +1,5 @@
 using Gert.Model.Dtos;
+using Gert.Service;
 using Gert.Service.Chat;
 using Microsoft.AspNetCore.Mvc;
 
@@ -14,7 +15,8 @@ namespace Gert.Api.Controllers;
 /// handlers), the job is queued for the background worker, and the client
 /// receives <b>202</b> with the ids + the cursor to subscribe from — delivery
 /// happens on the WS/SSE/range endpoints, and generation survives the client
-/// disconnecting. Covered by the fallback authenticated-user policy.
+/// disconnecting. Also hosts the inverse, <c>POST …/cancel</c> (§ stop
+/// generation). Covered by the fallback authenticated-user policy.
 /// </summary>
 [ApiController]
 [Route("api/projects/{pid}/conversations/{id}/messages")]
@@ -22,11 +24,19 @@ public sealed class MessagesController : ControllerBase
 {
     private readonly ITurnPlanner _planner;
     private readonly ITurnQueue _queue;
+    private readonly ITurnCancellation _cancellation;
+    private readonly IUserContext _user;
 
-    public MessagesController(ITurnPlanner planner, ITurnQueue queue)
+    public MessagesController(
+        ITurnPlanner planner,
+        ITurnQueue queue,
+        ITurnCancellation cancellation,
+        IUserContext user)
     {
         _planner = planner ?? throw new ArgumentNullException(nameof(planner));
         _queue = queue ?? throw new ArgumentNullException(nameof(queue));
+        _cancellation = cancellation ?? throw new ArgumentNullException(nameof(cancellation));
+        _user = user ?? throw new ArgumentNullException(nameof(user));
     }
 
     /// <summary>Plan (validate + persist) and enqueue the turn; 202 with the subscribe cursor.</summary>
@@ -48,4 +58,18 @@ public sealed class MessagesController : ControllerBase
             Seq = job.AssistantSeq,
         });
     }
+
+    /// <summary>
+    /// <c>POST /api/projects/{pid}/conversations/{id}/cancel</c> — stop the
+    /// in-flight turn. The key carries the caller's own iss/sub, so a foreign
+    /// conversation id can never address another tenant's turn. Idempotent:
+    /// <b>202</b> when a live turn was signalled, <b>204</b> when there was
+    /// nothing to stop (a tombstone covers the still-queued race). The terminal
+    /// <c>cancelled</c> event arrives on the normal delivery transports.
+    /// </summary>
+    [HttpPost("~/api/projects/{pid}/conversations/{id}/cancel")]
+    public IActionResult Cancel(string pid, string id) =>
+        _cancellation.Cancel(new TurnKey(_user.Iss, _user.Sub, pid, id))
+            ? Accepted()
+            : NoContent();
 }

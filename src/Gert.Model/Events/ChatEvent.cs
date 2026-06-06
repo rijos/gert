@@ -19,10 +19,12 @@ namespace Gert.Model.Events;
 [JsonDerivedType(typeof(MessageStartEvent), "message_start")]
 [JsonDerivedType(typeof(ToolCallEvent), "tool_call")]
 [JsonDerivedType(typeof(ToolResultEvent), "tool_result")]
+[JsonDerivedType(typeof(ReasoningEvent), "reasoning")]
 [JsonDerivedType(typeof(DeltaEvent), "delta")]
 [JsonDerivedType(typeof(CitationEvent), "citation")]
 [JsonDerivedType(typeof(ArtifactEvent), "artifact")]
 [JsonDerivedType(typeof(MessageEndEvent), "message_end")]
+[JsonDerivedType(typeof(CancelledEvent), "cancelled")]
 [JsonDerivedType(typeof(ErrorEvent), "error")]
 public abstract record ChatEvent
 {

@@ -65,9 +65,36 @@ public sealed class SettingsService : ISettingsService
             DefaultModelId = request.DefaultModelId ?? current.DefaultModelId,
             DefaultTools = request.DefaultTools ?? current.DefaultTools,
             MemoryMode = request.MemoryMode ?? current.MemoryMode,
+            ModelParams = MergeModelParams(current.ModelParams, request.ModelParams),
         };
 
         await _store.SaveSettingsAsync(_user.Iss, _user.Sub, merged, cancellationToken).ConfigureAwait(false);
+        return merged;
+    }
+
+    /// <summary>
+    /// Per-model merge: each supplied model id REPLACES that model's whole
+    /// entry (the cogwheel modal sends the full params for one model; an
+    /// all-unset entry effectively clears it); absent ids stay untouched.
+    /// </summary>
+    private static IReadOnlyDictionary<string, Gert.Model.Dtos.GenerationParams>? MergeModelParams(
+        IReadOnlyDictionary<string, Gert.Model.Dtos.GenerationParams>? current,
+        IReadOnlyDictionary<string, Gert.Model.Dtos.GenerationParams>? patch)
+    {
+        if (patch is null)
+        {
+            return current;
+        }
+
+        var merged = current is null
+            ? new Dictionary<string, Gert.Model.Dtos.GenerationParams>(StringComparer.Ordinal)
+            : new Dictionary<string, Gert.Model.Dtos.GenerationParams>(current, StringComparer.Ordinal);
+
+        foreach (var (modelId, value) in patch)
+        {
+            merged[modelId] = value;
+        }
+
         return merged;
     }
 }

@@ -15,10 +15,12 @@ public static class ChatEventTypeNames
             [ChatEventType.MessageStart] = "message_start",
             [ChatEventType.ToolCall] = "tool_call",
             [ChatEventType.ToolResult] = "tool_result",
+            [ChatEventType.Reasoning] = "reasoning",
             [ChatEventType.Delta] = "delta",
             [ChatEventType.Citation] = "citation",
             [ChatEventType.Artifact] = "artifact",
             [ChatEventType.MessageEnd] = "message_end",
+            [ChatEventType.Cancelled] = "cancelled",
             [ChatEventType.Error] = "error",
         };
 

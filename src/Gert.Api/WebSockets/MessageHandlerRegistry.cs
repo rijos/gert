@@ -1,3 +1,4 @@
+using Gert.Service;
 using Gert.Service.Chat;
 
 namespace Gert.Api.WebSockets;
@@ -6,10 +7,9 @@ namespace Gert.Api.WebSockets;
 /// Dispatch table for client WS messages (rest-api.md § the ws endpoint): one
 /// handler per <see cref="ClientMessage"/> shape, with the defaults registered
 /// up front — <c>subscribe</c> (replay-then-live) and <c>range</c> (history
-/// backfill over the socket). Singleton; per-connection state lives on the
-/// <see cref="ChatSocketSession"/>, per-request services on its
-/// <see cref="ChatSocketSession.Services"/>. Future message kinds (e.g.
-/// <c>cancel</c> for client-initiated turn abort) register here.
+/// backfill over the socket) and <c>cancel</c> (stop the in-flight turn).
+/// Singleton; per-connection state lives on the <see cref="ChatSocketSession"/>,
+/// per-request services on its <see cref="ChatSocketSession.Services"/>.
 /// </summary>
 public sealed class MessageHandlerRegistry
 {
@@ -31,6 +31,17 @@ public sealed class MessageHandlerRegistry
             await session.SendAsync(
                 new { kind = "range", events = range.Events, next_cursor = range.NextCursor, has_more = range.HasMore },
                 token).ConfigureAwait(false);
+        });
+
+        Register<ClientMessage.Cancel>(static (session, _, _) =>
+        {
+            // The socket's authenticated identity scopes the key — a cancel can
+            // only ever address this tenant's own turn. The terminal `cancelled`
+            // event arrives over the live subscription like any other.
+            var user = session.Services.GetRequiredService<IUserContext>();
+            session.Services.GetRequiredService<ITurnCancellation>()
+                .Cancel(new TurnKey(user.Iss, user.Sub, session.Pid, session.ConversationId));
+            return Task.CompletedTask;
         });
     }
 

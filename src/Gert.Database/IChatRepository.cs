@@ -41,6 +41,21 @@ public interface IChatRepository : IAsyncDisposable
         int? tokenCount,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Final (complete) transition of an assistant row, carrying the turn's
+    /// reasoning text and generation metrics alongside the content. Null metric
+    /// values keep whatever was written earlier (COALESCE semantics).
+    /// </summary>
+    Task FinalizeMessageAsync(
+        string messageId,
+        string content,
+        MessageStatus status,
+        int? tokenCount,
+        string? reasoning,
+        long? durationMs,
+        int? contextTokens,
+        CancellationToken cancellationToken = default);
+
     // Turn sequencing + the durable event log (chat-and-tools.md § detached turns)
 
     /// <summary>

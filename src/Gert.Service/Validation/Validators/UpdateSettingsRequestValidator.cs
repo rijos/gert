@@ -11,9 +11,12 @@ namespace Gert.Service.Validation.Validators;
 /// </summary>
 public sealed class UpdateSettingsRequestValidator : AbstractValidator<UpdateSettingsRequest>
 {
-    public UpdateSettingsRequestValidator(ToolTogglesValidator toolsValidator)
+    public UpdateSettingsRequestValidator(
+        ToolTogglesValidator toolsValidator,
+        GenerationParamsValidator paramsValidator)
     {
         ArgumentNullException.ThrowIfNull(toolsValidator);
+        ArgumentNullException.ThrowIfNull(paramsValidator);
 
         RuleFor(r => r.UiLanguage!)
             .Must(ValidationRules.IsSafeIdentifier)
@@ -35,5 +38,18 @@ public sealed class UpdateSettingsRequestValidator : AbstractValidator<UpdateSet
 
         // TODO: allowlist model_id against the model catalog when it lands.
         RuleFor(r => r.DefaultTools!).SetValidator(toolsValidator).When(r => r.DefaultTools is not null);
+
+        // Per-model params: safe-identifier keys, each value through the same
+        // bounds as conversation params.
+        RuleFor(r => r.ModelParams!)
+            .Must(map => map.Keys.All(ValidationRules.IsSafeIdentifier))
+            .When(r => r.ModelParams is not null)
+            .WithMessage("Model param keys must be safe identifier tokens.")
+            .WithErrorCode("model_params.key.invalid");
+
+        RuleForEach(r => r.ModelParams!.Values)
+            .SetValidator(paramsValidator)
+            .When(r => r.ModelParams is not null)
+            .OverridePropertyName("model_params");
     }
 }

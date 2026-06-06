@@ -101,11 +101,12 @@ GET /api/projects/{pid}/conversations/{id}/ws                            WebSock
   (`new WebSocket(url, ["bearer", token])` — a browser WS cannot send an
   Authorization header and the token never goes in the URL; the server lifts it
   into the normal JwtBearer pipeline). Client messages are JSON with `type`:
-  `{"type":"subscribe","after":42}` (replay-then-live) and
-  `{"type":"range","after":0,"limit":200}`; server frames carry `kind`:
+  `{"type":"subscribe","after":42}` (replay-then-live),
+  `{"type":"range","after":0,"limit":200}`, and `{"type":"cancel"}` (stop the
+  in-flight turn — same effect as `POST …/cancel`); server frames carry `kind`:
   `{"kind":"event","seq":n,"event":{…}}` / `{"kind":"range", …}` /
   `{"kind":"error","message":"…"}`. Unknown/malformed client messages are
-  ignored. *(Future: `{"type":"cancel"}` for client-initiated turn abort.)*
+  ignored.
 
 The `event` payload is the ChatEvent union (the `$type` field matches the SSE
 `event:` name). This is what drives the mockup's tool cards → streamed text →
@@ -120,6 +121,7 @@ footnotes sequence:
 | `citation` | `{ "ordinal":1, "label":"qdrant-benchmarks.pdf · p.4", "doc_id":"…" }` | the `[1]` marker + footnote |
 | `artifact` | `{ "id","kind":"md","name":"decision.md","content":"…" }` | opens a canvas tab |
 | `message_end` | `{ "token_count":312 }` | removes caret |
+| `cancelled` | `{ "token_count":null }` | removes caret + "Stopped" marker; the row persists as `status="cancelled"` with the partial text |
 | `error` | `{ "message":"…" }` | inline error; the assistant row persists as `status="error"` |
 
 Every event is persisted **before** it is published, so reloading a
@@ -129,9 +131,23 @@ nothing (thread messages carry `status` + `seq` for exactly this).
 
 > **Why both SSE and WS:** SSE survives plain-HTTP proxies (the dev proxy does
 > not upgrade WebSockets) and needs no auth workaround; WS adds the
-> client→server channel (range backfill today, mid-generation cancel later).
-> Both are thin subscribers over the same log + bus splice — the SPA tries WS,
-> falls back to SSE, then to range polling.
+> client→server channel (range backfill + mid-generation cancel). Both are thin
+> subscribers over the same log + bus splice — the SPA tries WS, falls back to
+> SSE, then to range polling.
+
+### Stop generation
+
+`POST /api/projects/{pid}/conversations/{id}/cancel` (or the WS
+`{"type":"cancel"}` message) stops the in-flight turn **server-side**: the
+runner's token cancels, the upstream vLLM stream is torn down, the assistant
+row finalises as `status="cancelled"` with whatever streamed, and a terminal
+`cancelled` event lands on the normal delivery transports — the still-attached
+client renders the exact final partial. Idempotent: `202` when a live turn was
+signalled, `204` when there was nothing to stop (a cancel that races the queued
+job leaves a tombstone that pre-cancels it at pickup). A cancelled turn does
+not block the conversation — the next `POST …/messages` is accepted
+immediately, and cancelled partials are **excluded** from the next turn's
+upstream history (UI-only context).
 
 ## Documents (knowledge panel)
 

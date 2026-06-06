@@ -63,7 +63,13 @@ public sealed record TurnJob
     /// <summary>The project's pinned instructions (step 0), or null.</summary>
     public string? SystemPrompt { get; init; }
 
-    // --- generation params (from the conversation) ---------------------------
+    /// <summary>Effective reasoning toggle for the turn (request ?? conversation; null = model default).</summary>
+    public bool? Thinking { get; init; }
+
+    /// <summary>Effective interleaved-thinking toggle (request ?? conversation; null = model default).</summary>
+    public bool? PreserveThinking { get; init; }
+
+    // --- generation params (conversation overrides ?? per-model user settings) ---
     public double? Temperature { get; init; }
 
     public double? TopP { get; init; }

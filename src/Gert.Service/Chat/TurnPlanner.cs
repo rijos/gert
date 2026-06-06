@@ -3,6 +3,7 @@ using Gert.Model.Chat;
 using Gert.Model.Dtos;
 using Gert.Database;
 using Gert.Service.External;
+using Gert.Service.Projects;
 using Gert.Service.Tools;
 using Gert.Service.Validation;
 using Microsoft.Extensions.Options;
@@ -28,6 +29,7 @@ public sealed class TurnPlanner : ITurnPlanner
     private readonly IReadOnlyList<ITool> _tools;
     private readonly IProjectInstructionsReader? _instructions;
     private readonly IModelCatalog _catalog;
+    private readonly ISettingsService? _settings;
     private readonly TurnOptions _options;
 
     public TurnPlanner(
@@ -37,7 +39,8 @@ public sealed class TurnPlanner : ITurnPlanner
         IEnumerable<ITool> tools,
         IOptions<TurnOptions> options,
         IProjectInstructionsReader? instructions,
-        IModelCatalog? catalog = null)
+        IModelCatalog? catalog = null,
+        ISettingsService? settings = null)
     {
         _databases = databases ?? throw new ArgumentNullException(nameof(databases));
         _user = user ?? throw new ArgumentNullException(nameof(user));
@@ -47,6 +50,7 @@ public sealed class TurnPlanner : ITurnPlanner
         _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
         _instructions = instructions;
         _catalog = catalog ?? new NullModelCatalog();
+        _settings = settings;
     }
 
     /// <inheritdoc />
@@ -96,10 +100,26 @@ public sealed class TurnPlanner : ITurnPlanner
                 Title = DeriveTitle(request.Content),
                 ModelId = request.ModelId ?? DefaultModelId,
                 Tools = request.Tools ?? new ToolToggles(),
+                Thinking = request.Thinking,
+                PreserveThinking = request.PreserveThinking,
                 CreatedAt = now,
                 UpdatedAt = now,
             };
             await repo.InsertConversationAsync(conversation, cancellationToken).ConfigureAwait(false);
+        }
+        else if ((request.Thinking is not null && request.Thinking != conversation.Thinking)
+                 || (request.PreserveThinking is not null && request.PreserveThinking != conversation.PreserveThinking))
+        {
+            // The composer toggles ride each send; a changed value persists onto
+            // the conversation (parity with Tools at materialise) so a reload
+            // restores the toggle state.
+            conversation = conversation with
+            {
+                Thinking = request.Thinking ?? conversation.Thinking,
+                PreserveThinking = request.PreserveThinking ?? conversation.PreserveThinking,
+                UpdatedAt = now,
+            };
+            await repo.UpdateConversationAsync(conversation, cancellationToken).ConfigureAwait(false);
         }
 
         // 4. Persist the user message (complete) and the assistant placeholder
@@ -134,11 +154,20 @@ public sealed class TurnPlanner : ITurnPlanner
         };
         await repo.InsertMessageAsync(assistantMessage, cancellationToken).ConfigureAwait(false);
 
+        // Effective reasoning toggles: per-request override, else the persisted
+        // conversation preference, else null (= model/template default).
+        var thinking = request.Thinking ?? conversation.Thinking;
+        var preserveThinking = request.PreserveThinking ?? conversation.PreserveThinking;
+
         // 5. History for the model: prior complete turns + the new user message.
-        // Streaming/error rows never enter the prompt (an error row's partial
-        // content is a UI artifact, not conversation truth).
+        // Streaming/error/cancelled rows never enter the prompt (an error or
+        // user-stopped row's partial content is a UI artifact, not conversation
+        // truth — and a stable history maximises vLLM prefix-cache reuse).
+        // With preserve_thinking on, assistant rows carry their persisted
+        // reasoning back upstream (Qwen3.6 interleaved thinking).
         var history = ToModelMessages(
-            priorMessages.Where(m => m.Status == MessageStatus.Complete).Append(userMessage));
+            priorMessages.Where(m => m.Status == MessageStatus.Complete).Append(userMessage),
+            includeReasoning: preserveThinking == true);
 
         // Step 0: the project's pinned instructions (best-effort; a missing reader
         // or project means "no instructions", never a failed turn).
@@ -152,6 +181,12 @@ public sealed class TurnPlanner : ITurnPlanner
         var offered = _catalog.SupportsTools(assistantMessage.ModelId!)
             ? ResolveOfferedTools(request, conversation)
             : Array.Empty<ITool>();
+
+        // 7. Per-model user defaults (the picker's cogwheel): conversation params
+        // win field-by-field; settings are best-effort — a broken settings read
+        // must not fail the turn.
+        var modelParams = await ResolveModelParamsAsync(assistantMessage.ModelId!, cancellationToken)
+            .ConfigureAwait(false);
 
         return new TurnJob
         {
@@ -170,12 +205,45 @@ public sealed class TurnPlanner : ITurnPlanner
             ToolIds = offered.Select(t => t.Id).ToList(),
             Tools = offered.Select(ToSpec).ToList(),
             SystemPrompt = systemPrompt,
-            Temperature = conversation.Params.Temperature,
-            TopP = conversation.Params.TopP,
-            MaxTokens = conversation.Params.MaxTokens,
-            Stop = conversation.Params.Stop,
-            Seed = conversation.Params.Seed,
+            Thinking = thinking,
+            PreserveThinking = preserveThinking,
+            Temperature = conversation.Params.Temperature ?? modelParams?.Temperature,
+            TopP = conversation.Params.TopP ?? modelParams?.TopP,
+            MaxTokens = conversation.Params.MaxTokens ?? modelParams?.MaxTokens,
+            Stop = conversation.Params.Stop ?? modelParams?.Stop,
+            Seed = conversation.Params.Seed ?? modelParams?.Seed,
         };
+    }
+
+    /// <summary>
+    /// The user's per-model generation defaults for <paramref name="modelId"/>,
+    /// or null. Best-effort: settings are preferences, never a turn-blocker.
+    /// </summary>
+    private async Task<GenerationParams?> ResolveModelParamsAsync(
+        string modelId,
+        CancellationToken cancellationToken)
+    {
+        if (_settings is null)
+        {
+            return null;
+        }
+
+        try
+        {
+            var settings = await _settings.GetAsync(cancellationToken).ConfigureAwait(false);
+            return settings.ModelParams is not null
+                   && settings.ModelParams.TryGetValue(modelId, out var modelParams)
+                ? modelParams
+                : null;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
     }
 
     /// <summary>
@@ -248,12 +316,21 @@ public sealed class TurnPlanner : ITurnPlanner
         ParametersSchema = tool.ParametersSchema,
     };
 
-    /// <summary>Map persisted chat rows to the OpenAI-style upstream message list.</summary>
-    private static IReadOnlyList<ChatModelMessage> ToModelMessages(IEnumerable<Message> messages) =>
+    /// <summary>
+    /// Map persisted chat rows to the OpenAI-style upstream message list. With
+    /// <paramref name="includeReasoning"/>, assistant rows carry their persisted
+    /// thinking as <c>reasoning_content</c> (preserve_thinking interleaving).
+    /// </summary>
+    private static IReadOnlyList<ChatModelMessage> ToModelMessages(
+        IEnumerable<Message> messages,
+        bool includeReasoning = false) =>
         messages.Select(m => new ChatModelMessage
         {
             Role = ToOpenAiRole(m.Role),
             Content = m.Content,
+            ReasoningContent = includeReasoning && m.Role == MessageRole.Assistant && !string.IsNullOrEmpty(m.Reasoning)
+                ? m.Reasoning
+                : null,
         }).ToList();
 
     // Seed a conversation title from its first message (single-lined, capped).

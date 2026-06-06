@@ -17,6 +17,10 @@ public sealed class CompletionFixture
     [JsonPropertyName("deltas")]
     public IReadOnlyList<string> Deltas { get; init; } = [];
 
+    /// <summary>Thinking deltas (reasoning_content), streamed BEFORE the content deltas.</summary>
+    [JsonPropertyName("reasoning_deltas")]
+    public IReadOnlyList<string> ReasoningDeltas { get; init; } = [];
+
     /// <summary>OpenAI finish reason — <c>stop</c>, or <c>tool_calls</c> when <see cref="ToolCall"/> is set.</summary>
     [JsonPropertyName("finish")]
     public string Finish { get; init; } = "stop";

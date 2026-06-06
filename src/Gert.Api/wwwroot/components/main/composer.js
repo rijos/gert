@@ -4,6 +4,7 @@ import van from "van";
 import { component } from "../../lib/component.js";
 import { Icon } from "../../icons/icons.js";
 import { ToolsMenu } from "./tools-menu.js";
+import { ContextRing } from "./context-ring.js";
 import * as chatSvc from "../../services/chat.js";
 import * as chat from "../../state/chat.js";
 import * as docsSvc from "../../services/documents.js";
@@ -29,14 +30,16 @@ export const Composer = component({
     .cbtn:hover{border-color:var(--accent); color:var(--accent-deep); background:var(--accent-soft);}
     .cbtn svg{width:14px; height:14px;}
     .cbtn.toggle.on{border-color:var(--sage-soft); color:var(--sage); background:var(--sage-soft);}
-    .send{margin-left:auto; width:36px; height:36px; border-radius:10px; border:none; background:var(--accent); color:var(--on-accent); cursor:pointer; display:grid; place-items:center; transition:.16s;}
+    /* right cluster: context ring + send/stop pinned to the corner */
+    .cright{margin-left:auto; display:flex; align-items:center; gap:9px;}
+    .send{width:36px; height:36px; border-radius:10px; border:none; background:var(--accent); color:var(--on-accent); cursor:pointer; display:grid; place-items:center; transition:.16s;}
     .send:hover{background:var(--accent-deep); transform:translateY(-1px);}
     /* empty textbox → inert grey button (no faded-accent look) */
     .send:disabled{background:var(--line-strong); color:var(--ink-faint); cursor:default; transform:none;}
     .send:disabled:hover{background:var(--line-strong);}
     .send svg{width:17px; height:17px;}
     /* shown while the turn streams — click to detach (stop) */
-    .stop{margin-left:auto; width:36px; height:36px; border-radius:10px; border:none; background:var(--accent); color:var(--on-accent); cursor:pointer; display:grid; place-items:center; transition:.16s; animation:pulse 1.4s ease-in-out infinite;}
+    .stop{width:36px; height:36px; border-radius:10px; border:none; background:var(--accent); color:var(--on-accent); cursor:pointer; display:grid; place-items:center; transition:.16s; animation:pulse 1.4s ease-in-out infinite;}
     .stop:hover{background:var(--accent-deep);}
     .stop svg{width:15px; height:15px;}
   `,
@@ -94,22 +97,36 @@ export const Composer = component({
           ),
           fileInput,
           ToolsMenu(),
-          // streaming → Stop (detach the turn); otherwise → Send (grey when empty).
-          () =>
-            chat.streaming.val
-              ? button(
-                  { class: "stop", title: "Stop", onclick: chatSvc.stop },
-                  Icon("stop", { size: 15, strokeWidth: 0 }),
-                )
-              : button(
-                  {
-                    class: "send",
-                    title: "Send",
-                    disabled: () => empty.val,
-                    onclick: submit,
-                  },
-                  Icon("send", { size: 17, strokeWidth: 2.2 }),
-                ),
+          // reasoning toggle — persisted per conversation on the next send
+          button(
+            {
+              class: () => "cbtn toggle" + (chat.thinking.val ? " on" : ""),
+              title: "Model reasoning (thinking) on/off",
+              onclick: () => (chat.thinking.val = !chat.thinking.val),
+            },
+            Icon("brain", { size: 14, strokeWidth: 2 }),
+            "Thinking",
+          ),
+          // bottom-right: context ring, then Send/Stop
+          div(
+            { class: "cright" },
+            ContextRing(),
+            () =>
+              chat.streaming.val
+                ? button(
+                    { class: "stop", title: "Stop", onclick: chatSvc.stop },
+                    Icon("stop", { size: 15, strokeWidth: 0 }),
+                  )
+                : button(
+                    {
+                      class: "send",
+                      title: "Send",
+                      disabled: () => empty.val,
+                      onclick: submit,
+                    },
+                    Icon("send", { size: 17, strokeWidth: 2.2 }),
+                  ),
+          ),
         ),
       ),
     );

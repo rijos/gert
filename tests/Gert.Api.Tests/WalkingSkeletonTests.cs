@@ -158,6 +158,85 @@ public sealed class WalkingSkeletonTests : IClassFixture<GertApiFactory>
         assistant.Id.Should().Be(accepted.AssistantMessageId);
     }
 
+    [Fact]
+    public async Task Reasoning_turn_streams_thinking_then_answer_with_metrics_and_persists()
+    {
+        var client = Authed();
+
+        var createResponse = await client.PostAsJsonAsync(
+            "/api/projects/default/conversations",
+            new CreateConversationRequest { Title = "Thinking" },
+            Json);
+        var conversation = await createResponse.Content.ReadFromJsonAsync<Conversation>(Json);
+
+        // The reasoning fixture, thinking explicitly ON.
+        var post = await client.PostAsJsonAsync(
+            $"/api/projects/default/conversations/{conversation!.Id}/messages",
+            new SendMessageRequest { Content = "think about the best vector store", Thinking = true },
+            Json);
+        var accepted = await post.Content.ReadFromJsonAsync<TurnAccepted>(Json);
+
+        using var stream = await client.GetAsync(
+            $"/api/projects/default/conversations/{conversation.Id}/stream?after={accepted!.Seq}",
+            HttpCompletionOption.ResponseHeadersRead);
+        var events = ParseSse(await ReadUntilTerminalAsync(stream));
+
+        // message_start → reasoning… → delta… → message_end, thinking first.
+        events[0].Should().BeOfType<MessageStartEvent>();
+        var types = events.Select(e => e.GetType().Name).ToList();
+        events.OfType<ReasoningEvent>().Should().NotBeEmpty();
+        types.LastIndexOf(nameof(ReasoningEvent))
+            .Should().BeLessThan(types.IndexOf(nameof(DeltaEvent)), "thinking precedes the answer");
+
+        string.Concat(events.OfType<ReasoningEvent>().Select(r => r.Text))
+            .Should().Be("The user runs a homelab. Scale is ~20 users, so operational simplicity dominates recall.");
+
+        // The terminal event carries the generation metrics.
+        var end = events[^1].Should().BeOfType<MessageEndEvent>().Subject;
+        end.TokenCount.Should().Be(12);
+        end.DurationMs.Should().NotBeNull();
+        end.ContextTokens.Should().NotBeNull("the fake reports prompt tokens");
+        end.ContextTokens.Should().BeGreaterThan(12, "context = prompt + completion");
+
+        // Reload: the thread restores the thinking block + metrics, and the
+        // conversation remembers the toggle.
+        var thread = await client.GetFromJsonAsync<ThreadResponse>(
+            $"/api/projects/default/conversations/{conversation.Id}", Json);
+        var assistant = thread!.Messages.Single(m => m.Role == MessageRole.Assistant);
+        assistant.Reasoning.Should().Contain("operational simplicity");
+        assistant.TokenCount.Should().Be(12);
+        assistant.ContextTokens.Should().Be(end.ContextTokens);
+        thread.Thinking.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Thinking_off_suppresses_reasoning_events()
+    {
+        var client = Authed();
+
+        var createResponse = await client.PostAsJsonAsync(
+            "/api/projects/default/conversations",
+            new CreateConversationRequest { Title = "No thinking" },
+            Json);
+        var conversation = await createResponse.Content.ReadFromJsonAsync<Conversation>(Json);
+
+        var post = await client.PostAsJsonAsync(
+            $"/api/projects/default/conversations/{conversation!.Id}/messages",
+            new SendMessageRequest { Content = "think about the best vector store", Thinking = false },
+            Json);
+        var accepted = await post.Content.ReadFromJsonAsync<TurnAccepted>(Json);
+
+        using var stream = await client.GetAsync(
+            $"/api/projects/default/conversations/{conversation.Id}/stream?after={accepted!.Seq}",
+            HttpCompletionOption.ResponseHeadersRead);
+        var events = ParseSse(await ReadUntilTerminalAsync(stream));
+
+        // The fake mirrors the real template: enable_thinking=false → no reasoning.
+        events.OfType<ReasoningEvent>().Should().BeEmpty();
+        string.Concat(events.OfType<DeltaEvent>().Select(d => d.Text))
+            .Should().Be("After weighing it: sqlite-vec — one file, no extra service.");
+    }
+
     /// <summary>
     /// Read SSE text until the terminal frame (<c>message_end</c>/<c>error</c>) —
     /// the live stream never ends on its own (detached turns keep it open).

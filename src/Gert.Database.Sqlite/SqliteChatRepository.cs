@@ -44,7 +44,7 @@ public sealed class SqliteChatRepository(SqliteConnection connection) : IChatRep
         CancellationToken cancellationToken = default)
     {
         const string sql =
-            "SELECT id, title, model_id, tools_json, params_json, created_at, updated_at, archived " +
+            "SELECT id, title, model_id, tools_json, params_json, thinking, preserve_thinking, created_at, updated_at, archived " +
             "FROM conversations ORDER BY updated_at DESC, id ASC;";
 
         var rows = await _connection.QueryAsync<ConversationRow>(
@@ -61,7 +61,7 @@ public sealed class SqliteChatRepository(SqliteConnection connection) : IChatRep
         ArgumentNullException.ThrowIfNull(conversationId);
 
         const string sql =
-            "SELECT id, title, model_id, tools_json, params_json, created_at, updated_at, archived " +
+            "SELECT id, title, model_id, tools_json, params_json, thinking, preserve_thinking, created_at, updated_at, archived " +
             "FROM conversations WHERE id = @id;";
 
         var row = await _connection.QuerySingleOrDefaultAsync<ConversationRow>(
@@ -121,8 +121,8 @@ public sealed class SqliteChatRepository(SqliteConnection connection) : IChatRep
         ArgumentNullException.ThrowIfNull(conversation);
 
         const string sql =
-            "INSERT INTO conversations (id, title, model_id, tools_json, params_json, created_at, updated_at, archived) " +
-            "VALUES (@Id, @Title, @ModelId, @ToolsJson, @ParamsJson, @CreatedAt, @UpdatedAt, @Archived);";
+            "INSERT INTO conversations (id, title, model_id, tools_json, params_json, thinking, preserve_thinking, created_at, updated_at, archived) " +
+            "VALUES (@Id, @Title, @ModelId, @ToolsJson, @ParamsJson, @Thinking, @PreserveThinking, @CreatedAt, @UpdatedAt, @Archived);";
 
         await _connection.ExecuteAsync(new CommandDefinition(sql, new
         {
@@ -131,6 +131,8 @@ public sealed class SqliteChatRepository(SqliteConnection connection) : IChatRep
             conversation.ModelId,
             ToolsJson = JsonSerializer.Serialize(conversation.Tools, JsonOptions),
             ParamsJson = JsonSerializer.Serialize(conversation.Params, JsonOptions),
+            Thinking = conversation.Thinking switch { null => (int?)null, false => 0, true => 1 },
+            PreserveThinking = conversation.PreserveThinking switch { null => (int?)null, false => 0, true => 1 },
             CreatedAt = FormatTime(conversation.CreatedAt),
             UpdatedAt = FormatTime(conversation.UpdatedAt),
             Archived = conversation.Archived ? 1 : 0,
@@ -146,7 +148,8 @@ public sealed class SqliteChatRepository(SqliteConnection connection) : IChatRep
 
         const string sql =
             "UPDATE conversations SET title = @Title, model_id = @ModelId, tools_json = @ToolsJson, " +
-            "params_json = @ParamsJson, updated_at = @UpdatedAt, archived = @Archived WHERE id = @Id;";
+            "params_json = @ParamsJson, thinking = @Thinking, preserve_thinking = @PreserveThinking, " +
+            "updated_at = @UpdatedAt, archived = @Archived WHERE id = @Id;";
 
         await _connection.ExecuteAsync(new CommandDefinition(sql, new
         {
@@ -155,6 +158,8 @@ public sealed class SqliteChatRepository(SqliteConnection connection) : IChatRep
             conversation.ModelId,
             ToolsJson = JsonSerializer.Serialize(conversation.Tools, JsonOptions),
             ParamsJson = JsonSerializer.Serialize(conversation.Params, JsonOptions),
+            Thinking = conversation.Thinking switch { null => (int?)null, false => 0, true => 1 },
+            PreserveThinking = conversation.PreserveThinking switch { null => (int?)null, false => 0, true => 1 },
             UpdatedAt = FormatTime(conversation.UpdatedAt),
             Archived = conversation.Archived ? 1 : 0,
         }, cancellationToken: cancellationToken)).ConfigureAwait(false);
@@ -189,7 +194,7 @@ public sealed class SqliteChatRepository(SqliteConnection connection) : IChatRep
         // seq is the primary order; pre-v2 rows all have seq=0 and fall back to
         // created_at, so legacy threads keep their original order.
         const string sql =
-            "SELECT id, conversation_id, role, content, model_id, token_count, seq, status, created_at " +
+            "SELECT id, conversation_id, role, content, model_id, token_count, reasoning, duration_ms, context_tokens, seq, status, created_at " +
             "FROM messages WHERE conversation_id = @cid ORDER BY seq ASC, created_at ASC, id ASC;";
 
         var rows = await _connection.QueryAsync<MessageRow>(
@@ -245,6 +250,41 @@ public sealed class SqliteChatRepository(SqliteConnection connection) : IChatRep
             Content = content,
             Status = MessageStatusToString(status),
             TokenCount = tokenCount,
+        }, cancellationToken: cancellationToken)).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
+    public async Task FinalizeMessageAsync(
+        string messageId,
+        string content,
+        MessageStatus status,
+        int? tokenCount,
+        string? reasoning,
+        long? durationMs,
+        int? contextTokens,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(messageId);
+        ArgumentNullException.ThrowIfNull(content);
+
+        // COALESCE keeps earlier-written values when the caller has none (same
+        // idiom as the streaming update's token_count).
+        const string sql =
+            "UPDATE messages SET content = @Content, status = @Status, " +
+            "token_count = COALESCE(@TokenCount, token_count), " +
+            "reasoning = COALESCE(@Reasoning, reasoning), " +
+            "duration_ms = COALESCE(@DurationMs, duration_ms), " +
+            "context_tokens = COALESCE(@ContextTokens, context_tokens) WHERE id = @Id;";
+
+        await _connection.ExecuteAsync(new CommandDefinition(sql, new
+        {
+            Id = messageId,
+            Content = content,
+            Status = MessageStatusToString(status),
+            TokenCount = tokenCount,
+            Reasoning = reasoning,
+            DurationMs = durationMs,
+            ContextTokens = contextTokens,
         }, cancellationToken: cancellationToken)).ConfigureAwait(false);
     }
 
@@ -455,6 +495,8 @@ public sealed class SqliteChatRepository(SqliteConnection connection) : IChatRep
         ModelId = row.ModelId,
         Tools = Deserialize<ToolToggles>(row.ToolsJson) ?? new ToolToggles(),
         Params = Deserialize<GenerationParams>(row.ParamsJson) ?? new GenerationParams(),
+        Thinking = row.Thinking switch { null => null, 0 => false, _ => true },
+        PreserveThinking = row.PreserveThinking switch { null => null, 0 => false, _ => true },
         CreatedAt = ParseTime(row.CreatedAt),
         UpdatedAt = ParseTime(row.UpdatedAt),
         Archived = row.Archived != 0,
@@ -468,6 +510,9 @@ public sealed class SqliteChatRepository(SqliteConnection connection) : IChatRep
         Content = row.Content,
         ModelId = row.ModelId,
         TokenCount = row.TokenCount,
+        Reasoning = row.Reasoning,
+        DurationMs = row.DurationMs,
+        ContextTokens = row.ContextTokens,
         Seq = row.Seq,
         Status = MessageStatusFromString(row.Status),
         CreatedAt = ParseTime(row.CreatedAt),
@@ -569,6 +614,7 @@ public sealed class SqliteChatRepository(SqliteConnection connection) : IChatRep
         MessageStatus.Streaming => "streaming",
         MessageStatus.Complete => "complete",
         MessageStatus.Error => "error",
+        MessageStatus.Cancelled => "cancelled",
         _ => throw new ArgumentOutOfRangeException(nameof(status), status, null),
     };
 
@@ -577,6 +623,7 @@ public sealed class SqliteChatRepository(SqliteConnection connection) : IChatRep
         "streaming" => MessageStatus.Streaming,
         "complete" => MessageStatus.Complete,
         "error" => MessageStatus.Error,
+        "cancelled" => MessageStatus.Cancelled,
         _ => throw new InvalidOperationException($"Unknown message status '{value}'."),
     };
 
@@ -624,6 +671,8 @@ public sealed class SqliteChatRepository(SqliteConnection connection) : IChatRep
         public required string ModelId { get; init; }
         public required string ToolsJson { get; init; }
         public required string ParamsJson { get; init; }
+        public long? Thinking { get; init; }
+        public long? PreserveThinking { get; init; }
         public required string CreatedAt { get; init; }
         public required string UpdatedAt { get; init; }
         public int Archived { get; init; }
@@ -637,6 +686,9 @@ public sealed class SqliteChatRepository(SqliteConnection connection) : IChatRep
         public required string Content { get; init; }
         public string? ModelId { get; init; }
         public int? TokenCount { get; init; }
+        public string? Reasoning { get; init; }
+        public long? DurationMs { get; init; }
+        public int? ContextTokens { get; init; }
         public long Seq { get; init; }
         public required string Status { get; init; }
         public required string CreatedAt { get; init; }

@@ -43,11 +43,28 @@ public sealed class FakeChatModel : IChatModelClient
         var hasToolResult = request.Messages.Any(m =>
             string.Equals(m.Role, "tool", StringComparison.OrdinalIgnoreCase));
 
+        // Mirror the real template: enable_thinking=false suppresses reasoning.
+        var thinkingEnabled = request.EnableThinking != false;
+
+        // Rough context estimate so the SPA's ring lights up under serve-mock
+        // (≈ chars/4, the classic token heuristic).
+        var promptTokens = request.Messages.Sum(m => (m.Content?.Length ?? 0) + (m.ReasoningContent?.Length ?? 0)) / 4;
+
         var fixture = Resolve(lastUser);
 
         if (fixture is not null && fixture.ToolCall is not null && !hasToolResult)
         {
-            // First call: emit the scripted tool call, finish_reason = tool_calls.
+            // First call: scripted reasoning (if any), then the tool call,
+            // finish_reason = tool_calls.
+            if (thinkingEnabled)
+            {
+                foreach (var thought in fixture.ReasoningDeltas)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    yield return new ChatModelChunk { ReasoningDelta = thought };
+                }
+            }
+
             cancellationToken.ThrowIfCancellationRequested();
             yield return new ChatModelChunk
             {
@@ -62,14 +79,24 @@ public sealed class FakeChatModel : IChatModelClient
             yield return new ChatModelChunk
             {
                 FinishReason = string.IsNullOrEmpty(fixture.Finish) ? "tool_calls" : fixture.Finish,
+                PromptTokenCount = promptTokens,
             };
             yield break;
         }
 
         if (fixture is not null && fixture.ToolCall is not null && hasToolResult)
         {
-            // Follow-up call: replay after_tool.
+            // Follow-up call: replay after_tool (reasoning first).
             var after = fixture.AfterTool;
+            if (thinkingEnabled)
+            {
+                foreach (var thought in after?.ReasoningDeltas ?? [])
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    yield return new ChatModelChunk { ReasoningDelta = thought };
+                }
+            }
+
             var deltas = after?.Deltas ?? [];
             foreach (var delta in deltas)
             {
@@ -81,13 +108,23 @@ public sealed class FakeChatModel : IChatModelClient
             {
                 FinishReason = after?.Finish ?? "stop",
                 TokenCount = after?.Usage?.CompletionTokens,
+                PromptTokenCount = promptTokens,
             };
             yield break;
         }
 
         if (fixture is not null)
         {
-            // Plain completion: stream the deltas.
+            // Plain completion: reasoning first, then the content deltas.
+            if (thinkingEnabled)
+            {
+                foreach (var thought in fixture.ReasoningDeltas)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    yield return new ChatModelChunk { ReasoningDelta = thought };
+                }
+            }
+
             foreach (var delta in fixture.Deltas)
             {
                 cancellationToken.ThrowIfCancellationRequested();
@@ -98,6 +135,7 @@ public sealed class FakeChatModel : IChatModelClient
             {
                 FinishReason = string.IsNullOrEmpty(fixture.Finish) ? "stop" : fixture.Finish,
                 TokenCount = fixture.Usage?.CompletionTokens,
+                PromptTokenCount = promptTokens,
             };
             yield break;
         }
@@ -109,7 +147,7 @@ public sealed class FakeChatModel : IChatModelClient
             yield return new ChatModelChunk { TextDelta = chunk };
         }
 
-        yield return new ChatModelChunk { FinishReason = "stop" };
+        yield return new ChatModelChunk { FinishReason = "stop", PromptTokenCount = promptTokens };
     }
 
     private CompletionFixture? Resolve(string lastUser)
@@ -137,7 +175,7 @@ public sealed class FakeChatModel : IChatModelClient
         {
             if (string.Equals(messages[i].Role, "user", StringComparison.OrdinalIgnoreCase))
             {
-                return messages[i].Content;
+                return messages[i].Content ?? string.Empty;
             }
         }
 

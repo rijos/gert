@@ -30,6 +30,7 @@ public sealed class VllmStreamParser
     private readonly SortedDictionary<int, ToolCallBuffer> _toolCalls = new();
     private string? _finishReason;
     private int? _completionTokens;
+    private int? _promptTokens;
     private bool _finished;
 
     /// <summary>
@@ -60,11 +61,31 @@ public sealed class VllmStreamParser
 
             // Usage may arrive on a trailing usage-only chunk (empty choices).
             if (root.TryGetProperty("usage", out var usage) &&
-                usage.ValueKind == JsonValueKind.Object &&
-                usage.TryGetProperty("completion_tokens", out var ct) &&
-                ct.ValueKind == JsonValueKind.Number)
+                usage.ValueKind == JsonValueKind.Object)
             {
-                _completionTokens = ct.GetInt32();
+                if (usage.TryGetProperty("completion_tokens", out var ct) &&
+                    ct.ValueKind == JsonValueKind.Number)
+                {
+                    _completionTokens = ct.GetInt32();
+                }
+
+                if (usage.TryGetProperty("prompt_tokens", out var pt) &&
+                    pt.ValueKind == JsonValueKind.Number)
+                {
+                    _promptTokens = pt.GetInt32();
+                }
+
+                // vLLM sends the usage tail AFTER the finish_reason chunk, so the
+                // finish chunk has already gone out without it — surface a trailing
+                // usage chunk so the runner still observes the counts.
+                if (_finished && (_completionTokens is not null || _promptTokens is not null))
+                {
+                    chunks.Add(new ChatModelChunk
+                    {
+                        TokenCount = _completionTokens,
+                        PromptTokenCount = _promptTokens,
+                    });
+                }
             }
 
             if (root.TryGetProperty("choices", out var choices) &&
@@ -104,6 +125,18 @@ public sealed class VllmStreamParser
         if (choice.TryGetProperty("delta", out var delta) &&
             delta.ValueKind == JsonValueKind.Object)
         {
+            // Reasoning ("thinking") delta — emitted by --reasoning-parser
+            // before the answer's content deltas.
+            if (delta.TryGetProperty("reasoning_content", out var reasoningContent) &&
+                reasoningContent.ValueKind == JsonValueKind.String)
+            {
+                var thought = reasoningContent.GetString();
+                if (!string.IsNullOrEmpty(thought))
+                {
+                    chunks.Add(new ChatModelChunk { ReasoningDelta = thought });
+                }
+            }
+
             // Content delta.
             if (delta.TryGetProperty("content", out var content) &&
                 content.ValueKind == JsonValueKind.String)
@@ -207,6 +240,7 @@ public sealed class VllmStreamParser
         {
             FinishReason = _finishReason ?? "stop",
             TokenCount = _completionTokens,
+            PromptTokenCount = _promptTokens,
         });
     }
 

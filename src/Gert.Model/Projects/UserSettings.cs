@@ -24,4 +24,11 @@ public sealed record UserSettings
     public ToolToggles? DefaultTools { get; init; }
 
     public MemoryMode MemoryMode { get; init; } = MemoryMode.Manual;
+
+    /// <summary>
+    /// Per-model generation defaults, keyed by model id (the picker's cogwheel).
+    /// Conversation-level params override these field-by-field; unset fields
+    /// inherit the server defaults. Wire: <c>model_params</c>.
+    /// </summary>
+    public IReadOnlyDictionary<string, GenerationParams>? ModelParams { get; init; }
 }

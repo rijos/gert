@@ -75,6 +75,27 @@ async def chat_completions(request: Request) -> StreamingResponse:
         return chunk
 
     async def stream() -> AsyncIterator[bytes]:
+        # 0) Reasoning deltas (reasoning_content), BEFORE tool calls/content —
+        # what --reasoning-parser qwen3 emits. Suppressed when the request sent
+        # chat_template_kwargs.enable_thinking=false (the thinking toggle).
+        template_kwargs = body.get("chat_template_kwargs") or {}
+        thinking_enabled = template_kwargs.get("enable_thinking", True)
+        if thinking_enabled:
+            for thought in reply.get("reasoning_deltas", []):
+                if not thought:
+                    continue
+                yield _sse(
+                    base_chunk(
+                        [
+                            {
+                                "index": 0,
+                                "delta": {"reasoning_content": thought},
+                                "finish_reason": None,
+                            }
+                        ]
+                    )
+                )
+
         # 1) Tool call (whole call in one delta: id + function.name + arguments).
         tool_call = reply.get("tool_call")
         if tool_call is not None:
@@ -132,14 +153,23 @@ async def chat_completions(request: Request) -> StreamingResponse:
         )
 
         # 4) Trailing usage-only chunk (vLLM with stream_options.include_usage).
+        # prompt_tokens ≈ chars/4 so the SPA's context ring shows real movement.
         usage = reply.get("usage") or {}
+        prompt_tokens = (
+            sum(
+                len(m.get("content") or "") + len(m.get("reasoning_content") or "")
+                for m in messages
+            )
+            // 4
+        )
+        completion_tokens = usage.get("completion_tokens", 0)
         yield _sse(
             base_chunk(
                 [],
                 usage={
-                    "prompt_tokens": 0,
-                    "completion_tokens": usage.get("completion_tokens", 0),
-                    "total_tokens": usage.get("completion_tokens", 0),
+                    "prompt_tokens": prompt_tokens,
+                    "completion_tokens": completion_tokens,
+                    "total_tokens": prompt_tokens + completion_tokens,
                 },
             )
         )

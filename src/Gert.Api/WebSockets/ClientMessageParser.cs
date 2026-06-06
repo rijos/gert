@@ -36,6 +36,7 @@ public static class ClientMessageParser
                 "range" => new ClientMessage.Range(
                     ReadLong(root, "after", 0),
                     (int)Math.Clamp(ReadLong(root, "limit", 200), 1, MaxRangeLimit)),
+                "cancel" => new ClientMessage.Cancel(),
                 _ => null,
             };
         }

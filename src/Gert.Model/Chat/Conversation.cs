@@ -23,6 +23,21 @@ public sealed record Conversation
     /// <summary>Per-conversation generation overrides (the <c>params_json</c> column).</summary>
     public Dtos.GenerationParams Params { get; init; } = new();
 
+    /// <summary>
+    /// Reasoning ("thinking") preference for this conversation: null = model
+    /// default, otherwise an explicit on/off sent upstream as
+    /// <c>chat_template_kwargs.enable_thinking</c>.
+    /// </summary>
+    public bool? Thinking { get; init; }
+
+    /// <summary>
+    /// Interleaved-thinking preference: when on, prior turns' reasoning is sent
+    /// back upstream (assistant <c>reasoning_content</c> +
+    /// <c>chat_template_kwargs.preserve_thinking</c>); null = model default
+    /// (prior thinking stripped by the template).
+    /// </summary>
+    public bool? PreserveThinking { get; init; }
+
     public required DateTimeOffset CreatedAt { get; init; }
 
     public required DateTimeOffset UpdatedAt { get; init; }

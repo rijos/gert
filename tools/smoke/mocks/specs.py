@@ -130,6 +130,7 @@ def resolve_completion(last_user_message: str, after_tool: bool) -> dict[str, An
         if "tool_call" in entry and not after_tool:
             return {
                 "deltas": [],
+                "reasoning_deltas": list(entry.get("reasoning_deltas", [])),
                 "finish": entry.get("finish", "tool_calls"),
                 "tool_call": entry["tool_call"],
                 "usage": entry.get("usage", {"completion_tokens": 0}),
@@ -143,6 +144,7 @@ def resolve_completion(last_user_message: str, after_tool: bool) -> dict[str, An
         )
         return {
             "deltas": list(source.get("deltas", [])),
+            "reasoning_deltas": list(source.get("reasoning_deltas", [])),
             "finish": source.get("finish", "stop"),
             "tool_call": None,
             "usage": source.get("usage", {"completion_tokens": 0}),

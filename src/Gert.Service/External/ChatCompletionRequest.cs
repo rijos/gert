@@ -19,4 +19,17 @@ public sealed record ChatCompletionRequest
     public IReadOnlyList<string>? Stop { get; init; }
 
     public int? Seed { get; init; }
+
+    /// <summary>
+    /// Reasoning toggle (<c>chat_template_kwargs.enable_thinking</c>); null
+    /// omits the kwarg and leaves the server/template default.
+    /// </summary>
+    public bool? EnableThinking { get; init; }
+
+    /// <summary>
+    /// Interleaved thinking (<c>chat_template_kwargs.preserve_thinking</c>,
+    /// Qwen3.6); null omits the kwarg. Pair with assistant
+    /// <see cref="ChatModelMessage.ReasoningContent"/> history.
+    /// </summary>
+    public bool? PreserveThinking { get; init; }
 }

@@ -20,6 +20,15 @@ public sealed record Message
 
     public int? TokenCount { get; init; }
 
+    /// <summary>The model's thinking text (reasoning_content); null when absent/disabled.</summary>
+    public string? Reasoning { get; init; }
+
+    /// <summary>Pure generation wall-clock in ms (tool execution excluded).</summary>
+    public long? DurationMs { get; init; }
+
+    /// <summary>Context window occupied by the final model round (prompt + completion tokens).</summary>
+    public int? ContextTokens { get; init; }
+
     /// <summary>
     /// Per-conversation monotonic sequence (the streaming/pagination cursor).
     /// Allocated from <c>conversations.next_seq</c> when the row is written;

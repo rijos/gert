@@ -18,4 +18,10 @@ public sealed record UpdateSettingsRequest
     public ToolToggles? DefaultTools { get; init; }
 
     public MemoryMode? MemoryMode { get; init; }
+
+    /// <summary>
+    /// Per-model generation defaults to merge: each supplied model id REPLACES
+    /// that model's entry (an empty params object clears it); absent ids stay.
+    /// </summary>
+    public IReadOnlyDictionary<string, GenerationParams>? ModelParams { get; init; }
 }

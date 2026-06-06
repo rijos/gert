@@ -74,6 +74,15 @@
       "usage": { "completion_tokens": 8 }
     },
     {
+      "$comment": "Reasoning fixture: thinking deltas stream BEFORE the answer (the collapsed Thinking block). Suppressed when the request sends chat_template_kwargs.enable_thinking=false — the toggle's E2E proof.",
+      "match": "contains",
+      "when": "think about the best vector store",
+      "reasoning_deltas": ["The user runs a homelab. ", "Scale is ~20 users, so ", "operational simplicity dominates recall."],
+      "deltas": ["After weighing it: ", "sqlite-vec — ", "one file, no extra service."],
+      "finish": "stop",
+      "usage": { "completion_tokens": 12 }
+    },
+    {
       "$comment": "SLOW fixture for the detached-turn resume test: delay_ms paces the python mock between deltas (~3s total) so the browser can reload mid-stream and resubscribe. The .NET FakeChatModel ignores delay_ms (unit tests stay instant).",
       "match": "contains",
       "when": "count slowly",
@@ -96,6 +105,40 @@
       ],
       "finish": "stop",
       "usage": { "completion_tokens": 14 }
+    },
+    {
+      "$comment": "Python artifact fixture (the py kind), fence split across deltas like the html one.",
+      "match": "contains",
+      "when": "write a python fibonacci script",
+      "deltas": [
+        "Sure:\n\n",
+        "```python name=fib.py\n",
+        "def fib(n):\n",
+        "    a, b = 0, 1\n",
+        "    for _ in range(n):\n",
+        "        a, b = b, a + b\n",
+        "    return a\n",
+        "```",
+        "\n\nSaved to the canvas."
+      ],
+      "finish": "stop",
+      "usage": { "completion_tokens": 24 }
+    },
+    {
+      "$comment": "Markdown artifact fixture (the md kind). An UNNAMED extra fence rides along to prove only name= fences become artifacts.",
+      "match": "contains",
+      "when": "draft a markdown decision doc",
+      "deltas": [
+        "Drafted:\n\n",
+        "```md name=decision.md\n",
+        "# Vector store decision\n\n",
+        "We pick **sqlite-vec** for the homelab.\n",
+        "```",
+        "\n\nAnd inline, not an artifact:\n\n",
+        "```md\njust an inline snippet\n```\n"
+      ],
+      "finish": "stop",
+      "usage": { "completion_tokens": 22 }
     },
     {
       "$comment": "Memory-retrieval fixture: search_documents over the memory entry the E2E seeds via POST /api/projects/{pid}/memory (title 'Favorite database') — proves memory rides the hybrid query and surfaces its DECODED title in the hit + citation.",

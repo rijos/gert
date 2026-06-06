@@ -92,6 +92,16 @@ One OpenAI-compatible upstream serves **both chat and embeddings**. Binds to
 | `RequestTimeoutSeconds` | `120` | Per-attempt timeout; Polly retries wrap it. |
 | `RetryCount` | `2` | Retries on transient upstream failure. |
 
+> **vLLM prefix caching.** Gert's requests are built to be prefix-cache friendly:
+> the system prompt is static per project, history is replayed verbatim, tool specs
+> serialize deterministically, and no per-request unique fields are sent. To benefit,
+> make sure the vLLM server has automatic prefix caching enabled — it is **on by
+> default in the V1 engine**; verify with `--enable-prefix-caching` (and watch the
+> `vllm:prefix_cache_hit_rate` metrics). Two caveats: prefix reuse is shared across
+> all users of the server (fine for a single-tenant box; pass a per-tenant
+> `cache_salt` upstream if you ever need isolation), and editing a project's pinned
+> instructions invalidates every conversation prefix in that project.
+
 ---
 
 ## 4. `Gert:Models` — the model catalog

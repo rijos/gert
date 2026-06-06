@@ -35,14 +35,15 @@ public sealed class VllmStreamParserTests
             """{"choices":[{"delta":{},"finish_reason":"stop"}]}""",
             """{"choices":[],"usage":{"completion_tokens":7}}""");
 
-        chunks.Should().HaveCount(3);
+        chunks.Should().HaveCount(4);
         chunks[0].TextDelta.Should().Be("Hel");
         chunks[1].TextDelta.Should().Be("lo");
         chunks[2].FinishReason.Should().Be("stop");
-        // Usage arrives after the finish chunk; the parser folds the count it saw.
-        // The terminal chunk is emitted at finish_reason, before the usage tail, so the
-        // token count may be null here — assert finish is correct regardless.
         chunks[2].TextDelta.Should().BeNull();
+        // Usage arrives AFTER the finish chunk; the parser surfaces it as a
+        // trailing usage chunk so the runner still observes the counts.
+        chunks[3].FinishReason.Should().BeNull();
+        chunks[3].TokenCount.Should().Be(7);
     }
 
     [Fact]
@@ -107,5 +108,53 @@ public sealed class VllmStreamParserTests
         parser.Parse("""{"choices":[{"delta":{"content":"x"},"finish_reason":null}]}""");
         var flushed = parser.Flush();
         flushed.Should().ContainSingle(c => c.FinishReason == "stop");
+    }
+
+    [Fact]
+    public void Parse_ReasoningContentDeltas_SurfaceAsReasoningChunks()
+    {
+        var parser = new VllmStreamParser();
+        var chunks = Run(
+            parser,
+            """{"choices":[{"delta":{"reasoning_content":"hmm, "},"finish_reason":null}]}""",
+            """{"choices":[{"delta":{"reasoning_content":"let me think"},"finish_reason":null}]}""",
+            """{"choices":[{"delta":{"content":"Answer."},"finish_reason":null}]}""",
+            """{"choices":[{"delta":{},"finish_reason":"stop"}]}""");
+
+        chunks[0].ReasoningDelta.Should().Be("hmm, ");
+        chunks[0].TextDelta.Should().BeNull();
+        chunks[1].ReasoningDelta.Should().Be("let me think");
+        chunks[2].TextDelta.Should().Be("Answer.");
+        chunks[2].ReasoningDelta.Should().BeNull();
+    }
+
+    [Fact]
+    public void Parse_TrailingUsage_SurfacesPromptAndCompletionTokens()
+    {
+        var parser = new VllmStreamParser();
+        var chunks = Run(
+            parser,
+            """{"choices":[{"delta":{"content":"hi"},"finish_reason":null}]}""",
+            """{"choices":[{"delta":{},"finish_reason":"stop"}]}""",
+            """{"choices":[],"usage":{"prompt_tokens":1234,"completion_tokens":56}}""");
+
+        var usage = chunks.Last();
+        usage.FinishReason.Should().BeNull();
+        usage.PromptTokenCount.Should().Be(1234);
+        usage.TokenCount.Should().Be(56);
+    }
+
+    [Fact]
+    public void Parse_UsageBeforeFinish_PromptTokensRideTheFinishChunk()
+    {
+        var parser = new VllmStreamParser();
+        var chunks = Run(
+            parser,
+            """{"choices":[{"delta":{"content":"hi"},"finish_reason":null}],"usage":{"prompt_tokens":99,"completion_tokens":3}}""",
+            """{"choices":[{"delta":{},"finish_reason":"stop"}]}""");
+
+        var finish = chunks.Single(c => c.FinishReason is not null);
+        finish.PromptTokenCount.Should().Be(99);
+        finish.TokenCount.Should().Be(3);
     }
 }

@@ -15,10 +15,18 @@ public sealed class TurnOptions
     public TimeSpan MaxTurnDuration { get; set; } = TimeSpan.FromMinutes(5);
 
     /// <summary>
-    /// Coalescing threshold for durable delta rows: accumulated delta text is
-    /// flushed to <c>turn_events</c> when it reaches this many chars (and always
-    /// at tool/message boundaries). Live subscribers still get per-chunk deltas
-    /// via the bus; this only bounds replay-log granularity.
+    /// Delta coalescing window: model chunks are buffered and emitted as ONE
+    /// delta event (one seq, one durable row, one publish) once this much time
+    /// has passed since the last flush. <see cref="TimeSpan.Zero"/> disables
+    /// coalescing — every chunk flushes immediately (the pre-coalescing
+    /// behavior). Boundaries (tool rounds, end of stream) always flush.
     /// </summary>
-    public int DeltaFlushChars { get; set; } = 512;
+    public TimeSpan DeltaFlushInterval { get; set; } = TimeSpan.FromMilliseconds(150);
+
+    /// <summary>
+    /// Size backstop for the coalescing window: the pending buffer flushes as
+    /// soon as it reaches this many chars, even mid-interval, so a fast model
+    /// can't grow unbounded delta events.
+    /// </summary>
+    public int DeltaFlushMaxChars { get; set; } = 512;
 }

@@ -75,6 +75,75 @@ public sealed class ApiBreadthTests : IClassFixture<GertApiFactory>
     }
 
     [Fact]
+    public async Task Settings_per_model_params_round_trip_and_merge_per_model()
+    {
+        var client = Authed();
+
+        // Set params for one model.
+        var first = await client.PutAsJsonAsync(
+            "/api/settings",
+            new UpdateSettingsRequest
+            {
+                ModelParams = new Dictionary<string, GenerationParams>
+                {
+                    ["qwen36"] = new() { Temperature = 0.3, TopP = 0.9 },
+                },
+            },
+            Json);
+        first.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        // A second PUT for a different model must keep the first entry.
+        var second = await client.PutAsJsonAsync(
+            "/api/settings",
+            new UpdateSettingsRequest
+            {
+                ModelParams = new Dictionary<string, GenerationParams>
+                {
+                    ["other-model"] = new() { MaxTokens = 1024 },
+                },
+            },
+            Json);
+        second.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var settings = await client.GetFromJsonAsync<UserSettings>("/api/settings", Json);
+        settings!.ModelParams.Should().NotBeNull();
+        settings.ModelParams!["qwen36"].Temperature.Should().Be(0.3);
+        settings.ModelParams["qwen36"].TopP.Should().Be(0.9);
+        settings.ModelParams["other-model"].MaxTokens.Should().Be(1024);
+    }
+
+    [Fact]
+    public async Task Settings_per_model_params_reject_bad_keys_and_out_of_range_values()
+    {
+        var client = Authed();
+
+        // '/'+'.' are legitimate in model ids (HF repo ids); spaces/braces are not.
+        var badKey = await client.PutAsJsonAsync(
+            "/api/settings",
+            new UpdateSettingsRequest
+            {
+                ModelParams = new Dictionary<string, GenerationParams>
+                {
+                    ["bad key {oops}"] = new() { Temperature = 0.5 },
+                },
+            },
+            Json);
+        badKey.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        var badRange = await client.PutAsJsonAsync(
+            "/api/settings",
+            new UpdateSettingsRequest
+            {
+                ModelParams = new Dictionary<string, GenerationParams>
+                {
+                    ["qwen36"] = new() { Temperature = 9.5 },
+                },
+            },
+            Json);
+        badRange.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
     public async Task Projects_create_list_get_round_trips_and_default_is_listed()
     {
         var client = Authed();

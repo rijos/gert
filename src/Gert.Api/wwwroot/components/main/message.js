@@ -22,6 +22,46 @@ export const Citation = ({ ordinal, label } = {}) =>
 // streaming typewriter caret
 const Caret = () => span({ class: "caret" });
 
+// --- thinking block (collapsible, mirrors the sources card) ------------------
+// Collapsed by default; the header appears the moment reasoning text arrives
+// and the body live-appends while the model thinks. Raw pre-wrapped text — the
+// model's scratchpad is not markdown.
+const Thinking = (m) => {
+  const open = van.state(false);
+  return () => {
+    if (!m.reasoning) return div();
+    return div(
+      { class: () => "thinking" + (open.val ? " open" : "") },
+      button(
+        {
+          class: "t-head",
+          "aria-expanded": () => String(open.val),
+          onclick: () => (open.val = !open.val),
+        },
+        Icon("brain", { size: 16, class: "t-mark", strokeWidth: 1.7 }),
+        span({ class: "t-label" }, "Thinking"),
+        () =>
+          m.streaming && !m.text
+            ? span({ class: "t-live" }, "…")
+            : span(),
+        Icon("chevron", { size: 15, class: "t-chev", strokeWidth: 2.2 }),
+      ),
+      () => (open.val ? div({ class: "t-body" }, m.reasoning) : div()),
+    );
+  };
+};
+
+// --- per-message generation stats ("312 tok · 41 tok/s") ---------------------
+const Meta = (m) => () => {
+  if (m.streaming || m.tokenCount == null) return div();
+  const tps =
+    m.durationMs > 0 ? Math.round(m.tokenCount / (m.durationMs / 1000)) : null;
+  return div(
+    { class: "msg-meta" },
+    `${m.tokenCount} tok` + (tps != null ? ` · ${tps} tok/s` : ""),
+  );
+};
+
 // --- sources card (the collapsible footnote redesign) ------------------------
 // Only http(s) locators become links — same URL stance as the markdown
 // renderer; anything else (document pages) renders as a plain row.
@@ -240,6 +280,21 @@ export const Message = component({
 
     .caret{display:inline-block; width:8px; height:16px; background:var(--accent); margin-left:2px; vertical-align:-2px; animation:blink 1.05s steps(2,start) infinite; border-radius:1px;}
 
+    /* user-stopped turn: quiet meta line under the partial text */
+    .stopped{margin-top:8px; font-size:12px; color:var(--ink-faint); font-style:italic;}
+
+    /* thinking block: collapsible scratchpad above the answer */
+    .thinking{margin:0 0 12px; border:1px solid var(--line); border-radius:11px; background:var(--inset); overflow:hidden;}
+    .t-head{display:flex; align-items:center; gap:9px; width:100%; padding:8px 12px; background:none; border:none; cursor:pointer; font-family:var(--sans); color:var(--ink-soft); font-size:12.5px; font-weight:700; text-align:left;}
+    .t-head .t-mark{color:var(--ink-faint); flex:none;}
+    .t-live{color:var(--accent); font-weight:700;}
+    .t-chev{margin-left:auto; color:var(--ink-faint); flex:none; transition:transform .2s;}
+    .thinking.open .t-chev{transform:rotate(180deg);}
+    .t-body{padding:2px 13px 11px; font-size:12.5px; line-height:1.55; color:var(--ink-soft); white-space:pre-wrap; overflow-wrap:anywhere;}
+
+    /* generation stats under the answer */
+    .msg-meta{margin-top:7px; font-family:var(--mono); font-size:11px; color:var(--ink-faint);}
+
     /* toolzone: git-graph spine that holds the tool-call cards */
     .toolzone{position:relative; padding-left:26px; margin:14px 0 16px;}
     .toolzone::before{content:""; position:absolute; left:10px; top:-4px; bottom:-4px; width:1.5px; background:var(--line-strong);}
@@ -259,6 +314,8 @@ export const Message = component({
     return div(
       { class: "msg bot" },
       RoleHeader(true),
+      // thinking scratchpad (collapsed; live-fills while the model reasons)
+      Thinking(m),
       // tool cards (git-graph). re-renders as cards arrive.
       () =>
         m.tools.length
@@ -273,6 +330,10 @@ export const Message = component({
         if (m.streaming) body.append(Caret());
         return body;
       },
+      // user-stopped marker (server-confirmed `cancelled` terminal)
+      () => (m.cancelled ? div({ class: "stopped" }, "Stopped") : div()),
+      // generation stats ("312 tok · 41 tok/s")
+      Meta(m),
       // sources card
       Sources(m.citations),
     );

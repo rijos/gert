@@ -96,6 +96,19 @@ export const ToolsMenu = component({
             span({ class: "t-label" }, "Use my docs"),
             Switch({ on: () => knowledge.useInChat.val, onToggle: () => {} }),
           ),
+          // Interleaved thinking (Qwen3.6 preserve_thinking): prior turns'
+          // reasoning rides back upstream so the model builds on it instead of
+          // re-deriving — recommended for agentic/tool-heavy chats.
+          div(
+            {
+              class: () => "t-row" + (chat.preserveThinking.val ? " on" : ""),
+              onclick: () => (chat.preserveThinking.val = !chat.preserveThinking.val),
+              title: "Carry earlier reasoning into later turns (interleaved thinking)",
+            },
+            Icon("brain", { size: 14, strokeWidth: 2 }),
+            span({ class: "t-label" }, "Preserve thinking"),
+            Switch({ on: () => chat.preserveThinking.val, onToggle: () => {} }),
+          ),
         ),
       ],
     });

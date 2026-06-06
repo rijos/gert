@@ -27,6 +27,12 @@ public sealed record ThreadResponse
 
     public required GenerationParams Params { get; init; }
 
+    /// <summary>Conversation reasoning preference (null = model default). Wire: <c>thinking</c>.</summary>
+    public bool? Thinking { get; init; }
+
+    /// <summary>Interleaved-thinking preference. Wire: <c>preserve_thinking</c>.</summary>
+    public bool? PreserveThinking { get; init; }
+
     public required DateTimeOffset CreatedAt { get; init; }
 
     public required DateTimeOffset UpdatedAt { get; init; }
@@ -54,6 +60,8 @@ public sealed record ThreadResponse
             ModelId = conversation.ModelId,
             Tools = conversation.Tools,
             Params = conversation.Params,
+            Thinking = conversation.Thinking,
+            PreserveThinking = conversation.PreserveThinking,
             CreatedAt = conversation.CreatedAt,
             UpdatedAt = conversation.UpdatedAt,
             Archived = conversation.Archived,

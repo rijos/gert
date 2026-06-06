@@ -53,6 +53,9 @@ public static class ServiceCollectionExtensions
         // process-wide singleton (live delivery is per-process; the DB is the
         // cross-instance truth); the reader is scoped (per-request IUserContext).
         services.TryAddSingleton<Chat.Bus.IConversationBus, Chat.Bus.ConversationBus>();
+        // The cancel registry is process-wide for the same reason the bus is:
+        // the in-process queue means the addressed turn always lives here.
+        services.TryAddSingleton<ITurnCancellation, TurnCancellation>();
         services.TryAddScoped<IConversationReader, ConversationReader>();
         services.TryAddScoped<IConversationStreamer, ConversationStreamer>();
         services.TryAddScoped<ITurnPlanner, TurnPlanner>();
