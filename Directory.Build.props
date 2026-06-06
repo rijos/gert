@@ -51,6 +51,11 @@
     <SerilogExtensionsHostingVersion>9.0.0</SerilogExtensionsHostingVersion>
     <SerilogExtensionsLoggingVersion>9.0.0</SerilogExtensionsLoggingVersion>
     <SerilogSinksConsoleVersion>6.0.0</SerilogSinksConsoleVersion>
+    <!-- U16 Console TUI: full-screen Terminal.Gui host + file-sink logging (stdout
+         belongs to the TUI screen, so NDJSON goes to a file in TUI mode). -->
+    <TerminalGuiVersion>2.4.4</TerminalGuiVersion>
+    <SerilogSinksFileVersion>7.0.0</SerilogSinksFileVersion>
+    <MicrosoftExtensionsFileSystemGlobbingVersion>9.0.0</MicrosoftExtensionsFileSystemGlobbingVersion>
   </PropertyGroup>
 
   <!-- One-type-per-file enforcement (#11). Only SA1402/SA1649 are on (see .editorconfig);

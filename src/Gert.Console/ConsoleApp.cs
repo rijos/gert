@@ -58,6 +58,7 @@ public sealed class ConsoleApp
             {
                 "chat" => await ChatAsync(args, cancellationToken).ConfigureAwait(false),
                 "ingest" => await IngestAsync(args, cancellationToken).ConfigureAwait(false),
+                "tui" => TuiUnavailable(),
                 _ => Usage(),
             };
         }
@@ -214,9 +215,21 @@ public sealed class ConsoleApp
         return null;
     }
 
+    /// <summary>
+    /// The <c>tui</c> command is dispatched in <c>Program.cs</c> BEFORE
+    /// <see cref="ConsoleApp"/> (it owns the terminal); reaching this case means
+    /// stdin/stdout is redirected, so the full-screen app cannot run.
+    /// </summary>
+    private int TuiUnavailable()
+    {
+        _error.WriteLine("error: tui requires an interactive terminal (stdin/stdout must not be redirected)");
+        return 1;
+    }
+
     private int Usage()
     {
         _error.WriteLine("usage:");
+        _error.WriteLine("  gert tui");
         _error.WriteLine("  gert chat \"<message>\" [--project <pid>]");
         _error.WriteLine("  gert ingest <path> [--project <pid>]");
         return 1;

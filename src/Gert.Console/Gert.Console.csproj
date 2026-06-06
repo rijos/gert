@@ -30,6 +30,13 @@
     <PackageReference Include="Serilog" Version="$(SerilogVersion)" />
     <PackageReference Include="Serilog.Extensions.Logging" Version="$(SerilogExtensionsLoggingVersion)" />
     <PackageReference Include="Serilog.Sinks.Console" Version="$(SerilogSinksConsoleVersion)" />
+    <!-- U16 TUI: full-screen interactive host (the local equivalent of the web SPA).
+         In TUI mode stdout is the screen, so logs go to a file sink instead. -->
+    <PackageReference Include="Terminal.Gui" Version="$(TerminalGuiVersion)" />
+    <PackageReference Include="Serilog.Sinks.File" Version="$(SerilogSinksFileVersion)" />
+    <!-- U16 local file tools: glob matching for the glob/grep capabilities. -->
+    <PackageReference Include="Microsoft.Extensions.FileSystemGlobbing"
+                      Version="$(MicrosoftExtensionsFileSystemGlobbingVersion)" />
   </ItemGroup>
 
 </Project>
