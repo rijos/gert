@@ -10,6 +10,7 @@ import { ConvoList } from "./convo-list.js";
 import { UserChip } from "./user-chip.js";
 import * as ui from "../../state/ui.js";
 import * as chat from "../../state/chat.js";
+import * as chatSvc from "../../services/chat.js";
 import * as artifacts from "../../state/artifacts.js";
 import { navigate } from "../../lib/router.js";
 
@@ -38,6 +39,7 @@ const NewChat = () =>
     {
       class: "newchat",
       onclick: () => {
+        chatSvc.detach(); // leaving a mid-stream thread — unpin the composer
         chat.newConversation();
         artifacts.clear();
         navigate("/");

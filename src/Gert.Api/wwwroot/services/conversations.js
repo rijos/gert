@@ -18,6 +18,11 @@ export const list = async () => {
 };
 
 export const open = async (id) => {
+  // Switching mid-stream: detach the client consumer first (the server turn
+  // keeps running detached). Without this the old consumer keeps the global
+  // streaming flag pinned — locking the composer, mistargeting stop(), and
+  // blocking the resume below. Re-opening the streaming thread re-attaches.
+  chatSvc.detach();
   // GET thread returns the flattened contract: { id, title, tools, messages:[{ id,
   // role, text, status, seq, citations }], artifacts } — consumed directly, no remapping.
   const conv = await http.get(`/projects/${pid()}/conversations/${id}`);
@@ -58,5 +63,8 @@ export const remove = async (id) => {
   await http.del(`/projects/${pid()}/conversations/${id}`);
   const i = chat.conversations.findIndex((x) => x.id === id);
   if (i >= 0) chat.conversations.splice(i, 1);
-  if (chat.activeId.val === id) chat.newConversation();
+  if (chat.activeId.val === id) {
+    chatSvc.detach(); // it may have been mid-stream — unpin the composer
+    chat.newConversation();
+  }
 };

@@ -263,6 +263,18 @@ let activeController = null;
 // race the cancel finalize into a 409.
 let activeTurn = null;
 
+// detach() — drop the client from the in-flight turn WITHOUT cancelling it
+// server-side (detached generation keeps running). Used when the user switches
+// conversation (or starts a new chat) mid-stream: the consumer is torn down so
+// the composer unlocks for the thread now on screen, and re-opening the
+// streaming thread later resumes it live from the row's seq.
+export const detach = () => {
+  if (!activeController) return;
+  activeController.abort();
+  activeController = null;
+  chat.streaming.val = false;
+};
+
 export const stop = () => {
   if (!chat.streaming.val) return;
   chat.streaming.val = false; // swap Stop → Send immediately; finally re-confirms
@@ -318,6 +330,10 @@ export const send = async (content, attachments = []) => {
       body,
     );
     assistant.id = accepted.assistant_message_id;
+    // The server materialised the conversation row on accept — refresh the
+    // sidebar NOW so the new thread is reachable if the user switches away
+    // mid-stream (the finally refresh below picks up its auto-title later).
+    if (isNew) conversationsSvc.list().catch(() => {});
     turn = consume(pid, cid, accepted.seq, assistant, ac.signal);
     activeTurn = turn;
     await turn;
@@ -339,8 +355,8 @@ export const send = async (content, attachments = []) => {
       chat.streaming.val = false;
     }
     assistant.streaming = false;
-    // The server materialised the conversation row on this first message; refresh
-    // the sidebar so the new thread shows up without needing a page reload.
+    // Refresh the sidebar once more at turn end: the server auto-titles the
+    // conversation after the first message, and list() syncs that title in.
     if (isNew) conversationsSvc.list().catch(() => {});
   }
 };

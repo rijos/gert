@@ -3,6 +3,7 @@
 // picker (configuration §8). Updates state/chat.js.
 import * as http from "./http.js";
 import * as chat from "../state/chat.js";
+import * as chatSvc from "./chat.js";
 import * as conversations from "./conversations.js";
 
 export const list = async () => {
@@ -22,6 +23,7 @@ export const create = async (body) => {
 // conversation when the project is empty. Returns the opened conversation (or null)
 // so the caller can route to it.
 export const select = async (id) => {
+  chatSvc.detach(); // leaving a mid-stream thread — unpin the composer
   chat.activeProjectId.val = id;
   chat.newConversation();
   const items = (await conversations.list()) || [];

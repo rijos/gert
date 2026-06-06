@@ -13,6 +13,7 @@ import { renderMarkdown } from "../../lib/markdown.js";
 import { Icon } from "../../icons/icons.js";
 import { ToolCard } from "./tool-card.js";
 import * as artifacts from "../../state/artifacts.js";
+import * as auth from "../../state/auth.js";
 import * as ui from "../../state/ui.js";
 
 const { div, span, a, button, img } = van.tags;
@@ -234,7 +235,8 @@ const injectCitations = (root, citations) => {
 const RoleHeader = (isBot) =>
   div(
     { class: "role " + (isBot ? "gert" : "you") },
-    span({ class: "rb" }, "G"),
+    // user rows wear the user's initial (same derivation as the sidebar chip)
+    span({ class: "rb" }, isBot ? "G" : () => auth.user.val?.avatar || "Y"),
     span({ class: "rl" }, isBot ? "Gert" : "You"),
   );
 
