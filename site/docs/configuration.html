@@ -142,13 +142,20 @@
     <p>A <strong>round</strong> is one upstream completion request that comes back with
     tool calls — executing them and re-prompting starts the next round, so every round
     costs a full vLLM completion.</p>
+    <p>The guards are layered: bound every part, brake the loop, make every trip visible
+    on its tool card.</p>
     <div class="table-wrap"><table>
       <tr><th>Key</th><th>Default</th><th>Notes</th></tr>
-      <tr><td><code>MaxTurnDuration</code></td><td><code>00:05:00</code></td><td>Hard wall-clock cap on one turn (model rounds + tools). Doubles as the orphan horizon for abandoned streaming rows.</td></tr>
-      <tr><td><code>MaxToolRounds</code></td><td><code>16</code></td><td>Hard cap on tool rounds per turn. The todo-driven flow consumes a round per <code>set_todos</code> update — size this to your longest expected checklist. Past the cap the runner refuses further calls and winds the turn down.</td></tr>
+      <tr><td><code>MaxTurnDuration</code></td><td><code>00:05:00</code></td><td>Hard wall-clock cap on one turn (model rounds + tools) — the real budget. Doubles as the orphan horizon for abandoned streaming rows.</td></tr>
+      <tr><td><code>MaxToolRounds</code></td><td><code>64</code></td><td><strong>Runaway brake, not a work budget</strong> — sized an order of magnitude above legitimate turns. Past it the runner refuses further calls with budget-exhausted errors (visible on the cards) and winds the turn down.</td></tr>
+      <tr><td><code>MaxTokensPerRound</code></td><td><code>16384</code></td><td>Per-round completion bound: both the default <code>max_tokens</code> (when neither conversation nor per-model user settings ask) and the ceiling (requests clamp down). Reasoning tokens count against it on thinking models. <code>0</code> disables.</td></tr>
+      <tr><td><code>ToolCallTimeout</code></td><td><code>00:01:00</code></td><td>Generic wall-clock backstop on one tool execution, behind each tool's own tighter limits. A trip fails that call with a visible card error; the turn continues. <code>0</code> disables.</td></tr>
       <tr><td><code>DeltaFlushInterval</code></td><td><code>150ms</code></td><td>Delta coalescing window — buffered chunks emit as one event per window.</td></tr>
       <tr><td><code>DeltaFlushMaxChars</code></td><td><code>512</code></td><td>Size backstop for the coalescing window.</td></tr>
     </table></div>
+    <p>The per-round <code>max_tokens</code> is also user-facing: the model picker's
+    cogwheel sets per-model defaults and conversation params override them — the server
+    value is the cascade's last fallback <em>and</em> its ceiling.</p>
 
     <h2>Dev &amp; test modes</h2>
     <p>Not for production — listed so a deployment never enables them by accident.</p>

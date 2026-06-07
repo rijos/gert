@@ -24,8 +24,10 @@ const toCards = (tools) => {
       hits: t.hits || [],
       code: t.code || "",
       stdout: t.stdout ?? "",
+      error: t.error ?? "",
       todos: t.todos || [],
-      open: false,
+      // A failed card arrives open — the error line is the information.
+      open: t.status === "error" && !!t.error,
     };
     const fold = t.kind === "todo" ? cards.findIndex((c) => c.kind === "todo") : -1;
     if (fold >= 0) cards[fold] = card;

@@ -15,17 +15,40 @@ public sealed class TurnOptions
     public TimeSpan MaxTurnDuration { get; set; } = TimeSpan.FromMinutes(5);
 
     /// <summary>
-    /// Hard cap on tool ROUNDS per turn. A round is one upstream completion
-    /// request that comes back with tool calls — executing them and re-prompting
-    /// starts the next round, so every round costs a full vLLM completion (one
-    /// upstream POST). The todo-driven flow consumes a round per
-    /// <c>set_todos</c> update, so the default leaves room for a long checklist
-    /// plus retrieval in one turn; <see cref="MaxTurnDuration"/> is the
-    /// wall-clock backstop either way. Past the cap the runner refuses further
-    /// calls with synthetic error results and winds the turn down
+    /// Runaway brake on tool ROUNDS per turn — NOT a work budget. A round is one
+    /// upstream completion request that comes back with tool calls — executing
+    /// them and re-prompting starts the next round, so every round costs a full
+    /// vLLM completion (one upstream POST). The todo-driven flow consumes a
+    /// round per <c>set_todos</c> update, so this is sized an order of magnitude
+    /// above legitimate work (the design rationale and survey live in
+    /// docs/design/turn-budgets.md); <see cref="MaxTurnDuration"/> is the real
+    /// budget. Past the cap the runner refuses further calls with synthetic
+    /// error results — visible on the tool cards — and winds the turn down
     /// (see <c>TurnRunner</c>).
     /// </summary>
-    public int MaxToolRounds { get; set; } = 16;
+    public int MaxToolRounds { get; set; } = 64;
+
+    /// <summary>
+    /// Per-round completion bound: the <c>max_tokens</c> sent upstream on every
+    /// completion request. Acts as BOTH the default (applied when neither the
+    /// conversation nor the user's per-model settings ask for anything) and the
+    /// ceiling (requested values clamp down to it) — so
+    /// <see cref="MaxToolRounds"/> × this bounds a turn's total completion
+    /// tokens. Mind thinking models: reasoning tokens count against it, so keep
+    /// it generous. <c>0</c> or negative disables the bound (requests pass
+    /// through unclamped, unset stays unset).
+    /// </summary>
+    public int MaxTokensPerRound { get; set; } = 16384;
+
+    /// <summary>
+    /// Generic wall-clock backstop on ONE tool execution. Individual tools keep
+    /// their own tighter limits (the sandbox wall clock, the search timeouts);
+    /// this catches the ones that hang outside them — a wedged database open, a
+    /// stuck embedding call's retry chain. A timed-out call fails with a
+    /// visible card error and the turn continues; it never kills the turn.
+    /// <see cref="TimeSpan.Zero"/> disables the backstop.
+    /// </summary>
+    public TimeSpan ToolCallTimeout { get; set; } = TimeSpan.FromSeconds(60);
 
     /// <summary>
     /// Delta coalescing window: model chunks are buffered and emitted as ONE

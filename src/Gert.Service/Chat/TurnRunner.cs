@@ -201,7 +201,7 @@ public sealed class TurnRunner : ITurnRunner
                     Temperature = job.Temperature,
                     TopP = job.TopP,
                     PresencePenalty = job.PresencePenalty,
-                    MaxTokens = job.MaxTokens,
+                    MaxTokens = ClampMaxTokens(job.MaxTokens),
                     Stop = job.Stop,
                     Seed = job.Seed,
                     EnableThinking = job.Thinking,
@@ -355,6 +355,7 @@ public sealed class TurnRunner : ITurnRunner
                         Hits = outcome.Hits,
                         Stdout = outcome.Stdout,
                         Todos = outcome.Todos,
+                        Error = outcome.Error,
                     }, token).ConfigureAwait(false);
 
                     // Tool rows persist LIVE (the tree read model grows as the turn
@@ -588,11 +589,34 @@ public sealed class TurnRunner : ITurnRunner
         }
 
         var invocation = new ToolInvocation { Pid = job.Pid, ArgumentsJson = call.ArgumentsJson };
+
+        // The generic per-call backstop: tools carry their own tighter limits
+        // (sandbox wall clock, search timeouts); this catches a hang outside
+        // them. A trip fails THIS call with a visible card error — the turn
+        // token cancelling rethrows as before and ends the turn.
+        using var callCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        if (_options.ToolCallTimeout > TimeSpan.Zero)
+        {
+            callCts.CancelAfter(_options.ToolCallTimeout);
+        }
+
         var stopwatch = Stopwatch.StartNew();
         ToolResult result;
         try
         {
-            result = await tool.ExecuteAsync(invocation, cancellationToken).ConfigureAwait(false);
+            result = await tool.ExecuteAsync(invocation, callCts.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested
+                                                 && callCts.IsCancellationRequested)
+        {
+            stopwatch.Stop();
+            _logger.LogWarning(
+                "Tool '{ToolId}' timed out after {TimeoutSeconds}s (call {CallId}).",
+                tool.Id, _options.ToolCallTimeout.TotalSeconds, call.Id);
+            return ToolOutcome.Failure(
+                tool.Id,
+                $"tool timed out after {_options.ToolCallTimeout.TotalSeconds:0}s",
+                stopwatch.ElapsedMilliseconds);
         }
         catch (OperationCanceledException)
         {
@@ -607,6 +631,16 @@ public sealed class TurnRunner : ITurnRunner
         stopwatch.Stop();
         return ToolOutcome.From(tool.Id, result, stopwatch.ElapsedMilliseconds);
     }
+
+    /// <summary>
+    /// Apply the per-round completion bound: <see cref="TurnOptions.MaxTokensPerRound"/>
+    /// is the default when nothing was requested and the ceiling when something
+    /// was. Disabled (≤ 0) passes the request through untouched.
+    /// </summary>
+    private int? ClampMaxTokens(int? requested) =>
+        _options.MaxTokensPerRound > 0
+            ? Math.Min(requested ?? _options.MaxTokensPerRound, _options.MaxTokensPerRound)
+            : requested;
 
     private ITool? ResolveTool(string functionName) =>
         _tools.FirstOrDefault(t => string.Equals(t.Name, functionName, StringComparison.Ordinal));

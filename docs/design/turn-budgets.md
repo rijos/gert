@@ -1,9 +1,12 @@
 # Turn budgets — bounding long agentic turns
 
-**Status: open design — nothing in this document is implemented beyond the runaway brake.**
-The question: what should bound a long agentic turn, given that round caps are the wrong
-tool? Written after the 2026-06-07 runaway-loop incident and a survey of how
-[pi](https://pi.dev) handles the same problem.
+**Status: the layered-guards shape (§2b survey summary) is implemented** — loop brake
+(`MaxToolRounds` 64, visible trip), per-round completion bound (`MaxTokensPerRound`),
+per-tool-call backstop (`ToolCallTimeout`), all under `Gert:Turn`
+([installation/configuration.md §9](../installation/configuration.md)), with every trip
+rendered on its tool card live *and* on reload. **Token budgets (§4b) and steering (§4c)
+remain open design.** Written after the 2026-06-07 runaway-loop incident and a survey of
+how [pi](https://pi.dev) and Open WebUI handle the same problem.
 
 ---
 
@@ -190,7 +193,8 @@ Phased, smallest-honest-step first:
   for the user-facing budget; wall-clock already proxies total occupancy.
 - **Default for `MaxTurnTokens`?** Needs measurement against real qwen3.6 todo-flow turns
   (the 2026-06-07 sessions are a starting corpus).
-- **UI surface on budget trip** — silent wind-down, or a visible "budget exhausted"
-  marker event? Leaning: visible; silent truncation reads as model failure.
+- ~~**UI surface on budget trip**~~ — settled by Open WebUI's precedent and implemented:
+  refused calls, timeouts, and tool defects all carry their error text on the tool card
+  (`ToolResultEvent.Error` live, `ThreadToolCall.Error` on reload).
 - **Steering × thinking models** — injected tail messages interact with reasoning replay
   (`PreserveThinking`); verify against vLLM 0.22 before committing to 4c's placement.

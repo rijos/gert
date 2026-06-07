@@ -23,5 +23,12 @@ public sealed record ToolResultEvent : ChatEvent
     /// <summary>The model-managed todo list (the <c>set_todos</c> tool) for the todo card.</summary>
     public IReadOnlyList<Chat.TodoItem>? Todos { get; init; }
 
+    /// <summary>
+    /// Human-readable failure text the card renders when <see cref="Status"/> is
+    /// <see cref="ToolCallStatus.Error"/> — a timed-out call, a refused
+    /// budget-exhausted call, a tool defect. Null on success.
+    /// </summary>
+    public string? Error { get; init; }
+
     public override ChatEventType Type => ChatEventType.ToolResult;
 }

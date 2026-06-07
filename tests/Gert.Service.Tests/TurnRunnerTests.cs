@@ -494,6 +494,49 @@ public sealed class TurnRunnerTests
         // Five executed rows persisted done; the refused round's row is an error.
         _toolRows.Count(r => r.Status == ToolCallStatus.Done).Should().Be(5);
         _toolRows.Count(r => r.Status == ToolCallStatus.Error).Should().Be(1);
+
+        // The cap-trip is VISIBLE: the refused call's result event carries the
+        // budget message for the card's error line (turn-budgets.md §6).
+        var refused = Events.OfType<ToolResultEvent>().Single(e => e.Status == ToolCallStatus.Error);
+        refused.Error.Should().Contain("tool budget exhausted");
+    }
+
+    [Fact]
+    public async Task Per_round_max_tokens_defaults_and_clamps_to_the_configured_bound()
+    {
+        var model = new RequestCapturingModel();
+        var options = new TurnOptions { MaxTokensPerRound = 100 };
+
+        // Unset → the bound is the default; over the bound → clamped; under → kept.
+        await NewRunner(model, options: options).RunAsync(NewJob("hello"));
+        await NewRunner(model, options: options).RunAsync(NewJob("hello") with { MaxTokens = 500 });
+        await NewRunner(model, options: options).RunAsync(NewJob("hello") with { MaxTokens = 50 });
+
+        model.MaxTokens.Should().Equal(100, 100, 50);
+
+        // Disabled (0) → requests pass through untouched, unset stays unset.
+        var off = new TurnOptions { MaxTokensPerRound = 0 };
+        await NewRunner(model, options: off).RunAsync(NewJob("hello") with { MaxTokens = 500 });
+        await NewRunner(model, options: off).RunAsync(NewJob("hello"));
+        model.MaxTokens.Skip(3).Should().Equal(500, null);
+    }
+
+    [Fact]
+    public async Task Hung_tool_call_times_out_with_a_visible_error_and_the_turn_completes()
+    {
+        var hung = new HangingTool();
+        var options = new TurnOptions { ToolCallTimeout = TimeSpan.FromMilliseconds(50) };
+
+        await NewRunner(new TextThenToolModel(), [hung], options)
+            .RunAsync(NewJob("hang forever", [hung]));
+
+        // The call failed visibly — card error text names the timeout — and the
+        // turn went on to a complete final answer instead of dying with it.
+        var result = Events.OfType<ToolResultEvent>().Single();
+        result.Status.Should().Be(ToolCallStatus.Error);
+        result.Error.Should().Contain("timed out");
+
+        _finalized.Single().Status.Should().Be(MessageStatus.Complete);
     }
 
     [Fact]
@@ -863,6 +906,41 @@ public sealed class TurnRunnerTests
             ToolInvocation invocation,
             CancellationToken cancellationToken = default) =>
             Task.FromResult(new ToolResult { Success = true, ResultJson = "{}" });
+    }
+
+    /// <summary>Hangs until cancelled — exercises the per-call timeout backstop.</summary>
+    private sealed class HangingTool : ITool
+    {
+        public string Id => "stub";
+
+        public string Name => "stub_tool";
+
+        public string Description => "hangs";
+
+        public string ParametersSchema => """{"type":"object"}""";
+
+        public async Task<ToolResult> ExecuteAsync(
+            ToolInvocation invocation,
+            CancellationToken cancellationToken = default)
+        {
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+            return new ToolResult { Success = true, ResultJson = "{}" };
+        }
+    }
+
+    /// <summary>Plain text answer, capturing each request's <c>MaxTokens</c>.</summary>
+    private sealed class RequestCapturingModel : IChatModelClient
+    {
+        public List<int?> MaxTokens { get; } = [];
+
+        public async IAsyncEnumerable<ChatModelChunk> StreamAsync(
+            ChatCompletionRequest request,
+            [EnumeratorCancellation] CancellationToken cancellationToken = default)
+        {
+            MaxTokens.Add(request.MaxTokens);
+            yield return new ChatModelChunk { TextDelta = "ok" };
+            await Task.Yield();
+        }
     }
 
     /// <summary>Streams a named html fence split across deltas (the artifact path).</summary>

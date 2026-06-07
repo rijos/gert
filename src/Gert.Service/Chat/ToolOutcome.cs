@@ -23,6 +23,9 @@ internal sealed record ToolOutcome
     /// <summary>The JSON fed back to the model as the tool message content.</summary>
     public string? ResponseJson { get; init; }
 
+    /// <summary>Human-readable failure text for the tool card (null on success).</summary>
+    public string? Error { get; init; }
+
     public IReadOnlyList<Citation> Citations { get; init; } = [];
 
     public IReadOnlyList<ToolResultHit>? Hits { get; init; }
@@ -38,14 +41,16 @@ internal sealed record ToolOutcome
     {
         if (!result.Success)
         {
+            var error = result.Error ?? "tool failed";
             var errorJson = result.ResultJson
-                            ?? JsonSerializer.Serialize(new { error = result.Error ?? "tool failed" });
+                            ?? JsonSerializer.Serialize(new { error });
             return new ToolOutcome
             {
                 Kind = kind,
                 Status = ToolCallStatus.Error,
                 LatencyMs = latencyMs,
                 ResponseJson = errorJson,
+                Error = error,
             };
         }
 
@@ -69,5 +74,6 @@ internal sealed record ToolOutcome
         Status = ToolCallStatus.Error,
         LatencyMs = latencyMs,
         ResponseJson = JsonSerializer.Serialize(new { error }),
+        Error = error,
     };
 }

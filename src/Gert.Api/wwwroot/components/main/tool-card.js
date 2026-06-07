@@ -76,6 +76,8 @@ export const ToolCard = component({
     .doc-hit .pg{font-family:var(--mono); font-size:10.5px; color:var(--ink-3); margin-left:auto;}
     .doc-hit .score{font-family:var(--mono); font-size:10px; color:var(--green);}
     .stdout{font-family:var(--mono); font-size:11.5px; background:var(--surface-2); border:1px solid var(--line); border-left:2.5px solid var(--green); border-radius:6px; padding:8px 11px; color:var(--ink); white-space:pre-wrap;}
+    /* failure text: timeout, refused budget-exhausted call, tool defect */
+    .terror{font-family:var(--mono); font-size:11.5px; background:var(--surface-2); border:1px solid var(--line); border-left:2.5px solid var(--brick); border-radius:6px; padding:8px 11px; margin-top:11px; color:var(--ink); white-space:pre-wrap;}
     .todo-row{display:flex; align-items:center; gap:9px; padding:5px 0; border-bottom:1px solid var(--line-soft);}
     .todo-row:last-child{border-bottom:none;}
     .todo-row .tmark{font-family:var(--mono); font-size:11px; width:18px; height:18px; flex:none; display:grid; place-items:center; color:var(--ink-3); border:1px solid var(--line); border-radius:5px;}
@@ -157,6 +159,7 @@ export const ToolCard = component({
             ? div({ class: "todos" }, ...card.todos.map((t) => TodoRow(t)))
             : div(),
         () => (card.stdout ? pre({ class: "stdout" }, card.stdout) : div()),
+        () => (card.error ? pre({ class: "terror" }, card.error) : div()),
       ),
     ),
 });

@@ -39,6 +39,14 @@ public sealed record ThreadToolCall
     /// <summary>Result rows (doc/web hits), rebuilt from the call's citations.</summary>
     public IReadOnlyList<ToolResultHit> Hits { get; init; } = [];
 
+    /// <summary>
+    /// Human-readable failure text for an errored call (timeout, refused
+    /// budget-exhausted call, tool defect) — the reload twin of
+    /// <see cref="ToolResultEvent.Error"/>, recovered from the persisted
+    /// <c>response_json</c>'s <c>error</c> field.
+    /// </summary>
+    public string? Error { get; init; }
+
     /// <summary>Project a persisted <see cref="ToolCall"/> plus the citations it produced.</summary>
     public static ThreadToolCall From(ToolCall call, IReadOnlyList<Citation> citations)
     {
@@ -59,6 +67,7 @@ public sealed record ThreadToolCall
             Stdout = StdoutOf(call.Kind, response),
             Todos = TodosOf(response),
             Hits = ToolResultHit.FromCitations(citations),
+            Error = call.Status == ToolCallStatus.Error ? GetString(response, "error") : null,
         };
     }
 

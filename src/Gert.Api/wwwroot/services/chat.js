@@ -41,6 +41,7 @@ const apply = (assistant, event, data) => {
         hits: [],
         code: data.request?.code || "",
         stdout: "",
+        error: "",
         todos: [],
         // The todo card IS the artifact — open it so the checklist shows.
         open: data.kind === "todo",
@@ -54,6 +55,9 @@ const apply = (assistant, event, data) => {
         card.status = data.status || "done";
         card.hits = data.hits || card.hits;
         card.stdout = data.stdout ?? card.stdout;
+        card.error = data.error ?? card.error;
+        // A failed card opens itself — the error line is the information.
+        if (card.status === "error" && card.error) card.open = true;
         card.todos = data.todos || card.todos;
         card.tag =
           data.latency_ms != null

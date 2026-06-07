@@ -212,12 +212,22 @@ Binds to `TurnOptions` (`src/Gert.Service/Chat/TurnOptions.cs`). A **round** is 
 upstream completion request that comes back with tool calls — executing them and
 re-prompting starts the next round, so every round costs a full vLLM completion.
 
+The guards are layered (the rationale and survey live in
+[design/turn-budgets.md](../design/turn-budgets.md)): bound every part, brake the loop,
+make every trip visible on its tool card.
+
 | Key | Default | Notes |
 |-----|---------|-------|
-| `MaxTurnDuration` | `00:05:00` | Hard wall-clock cap on one turn (model rounds + tools). Doubles as the orphan horizon: a `streaming` row older than this reads as `error`. |
-| `MaxToolRounds` | `16` | Hard cap on tool rounds per turn. The todo-driven flow consumes a round per `set_todos` update, so size this to your longest expected checklist. Past the cap the runner refuses further calls with synthetic error results, winds down in one final round, and logs a warning. |
+| `MaxTurnDuration` | `00:05:00` | Hard wall-clock cap on one turn (model rounds + tools) — the real budget. Doubles as the orphan horizon: a `streaming` row older than this reads as `error`. |
+| `MaxToolRounds` | `64` | **Runaway brake, not a work budget** — sized an order of magnitude above legitimate turns. Past it the runner refuses further calls with budget-exhausted errors (visible on the cards), winds down in one final round, and logs a warning. |
+| `MaxTokensPerRound` | `16384` | Per-round completion bound: the `max_tokens` sent on every upstream request. Both the default (when neither the conversation nor the user's per-model settings ask) and the ceiling (requested values clamp down). Reasoning tokens count against it on thinking models — keep it generous. `0` disables. |
+| `ToolCallTimeout` | `00:01:00` | Generic wall-clock backstop on one tool execution, behind each tool's own tighter limits (sandbox wall clock, search timeouts). A trip fails that call with a visible card error; the turn continues. `0` disables. |
 | `DeltaFlushInterval` | `00:00:00.150` | Delta coalescing window — buffered model chunks emit as one event per window. `0` disables coalescing. |
 | `DeltaFlushMaxChars` | `512` | Size backstop for the coalescing window. |
+
+The per-round `max_tokens` is also user-facing: the model picker's cogwheel sets
+per-model defaults, and conversation params override those — the server value above is
+the cascade's last fallback *and* its ceiling.
 
 ---
 
