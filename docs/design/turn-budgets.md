@@ -53,6 +53,60 @@ The lesson is not "no budgets". It is that pi's budget mechanism is **a human wi
 working controls**. Gert's incident was painful precisely because the human had none: the
 turn ran detached server-side and the user's attempt to intervene got a 409.
 
+## 2b. What Open WebUI does (surveyed 2026-06-07, `open-webui/open-webui@main`)
+
+The closest architectural cousin (self-hosted, server-side chat, BYO model) has no single
+budget either — it has **layers of small guards that bound each component of a round**,
+plus one loop brake. The total turn bound *emerges* as `iterations × (bounded round)`
+rather than being declared anywhere.
+
+**Loop level:**
+
+- Default (prompt-based) tool mode is **single-shot** — one planning call picks tools,
+  they run once, results land in context for the final completion. No loop exists for
+  most users.
+- Native function-calling mode loops under
+  `CHAT_RESPONSE_MAX_TOOL_CALL_ITERATIONS` (**default 256**, `-1` = unlimited). On
+  hitting it: a `log.warning` plus a **visible error persisted into the chat** —
+  "Tool-call limit reached (N iterations)."
+
+**Per round (each model call):**
+
+- `AIOHTTP_CLIENT_TIMEOUT` on the upstream request (Gert: Polly timeout + retry).
+- Admin-pinned per-model params including **`max_tokens`** — every round's completion is
+  individually bounded, which is what makes `256 × round` finite in practice.
+- `CHAT_STREAM_RESPONSE_CHUNK_MAX_BUFFER_SIZE` caps stream buffering.
+
+**Per tool call:**
+
+- Tool-server timeouts (`AIOHTTP_CLIENT_TIMEOUT_TOOL_SERVER`, `…_TOOL_SERVER_DATA` 10 s,
+  `MCP_INITIALIZE_TIMEOUT`), code-execution timeout
+  (`CODE_EXECUTION_JUPYTER_TIMEOUT` 60 s), web search capped at
+  `WEB_SEARCH_RESULT_COUNT` (3) with concurrency caps on search/loader, outbound
+  redirects **off by default**, `RAG_EMBEDDING_TIMEOUT`.
+
+**Capability gating:** per-group `USER_PERMISSIONS_FEATURES_*` toggles (tools,
+web search, code interpreter) — the entitlement-ceiling pattern, like `gert_tools`.
+
+**Human controls:** generation runs as a stoppable task (redis-backed `stop_task`).
+No steering — a running loop can be killed, not redirected.
+
+**Absent:** token/spend budgets on the loop; any wall-clock cap per response; per-user
+generation rate limiting (a `RateLimiter` exists but is wired only to sign-in
+brute-force).
+
+**Survey summary.** Neither system budgets the loop in tokens or money. The converged
+shape is: *(a)* **bound every part** (per-call timeouts, per-tool caps, per-round
+`max_tokens`), *(b)* **brake the loop** high above legitimate work (256), *(c)* make the
+trip **visible in the chat**, *(d)* give the human a working **stop** — and, only in pi,
+*(e)* steering. Gert's per-part guards are already equal or stronger (gVisor caps vs a
+60 s Jupyter timeout; extractor rlimits; SSRF re-vetting with size/time caps), and its
+wall-clock cap is stricter than anything either system ships. What Gert is missing from
+the converged shape is the *visible* cap-trip (§6) and a per-round completion bound
+(`MaxTokens` exists on the request but no operator default enforces it). A token budget
+(§4b) would be novel territory, justified only by the shared-GPU fairness argument, not
+by precedent.
+
 ## 3. Gert's constraints (why we can't just copy pi)
 
 | Constraint | Consequence |
