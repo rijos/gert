@@ -22,3 +22,4 @@ REST API backend for `gert-frontend-mockup-v2.html`.
 12. [Testing plan](testing.md) — the fake in-memory host, .NET whitebox tests, Console coverage, and the Python + headless-browser smoke launcher.
 13. [Implementation plan](implementation-plan.md) — the agentic build order: dependency-ordered units, milestones (walking skeleton → hardened E2E), and the security-control → unit traceability.
 14. [Decisions to confirm](decisions.md) — open choices we still need to lock down.
+15. [Turn budgets](turn-budgets.md) — open design: bounding long agentic turns (token budgets, steering vs 409, what pi does).
