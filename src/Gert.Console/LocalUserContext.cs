@@ -10,9 +10,7 @@ namespace Gert.Console;
 /// the blanket tool grant (<c>"*"</c>) — every registered capability id.
 /// <para>
 /// The identity is fixed: <see cref="Iss"/> <c>gert-console</c> + <see cref="Sub"/>
-/// <c>local</c> derive one stable user folder key. The provisioning gate's
-/// <c>ExpectedIssuer</c> must be configured to <c>gert-console</c> so the
-/// fail-closed <c>iss</c> assertion accepts this identity (security F12).
+/// <c>local</c> derive one stable user folder key.
 /// </para>
 /// </summary>
 public sealed class LocalUserContext : IUserContext

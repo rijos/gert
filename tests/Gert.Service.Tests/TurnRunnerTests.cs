@@ -33,7 +33,8 @@ public sealed class TurnRunnerTests
 
     private readonly IChatRepository _repo = Substitute.For<IChatRepository>();
     private readonly IRagRepository _ragRepo = Substitute.For<IRagRepository>();
-    private readonly IDatabaseProvider _provider = Substitute.For<IDatabaseProvider>();
+    private readonly IChatDatabaseProvider _chatProvider = Substitute.For<IChatDatabaseProvider>();
+    private readonly IRagDatabaseProvider _ragProvider = Substitute.For<IRagDatabaseProvider>();
     private readonly IConversationBus _bus = Substitute.For<IConversationBus>();
 
     private readonly List<TurnEvent> _published = [];
@@ -47,11 +48,11 @@ public sealed class TurnRunnerTests
 
     public TurnRunnerTests()
     {
-        _provider
-            .OpenChatAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+        _chatProvider
+            .OpenAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(_repo);
-        _provider
-            .OpenRagAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+        _ragProvider
+            .OpenAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(_ragRepo);
 
         _repo.AllocateSeqAsync(Conv, Arg.Any<CancellationToken>())
@@ -129,7 +130,7 @@ public sealed class TurnRunnerTests
         TurnOptions? options = null,
         TimeProvider? clock = null,
         ITurnCancellation? cancellation = null) =>
-        new(_provider, model, _bus, tools ?? [], Options.Create(options ?? new TurnOptions()),
+        new(_chatProvider, model, _bus, tools ?? [], Options.Create(options ?? new TurnOptions()),
             clock ?? TimeProvider.System,
             cancellation ?? new TurnCancellation(
                 Options.Create(options ?? new TurnOptions()), clock ?? TimeProvider.System));
@@ -206,7 +207,7 @@ public sealed class TurnRunnerTests
     public async Task Rag_tool_loop_emits_full_event_sequence_and_persists_provenance()
     {
         var user = new TestUserContext { AllowedTools = new HashSet<string>(["rag"], StringComparer.Ordinal) };
-        var ragTool = new RagTool(_provider, new FakeEmbeddings(), user);
+        var ragTool = new RagTool(_ragProvider, new FakeEmbeddings(), user);
 
         await NewRunner(new FakeChatModel(), [ragTool])
             .RunAsync(NewJob("search my docs about qdrant", [ragTool]));

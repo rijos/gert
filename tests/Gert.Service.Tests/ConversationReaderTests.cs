@@ -22,14 +22,14 @@ public sealed class ConversationReaderTests
     private const string Conv = "conv-1";
 
     private readonly IChatRepository _repo = Substitute.For<IChatRepository>();
-    private readonly IDatabaseProvider _provider = Substitute.For<IDatabaseProvider>();
+    private readonly IChatDatabaseProvider _provider = Substitute.For<IChatDatabaseProvider>();
     private readonly TestUserContext _user = new();
     private readonly TurnOptions _options = new();
 
     public ConversationReaderTests()
     {
         _provider
-            .OpenChatAsync(_user.Iss, _user.Sub, Pid, Arg.Any<CancellationToken>())
+            .OpenAsync(_user.Iss, _user.Sub, Pid, Arg.Any<CancellationToken>())
             .Returns(_repo);
     }
 

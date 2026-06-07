@@ -30,5 +30,14 @@ services.AddGertConsole(configuration);
 
 await using var provider = services.BuildServiceProvider();
 
+// Seed the fixed local user's user.db (username + default project) before any
+// command runs — the same one-time provisioning the API does at its request edge.
+using (var scope = provider.CreateScope())
+{
+    await scope.ServiceProvider
+        .GetRequiredService<Gert.Service.Provisioning.IUserProvisioner>()
+        .EnsureCurrentUserAsync();
+}
+
 var app = new ConsoleApp(provider, System.Console.Out, System.Console.Error);
 return await app.RunAsync(args);

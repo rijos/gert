@@ -27,7 +27,7 @@ public sealed class TurnPlanner : ITurnPlanner
     /// <summary>Tool id whose persisted snapshots the cross-turn reminder revives (TodoTool).</summary>
     private const string TodoToolId = "todo";
 
-    private readonly IDatabaseProvider _databases;
+    private readonly IChatDatabaseProvider _databases;
     private readonly IUserContext _user;
     private readonly IValidationProvider _validation;
     private readonly IReadOnlyList<ITool> _tools;
@@ -37,7 +37,7 @@ public sealed class TurnPlanner : ITurnPlanner
     private readonly TurnOptions _options;
 
     public TurnPlanner(
-        IDatabaseProvider databases,
+        IChatDatabaseProvider databases,
         IUserContext user,
         IValidationProvider validation,
         IEnumerable<ITool> tools,
@@ -74,7 +74,7 @@ public sealed class TurnPlanner : ITurnPlanner
         }
 
         await using var repo = await _databases
-            .OpenChatAsync(_user.Iss, _user.Sub, pid, cancellationToken)
+            .OpenAsync(_user.Iss, _user.Sub, pid, cancellationToken)
             .ConfigureAwait(false);
 
         var conversation = await repo.GetConversationAsync(conversationId, cancellationToken)

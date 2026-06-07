@@ -27,9 +27,9 @@ public sealed class ToolsTests
     public async Task RagTool_embeds_query_then_hybrid_searches_and_emits_document_citations()
     {
         var ragRepo = Substitute.For<IRagRepository>();
-        var provider = Substitute.For<IDatabaseProvider>();
+        var provider = Substitute.For<IRagDatabaseProvider>();
         provider
-            .OpenRagAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .OpenAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(ragRepo);
 
         var hits = new[]
@@ -52,7 +52,7 @@ public sealed class ToolsTests
         result.ResultJson.Should().Contain("qdrant-benchmarks.pdf");
 
         // The rag.db is opened for the user-context identity + the invocation pid.
-        await provider.Received(1).OpenRagAsync(User.Iss, User.Sub, "default", Arg.Any<CancellationToken>());
+        await provider.Received(1).OpenAsync(User.Iss, User.Sub, "default", Arg.Any<CancellationToken>());
 
         // The query was embedded and passed to the hybrid search (k clamped within range).
         await ragRepo.Received(1).HybridSearchAsync(
@@ -73,7 +73,7 @@ public sealed class ToolsTests
     [Fact]
     public async Task RagTool_rejects_missing_query()
     {
-        var provider = Substitute.For<IDatabaseProvider>();
+        var provider = Substitute.For<IRagDatabaseProvider>();
         var tool = new RagTool(provider, new FakeEmbeddings(), User);
 
         var result = await tool.ExecuteAsync(new ToolInvocation { Pid = "default", ArgumentsJson = "{}" });
@@ -82,7 +82,7 @@ public sealed class ToolsTests
         result.Error.Should().Contain("query");
 
         // Fail-closed before any rag.db open.
-        await provider.DidNotReceive().OpenRagAsync(
+        await provider.DidNotReceive().OpenAsync(
             Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 
@@ -207,9 +207,9 @@ public sealed class ToolsTests
     public async Task RagTool_decodes_a_memory_hits_title_for_the_label_and_payload()
     {
         var ragRepo = Substitute.For<IRagRepository>();
-        var provider = Substitute.For<IDatabaseProvider>();
+        var provider = Substitute.For<IRagDatabaseProvider>();
         provider
-            .OpenRagAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .OpenAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(ragRepo);
 
         // A memory entry's documents.filename is the base64-encoded title

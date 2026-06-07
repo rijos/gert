@@ -185,7 +185,13 @@ builder.Services.Configure<SqliteVecOptions>(
     builder.Configuration.GetSection(SqliteVecOptions.SectionName));
 builder.Services.Configure<ToolOptions>(
     builder.Configuration.GetSection(ToolOptions.SectionName));
-builder.Services.AddSingleton<IDatabaseProvider, SqliteDatabaseProvider>();
+// Three self-provisioning database seams (no shared "ensure", no memoised cache):
+// user.db (username, settings, project registry) + per-project chat.db / rag.db.
+// The shared connection factory does the open + migrate-on-open for all of them.
+builder.Services.AddSingleton<SqliteConnectionFactory>();
+builder.Services.AddSingleton<IUserDatabaseProvider, SqliteUserDatabaseProvider>();
+builder.Services.AddSingleton<IChatDatabaseProvider, SqliteChatDatabaseProvider>();
+builder.Services.AddSingleton<IRagDatabaseProvider, SqliteRagDatabaseProvider>();
 // Lets the storage backend drop SQLite's pooled chat.db/rag.db handles before a
 // local whole-tree delete; a server-backed adapter (e.g. Postgres) registers a no-op.
 builder.Services.AddSingleton<IDatabaseHandleReleaser, SqliteHandleReleaser>();
@@ -281,6 +287,11 @@ app.UseAuthentication();
 app.UseMiddleware<RequestLogContextMiddleware>();
 
 app.UseAuthorization();
+
+// First touch from a valid identity materialises their user.db (username + default
+// project) before any controller/WS handler reads it. The databases self-provision
+// on open; this only seeds the descriptive, product-level state.
+app.UseMiddleware<Gert.Api.UserProvisioningMiddleware>();
 
 // Per-user rate limiting (F10) — applied to the controller surface below. Absent in
 // Testing (the limiter services are not registered there).

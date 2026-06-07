@@ -1,33 +1,29 @@
 using Gert.Model.Dtos;
 using Gert.Model.Projects;
 using Gert.Database;
-using Gert.Service.Storage;
 using Gert.Service.Validation;
 
 namespace Gert.Service.Projects;
 
 /// <summary>
-/// Reads/writes the user's <c>settings.json</c> preferences (rest-api.md
-/// § settings; configuration.md § 3) via <see cref="IUserStore"/>. User-level,
-/// not project-scoped — identity comes only from <see cref="IUserContext"/>.
-/// Provisioning is ensured first so the user folder + default <c>settings.json</c>
-/// exist before a read/merge/write.
+/// Reads/writes the user's preferences (rest-api.md § settings; configuration.md
+/// § 3) in <c>user.db</c> via <see cref="IUserDatabaseProvider"/>. User-level, not
+/// project-scoped — identity comes only from <see cref="IUserContext"/>. The store
+/// self-provisions on open, so a read returns durable defaults for a brand-new user
+/// without any explicit provisioning step.
 /// </summary>
 public sealed class SettingsService : ISettingsService
 {
-    private readonly IUserStore _store;
-    private readonly IDatabaseProvider _databases;
+    private readonly IUserDatabaseProvider _userDatabases;
     private readonly IValidationProvider _validation;
     private readonly IUserContext _user;
 
     public SettingsService(
-        IUserStore store,
-        IDatabaseProvider databases,
+        IUserDatabaseProvider userDatabases,
         IValidationProvider validation,
         IUserContext user)
     {
-        _store = store ?? throw new ArgumentNullException(nameof(store));
-        _databases = databases ?? throw new ArgumentNullException(nameof(databases));
+        _userDatabases = userDatabases ?? throw new ArgumentNullException(nameof(userDatabases));
         _validation = validation ?? throw new ArgumentNullException(nameof(validation));
         _user = user ?? throw new ArgumentNullException(nameof(user));
     }
@@ -35,8 +31,9 @@ public sealed class SettingsService : ISettingsService
     /// <inheritdoc />
     public async Task<UserSettings> GetAsync(CancellationToken cancellationToken = default)
     {
-        await _databases.EnsureProvisionedAsync(_user.Iss, _user.Sub, cancellationToken).ConfigureAwait(false);
-        return await _store.GetSettingsAsync(_user.Iss, _user.Sub, cancellationToken).ConfigureAwait(false);
+        await using var repo = await _userDatabases
+            .OpenAsync(_user.Iss, _user.Sub, cancellationToken).ConfigureAwait(false);
+        return await repo.GetSettingsAsync(cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc />
@@ -52,9 +49,10 @@ public sealed class SettingsService : ISettingsService
             throw new ValidationException(validation);
         }
 
-        await _databases.EnsureProvisionedAsync(_user.Iss, _user.Sub, cancellationToken).ConfigureAwait(false);
+        await using var repo = await _userDatabases
+            .OpenAsync(_user.Iss, _user.Sub, cancellationToken).ConfigureAwait(false);
 
-        var current = await _store.GetSettingsAsync(_user.Iss, _user.Sub, cancellationToken).ConfigureAwait(false);
+        var current = await repo.GetSettingsAsync(cancellationToken).ConfigureAwait(false);
 
         // Merge: each request field overrides only when present (null = leave unchanged).
         var merged = current with
@@ -68,18 +66,18 @@ public sealed class SettingsService : ISettingsService
             ModelParams = MergeModelParams(current.ModelParams, request.ModelParams),
         };
 
-        await _store.SaveSettingsAsync(_user.Iss, _user.Sub, merged, cancellationToken).ConfigureAwait(false);
+        await repo.SaveSettingsAsync(merged, cancellationToken).ConfigureAwait(false);
         return merged;
     }
 
     /// <summary>
-    /// Per-model merge: each supplied model id REPLACES that model's whole
-    /// entry (the cogwheel modal sends the full params for one model; an
-    /// all-unset entry effectively clears it); absent ids stay untouched.
+    /// Per-model merge: each supplied model id REPLACES that model's whole entry (the
+    /// cogwheel modal sends the full params for one model; an all-unset entry
+    /// effectively clears it); absent ids stay untouched.
     /// </summary>
-    private static IReadOnlyDictionary<string, Gert.Model.Dtos.GenerationParams>? MergeModelParams(
-        IReadOnlyDictionary<string, Gert.Model.Dtos.GenerationParams>? current,
-        IReadOnlyDictionary<string, Gert.Model.Dtos.GenerationParams>? patch)
+    private static IReadOnlyDictionary<string, GenerationParams>? MergeModelParams(
+        IReadOnlyDictionary<string, GenerationParams>? current,
+        IReadOnlyDictionary<string, GenerationParams>? patch)
     {
         if (patch is null)
         {
@@ -87,8 +85,8 @@ public sealed class SettingsService : ISettingsService
         }
 
         var merged = current is null
-            ? new Dictionary<string, Gert.Model.Dtos.GenerationParams>(StringComparer.Ordinal)
-            : new Dictionary<string, Gert.Model.Dtos.GenerationParams>(current, StringComparer.Ordinal);
+            ? new Dictionary<string, GenerationParams>(StringComparer.Ordinal)
+            : new Dictionary<string, GenerationParams>(current, StringComparer.Ordinal);
 
         foreach (var (modelId, value) in patch)
         {

@@ -15,13 +15,13 @@ namespace Gert.Service.Tests;
 public sealed class ConversationServiceTests
 {
     private readonly IChatRepository _repo = Substitute.For<IChatRepository>();
-    private readonly IDatabaseProvider _provider = Substitute.For<IDatabaseProvider>();
+    private readonly IChatDatabaseProvider _provider = Substitute.For<IChatDatabaseProvider>();
     private readonly TestUserContext _user = new();
 
     public ConversationServiceTests()
     {
         _provider
-            .OpenChatAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .OpenAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(_repo);
     }
 
@@ -135,12 +135,12 @@ public sealed class ConversationServiceTests
         await NewService().CreateAsync("proj-1", new CreateConversationRequest());
 
         // Identity always comes from IUserContext — never widened by a parameter.
-        await _provider.Received().OpenChatAsync(
+        await _provider.Received().OpenAsync(
             _user.Iss, _user.Sub, "proj-1", Arg.Any<CancellationToken>());
-        await _provider.DidNotReceive().OpenChatAsync(
+        await _provider.DidNotReceive().OpenAsync(
             Arg.Is<string>(s => s != _user.Iss), Arg.Any<string>(), Arg.Any<string>(),
             Arg.Any<CancellationToken>());
-        await _provider.DidNotReceive().OpenChatAsync(
+        await _provider.DidNotReceive().OpenAsync(
             Arg.Any<string>(), Arg.Is<string>(s => s != _user.Sub), Arg.Any<string>(),
             Arg.Any<CancellationToken>());
     }

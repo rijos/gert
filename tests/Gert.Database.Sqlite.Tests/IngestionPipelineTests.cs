@@ -256,12 +256,12 @@ public class IngestionPipelineTests
         var objects = ProviderFixture.ObjectsFor(root);
         var embeddings = new FakeEmbeddings();
         var extractor = new CompositeTextExtractor(new ITextExtractor[] { new PlainTextExtractor() });
-        var ingestion = new IngestionService(provider, objects, extractor, embeddings, chunking);
+        var ingestion = new IngestionService(provider.Rag, objects, extractor, embeddings, chunking);
         var ingestionQueue = queue ?? new InlineIngestionQueue(ingestion);
         var validation = new PassThroughValidationProvider();
 
-        var documents = new DocumentService(provider, objects, ingestionQueue, validation, _user);
-        var memory = new MemoryService(provider, objects, embeddings, validation, _user);
+        var documents = new DocumentService(provider.Rag, objects, ingestionQueue, validation, _user);
+        var memory = new MemoryService(provider.Rag, objects, embeddings, validation, _user);
 
         return new Harness(provider, objects, ingestion, documents, memory);
     }
@@ -287,7 +287,7 @@ public class IngestionPipelineTests
     }
 
     private sealed record Harness(
-        SqliteDatabaseProvider Provider,
+        ProviderFixture.TestDatabases Provider,
         LocalObjectStore Objects,
         IngestionService Ingestion,
         DocumentService Documents,

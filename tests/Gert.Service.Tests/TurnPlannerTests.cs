@@ -27,7 +27,8 @@ public sealed class TurnPlannerTests
     private const string Conv = "conv-1";
 
     private readonly IChatRepository _repo = Substitute.For<IChatRepository>();
-    private readonly IDatabaseProvider _provider = Substitute.For<IDatabaseProvider>();
+    private readonly IChatDatabaseProvider _provider = Substitute.For<IChatDatabaseProvider>();
+    private readonly IRagDatabaseProvider _ragProvider = Substitute.For<IRagDatabaseProvider>();
     private readonly IValidationProvider _validation = Substitute.For<IValidationProvider>();
     private readonly TurnOptions _options = new();
     private readonly List<Message> _persisted = [];
@@ -39,7 +40,7 @@ public sealed class TurnPlannerTests
         _validation.Validate(Arg.Any<SendMessageRequest>()).Returns(ValidationResult.Success);
 
         _provider
-            .OpenChatAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .OpenAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(_repo);
 
         _repo.AllocateSeqAsync(Conv, Arg.Any<CancellationToken>())
@@ -111,7 +112,7 @@ public sealed class TurnPlannerTests
         var act = () => NewPlanner().PlanAsync(Pid, Conv, new SendMessageRequest { Content = "" });
 
         await act.Should().ThrowAsync<ValidationException>();
-        await _provider.DidNotReceiveWithAnyArgs().OpenChatAsync(default!, default!, default!, default);
+        await _provider.DidNotReceiveWithAnyArgs().OpenAsync(default!, default!, default!, default);
     }
 
     [Fact]
@@ -555,7 +556,7 @@ public sealed class TurnPlannerTests
     public async Task Entitlement_ceiling_filters_unentitled_tools_and_snapshots_the_claim()
     {
         var user = new TestUserContext { AllowedTools = new HashSet<string>(["rag"], StringComparer.Ordinal) };
-        var rag = new RagTool(_provider, new FakeEmbeddings(), user);
+        var rag = new RagTool(_ragProvider, new FakeEmbeddings(), user);
         var sandbox = new SandboxTool(new StubSandbox());
         SeedConversation(("rag", true), ("sandbox", true));
 
@@ -581,7 +582,7 @@ public sealed class TurnPlannerTests
     public async Task Model_without_tool_capability_is_offered_no_tools()
     {
         var user = new TestUserContext { AllowedTools = new HashSet<string>(["rag"], StringComparer.Ordinal) };
-        var rag = new RagTool(_provider, new FakeEmbeddings(), user);
+        var rag = new RagTool(_ragProvider, new FakeEmbeddings(), user);
         SeedConversation(("rag", true));
 
         var catalog = Substitute.For<IModelCatalog>();

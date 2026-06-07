@@ -16,8 +16,7 @@ namespace Gert.Testing;
 /// and makes it self-contained and offline:
 /// <list type="bullet">
 ///   <item>points <c>StorageOptions.DataRoot</c> at a fresh <see cref="TempDataRoot"/>
-///     (exposed for assertions, disposed with the factory) and <c>ExpectedIssuer</c>
-///     at the <see cref="TestTokens"/> issuer;</item>
+///     (exposed for assertions, disposed with the factory);</item>
 ///   <item>overrides JwtBearer so it validates <see cref="TestTokens"/>-minted RS256
 ///     tokens against the in-process public key — no Authority/JWKS fetch
 ///     (<see cref="ConfigureOfflineJwtBearer"/>);</item>
@@ -72,13 +71,8 @@ public sealed class GertApiFactory : WebApplicationFactory<Program>
 
         builder.ConfigureServices(services =>
         {
-            // Point storage at the throwaway DataRoot and pin the gate's issuer to
-            // the test issuer used by TestTokens (storage-and-data.md provisioning gate).
-            services.Configure<StorageOptions>(o =>
-            {
-                o.DataRoot = _dataRoot.Path;
-                o.ExpectedIssuer = Tokens.Issuer;
-            });
+            // Point storage at the throwaway DataRoot.
+            services.Configure<StorageOptions>(o => o.DataRoot = _dataRoot.Path);
 
             // Validate TestTokens offline: real RS256/JWKS path, in-process key.
             services.PostConfigure<JwtBearerOptions>(

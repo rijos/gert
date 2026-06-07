@@ -26,14 +26,14 @@ namespace Gert.Service.Documents;
 /// </summary>
 public sealed class DocumentService : IDocumentService
 {
-    private readonly IDatabaseProvider _databases;
+    private readonly IRagDatabaseProvider _databases;
     private readonly IObjectStore _objects;
     private readonly IIngestionQueue _queue;
     private readonly IValidationProvider _validation;
     private readonly IUserContext _user;
 
     public DocumentService(
-        IDatabaseProvider databases,
+        IRagDatabaseProvider databases,
         IObjectStore objects,
         IIngestionQueue queue,
         IValidationProvider validation,
@@ -82,12 +82,6 @@ public sealed class DocumentService : IDocumentService
         {
             throw new ValidationException(validation);
         }
-
-        // Provision the user + project FIRST. The object store's PutAsync creates the
-        // files/ directory, which would otherwise materialise the user folder WITHOUT
-        // its meta.json sidecar (admin scans skip a folder with no readable meta).
-        // Provisioning writes the metadata before any blob is stored.
-        await _databases.EnsureProjectAsync(_user.Iss, _user.Sub, pid, cancellationToken).ConfigureAwait(false);
 
         var documentId = Guid.NewGuid().ToString("D");
         var extension = ValidationRules.ExtensionOf(upload.Filename);
@@ -186,7 +180,7 @@ public sealed class DocumentService : IDocumentService
     // ---- helpers -----------------------------------------------------------
 
     private Task<IRagRepository> OpenAsync(string pid, CancellationToken cancellationToken) =>
-        _databases.OpenRagAsync(_user.Iss, _user.Sub, pid, cancellationToken);
+        _databases.OpenAsync(_user.Iss, _user.Sub, pid, cancellationToken);
 
     private ObjectScope ScopeFor(string pid) => ObjectScope.Project(_user.Iss, _user.Sub, pid);
 

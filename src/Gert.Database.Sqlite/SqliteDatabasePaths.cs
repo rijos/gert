@@ -50,6 +50,22 @@ public sealed class SqliteDatabasePaths(IOptions<StorageOptions> options)
     /// <summary>The <c>projects/</c> directory under the user root.</summary>
     public string ProjectsDir(string iss, string sub) => Path.Combine(Root(iss, sub), "projects");
 
+    /// <summary>The per-user database <c>user.db</c> (username, settings, project registry).</summary>
+    public string UserDb(string iss, string sub) => Path.Combine(Root(iss, sub), "user.db");
+
+    /// <summary>
+    /// The user folder root addressed by its validated folder <paramref name="key"/>
+    /// (the admin path, which holds the hashed key, never the original identity).
+    /// </summary>
+    public string RootByKey(string key)
+    {
+        StorageKeys.ValidateUserKey(key);
+        return Path.Combine(UsersDir, key);
+    }
+
+    /// <summary>The per-user database addressed by folder <paramref name="key"/> (admin path).</summary>
+    public string UserDbByKey(string key) => Path.Combine(RootByKey(key), "user.db");
+
     // ---- project-level paths (pid validated; never escapes Root) -----------
 
     /// <summary>

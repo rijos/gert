@@ -38,7 +38,6 @@
         "Gert__Models__0__Context": "0",
 
         "Storage__DataRoot": ".dev/e2e-data",
-        "Storage__ExpectedIssuer": "https://id.dev.local",
 
         "Gert__Web__TestHarness": "true"
       }

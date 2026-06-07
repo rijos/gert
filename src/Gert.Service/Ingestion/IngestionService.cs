@@ -20,14 +20,14 @@ namespace Gert.Service.Ingestion;
 /// </summary>
 public sealed class IngestionService : IIngestionService
 {
-    private readonly IDatabaseProvider _databases;
+    private readonly IRagDatabaseProvider _databases;
     private readonly IObjectStore _objects;
     private readonly ITextExtractor _extractor;
     private readonly IEmbeddingClient _embeddings;
     private readonly ChunkingOptions _chunking;
 
     public IngestionService(
-        IDatabaseProvider databases,
+        IRagDatabaseProvider databases,
         IObjectStore objects,
         ITextExtractor extractor,
         IEmbeddingClient embeddings,
@@ -49,7 +49,7 @@ public sealed class IngestionService : IIngestionService
         ArgumentNullException.ThrowIfNull(job);
 
         await using var repo = await _databases
-            .OpenRagAsync(job.Iss, job.Sub, job.Pid, cancellationToken)
+            .OpenAsync(job.Iss, job.Sub, job.Pid, cancellationToken)
             .ConfigureAwait(false);
 
         try

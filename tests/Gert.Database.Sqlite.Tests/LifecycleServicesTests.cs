@@ -9,19 +9,17 @@ using Gert.Service.Projects;
 using Gert.Service.Storage;
 using Gert.Storage;
 using Gert.Testing;
-using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.Extensions.Options;
 using Xunit;
 
 namespace Gert.Database.Sqlite.Tests;
 
 /// <summary>
 /// Integration tests for the four lifecycle services (Projects/Settings/Account/
-/// Admin) wired over the real Sqlite adapters and a throwaway
-/// <see cref="TempDataRoot"/> — proving the orchestration of
-/// <see cref="IUserStore"/> + <see cref="Service.Database.IDatabaseProvider"/> +
-/// <see cref="IObjectStore"/>, including default-emptied-not-removed and a
-/// non-empty export archive.
+/// Admin) wired over the real split SQLite adapters and a throwaway
+/// <see cref="TempDataRoot"/> — proving the orchestration of <see cref="IUserStore"/>
+/// + the user/chat/rag database providers + <see cref="IObjectStore"/>, including
+/// default-emptied-not-removed and a non-empty export archive. Each harness
+/// provisions the user up front, exactly as the host's request-edge provisioner does.
 /// </summary>
 public class LifecycleServicesTests
 {
@@ -34,26 +32,29 @@ public class LifecycleServicesTests
         SettingsService Settings,
         AccountService Account,
         AdminService Admin,
-        SqliteDatabaseProvider Provider,
+        ProviderFixture.TestDatabases Provider,
         LocalObjectStore Objects,
         SqliteDatabasePaths Paths,
         IUserContext User);
 
-    private static Harness Build(TempDataRoot root, string sub = Sub)
+    private static async Task<Harness> BuildAsync(TempDataRoot root, string sub = Sub)
     {
-        var provider = ProviderFixture.ProviderFor(root);
+        var dbs = ProviderFixture.ProviderFor(root);
         var paths = ProviderFixture.PathsFor(root);
         var store = ProviderFixture.StoreFor(root);
         var objects = ProviderFixture.ObjectsFor(root);
         var validation = new PassThroughValidationProvider();
         IUserContext user = new FixedUserContext { Sub = sub };
 
+        // Mirror the request-edge provisioner: seed username + default project.
+        await dbs.EnsureProvisionedAsync(Iss, sub);
+
         return new Harness(
-            new ProjectService(store, provider, validation, user),
-            new SettingsService(store, provider, validation, user),
-            new AccountService(store, provider, objects, user),
-            new AdminService(store),
-            provider,
+            new ProjectService(dbs.Users, dbs.Chat, dbs.Rag, store, validation, user),
+            new SettingsService(dbs.Users, validation, user),
+            new AccountService(store, dbs.Users, dbs.Chat, objects, user),
+            new AdminService(store, dbs.Users),
+            dbs,
             objects,
             paths,
             user);
@@ -63,7 +64,7 @@ public class LifecycleServicesTests
     public async Task Settings_get_defaults_then_update_merges()
     {
         await using var root = new TempDataRoot();
-        var h = Build(root);
+        var h = await BuildAsync(root);
 
         var defaults = await h.Settings.GetAsync();
         defaults.ReplyLanguage.Should().BeNull();
@@ -79,7 +80,7 @@ public class LifecycleServicesTests
     public async Task Project_create_list_get_round_trips_with_counts()
     {
         await using var root = new TempDataRoot();
-        var h = Build(root);
+        var h = await BuildAsync(root);
 
         var created = await h.Projects.CreateAsync(new CreateProjectRequest { Name = "Research" });
         created.Name.Should().Be("Research");
@@ -99,7 +100,7 @@ public class LifecycleServicesTests
     public async Task Project_update_merges_partial_fields()
     {
         await using var root = new TempDataRoot();
-        var h = Build(root);
+        var h = await BuildAsync(root);
 
         var created = await h.Projects.CreateAsync(new CreateProjectRequest { Name = "Old", Description = "keep" });
 
@@ -112,9 +113,11 @@ public class LifecycleServicesTests
     public async Task Delete_non_default_project_removes_it()
     {
         await using var root = new TempDataRoot();
-        var h = Build(root);
+        var h = await BuildAsync(root);
 
         var created = await h.Projects.CreateAsync(new CreateProjectRequest { Name = "Temp" });
+        // Materialise the project's databases so there is a directory to remove.
+        await h.Provider.EnsureProjectAsync(Iss, Sub, created.Id);
         Directory.Exists(h.Paths.ProjectRoot(Iss, Sub, created.Id)).Should().BeTrue();
 
         (await h.Projects.DeleteAsync(created.Id)).Should().BeTrue();
@@ -126,7 +129,7 @@ public class LifecycleServicesTests
     public async Task Delete_default_project_is_emptied_not_removed()
     {
         await using var root = new TempDataRoot();
-        var h = Build(root);
+        var h = await BuildAsync(root);
 
         // Seed a conversation so there is content to clear.
         await using (var chat = await h.Provider.OpenChatAsync(Iss, Sub, SqliteDatabasePaths.DefaultProjectId))
@@ -147,7 +150,7 @@ public class LifecycleServicesTests
 
         Directory.Exists(defaultRoot).Should().BeTrue("the default project is emptied, never removed");
 
-        // Re-provisioned to a clean, usable project (fresh chat.db, no conversations).
+        // Still registered, and a clean, usable project (fresh chat.db, no conversations).
         (await h.Projects.GetAsync(SqliteDatabasePaths.DefaultProjectId)).Should().NotBeNull();
         await using var reopened = await h.Provider.OpenChatAsync(Iss, Sub, SqliteDatabasePaths.DefaultProjectId);
         (await reopened.ListConversationsAsync()).Should().BeEmpty();
@@ -157,11 +160,10 @@ public class LifecycleServicesTests
     public async Task Export_project_produces_a_non_empty_archive()
     {
         await using var root = new TempDataRoot();
-        var h = Build(root);
+        var h = await BuildAsync(root);
 
         // A file blob so the archive carries real content.
         var scope = ObjectScope.Project(Iss, Sub, SqliteDatabasePaths.DefaultProjectId);
-        await h.Provider.EnsureProvisionedAsync(Iss, Sub);
         await h.Objects.PutAsync(scope, "files/note.md", new MemoryStream(Encoding.UTF8.GetBytes("hello export")));
 
         var archive = await h.Account.ExportProjectAsync(SqliteDatabasePaths.DefaultProjectId);
@@ -177,7 +179,7 @@ public class LifecycleServicesTests
     public async Task Export_account_produces_a_non_empty_archive()
     {
         await using var root = new TempDataRoot();
-        var h = Build(root);
+        var h = await BuildAsync(root);
 
         await h.Projects.CreateAsync(new CreateProjectRequest { Name = "Extra" });
 
@@ -192,9 +194,8 @@ public class LifecycleServicesTests
     public async Task Delete_account_removes_the_user_dir()
     {
         await using var root = new TempDataRoot();
-        var h = Build(root);
+        var h = await BuildAsync(root);
 
-        await h.Provider.EnsureProvisionedAsync(Iss, Sub);
         Directory.Exists(h.Paths.Root(Iss, Sub)).Should().BeTrue();
 
         await h.Account.DeleteAccountAsync();
@@ -205,7 +206,7 @@ public class LifecycleServicesTests
     public async Task Admin_lists_and_deletes_users()
     {
         await using var root = new TempDataRoot();
-        var h = Build(root);
+        var h = await BuildAsync(root);
 
         await h.Provider.EnsureProvisionedAsync(Iss, "alice");
         await h.Provider.EnsureProvisionedAsync(Iss, "bob");

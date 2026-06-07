@@ -28,7 +28,7 @@ namespace Gert.Service.Documents;
 /// </summary>
 public sealed class MemoryService : IMemoryService
 {
-    private readonly IDatabaseProvider _databases;
+    private readonly IRagDatabaseProvider _databases;
     private readonly IObjectStore _objects;
     private readonly IEmbeddingClient _embeddings;
     private readonly IValidationProvider _validation;
@@ -38,7 +38,7 @@ public sealed class MemoryService : IMemoryService
     private const string MemoryMime = "text/markdown";
 
     public MemoryService(
-        IDatabaseProvider databases,
+        IRagDatabaseProvider databases,
         IObjectStore objects,
         IEmbeddingClient embeddings,
         IValidationProvider validation,
@@ -84,11 +84,6 @@ public sealed class MemoryService : IMemoryService
         {
             throw new ValidationException(validation);
         }
-
-        // Provision the user + project FIRST — PutAsync below creates the files/ dir,
-        // which would otherwise materialise the user folder without its meta.json
-        // sidecar (admin scans skip a folder with no readable meta).
-        await _databases.EnsureProjectAsync(_user.Iss, _user.Sub, pid, cancellationToken).ConfigureAwait(false);
 
         var id = Guid.NewGuid().ToString("D");
         var pinned = request.Pinned ?? false;
@@ -181,7 +176,7 @@ public sealed class MemoryService : IMemoryService
     // ---- helpers -----------------------------------------------------------
 
     private Task<IRagRepository> OpenAsync(string pid, CancellationToken cancellationToken) =>
-        _databases.OpenRagAsync(_user.Iss, _user.Sub, pid, cancellationToken);
+        _databases.OpenAsync(_user.Iss, _user.Sub, pid, cancellationToken);
 
     private ObjectScope ScopeFor(string pid) => ObjectScope.Project(_user.Iss, _user.Sub, pid);
 

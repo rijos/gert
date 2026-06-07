@@ -11,9 +11,10 @@ namespace Gert.Service.Storage;
 /// can never reach another user's or project's bytes.
 ///
 /// <para>
-/// Database files (<c>chat.db</c>/<c>rag.db</c>) are <b>not</b> objects — engines
-/// need real local file handles, so they stay with
-/// <see cref="Database.IDatabaseProvider"/>.
+/// Database files (<c>user.db</c>/<c>chat.db</c>/<c>rag.db</c>) are <b>not</b>
+/// objects — engines need real local file handles, so they stay with the database
+/// providers (<see cref="Database.IUserDatabaseProvider"/>,
+/// <see cref="Database.IChatDatabaseProvider"/>, <see cref="Database.IRagDatabaseProvider"/>).
 /// </para>
 ///
 /// <para>

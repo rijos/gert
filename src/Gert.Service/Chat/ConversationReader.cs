@@ -20,12 +20,12 @@ public sealed class ConversationReader : IConversationReader
     /// <summary>Cap on one range page; clients page with the cursor.</summary>
     public const int MaxLimit = 1000;
 
-    private readonly IDatabaseProvider _databases;
+    private readonly IChatDatabaseProvider _databases;
     private readonly IUserContext _user;
     private readonly TurnOptions _options;
 
     public ConversationReader(
-        IDatabaseProvider databases,
+        IChatDatabaseProvider databases,
         IUserContext user,
         IOptions<TurnOptions> options)
     {
@@ -48,7 +48,7 @@ public sealed class ConversationReader : IConversationReader
         var capped = Math.Clamp(limit, 1, MaxLimit);
 
         await using var repo = await _databases
-            .OpenChatAsync(_user.Iss, _user.Sub, pid, cancellationToken)
+            .OpenAsync(_user.Iss, _user.Sub, pid, cancellationToken)
             .ConfigureAwait(false);
 
         // Read one extra row to learn whether more exist beyond this page.
@@ -83,7 +83,7 @@ public sealed class ConversationReader : IConversationReader
         ArgumentNullException.ThrowIfNull(conversationId);
 
         await using var repo = await _databases
-            .OpenChatAsync(_user.Iss, _user.Sub, pid, cancellationToken)
+            .OpenAsync(_user.Iss, _user.Sub, pid, cancellationToken)
             .ConfigureAwait(false);
 
         var thread = await repo.GetThreadAsync(conversationId, cancellationToken).ConfigureAwait(false);

@@ -29,11 +29,11 @@ public sealed class RagTool : ITool
     private const int MinK = 1;
     private const int MaxK = 20;
 
-    private readonly IDatabaseProvider _databases;
+    private readonly IRagDatabaseProvider _databases;
     private readonly IEmbeddingClient _embeddings;
     private readonly IUserContext _user;
 
-    public RagTool(IDatabaseProvider databases, IEmbeddingClient embeddings, IUserContext user)
+    public RagTool(IRagDatabaseProvider databases, IEmbeddingClient embeddings, IUserContext user)
     {
         _databases = databases ?? throw new ArgumentNullException(nameof(databases));
         _embeddings = embeddings ?? throw new ArgumentNullException(nameof(embeddings));
@@ -96,7 +96,7 @@ public sealed class RagTool : ITool
         var queryVector = embeddings.Count > 0 ? embeddings[0] : [];
 
         await using var repo = await _databases
-            .OpenRagAsync(_user.Iss, _user.Sub, invocation.Pid, cancellationToken)
+            .OpenAsync(_user.Iss, _user.Sub, invocation.Pid, cancellationToken)
             .ConfigureAwait(false);
 
         var hits = await repo.HybridSearchAsync(query, queryVector, k, cancellationToken).ConfigureAwait(false);

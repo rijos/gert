@@ -20,8 +20,9 @@ namespace Gert.Service;
 /// DI wiring for the host-agnostic service layer (tech-stack.md § Architecture).
 /// Registers the granular services, the aggregate <see cref="IGertServices"/>
 /// hub, and the validation seam. The host/adapters supply the ports the services
-/// depend on — <see cref="IUserContext"/> (auth host),
-/// <see cref="Database.IDatabaseProvider"/> (a database adapter), and
+/// depend on — <see cref="IUserContext"/> (auth host), the database providers
+/// (<see cref="Database.IUserDatabaseProvider"/> / <see cref="Database.IChatDatabaseProvider"/>
+/// / <see cref="Database.IRagDatabaseProvider"/>), and
 /// <see cref="External.IChatModelClient"/> (Gert.External) — so this method does
 /// not register them.
 /// </summary>
@@ -76,6 +77,7 @@ public static class ServiceCollectionExtensions
         services.TryAddScoped<ISettingsService, SettingsService>();
         services.TryAddScoped<IAccountService, AccountService>();
         services.TryAddScoped<IAdminService, AdminService>();
+        services.TryAddScoped<Provisioning.IUserProvisioner, Provisioning.UserProvisioner>();
 
         // Ingestion (U7d) — the extract → chunk → embed → write pipeline and its
         // ports. Files are read/written ONLY via IObjectStore (host-registered) and
@@ -118,7 +120,7 @@ public static class ServiceCollectionExtensions
     /// because <see cref="Tools.RagTool"/> depends on the per-request
     /// <see cref="IUserContext"/>. The external ports each tool needs
     /// (<see cref="External.IEmbeddingClient"/>, <see cref="External.IWebSearch"/>,
-    /// <see cref="External.ISandbox"/>) and the <see cref="Database.IDatabaseProvider"/>
+    /// <see cref="External.ISandbox"/>) and the <see cref="Database.IRagDatabaseProvider"/>
     /// are supplied by the host/adapters (Gert.External / a database adapter).
     /// </summary>
     private static void AddTools(IServiceCollection services)

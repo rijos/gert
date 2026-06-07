@@ -7,7 +7,7 @@ namespace Gert.Service.Conversations;
 /// <summary>
 /// CRUD over a project's conversations, scoped to the caller's identity
 /// (rest-api.md § conversations). Every operation resolves the repository via
-/// <see cref="IDatabaseProvider.OpenChatAsync"/> using the
+/// <see cref="IChatDatabaseProvider.OpenAsync"/> using the
 /// <see cref="IUserContext"/>'s <c>(iss, sub)</c> and the supplied
 /// <c>pid</c> — the caller never supplies the user, so a request structurally
 /// cannot widen scope to another user's folder (configuration.md § 2.5,
@@ -15,13 +15,13 @@ namespace Gert.Service.Conversations;
 /// </summary>
 public sealed class ConversationService : IConversationService
 {
-    private readonly IDatabaseProvider _databases;
+    private readonly IChatDatabaseProvider _databases;
     private readonly IUserContext _user;
 
     /// <summary>The fallback model id when nothing in the cascade supplies one.</summary>
     private const string DefaultModelId = "default";
 
-    public ConversationService(IDatabaseProvider databases, IUserContext user)
+    public ConversationService(IChatDatabaseProvider databases, IUserContext user)
     {
         _databases = databases ?? throw new ArgumentNullException(nameof(databases));
         _user = user ?? throw new ArgumentNullException(nameof(user));
@@ -123,5 +123,5 @@ public sealed class ConversationService : IConversationService
     /// always comes from <see cref="IUserContext"/>, never from a parameter.
     /// </summary>
     private Task<IChatRepository> OpenAsync(string pid, CancellationToken cancellationToken) =>
-        _databases.OpenChatAsync(_user.Iss, _user.Sub, pid, cancellationToken);
+        _databases.OpenAsync(_user.Iss, _user.Sub, pid, cancellationToken);
 }

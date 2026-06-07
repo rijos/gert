@@ -96,7 +96,7 @@ public sealed class ConsoleWiringTests
 
     /// <summary>
     /// Build the Console graph with fakes swapping the four external ports, over a
-    /// temp DataRoot whose ExpectedIssuer matches <see cref="LocalUserContext"/>.
+    /// temp DataRoot.
     /// </summary>
     private static ServiceProvider BuildProvider(TempDataRoot root)
     {
@@ -104,7 +104,6 @@ public sealed class ConsoleWiringTests
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["Storage:DataRoot"] = root.Path,
-                ["Storage:ExpectedIssuer"] = LocalUserContext.ConsoleIssuer,
                 ["Tools:DefaultGrant:0"] = "rag",
                 ["Tools:DefaultGrant:1"] = "search",
                 ["Tools:DefaultGrant:2"] = "sandbox",
@@ -124,11 +123,12 @@ public sealed class ConsoleWiringTests
         return services.BuildServiceProvider();
     }
 
-    /// <summary>Provision the fixed local user's folder + default project (lazy gate, U5).</summary>
+    /// <summary>Provision the fixed local user's user.db (username + default project).</summary>
     private static async Task ProvisionAsync(IServiceProvider provider)
     {
-        var dbProvider = provider.GetRequiredService<Gert.Database.IDatabaseProvider>();
-        await dbProvider.EnsureProvisionedAsync(
-            LocalUserContext.ConsoleIssuer, LocalUserContext.ConsoleSubject);
+        using var scope = provider.CreateScope();
+        await scope.ServiceProvider
+            .GetRequiredService<Gert.Service.Provisioning.IUserProvisioner>()
+            .EnsureCurrentUserAsync();
     }
 }

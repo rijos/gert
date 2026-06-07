@@ -14,9 +14,11 @@ namespace Gert.Service.Account;
 /// <para>
 /// Export streams a <c>.zip</c> built from each project's conversations (one
 /// <c>conversations.json</c> per project, the full thread incl. messages) plus its
-/// original file blobs — conversations via <see cref="IDatabaseProvider"/>, files
-/// via <see cref="IObjectStore"/> (decision: user blobs only through the object
-/// store). Delete-account is a directory <c>rm -rf</c> via <see cref="IUserStore"/>.
+/// original file blobs — the project list from <c>user.db</c>
+/// (<see cref="IUserDatabaseProvider"/>), conversations via
+/// <see cref="IChatDatabaseProvider"/>, files via <see cref="IObjectStore"/>
+/// (decision: user blobs only through the object store). Delete-account is a
+/// directory <c>rm -rf</c> via <see cref="IUserStore"/>.
 /// </para>
 /// </summary>
 public sealed class AccountService : IAccountService
@@ -27,18 +29,21 @@ public sealed class AccountService : IAccountService
     };
 
     private readonly IUserStore _store;
-    private readonly IDatabaseProvider _databases;
+    private readonly IUserDatabaseProvider _userDatabases;
+    private readonly IChatDatabaseProvider _chatDatabases;
     private readonly IObjectStore _objects;
     private readonly IUserContext _user;
 
     public AccountService(
         IUserStore store,
-        IDatabaseProvider databases,
+        IUserDatabaseProvider userDatabases,
+        IChatDatabaseProvider chatDatabases,
         IObjectStore objects,
         IUserContext user)
     {
         _store = store ?? throw new ArgumentNullException(nameof(store));
-        _databases = databases ?? throw new ArgumentNullException(nameof(databases));
+        _userDatabases = userDatabases ?? throw new ArgumentNullException(nameof(userDatabases));
+        _chatDatabases = chatDatabases ?? throw new ArgumentNullException(nameof(chatDatabases));
         _objects = objects ?? throw new ArgumentNullException(nameof(objects));
         _user = user ?? throw new ArgumentNullException(nameof(user));
     }
@@ -46,10 +51,12 @@ public sealed class AccountService : IAccountService
     /// <inheritdoc />
     public async Task<ExportArchive> ExportAsync(CancellationToken cancellationToken = default)
     {
-        await _databases.EnsureProvisionedAsync(_user.Iss, _user.Sub, cancellationToken).ConfigureAwait(false);
-
-        var projects = await _store.ListProjectsAsync(_user.Iss, _user.Sub, cancellationToken).ConfigureAwait(false);
-        var pids = projects.Select(p => p.Id).ToList();
+        List<string> pids;
+        await using (var repo = await _userDatabases.OpenAsync(_user.Iss, _user.Sub, cancellationToken).ConfigureAwait(false))
+        {
+            var projects = await repo.ListProjectsAsync(cancellationToken).ConfigureAwait(false);
+            pids = projects.Select(p => p.Id).ToList();
+        }
 
         return await BuildArchiveAsync("gert-export.zip", pids, cancellationToken).ConfigureAwait(false);
     }
@@ -57,7 +64,6 @@ public sealed class AccountService : IAccountService
     /// <inheritdoc />
     public async Task<ExportArchive> ExportProjectAsync(string pid, CancellationToken cancellationToken = default)
     {
-        await _databases.EnsureProjectAsync(_user.Iss, _user.Sub, pid, cancellationToken).ConfigureAwait(false);
         return await BuildArchiveAsync($"gert-project-{pid}.zip", [pid], cancellationToken).ConfigureAwait(false);
     }
 
@@ -65,6 +71,7 @@ public sealed class AccountService : IAccountService
     public async Task DeleteAccountAsync(CancellationToken cancellationToken = default)
     {
         // rm -rf users/{key} — erase all of the caller's data (not the IdP account).
+        // Nothing to invalidate: the databases self-provision on the next open.
         await _store.DeleteUserAsync(_user.Iss, _user.Sub, cancellationToken).ConfigureAwait(false);
     }
 
@@ -111,8 +118,8 @@ public sealed class AccountService : IAccountService
     {
         // Conversations → projects/{pid}/conversations.json (full threads).
         var threads = new List<Gert.Model.Chat.ConversationThread>();
-        await using (var chat = await _databases
-            .OpenChatAsync(_user.Iss, _user.Sub, pid, cancellationToken).ConfigureAwait(false))
+        await using (var chat = await _chatDatabases
+            .OpenAsync(_user.Iss, _user.Sub, pid, cancellationToken).ConfigureAwait(false))
         {
             var conversations = await chat.ListConversationsAsync(cancellationToken).ConfigureAwait(false);
             foreach (var conversation in conversations)
@@ -133,8 +140,8 @@ public sealed class AccountService : IAccountService
         }
 
         // Original file blobs + memory bodies → projects/{pid}/{key} (via the object
-        // store only). Listed by prefix so the config sidecar and database files are
-        // never pulled into the archive.
+        // store only). Listed by prefix so the database files are never pulled into
+        // the archive.
         var scope = ObjectScope.Project(_user.Iss, _user.Sub, pid);
         foreach (var prefix in new[] { "files/", "memory/" })
         {

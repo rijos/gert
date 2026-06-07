@@ -43,7 +43,7 @@ public sealed class TurnRunner : ITurnRunner
     /// <summary>Hard cap on tool rounds per turn, to bound a runaway tool loop.</summary>
     private const int MaxToolRounds = 5;
 
-    private readonly IDatabaseProvider _databases;
+    private readonly IChatDatabaseProvider _databases;
     private readonly IChatModelClient _model;
     private readonly IConversationBus _bus;
     private readonly IReadOnlyList<ITool> _tools;
@@ -52,7 +52,7 @@ public sealed class TurnRunner : ITurnRunner
     private readonly ITurnCancellation _cancellation;
 
     public TurnRunner(
-        IDatabaseProvider databases,
+        IChatDatabaseProvider databases,
         IChatModelClient model,
         IConversationBus bus,
         IEnumerable<ITool> tools,
@@ -90,7 +90,7 @@ public sealed class TurnRunner : ITurnRunner
         try
         {
             await using var repo = await _databases
-                .OpenChatAsync(job.Iss, job.Sub, job.Pid, token)
+                .OpenAsync(job.Iss, job.Sub, job.Pid, token)
                 .ConfigureAwait(false);
 
             await ExecuteTurnAsync(job, repo, topic, content, reasoning, token).ConfigureAwait(false);
@@ -483,7 +483,7 @@ public sealed class TurnRunner : ITurnRunner
         try
         {
             await using var repo = await _databases
-                .OpenChatAsync(job.Iss, job.Sub, job.Pid, CancellationToken.None)
+                .OpenAsync(job.Iss, job.Sub, job.Pid, CancellationToken.None)
                 .ConfigureAwait(false);
 
             await repo.FinalizeMessageAsync(
@@ -515,7 +515,7 @@ public sealed class TurnRunner : ITurnRunner
         try
         {
             await using var repo = await _databases
-                .OpenChatAsync(job.Iss, job.Sub, job.Pid, CancellationToken.None)
+                .OpenAsync(job.Iss, job.Sub, job.Pid, CancellationToken.None)
                 .ConfigureAwait(false);
 
             await repo.FinalizeMessageAsync(

@@ -17,12 +17,4 @@ public sealed class StorageOptions
     /// <c>{DataRoot}/users/{key}</c>.
     /// </summary>
     public string DataRoot { get; set; } = string.Empty;
-
-    /// <summary>
-    /// The single configured token authority. <see cref="ExpectedIssuer"/> is the
-    /// fail-closed gate's <c>iss</c> assertion in <c>EnsureProvisioned</c>
-    /// (security F12 / decisions §3): an identity whose <c>iss</c> differs is
-    /// rejected <b>before any folder is created</b>.
-    /// </summary>
-    public string ExpectedIssuer { get; set; } = string.Empty;
 }
