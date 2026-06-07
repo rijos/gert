@@ -4,6 +4,7 @@ using Gert.Service.Chat;
 using Gert.Service.External;
 using Gert.Service.Tools;
 using Gert.Model;
+using Gert.Testing.Fakes;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Xunit;
@@ -56,69 +57,55 @@ public sealed class VllmLiveIntegrationTests
     }
 
     [Fact]
-    public async Task Live_model_produces_named_html_py_and_md_artifacts()
+    public async Task Live_model_creates_then_edits_a_markdown_artifact_via_the_canvas_tools()
     {
         var client = CreateClient(out var baseUrl);
         Assert.SkipWhen(client is null, "GERT_VLLM_URL is not set — live vLLM integration skipped.");
 
-        // The screenshot regression: a NATURAL request, with the name= fence
-        // convention taught ONLY by the built-in system prompt (exactly what
-        // TurnPlanner sends) — the model must opt its files into the canvas
-        // without the user ever mentioning the syntax.
-        var request = new ChatCompletionRequest
+        // The screenshot regression, solved at the root: a NATURAL "make a file"
+        // request, with ONLY the built-in system prompt + the tool schemas (exactly
+        // what TurnPlanner sends). The model must call make_artifact rather than
+        // pasting a fence — and a Markdown file with its OWN ``` code block must
+        // survive intact, because the content is a JSON arg, not regex-extracted.
+        var repo = new InMemoryArtifactRepository();
+        var (specs, toolsByName) = ArtifactToolset(repo);
+
+        var messages = new List<ChatModelMessage>
         {
-            ModelId = "default", // → VllmOptions.ChatModelId
-            Messages =
-            [
-                new ChatModelMessage { Role = "system", Content = SystemPrompts.Canvas },
-                new ChatModelMessage
-                {
-                    Role = "user",
-                    Content =
-                        "Make me three small standalone files: a minimal HTML5 starter page " +
-                        "with an <h1>, a Python script with a fibonacci function, and a short " +
-                        "Markdown note describing both. Keep each under 15 lines.",
-                },
-            ],
-            // Deterministic-ish + fast: no sampling spread, no thinking detour.
-            Temperature = 0,
-            MaxTokens = 1600,
-            EnableThinking = false,
+            new() { Role = "system", Content = SystemPrompts.Canvas },
+            new()
+            {
+                Role = "user",
+                Content =
+                    "Create a Markdown file called notes.md: a one-line intro, then a Python " +
+                    "code block showing a hello-world, then a closing line.",
+            },
         };
 
-        var content = new System.Text.StringBuilder();
-        var reasoning = new System.Text.StringBuilder();
-        int? completionTokens = null;
-        int? promptTokens = null;
-
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(170));
-        await foreach (var chunk in client!.StreamAsync(request, cts.Token))
+        var calls = await DriveToolLoopAsync(client!, messages, specs, toolsByName, "live-conv", cts.Token);
+
+        // The file reached the canvas through the tool — not a fenced block — and
+        // the nested ``` python fence is intact inside it (the truncation bug).
+        calls.Should().Contain(c => c.Name == "make_artifact",
+            $"the model must create the file with the tool (calls: {string.Join(",", calls.Select(c => c.Name))})");
+        var md = repo.Artifacts.Should().ContainSingle(a => a.Kind == ArtifactKind.Md).Subject;
+        md.Name.Should().Be("notes.md");
+        md.Content.Should().Contain("```", "a Markdown file's own code fence rides inside the JSON arg untouched");
+
+        // Iterate: a follow-up turn must MODIFY the file (edit or remake), not
+        // restate it — and the change must land in the stored artifact.
+        messages.Add(new ChatModelMessage
         {
-            content.Append(chunk.TextDelta);
-            reasoning.Append(chunk.ReasoningDelta);
-            completionTokens ??= chunk.TokenCount;
-            completionTokens = chunk.TokenCount ?? completionTokens;
-            promptTokens = chunk.PromptTokenCount ?? promptTokens;
-        }
+            Role = "user",
+            Content = "Add a new section heading '## Setup' at the end of notes.md.",
+        });
+        var followUp = await DriveToolLoopAsync(client!, messages, specs, toolsByName, "live-conv", cts.Token);
 
-        // The real wire path delivered text and the trailing usage chunk
-        // (prompt tokens are what the composer's context ring runs on).
-        content.Length.Should().BeGreaterThan(0, $"the model at {baseUrl} should reply");
-        completionTokens.Should().NotBeNull("stream_options.include_usage is always requested");
-        promptTokens.Should().BeGreaterThan(0, "vLLM reports prompt_tokens on the usage tail");
-
-        // enable_thinking=false reached the template: no reasoning streamed.
-        reasoning.Length.Should().Be(0, "chat_template_kwargs.enable_thinking=false suppresses thinking");
-
-        // The extractor lifts all three kinds out of the real completion — the
-        // model picked its own filenames; the system prompt supplied the syntax.
-        var artifacts = ArtifactExtractor.Extract(content.ToString());
-        artifacts.Select(a => a.Kind).Should().Contain(
-            [ArtifactKind.Html, ArtifactKind.Py, ArtifactKind.Md],
-            $"the canvas convention must steer real fences (got: {content})");
-        artifacts.Single(a => a.Kind == ArtifactKind.Html).Content.Should().Contain("<h1");
-        artifacts.Single(a => a.Kind == ArtifactKind.Py).Content.Should().Contain("def ");
-        artifacts.Should().OnlyContain(a => a.Name.Length > 0);
+        followUp.Should().Contain(c => c.Name == "edit_artifact" || c.Name == "make_artifact",
+            $"the model must change the file with a tool (calls: {string.Join(",", followUp.Select(c => c.Name))})");
+        repo.Artifacts.Should().ContainSingle(a => a.Name == "notes.md")
+            .Which.Content.Should().Contain("Setup", $"the edit must land (got: {baseUrl})");
     }
 
     [Fact]
@@ -262,7 +249,7 @@ public sealed class VllmLiveIntegrationTests
         // The cross-turn gap: TurnPlanner rebuilds history as role+content only,
         // so the todo list set via tool calls in turn 1 is INVISIBLE in turn 2.
         // This renders turn 2 exactly as the planner would — assistant content
-        // without its tool_calls — and appends SystemPrompts.TodoReminder to the
+        // without its tool_calls — and appends TodoTool.CrossTurnReminder to the
         // new user message. The assistant content is deliberately vague about
         // which steps are done: ONLY the reminder says winter is the one left,
         // so a winter haiku in the answer proves the snapshot was read.
@@ -291,7 +278,7 @@ public sealed class VllmLiveIntegrationTests
             new()
             {
                 Role = "user",
-                Content = "continue\n\n" + SystemPrompts.TodoReminder(snapshot),
+                Content = "continue\n\n" + TodoTool.CrossTurnReminder(snapshot),
             },
         };
 
@@ -322,10 +309,18 @@ public sealed class VllmLiveIntegrationTests
         // echoed that narration back, the model saw a done-marked list with no
         // files in its own (empty) turn, concluded it had skipped the work, and
         // restarted the answer every round ("oops, I jumped the gun" ×3, files
-        // generated twice). With the narration echoed, each file is produced
-        // exactly once.
+        // generated twice). With the narration echoed, each file is produced once.
+        // Files now flow through make_artifact, so the todo tool and the artifact
+        // tools are offered together and the loop executes both for real.
+        var repo = new InMemoryArtifactRepository();
+        var (artifactSpecs, artifactTools) = ArtifactToolset(repo);
         var todo = new TodoTool();
-        var tools = ToolSpecs(todo);
+
+        var specs = ToolSpecs(todo).Concat(artifactSpecs).ToList();
+        var toolsByName = new Dictionary<string, ITool>(artifactTools, StringComparer.Ordinal)
+        {
+            [todo.Name] = todo,
+        };
 
         var messages = new List<ChatModelMessage>
         {
@@ -334,28 +329,129 @@ public sealed class VllmLiveIntegrationTests
         };
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(170));
-        var (answer, todoCalls, log) = await RunTodoLoopAsync(client!, messages, tools, todo, cts.Token);
+        var calls = await DriveToolLoopAsync(client!, messages, specs, toolsByName, "live-conv", cts.Token);
 
+        var todoCalls = calls.Where(c => c.Name == "set_todos").ToList();
         todoCalls.Should().NotBeEmpty("the user explicitly asked for the todo list");
-        answer.Should().NotBeEmpty();
 
-        // The restart bug's fingerprint is duplicated files and an abandoned
-        // list — so assert the turn is COHERENT: each emitted file appears
-        // exactly once, and the last accepted set_todos call finished the plan.
-        // (Exactly-3-artifacts would be at the mercy of fence typos the strict
-        // extractor rightly ignores, e.g. "name/notes.md" — sampling noise,
-        // not a loop defect.)
-        var artifacts = ArtifactExtractor.Extract(answer);
-        artifacts.Should().NotBeEmpty($"files were requested (rounds: {log}; got: {answer})");
-        artifacts.Select(a => a.Name).Should().OnlyHaveUniqueItems(
-            $"a coherent turn emits each file once (rounds: {log}; got: {answer})");
+        // The restart bug's fingerprint is duplicated files and an abandoned list —
+        // so assert the turn is COHERENT: files were created via the tool, each name
+        // is unique (no double-generation), and the last set_todos finished the plan.
+        repo.Artifacts.Should().NotBeEmpty($"files were requested (calls: {string.Join(",", calls.Select(c => c.Name))})");
+        repo.Artifacts.Select(a => a.Name).Should().OnlyHaveUniqueItems(
+            "a coherent turn emits each file once");
         todoCalls[^1].ArgumentsJson.Should().NotContainAny(["pending", "active"],
-            $"the turn must end with the plan completed, not abandoned (rounds: {log})");
+            "the turn must end with the plan completed, not abandoned");
     }
 
     /// <summary>Offer a single tool the way TurnPlanner's ToSpec does.</summary>
     private static List<ChatToolSpec> ToolSpecs(ITool tool) =>
         [new() { Name = tool.Name, Description = tool.Description, ParametersSchema = tool.ParametersSchema }];
+
+    /// <summary>The canvas artifact tools over an in-memory repo, with their specs.</summary>
+    private static (List<ChatToolSpec> Specs, Dictionary<string, ITool> ByName) ArtifactToolset(
+        InMemoryArtifactRepository repo)
+    {
+        var provider = new FakeChatDatabaseProvider(repo);
+        var user = new FakeUserContext();
+        ITool[] tools =
+        [
+            new MakeArtifactTool(provider, user, TimeProvider.System),
+            new EditArtifactTool(provider, user),
+            new ReadArtifactTool(provider, user),
+        ];
+        var specs = tools.Select(t => new ChatToolSpec
+        {
+            Name = t.Name,
+            Description = t.Description,
+            ParametersSchema = t.ParametersSchema,
+        }).ToList();
+        return (specs, tools.ToDictionary(t => t.Name, t => t, StringComparer.Ordinal));
+    }
+
+    /// <summary>
+    /// Drive the model through the tool loop exactly as TurnRunner does, but for an
+    /// arbitrary tool set: stream a round; execute each call against the real tool
+    /// (with the conversation-scoped <see cref="ToolInvocation"/> the artifact tools
+    /// need); echo the assistant tool-call message + one tool result per call; stop
+    /// when a round makes no calls. Returns every tool call seen across rounds.
+    /// </summary>
+    private static async Task<List<ChatModelToolCall>> DriveToolLoopAsync(
+        VllmChatModelClient client,
+        List<ChatModelMessage> messages,
+        IReadOnlyList<ChatToolSpec> specs,
+        IReadOnlyDictionary<string, ITool> toolsByName,
+        string conversationId,
+        CancellationToken token)
+    {
+        var allCalls = new List<ChatModelToolCall>();
+
+        for (var round = 0; round < 6; round++)
+        {
+            var request = new ChatCompletionRequest
+            {
+                ModelId = "default",
+                Messages = messages,
+                Tools = specs.ToList(),
+                Temperature = 0.7,
+                TopP = 0.8,
+                PresencePenalty = 1.5,
+                MaxTokens = 2200,
+                EnableThinking = false,
+            };
+
+            var text = new System.Text.StringBuilder();
+            var calls = new List<ChatModelToolCall>();
+            await foreach (var chunk in client.StreamAsync(request, token))
+            {
+                text.Append(chunk.TextDelta);
+                if (chunk.ToolCall is not null)
+                {
+                    calls.Add(chunk.ToolCall);
+                }
+            }
+
+            if (calls.Count == 0)
+            {
+                break;
+            }
+
+            allCalls.AddRange(calls);
+            messages.Add(new ChatModelMessage
+            {
+                Role = "assistant",
+                Content = text.Length > 0 ? text.ToString() : null,
+                ToolCalls = calls,
+            });
+
+            foreach (var call in calls)
+            {
+                string content;
+                if (toolsByName.TryGetValue(call.Name, out var tool))
+                {
+                    var outcome = await tool.ExecuteAsync(
+                        new ToolInvocation
+                        {
+                            Pid = "default",
+                            ArgumentsJson = call.ArgumentsJson,
+                            ConversationId = conversationId,
+                            MessageId = "live-msg",
+                        }, token);
+                    content = outcome.Success
+                        ? outcome.ResultJson ?? "{}"
+                        : System.Text.Json.JsonSerializer.Serialize(new { error = outcome.Error });
+                }
+                else
+                {
+                    content = System.Text.Json.JsonSerializer.Serialize(new { error = $"no tool named '{call.Name}'" });
+                }
+
+                messages.Add(new ChatModelMessage { Role = "tool", Content = content, ToolCallId = call.Id });
+            }
+        }
+
+        return allCalls;
+    }
 
     /// <summary>
     /// Drive the model through the tool loop exactly as TurnRunner does: stream

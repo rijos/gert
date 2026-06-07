@@ -25,7 +25,20 @@ export const tools = reactive({
   sandbox: false,
   todo: true,
   clock: true,
+  // The canvas artifact suite — on by default; toggled as one unit (see below).
+  make_artifact: true,
+  edit_artifact: true,
+  read_artifact: true,
 });
+
+// The make/edit/read artifact tools are one feature ("Canvas"); the menu shows a
+// single switch that flips all three together.
+export const CANVAS_TOOL_IDS = ["make_artifact", "edit_artifact", "read_artifact"];
+export const canvasOn = () => CANVAS_TOOL_IDS.every((id) => tools[id]);
+export const toggleCanvas = () => {
+  const on = !canvasOn();
+  CANVAS_TOOL_IDS.forEach((id) => (tools[id] = on));
+};
 
 // per-conversation reasoning toggles (persisted server-side on send)
 export const thinking = van.state(true); // ON by default — the model's native behavior
@@ -72,6 +85,10 @@ export const reactiveMessage = (m) =>
     attachments: m.attachments ?? [],
     reasoning: m.reasoning ?? "",
     streaming: m.streaming ?? false,
+    // busy phase: true while the model is thinking / running tools / waiting for
+    // the first answer token (the three-dot pulse); false once answer text
+    // streams (the caret). Only meaningful while `streaming`.
+    working: m.working ?? false,
     // live flag, or the persisted row status from a thread GET after reload
     cancelled: m.cancelled ?? m.status === "cancelled",
     tokenCount: m.token_count ?? null,
@@ -87,7 +104,8 @@ export const addUserMessage = (text, attachments = []) => {
 };
 
 export const addAssistantMessage = () => {
-  const m = reactiveMessage({ role: "assistant", text: "", streaming: true });
+  // Starts in the working phase (pulse) until the first answer token arrives.
+  const m = reactiveMessage({ role: "assistant", text: "", streaming: true, working: true });
   messages.push(m);
   return m;
 };

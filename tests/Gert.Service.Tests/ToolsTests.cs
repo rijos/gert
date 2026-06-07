@@ -314,6 +314,27 @@ public sealed class ToolsTests
         result.Error.Should().Contain("invalid arguments");
     }
 
+    [Fact]
+    public void TodoTool_revives_an_open_list_as_a_tail_reminder()
+    {
+        // ITailReminder: an open snapshot becomes the formatted revival block.
+        const string snapshot = """{"todos":[{"text":"step 2","status":"pending"}]}""";
+
+        new TodoTool().BuildTailReminder(snapshot).Should().Be(TodoTool.CrossTurnReminder(snapshot));
+    }
+
+    [Theory]
+    [InlineData(null)] // no prior accepted call
+    [InlineData("")] // blank snapshot
+    [InlineData("""{"todos":[{"text":"step 1","status":"done"}]}""")] // all done
+    [InlineData("""{"todos":[]}""")] // empty list
+    [InlineData("{not json")] // a parse bug must not throw
+    [InlineData("""{"other":1}""")] // right JSON, wrong shape
+    public void TodoTool_revives_nothing_when_there_is_no_open_work(string? snapshot)
+    {
+        new TodoTool().BuildTailReminder(snapshot).Should().BeNull();
+    }
+
     // ---- ClockTool ---------------------------------------------------------
 
     /// <summary>The pinned instant the clock tests read through TimeProvider.</summary>

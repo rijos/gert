@@ -36,6 +36,9 @@ internal sealed record ToolOutcome
     /// <summary>The todo list for the todo card (the <c>set_todos</c> tool).</summary>
     public IReadOnlyList<TodoItem>? Todos { get; init; }
 
+    /// <summary>Artifacts the call created/updated, for the canvas (make/edit tools).</summary>
+    public IReadOnlyList<Artifact>? Artifacts { get; init; }
+
     /// <summary>Build an outcome from a successful or failed tool execution.</summary>
     public static ToolOutcome From(string kind, ToolResult result, long latencyMs)
     {
@@ -64,6 +67,7 @@ internal sealed record ToolOutcome
             Hits = ToolResultHit.FromCitations(result.Citations),
             Stdout = result.Stdout,
             Todos = result.Todos,
+            Artifacts = result.Artifacts,
         };
     }
 

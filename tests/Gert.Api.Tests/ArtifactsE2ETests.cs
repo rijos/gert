@@ -17,13 +17,11 @@ using Xunit;
 namespace Gert.Api.Tests;
 
 /// <summary>
-/// Artifact extraction end-to-end over the mocks, one test per
+/// Artifact creation end-to-end over the mocks, one test per
 /// <see cref="ArtifactKind"/> the fixtures script (html / py / md): POST the
-/// fixture prompt → FakeChatModel streams a named fence split across deltas →
-/// TurnRunner extracts + persists → the SSE carries an <c>artifact</c> event →
-/// the canvas read APIs (conversation list + artifact by id) and the thread GET
-/// reproduce it. The md fixture also carries an UNNAMED fence to prove ordinary
-/// code blocks stay inline.
+/// fixture prompt → FakeChatModel calls <c>make_artifact</c> → the tool persists
+/// the file and TurnRunner emits an <c>artifact</c> event → the canvas read APIs
+/// (conversation list + artifact by id) and the thread GET reproduce it.
 /// </summary>
 public sealed class ArtifactsE2ETests : IClassFixture<GertApiFactory>
 {
@@ -41,17 +39,25 @@ public sealed class ArtifactsE2ETests : IClassFixture<GertApiFactory>
         return client;
     }
 
+    /// <summary>The canvas suite, enabled on the conversation so the planner offers it.</summary>
+    private static ToolToggles ArtifactTools => new(new Dictionary<string, bool>
+    {
+        ["make_artifact"] = true,
+        ["edit_artifact"] = true,
+        ["read_artifact"] = true,
+    });
+
     public static TheoryData<string, ArtifactKind, string, string, string> Cases => new()
     {
-        // prompt → kind, name, fence language, a content marker that must survive
+        // prompt → kind, name, stored language, a content marker that must survive
         { "make me a demo html page", ArtifactKind.Html, "demo.html", "html", "<h1>Demo</h1>" },
         { "write a python fibonacci script", ArtifactKind.Py, "fib.py", "python", "def fib(n):" },
-        { "draft a markdown decision doc", ArtifactKind.Md, "decision.md", "md", "**sqlite-vec**" },
+        { "draft a markdown decision doc", ArtifactKind.Md, "decision.md", "markdown", "**sqlite-vec**" },
     };
 
     [Theory]
     [MemberData(nameof(Cases))]
-    public async Task Named_fence_becomes_a_canvas_artifact_end_to_end(
+    public async Task Make_artifact_tool_creates_a_canvas_artifact_end_to_end(
         string prompt,
         ArtifactKind kind,
         string name,
@@ -62,7 +68,7 @@ public sealed class ArtifactsE2ETests : IClassFixture<GertApiFactory>
 
         var createResponse = await client.PostAsJsonAsync(
             "/api/projects/default/conversations",
-            new CreateConversationRequest { Title = $"Artifacts · {name}" },
+            new CreateConversationRequest { Title = $"Artifacts · {name}", Tools = ArtifactTools },
             Json);
         var conversation = await createResponse.Content.ReadFromJsonAsync<Conversation>(Json);
         conversation.Should().NotBeNull();
@@ -79,15 +85,15 @@ public sealed class ArtifactsE2ETests : IClassFixture<GertApiFactory>
             HttpCompletionOption.ResponseHeadersRead);
         var events = ParseSse(await ReadUntilTerminalAsync(stream));
 
-        // Exactly ONE artifact event (the md fixture's unnamed fence stays
-        // inline), emitted after the text, before message_end.
+        // Exactly ONE artifact event, emitted from the tool loop: after the
+        // tool_result that produced it, before message_end.
         var artifactEvent = events.OfType<ArtifactEvent>().Should().ContainSingle().Subject;
         artifactEvent.Kind.Should().Be(kind);
         artifactEvent.Name.Should().Be(name);
         artifactEvent.Content.Should().Contain(contentMarker);
         var types = events.Select(e => e.GetType().Name).ToList();
         types.IndexOf(nameof(ArtifactEvent))
-            .Should().BeGreaterThan(types.LastIndexOf(nameof(DeltaEvent)))
+            .Should().BeGreaterThan(types.IndexOf(nameof(ToolResultEvent)))
             .And.BeLessThan(types.IndexOf(nameof(MessageEndEvent)));
 
         // Canvas list API: the conversation's artifacts carry the persisted row.
@@ -110,9 +116,6 @@ public sealed class ArtifactsE2ETests : IClassFixture<GertApiFactory>
         var thread = await client.GetFromJsonAsync<ThreadResponse>(
             $"/api/projects/default/conversations/{conversation.Id}", Json);
         thread!.Artifacts.Should().ContainSingle(a => a.Id == row.Id && a.Name == name);
-
-        // And the fence body never leaks the name= token into the artifact.
-        artifactEvent.Content.Should().NotContain("name=");
     }
 
     [Fact]
@@ -181,7 +184,7 @@ public sealed class ArtifactsE2ETests : IClassFixture<GertApiFactory>
     {
         var createResponse = await client.PostAsJsonAsync(
             "/api/projects/default/conversations",
-            new CreateConversationRequest { Title = "Render ticket" },
+            new CreateConversationRequest { Title = "Render ticket", Tools = ArtifactTools },
             Json);
         var conversation = await createResponse.Content.ReadFromJsonAsync<Conversation>(Json);
 

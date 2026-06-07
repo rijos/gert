@@ -15,6 +15,9 @@ const iconFor = (kind) =>
     sandbox: "file",
     todo: "checklist",
     clock: "clock",
+    make_artifact: "file",
+    edit_artifact: "file",
+    read_artifact: "file",
   })[kind] || "file";
 
 const DocHit = (h) =>

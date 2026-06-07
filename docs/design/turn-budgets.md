@@ -117,7 +117,7 @@ by precedent.
 | **Detached turns** ([chat-and-tools](chat-and-tools.md#detached-turns)) — generation survives disconnects by design | No human is guaranteed to be attached; a server-side bound must exist. `MaxTurnDuration` is that bound today. |
 | **Shared, multi-user GPU** | One user's runaway turn starves others — budgets are also a fairness control ([security F10](security.md#3-findings--remediations)). |
 | **Turns are serialized per conversation** (the seq single-writer invariant; the 409) | Any steering design must keep ONE writer: the *running turn* must consume injected messages; a second concurrent turn is not an option. |
-| **Prefix-cache friendliness** ([configuration](../installation/configuration.md#3-gertvllm--the-model-upstream)) | Budget/steering injections must append at the prompt *tail* (the `TodoReminder` precedent) — never mutate the system prompt or history mid-turn. |
+| **Prefix-cache friendliness** ([configuration](../installation/configuration.md#3-gertvllm--the-model-upstream)) | Budget/steering injections must append at the prompt *tail* (the `TodoTool.CrossTurnReminder` precedent) — never mutate the system prompt or history mid-turn. |
 | **Persist-then-publish event log** | Steering messages need seq allocation and durable rows like any other event; the UI replays them on reload. |
 
 ## 4. The candidate mechanisms
@@ -152,7 +152,7 @@ pi's most transferable idea. Today a `POST …/messages` during a live turn 409s
   `queued`, respond 202.
 - The runner checks a per-conversation steering queue **at each round boundary** and
   appends queued messages to the prompt tail (prefix-cache safe, same placement rule as
-  `TodoReminder`), then continues the loop.
+  `TodoTool.CrossTurnReminder`), then continues the loop.
 - The single-writer invariant holds: the running turn consumes the message; no second
   turn starts. If no turn is live, the normal plan-and-enqueue path runs unchanged.
 

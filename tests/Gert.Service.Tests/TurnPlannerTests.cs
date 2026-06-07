@@ -424,7 +424,7 @@ public sealed class TurnPlannerTests
         // The reminder rides at the TAIL of the rendered prompt; prior history
         // keeps its exact bytes (prefix cache) and the persisted user row keeps
         // the user's actual words (UI truth).
-        job.History[^1].Content.Should().Be("continue\n\n" + SystemPrompts.TodoReminder(snapshot));
+        job.History[^1].Content.Should().Be("continue\n\n" + TodoTool.CrossTurnReminder(snapshot));
         job.History[0].Content.Should().Be("earlier turn");
         _persisted.Single(m => m.Role == MessageRole.User).Content.Should().Be("continue");
     }
@@ -486,6 +486,60 @@ public sealed class TurnPlannerTests
 
         // Best-effort: the reminder is a nicety, never a turn-blocker.
         job.History[^1].Content.Should().Be("continue");
+    }
+
+    [Fact]
+    public async Task Any_offered_ITailReminder_tool_is_revived_not_just_todo()
+    {
+        // The mechanism is generic: a non-todo tool that implements ITailReminder
+        // gets its snapshot and its reminder appended at the tail, exactly like the
+        // todo list — the planner has no per-tool branch.
+        var user = new TestUserContext { AllowedTools = new HashSet<string>(["stub"], StringComparer.Ordinal) };
+        SeedConversation(("stub", true));
+        _repo.GetLatestToolCallAsync(Conv, "stub", Arg.Any<CancellationToken>())
+            .Returns(new ToolCall
+            {
+                Id = Guid.NewGuid().ToString("D"),
+                MessageId = Guid.NewGuid().ToString("D"),
+                Kind = "stub",
+                Status = ToolCallStatus.Done,
+                ResponseJson = "STATE",
+                CreatedAt = DateTimeOffset.UtcNow,
+            });
+
+        var request = new SendMessageRequest
+        {
+            Content = "go",
+            Tools = new ToolToggles(new Dictionary<string, bool> { ["stub"] = true }),
+        };
+
+        var job = await NewPlanner(user, [new StubRevivableTool()]).PlanAsync(Pid, Conv, request);
+
+        job.History[^1].Content.Should().Be("go\n\n<revived>STATE</revived>");
+    }
+
+    /// <summary>
+    /// A non-todo tool that opts into cross-turn revival — proof the reminder path
+    /// keys off the <see cref="ITailReminder"/> interface, not a hard-coded tool id.
+    /// Echoes its snapshot verbatim so the test can assert exact tail placement.
+    /// </summary>
+    private sealed class StubRevivableTool : ITool, ITailReminder
+    {
+        public string Id => "stub";
+
+        public string Name => "stub";
+
+        public string Description => string.Empty;
+
+        public string ParametersSchema => "{}";
+
+        public Task<ToolResult> ExecuteAsync(
+            ToolInvocation invocation,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(new ToolResult { Success = true });
+
+        public string? BuildTailReminder(string? latestResultJson) =>
+            string.IsNullOrEmpty(latestResultJson) ? null : $"<revived>{latestResultJson}</revived>";
     }
 
     /// <summary>A catalog declaring the Qwen3.6 instruct sampling for "default".</summary>
@@ -619,11 +673,11 @@ public sealed class TurnPlannerTests
     [Fact]
     public async Task The_canvas_convention_rides_every_turn_even_without_instructions()
     {
-        // No instructions reader at all: real models still must learn the
-        // name= fence opt-in, or complete files never reach the canvas.
+        // No instructions reader at all: real models still must learn to put
+        // complete files in the canvas via the make_artifact tool.
         var job = await NewPlanner().PlanAsync(Pid, Conv, new SendMessageRequest { Content = "hello" });
 
         job.SystemPrompt.Should().Be(SystemPrompts.Canvas);
-        job.SystemPrompt.Should().Contain("name=");
+        job.SystemPrompt.Should().Contain("make_artifact");
     }
 }

@@ -102,5 +102,23 @@ public interface IChatRepository : IAsyncDisposable
 
     Task<Artifact?> GetArtifactAsync(string artifactId, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// The latest artifact in a conversation carrying <paramref name="name"/>, or
+    /// null. Names are the model-facing handle the artifact tools (make/edit/read)
+    /// key on; a re-used name "saves over" the prior draft, so this returns the
+    /// most recent one.
+    /// </summary>
+    Task<Artifact?> GetArtifactByNameAsync(
+        string conversationId,
+        string name,
+        CancellationToken cancellationToken = default);
+
     Task InsertArtifactAsync(Artifact artifact, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Overwrite an existing artifact's mutable fields (kind/name/language/content/
+    /// version) by <c>Id</c> — the <c>edit_artifact</c> / <c>make_artifact</c>
+    /// (overwrite) path. Identity and conversation binding are immutable.
+    /// </summary>
+    Task UpdateArtifactAsync(Artifact artifact, CancellationToken cancellationToken = default);
 }

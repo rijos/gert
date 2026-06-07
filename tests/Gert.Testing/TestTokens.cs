@@ -78,7 +78,7 @@ public sealed class TestTokens : IDisposable
 
     /// <summary>Mint a token for the standard <c>user</c> role (sandbox denied).</summary>
     public string MintUser(params (string Type, string Value)[] extraClaims) =>
-        Mint("dev-user", Issuer, ["gert-users"], "rag search", extraClaims: extraClaims);
+        Mint("dev-user", Issuer, ["gert-users"], "rag search make_artifact edit_artifact read_artifact", extraClaims: extraClaims);
 
     /// <summary>Mint a token for the <c>limited</c> role (only <c>rag</c>; search + sandbox denied).</summary>
     public string MintLimited(params (string Type, string Value)[] extraClaims) =>

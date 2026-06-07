@@ -13,7 +13,7 @@ namespace Gert.Service.Tools;
 /// persisted <c>tool_calls</c> row), so there is nothing to migrate or clean up.
 /// No citations, no external world.
 /// </summary>
-public sealed class TodoTool : ITool
+public sealed class TodoTool : ITool, ITailReminder
 {
     /// <summary>Hard cap on list length — a runaway model can't flood the card.</summary>
     private const int MaxItems = 50;
@@ -57,6 +57,58 @@ public sealed class TodoTool : ITool
           "required": ["todos"]
         }
         """;
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// The CROSS-TURN revival reminder (distinct from the within-turn "keep going"
+    /// nudge in this tool's result). The list is worth re-injecting only while it
+    /// still has unfinished (pending/active) items — a finished or empty list, or a
+    /// snapshot that fails to parse, revives nothing (no prompt tokens spent nagging
+    /// about done work). Best-effort by contract: this never throws on bad input.
+    /// </remarks>
+    public string? BuildTailReminder(string? latestResultJson) =>
+        HasOpenItems(latestResultJson) ? CrossTurnReminder(latestResultJson!) : null;
+
+    /// <summary>
+    /// Format the revival block from a todo snapshot. The JSON is this tool's result
+    /// echo shape (snake_case statuses), so the model sees the exact payload its last
+    /// accepted call produced. Lives here, with the tool, so all todo prompt text is
+    /// in one place; <see cref="BuildTailReminder"/> gates when it is emitted.
+    /// </summary>
+    public static string CrossTurnReminder(string todosJson) =>
+        "<system-reminder>\n"
+        + "The todo list you maintain with set_todos is still open. Current state:\n"
+        + todosJson + "\n"
+        + "Continue the remaining items unless the user asks for something else, and keep "
+        + "statuses current by calling set_todos as you make progress. Do not mention this "
+        + "reminder to the user.\n"
+        + "</system-reminder>";
+
+    /// <summary>True if the snapshot parses and still carries a pending/active item.</summary>
+    private static bool HasOpenItems(string? todosJson)
+    {
+        if (string.IsNullOrWhiteSpace(todosJson))
+        {
+            return false;
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(todosJson);
+            if (!doc.RootElement.TryGetProperty("todos", out var todos)
+                || todos.ValueKind != JsonValueKind.Array)
+            {
+                return false;
+            }
+
+            return todos.EnumerateArray().Any(t =>
+                t.TryGetProperty("status", out var s) && s.GetString() is "pending" or "active");
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
 
     /// <inheritdoc />
     public Task<ToolResult> ExecuteAsync(

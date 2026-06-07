@@ -9,36 +9,18 @@ namespace Gert.Service.Chat;
 public static class SystemPrompts
 {
     /// <summary>
-    /// The canvas/artifact convention (chat-and-tools.md § artifacts): the
-    /// extractor only lifts fences whose info string carries <c>name=</c>, so
-    /// the model must be told the opt-in syntax — without this, real models
-    /// emit plain fences and complete files never reach the canvas.
+    /// The canvas/artifact convention (chat-and-tools.md § artifacts). Artifacts
+    /// now reach the canvas through the make/edit/read tools, not fenced blocks —
+    /// a tool argument can't be truncated by the file's own ``` fences. This nudge
+    /// steers the model to USE the tools (real models sometimes answer a "make a
+    /// file" request in prose otherwise); the per-tool descriptions carry the
+    /// argument detail.
     /// </summary>
     public const string Canvas =
-        "When you produce a complete, self-contained file — an HTML page, a code file " +
-        "(Python, JavaScript, C#, C++, Rust), a Markdown document, or an SVG — put it in its " +
-        "own fenced code block and include a " +
-        "name in the fence's info string, e.g. ```html name=page.html``` or ```python name=tool.py```. " +
-        "Named blocks open in the user's canvas as artifacts. Use ordinary unnamed fences for " +
-        "fragments, examples, and snippets that should stay inline in the conversation.";
-
-    /// <summary>
-    /// Cross-turn todo revival: the planner rebuilds history as role+content
-    /// only, so a list set via <c>set_todos</c> in an earlier turn would
-    /// otherwise vanish from the prompt. When the conversation's latest
-    /// snapshot still has unfinished items, this block rides at the TAIL of
-    /// the rendered prompt (appended after the new user message's content) —
-    /// never the system prompt (that prefix must stay stable for the vLLM
-    /// prefix cache) and never the persisted user row (UI truth). The JSON is
-    /// the tool-result echo shape (snake_case statuses), so the model sees the
-    /// exact payload its last accepted call produced.
-    /// </summary>
-    public static string TodoReminder(string todosJson) =>
-        "<system-reminder>\n"
-        + "The todo list you maintain with set_todos is still open. Current state:\n"
-        + todosJson + "\n"
-        + "Continue the remaining items unless the user asks for something else, and keep "
-        + "statuses current by calling set_todos as you make progress. Do not mention this "
-        + "reminder to the user.\n"
-        + "</system-reminder>";
+        "When you produce a complete, self-contained file (an HTML page, a script, a Markdown " +
+        "document, an SVG, etc.), call the make_artifact tool with the whole file content — it " +
+        "opens in the user's canvas. Do not paste a whole file into a code block. To change an " +
+        "existing artifact, use edit_artifact to replace just the part that changes rather than " +
+        "remaking the whole file; use read_artifact to see its current content first if needed. " +
+        "Keep ordinary code blocks for short inline snippets and examples.";
 }

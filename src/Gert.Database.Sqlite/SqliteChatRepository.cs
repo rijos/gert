@@ -481,6 +481,27 @@ public sealed class SqliteChatRepository(SqliteConnection connection) : IChatRep
     }
 
     /// <inheritdoc />
+    public async Task<Artifact?> GetArtifactByNameAsync(
+        string conversationId,
+        string name,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(conversationId);
+        ArgumentNullException.ThrowIfNull(name);
+
+        const string sql =
+            "SELECT id, conversation_id, message_id, kind, name, language, content, version, created_at " +
+            "FROM artifacts WHERE conversation_id = @cid AND name = @name " +
+            "ORDER BY created_at DESC, id DESC LIMIT 1;";
+
+        var row = await _connection.QuerySingleOrDefaultAsync<ArtifactRow>(
+            new CommandDefinition(sql, new { cid = conversationId, name }, cancellationToken: cancellationToken))
+            .ConfigureAwait(false);
+
+        return row is null ? null : MapArtifact(row);
+    }
+
+    /// <inheritdoc />
     public async Task InsertArtifactAsync(Artifact artifact, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(artifact);
@@ -500,6 +521,26 @@ public sealed class SqliteChatRepository(SqliteConnection connection) : IChatRep
             artifact.Content,
             artifact.Version,
             CreatedAt = FormatTime(artifact.CreatedAt),
+        }, cancellationToken: cancellationToken)).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
+    public async Task UpdateArtifactAsync(Artifact artifact, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(artifact);
+
+        const string sql =
+            "UPDATE artifacts SET kind = @Kind, name = @Name, language = @Language, " +
+            "content = @Content, version = @Version WHERE id = @Id;";
+
+        await _connection.ExecuteAsync(new CommandDefinition(sql, new
+        {
+            artifact.Id,
+            Kind = ArtifactKindToString(artifact.Kind),
+            artifact.Name,
+            artifact.Language,
+            artifact.Content,
+            artifact.Version,
         }, cancellationToken: cancellationToken)).ConfigureAwait(false);
     }
 

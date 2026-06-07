@@ -157,7 +157,7 @@ public sealed class VllmStreamParser
             {
                 foreach (var tc in toolCalls.EnumerateArray())
                 {
-                    BufferToolCallFragment(tc);
+                    BufferToolCallFragment(tc, chunks);
                 }
             }
         }
@@ -177,7 +177,7 @@ public sealed class VllmStreamParser
         }
     }
 
-    private void BufferToolCallFragment(JsonElement tc)
+    private void BufferToolCallFragment(JsonElement tc, List<ChatModelChunk> chunks)
     {
         var index = tc.TryGetProperty("index", out var idx) && idx.ValueKind == JsonValueKind.Number
             ? idx.GetInt32()
@@ -199,6 +199,23 @@ public sealed class VllmStreamParser
             if (fn.TryGetProperty("name", out var name) && name.ValueKind == JsonValueKind.String)
             {
                 buffer.Name = name.GetString();
+
+                // First time we learn the name: announce the call so the UI can show
+                // intent while the arguments are still streaming. The id matches the
+                // eventual flushed call (same `Id ?? call_<name>` fallback). Announce
+                // once per call.
+                if (!buffer.Announced && !string.IsNullOrEmpty(buffer.Name))
+                {
+                    buffer.Announced = true;
+                    chunks.Add(new ChatModelChunk
+                    {
+                        ToolCallStart = new ToolCallStart
+                        {
+                            Id = buffer.Id ?? $"call_{buffer.Name}",
+                            Name = buffer.Name,
+                        },
+                    });
+                }
             }
 
             if (fn.TryGetProperty("arguments", out var args) && args.ValueKind == JsonValueKind.String)
@@ -282,6 +299,9 @@ public sealed class VllmStreamParser
         public string? Id { get; set; }
 
         public string? Name { get; set; }
+
+        /// <summary>True once the name has been announced as a <see cref="ToolCallStart"/>.</summary>
+        public bool Announced { get; set; }
 
         public System.Text.StringBuilder Arguments { get; } = new();
     }

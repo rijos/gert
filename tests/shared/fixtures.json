@@ -107,68 +107,64 @@
       "usage": { "completion_tokens": 7 }
     },
     {
-      "$comment": "Artifact fixture: the NAMED html fence in the final content is extracted by TurnRunner into a canvas artifact (artifact event + persisted row) — the fence is deliberately split across deltas to prove extraction runs on the assembled content.",
+      "$comment": "Artifact fixture: the model calls make_artifact, which persists the file and TurnRunner emits the artifact event. Replaces the old named-fence extraction (a tool arg can't be truncated by the file's own fences).",
       "match": "contains",
       "when": "make me a demo html page",
-      "deltas": [
-        "Here you go:\n\n",
-        "```html name=demo.html\n",
-        "<h1>Demo</h1>\n",
-        "<p>Hello from Gert.</p>\n",
-        "```",
-        "\n\nI opened it in the canvas."
-      ],
-      "finish": "stop",
-      "usage": { "completion_tokens": 14 }
+      "tool_call": {
+        "name": "make_artifact",
+        "arguments": "{\"name\":\"demo.html\",\"format\":\"html\",\"content\":\"<h1>Demo</h1>\\n<p>Hello from Gert.</p>\"}"
+      },
+      "finish": "tool_calls",
+      "after_tool": {
+        "deltas": ["I opened ", "demo.html in the canvas."],
+        "finish": "stop",
+        "usage": { "completion_tokens": 14 }
+      }
     },
     {
-      "$comment": "Interactive HTML artifact (F3 served-origin fidelity): the fence carries an INLINE SCRIPT that mutates the DOM. Under the old srcdoc render the inherited app CSP (script-src 'self') silently blocked it; served from the separate artifact origin with its own script-src 'unsafe-inline', it runs — the e2e asserts the mutated text appears.",
+      "$comment": "Interactive HTML artifact (F3 served-origin fidelity): the content carries an INLINE SCRIPT that mutates the DOM. Served from the separate artifact origin with its own script-src 'unsafe-inline', it runs — the smoke test asserts the mutated text appears.",
       "match": "contains",
       "when": "make me an interactive html page",
-      "deltas": [
-        "Here you go:\n\n",
-        "```html name=interactive.html\n",
-        "<h1 id=\"out\">static</h1>\n",
-        "<script>document.getElementById('out').textContent='SCRIPT-RAN';</script>\n",
-        "```",
-        "\n\nI opened it in the canvas."
-      ],
-      "finish": "stop",
-      "usage": { "completion_tokens": 16 }
+      "tool_call": {
+        "name": "make_artifact",
+        "arguments": "{\"name\":\"interactive.html\",\"format\":\"html\",\"content\":\"<h1 id=\\\"out\\\">static</h1>\\n<script>document.getElementById('out').textContent='SCRIPT-RAN';</script>\"}"
+      },
+      "finish": "tool_calls",
+      "after_tool": {
+        "deltas": ["I opened ", "interactive.html in the canvas."],
+        "finish": "stop",
+        "usage": { "completion_tokens": 16 }
+      }
     },
     {
-      "$comment": "Python artifact fixture (the py kind), fence split across deltas like the html one.",
+      "$comment": "Python artifact fixture (the py kind) via make_artifact.",
       "match": "contains",
       "when": "write a python fibonacci script",
-      "deltas": [
-        "Sure:\n\n",
-        "```python name=fib.py\n",
-        "def fib(n):\n",
-        "    a, b = 0, 1\n",
-        "    for _ in range(n):\n",
-        "        a, b = b, a + b\n",
-        "    return a\n",
-        "```",
-        "\n\nSaved to the canvas."
-      ],
-      "finish": "stop",
-      "usage": { "completion_tokens": 24 }
+      "tool_call": {
+        "name": "make_artifact",
+        "arguments": "{\"name\":\"fib.py\",\"format\":\"python\",\"content\":\"def fib(n):\\n    a, b = 0, 1\\n    for _ in range(n):\\n        a, b = b, a + b\\n    return a\"}"
+      },
+      "finish": "tool_calls",
+      "after_tool": {
+        "deltas": ["Saved ", "fib.py to the canvas."],
+        "finish": "stop",
+        "usage": { "completion_tokens": 24 }
+      }
     },
     {
-      "$comment": "Markdown artifact fixture (the md kind). An UNNAMED extra fence rides along to prove only name= fences become artifacts.",
+      "$comment": "Markdown artifact fixture (the md kind) via make_artifact — the content carries its OWN code fence to prove nested ``` survive (the bug the tool path fixes).",
       "match": "contains",
       "when": "draft a markdown decision doc",
-      "deltas": [
-        "Drafted:\n\n",
-        "```md name=decision.md\n",
-        "# Vector store decision\n\n",
-        "We pick **sqlite-vec** for the homelab.\n",
-        "```",
-        "\n\nAnd inline, not an artifact:\n\n",
-        "```md\njust an inline snippet\n```\n"
-      ],
-      "finish": "stop",
-      "usage": { "completion_tokens": 22 }
+      "tool_call": {
+        "name": "make_artifact",
+        "arguments": "{\"name\":\"decision.md\",\"format\":\"markdown\",\"content\":\"# Vector store decision\\n\\nWe pick **sqlite-vec** for the homelab.\\n\\n```python\\nimport sqlite_vec\\n```\"}"
+      },
+      "finish": "tool_calls",
+      "after_tool": {
+        "deltas": ["Drafted ", "decision.md in the canvas."],
+        "finish": "stop",
+        "usage": { "completion_tokens": 22 }
+      }
     },
     {
       "$comment": "Memory-retrieval fixture: search_documents over the memory entry the E2E seeds via POST /api/projects/{pid}/memory (title 'Favorite database') — proves memory rides the hybrid query and surfaces its DECODED title in the hit + citation.",

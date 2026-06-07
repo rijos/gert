@@ -56,32 +56,46 @@ role+content only (tool calls and results never re-enter the prompt), so a
 list set via `set_todos` in turn N is invisible in turn N+1 — the model would
 silently abandon its own plan. The fix follows the pattern Claude Code and
 Cline use (dynamic state re-injected into the *message array*, never the
-system prompt): when the todo tool is offered and the conversation's newest
-accepted snapshot (`GetLatestToolCallAsync(conv, "todo")`, newest `done` row's
-`response_json`) still has `pending`/`active` items, the planner appends
-`SystemPrompts.TodoReminder(snapshot)` — a `<system-reminder>` block carrying
-the snapshot JSON plus "continue the remaining items, keep statuses current,
-don't mention this" — to the new user message in the *rendered* prompt only.
+system prompt), and is **generic, not todo-specific**: a tool opts in by
+implementing `ITailReminder`. For every offered tool that does, the planner
+reads its newest accepted snapshot (`GetLatestToolCallAsync(conv, tool.Id)`,
+the `done` row's `response_json`) and calls `BuildTailReminder(snapshot)`; the
+tool decides whether revival is warranted and returns the `<system-reminder>`
+text or null. Any text returned is appended to the new user message in the
+*rendered* prompt only. `TodoTool` is the one reviver today: it emits the block
+(snapshot JSON plus "continue the remaining items, keep statuses current, don't
+mention this") only while the list still has `pending`/`active` items.
 Tail placement is deliberate: the system prompt and prior turns keep their
 exact bytes, so vLLM prefix-cache reuse survives up to the previous tail. The
 persisted user row stays clean (UI truth), a finished/empty list injects
-nothing (no nagging about done work), and the read is best-effort — a broken
-snapshot never fails the turn. Verified live against Qwen3.6 on vLLM 0.22
+nothing (no nagging about done work), and both the read and the
+`BuildTailReminder` call are best-effort — a broken snapshot or a tool parse
+bug never fails the turn. Verified live against Qwen3.6 on vLLM 0.22
 (2026-06-06): with the reminder, turn 2 picks up the one remaining `pending`
 item that only the snapshot names (`Live_todo_reminder_revives…`).
 
 ### Artifacts (canvas tabs)
 
 The model opts a fenced block into the canvas by **naming it in the fence info
-string** — ` ```html name=demo.html ` … ` ``` `. When the turn's final content is
-assembled, the runner extracts every named fence whose language maps onto the
-closed artifact-kind set (`md`/`markdown`, `html`/`htm`, `svg`, `py`/`python`,
-`cs`/`csharp`, `cpp`/`c++`/`cc`/`cxx`, `js`/`javascript`, `rs`/`rust`),
-persists each as an `artifacts` row (provenance: conversation + producing
-message), and emits an `artifact` event before `message_end` — the canvas tab
-opens live, and a reload gets the same artifacts back through the thread GET.
-Unnamed fences and unknown languages stay inline in the bubble; extraction is
-additive (the fence text remains part of the message).
+string** — ` ```html name=demo.html ` … ` ``` ` (`filename=` is accepted as an
+alias). When the turn's final content is assembled, the runner extracts every
+named fence whose language maps onto the closed artifact-kind set
+(`md`/`markdown`, `html`/`htm`, `svg`, `py`/`python`, `cs`/`csharp`,
+`cpp`/`c++`/`cc`/`cxx`, `js`/`javascript`, `rs`/`rust`), persists each as an
+`artifacts` row (provenance: conversation + producing message), and emits an
+`artifact` event before `message_end` — the canvas tab opens live, and a reload
+gets the same artifacts back through the thread GET. Unnamed fences and unknown
+languages stay inline in the bubble; extraction is additive (the fence text
+remains part of the message).
+
+**Two near-miss placements are tolerated** — both keep the opt-in explicit (the
+model still chose the name; nothing is guessed): the `name=` may sit alone on the
+**first body line** instead of the info string (the marker line is stripped from
+the persisted content), and a fence with **no usable language token** has its
+kind inferred from the `name=`'s file extension. Real models (Qwen3.6) reliably
+name the block but occasionally misplace the marker by one line; accepting it is
+not the same as the forbidden unnamed-fence fallback below. `markdown.js` mirrors
+the same detection so the inline chip and the canvas tab always agree.
 
 **How the model learns the convention.** Real models don't know `name=` on
 their own — the built-in `SystemPrompts.Canvas` fragment rides first in every
@@ -98,7 +112,9 @@ chose. If artifacts stop appearing for prompts that should produce them,
 debug in this order: (1) is the running host built from current code —
 `SystemPrompts.Canvas` present in the upstream request? (2) did the model emit
 the fence unnamed anyway (a model/template regression — capture the completion
-and re-measure compliance)? Do not relax the extractor.
+and re-measure compliance)? Do not relax the extractor to *guess* names from
+unnamed fences — the placement tolerance above only accepts names the model
+explicitly wrote.
 
 ### Detached turns
 

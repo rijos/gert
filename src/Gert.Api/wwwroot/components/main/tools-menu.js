@@ -44,6 +44,7 @@ export const ToolsMenu = component({
     const open = van.state(false);
     const active = () =>
       TOOLS.filter((t) => chat.tools[t.id]).length +
+      (chat.canvasOn() ? 1 : 0) +
       (knowledge.useInChat.val ? 1 : 0);
 
     const ToolRow = ({ id, label }) =>
@@ -84,6 +85,20 @@ export const ToolsMenu = component({
       children: [
         div({ class: "menu-h" }, "Tools"),
         ...TOOLS.map(ToolRow),
+        // Canvas suite (make/edit/read artifact) — one switch for the trio.
+        div(
+          {
+            class: () =>
+              "t-row" + (models.selectedSupportsTools.val ? "" : " disabled"),
+            onclick: () => models.selectedSupportsTools.val && chat.toggleCanvas(),
+            title: () =>
+              models.selectedSupportsTools.val
+                ? "Let the model create and edit files in the canvas"
+                : "This model doesn't support tool calling",
+          },
+          span({ class: "t-label" }, "Canvas"),
+          Switch({ on: () => chat.canvasOn(), onToggle: () => {} }),
+        ),
         div(
           { class: "t-docs-wrap" },
           div(

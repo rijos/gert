@@ -15,6 +15,13 @@ public sealed record ChatModelChunk
 
     public ChatModelToolCall? ToolCall { get; init; }
 
+    /// <summary>
+    /// Set when a tool call's name first appears mid-stream, before its arguments
+    /// finish — lets the orchestrator surface intent live. The full call follows
+    /// via <see cref="ToolCall"/> with the same id.
+    /// </summary>
+    public ToolCallStart? ToolCallStart { get; init; }
+
     /// <summary>Set on the final chunk (e.g. <c>stop</c>, <c>tool_calls</c>, <c>length</c>).</summary>
     public string? FinishReason { get; init; }
 

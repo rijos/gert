@@ -81,6 +81,32 @@ public sealed class VllmStreamParserTests
     }
 
     [Fact]
+    public void Parse_ToolCall_AnnouncesNameBeforeArgumentsFinish()
+    {
+        var parser = new VllmStreamParser();
+        var chunks = Run(
+            parser,
+            // First fragment carries id + name (no/empty args yet).
+            """{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","function":{"name":"make_artifact","arguments":""}}]},"finish_reason":null}]}""",
+            // Argument fragments stream after — no further announcements.
+            """{"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\"name\":\"a"}}]},"finish_reason":null}]}""",
+            """{"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":".md\"}"}}]},"finish_reason":null}]}""",
+            """{"choices":[{"delta":{},"finish_reason":"tool_calls"}]}""");
+
+        // The intent is announced exactly once, with the id the full call will use…
+        var start = chunks.Where(c => c.ToolCallStart is not null).Should().ContainSingle().Subject;
+        start.ToolCallStart!.Id.Should().Be("call_1");
+        start.ToolCallStart.Name.Should().Be("make_artifact");
+
+        // …and it lands BEFORE the completed call, which carries the assembled args.
+        var startIdx = chunks.FindIndex(c => c.ToolCallStart is not null);
+        var callIdx = chunks.FindIndex(c => c.ToolCall is not null);
+        startIdx.Should().BeLessThan(callIdx);
+        chunks[callIdx].ToolCall!.Id.Should().Be("call_1");
+        chunks[callIdx].ToolCall!.ArgumentsJson.Should().Be("""{"name":"a.md"}""");
+    }
+
+    [Fact]
     public void Parse_UnterminatedToolCallArguments_DegradeToEmptyObject()
     {
         // Captured live from vLLM 0.22.1 + qwen3 tool parser with

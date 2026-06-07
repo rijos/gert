@@ -244,6 +244,25 @@ public sealed class TurnRunner : ITurnRunner
                         }
                     }
 
+                    // Live intent: the model has named a tool but is still streaming
+                    // its arguments. Flush streamed text first so the card lands after
+                    // it, then emit a Running card NOW so the user sees what's coming
+                    // (e.g. "Creating a file") instead of staring at the pulse while a
+                    // whole-file argument streams. The full call + its parsed request
+                    // arrive at end-of-round below (same id → the card updates in place).
+                    if (chunk.ToolCallStart is { } toolStart)
+                    {
+                        await FlushPendingReasoningAsync().ConfigureAwait(false);
+                        await FlushPendingAsync().ConfigureAwait(false);
+                        await EmitAsync(repo, topic, new ToolCallEvent
+                        {
+                            Id = toolStart.Id,
+                            Kind = ResolveKind(toolStart.Name),
+                            Status = ToolCallStatus.Running,
+                            Request = null,
+                        }, token).ConfigureAwait(false);
+                    }
+
                     if (chunk.ToolCall is not null)
                     {
                         toolCalls.Add(chunk.ToolCall);
@@ -332,6 +351,11 @@ public sealed class TurnRunner : ITurnRunner
 
                 foreach (var call in toolCalls)
                 {
+                    // A user stop (or shutdown/timeout) mid-round: unwind the whole
+                    // chain NOW rather than running the round's remaining calls. The
+                    // OCE lands in RunAsync's cancel finalize like any other.
+                    token.ThrowIfCancellationRequested();
+
                     await EmitAsync(repo, topic, new ToolCallEvent
                     {
                         Id = call.Id,
@@ -375,6 +399,23 @@ public sealed class TurnRunner : ITurnRunner
 
                     collectedCitations.AddRange(outcome.Citations.Select(c => c with { ToolCallId = toolCallRow.Id }));
 
+                    // Canvas artifacts the call created/updated (make/edit tools): the
+                    // tool already persisted them; emit one ArtifactEvent each so the
+                    // live canvas opens/updates. An existing id updates the tab in place.
+                    if (outcome.Artifacts is { Count: > 0 } artifacts)
+                    {
+                        foreach (var artifact in artifacts)
+                        {
+                            await EmitAsync(repo, topic, new ArtifactEvent
+                            {
+                                Id = artifact.Id,
+                                Kind = artifact.Kind,
+                                Name = artifact.Name,
+                                Content = artifact.Content,
+                            }, token).ConfigureAwait(false);
+                        }
+                    }
+
                     messages.Add(new ChatModelMessage
                     {
                         Role = "tool",
@@ -411,32 +452,9 @@ public sealed class TurnRunner : ITurnRunner
             }
         }
 
-        // Artifact extraction (implementation-plan U7b): named fences in the final
-        // content become canvas artifacts — persisted first (the thread read model
-        // returns them on reload), then emitted so the live canvas tab opens.
-        foreach (var extracted in ArtifactExtractor.Extract(content.ToString()))
-        {
-            var artifact = new Artifact
-            {
-                Id = Guid.NewGuid().ToString("D"),
-                ConversationId = job.ConversationId,
-                MessageId = job.AssistantMessageId,
-                Kind = extracted.Kind,
-                Name = extracted.Name,
-                Language = extracted.Language,
-                Content = extracted.Content,
-                CreatedAt = DateTimeOffset.UtcNow,
-            };
-            await repo.InsertArtifactAsync(artifact, token).ConfigureAwait(false);
-
-            await EmitAsync(repo, topic, new ArtifactEvent
-            {
-                Id = artifact.Id,
-                Kind = artifact.Kind,
-                Name = artifact.Name,
-                Content = artifact.Content,
-            }, token).ConfigureAwait(false);
-        }
+        // Canvas artifacts are produced by the make_artifact / edit_artifact tools
+        // during the tool loop (emitted above), not extracted from the final text —
+        // a tool call's JSON content can't be truncated by the file's own ``` fences.
 
         // Re-number citations into one stable sequence over the whole turn, bind
         // them to the assistant message, persist, and emit after the text.
@@ -588,7 +606,14 @@ public sealed class TurnRunner : ITurnRunner
             return ToolOutcome.Failure(tool.Id, $"tool '{tool.Id}' is not permitted");
         }
 
-        var invocation = new ToolInvocation { Pid = job.Pid, ArgumentsJson = call.ArgumentsJson };
+        var invocation = new ToolInvocation
+        {
+            Pid = job.Pid,
+            ArgumentsJson = call.ArgumentsJson,
+            // The artifact tools key/persist canvas artifacts on the conversation.
+            ConversationId = job.ConversationId,
+            MessageId = job.AssistantMessageId,
+        };
 
         // The generic per-call backstop: tools carry their own tighter limits
         // (sandbox wall clock, search timeouts); this catches a hang outside
@@ -663,7 +688,10 @@ public sealed class TurnRunner : ITurnRunner
             {
                 map[prop.Name] = prop.Value.ValueKind switch
                 {
-                    JsonValueKind.String => prop.Value.GetString(),
+                    // Request is display-only (the tool card) — cap long strings so a
+                    // whole-file argument (make_artifact content) doesn't bloat the
+                    // event payload; the tool itself gets the full ArgumentsJson.
+                    JsonValueKind.String => Cap(prop.Value.GetString()),
                     JsonValueKind.Number => prop.Value.TryGetInt64(out var l) ? l : prop.Value.GetDouble(),
                     JsonValueKind.True => true,
                     JsonValueKind.False => false,
@@ -678,6 +706,9 @@ public sealed class TurnRunner : ITurnRunner
         {
             return null;
         }
+
+        static string? Cap(string? value) =>
+            value is { Length: > 240 } ? value[..240] + "…" : value;
     }
 
     /// <summary>

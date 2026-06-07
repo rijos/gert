@@ -18,17 +18,28 @@ const apply = (assistant, event, data) => {
   switch (event) {
     case "message_start":
       if (data?.message_id) assistant.id = data.message_id;
+      assistant.working = true;
       break;
 
     case "tool_call": {
-      // Successive set_todos calls fold into ONE card per message: re-point the
-      // existing card at the new call id so its result updates the checklist in
-      // place. The card keeps its position and the user's open/collapsed choice.
+      // A tool call means the model is working, not answering — show the pulse.
+      assistant.working = true;
+      // One card per call: the live-intent announce (name only, as args stream)
+      // and the end-of-round running event (now with parsed args) share an id, so
+      // an existing card with this id is UPDATED in place. Successive set_todos
+      // calls also fold into the one todo card. Either way the card keeps its
+      // position and the user's open/collapsed choice.
       const existing =
-        data.kind === "todo" && assistant.tools.find((t) => t.kind === "todo");
+        assistant.tools.find((t) => t.id === data.id) ||
+        (data.kind === "todo" && assistant.tools.find((t) => t.kind === "todo"));
       if (existing) {
         existing.id = data.id;
-        existing.status = data.status || "running";
+        existing.status = data.status || existing.status || "running";
+        // The args land with the end-of-round event; don't clobber them with the
+        // announce's empty request.
+        if (data.request?.query || data.request?.name)
+          existing.query = data.request.query || data.request.name;
+        if (data.request?.code) existing.code = data.request.code;
         break;
       }
       assistant.tools.push({
@@ -36,7 +47,7 @@ const apply = (assistant, event, data) => {
         kind: data.kind,
         status: data.status || "running",
         label: labelFor(data.kind),
-        query: data.request?.query || "",
+        query: data.request?.query || data.request?.name || "",
         tag: data.kind,
         hits: [],
         code: data.request?.code || "",
@@ -50,6 +61,8 @@ const apply = (assistant, event, data) => {
     }
 
     case "tool_result": {
+      // Still working after a tool returns — the next round/answer is coming.
+      assistant.working = true;
       const card = assistant.tools.find((t) => t.id === data.id);
       if (card) {
         card.status = data.status || "done";
@@ -82,10 +95,14 @@ const apply = (assistant, event, data) => {
     }
 
     case "reasoning":
+      // Thinking is "working" too — the answer text hasn't started.
+      assistant.working = true;
       assistant.reasoning += data.text || "";
       break;
 
     case "delta":
+      // Answer text is streaming now: the caret takes over from the pulse.
+      assistant.working = false;
       assistant.text += data.text || "";
       break;
 
@@ -141,6 +158,9 @@ export const labelFor = (kind) =>
     sandbox: "Running code in the sandbox",
     todo: "Updating the todo list",
     clock: "Checking the date & time",
+    make_artifact: "Creating a file",
+    edit_artifact: "Editing a file",
+    read_artifact: "Reading a file",
   })[kind] || kind;
 
 // --- the turn consumer: one cursor, three transports -------------------------

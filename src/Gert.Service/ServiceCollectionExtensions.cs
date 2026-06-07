@@ -103,7 +103,8 @@ public static class ServiceCollectionExtensions
     /// <see cref="ITool.Id"/> of each registered tool. Keep in sync with
     /// <see cref="AddTools"/>.
     /// </summary>
-    private static readonly string[] BuiltInToolIds = ["rag", "search", "sandbox", "todo", "clock"];
+    private static readonly string[] BuiltInToolIds =
+        ["rag", "search", "sandbox", "todo", "clock", "make_artifact", "edit_artifact", "read_artifact"];
 
     /// <summary>
     /// DI key for the per-type leaf <see cref="ITextExtractor"/>s the
@@ -130,7 +131,12 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ITool, SandboxTool>();
         services.AddScoped<ITool, TodoTool>();
         services.AddScoped<ITool, ClockTool>();
-        // ClockTool reads time only through TimeProvider, so tests pin the instant.
+        // The canvas artifact suite (make/edit/read) — model-driven file creation
+        // and in-place iteration; each is ctor-injected with IChatRepository.
+        services.AddScoped<ITool, MakeArtifactTool>();
+        services.AddScoped<ITool, EditArtifactTool>();
+        services.AddScoped<ITool, ReadArtifactTool>();
+        // ClockTool/MakeArtifactTool read time only through TimeProvider, so tests pin the instant.
         services.TryAddSingleton(TimeProvider.System);
     }
 

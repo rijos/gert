@@ -12,9 +12,7 @@ import { component } from "../../lib/component.js";
 import { renderMarkdown } from "../../lib/markdown.js";
 import { Icon } from "../../icons/icons.js";
 import { ToolCard } from "./tool-card.js";
-import * as artifacts from "../../state/artifacts.js";
 import * as auth from "../../state/auth.js";
-import * as ui from "../../state/ui.js";
 
 const { div, span, a, button, img } = van.tags;
 
@@ -24,6 +22,17 @@ export const Citation = ({ ordinal, label } = {}) =>
 
 // streaming typewriter caret
 const Caret = () => span({ class: "caret" });
+
+// "working" pulse — the busy indicator while the turn is live but no answer text
+// has begun yet: the pre-first-token wait, reasoning, and tool execution between
+// rounds. Once answer text streams, the caret takes over (see the body render).
+const Working = () =>
+  span(
+    { class: "working", role: "status", "aria-label": "Working" },
+    span({ class: "wdot" }),
+    span({ class: "wdot" }),
+    span({ class: "wdot" }),
+  );
 
 // --- thinking block (collapsible, mirrors the sources card) ------------------
 // Collapsed by default; the header appears the moment reasoning text arrives
@@ -191,25 +200,6 @@ const decorateCodeBlocks = (body) => {
   }
 };
 
-// Dress the renderer's bare artifact-chip placeholders (a named fence collapsed
-// out of the bubble): file icon + name + hint, click opens the canvas tab. The
-// artifact lookup is LAZY (at click time) because the artifact event lands
-// after the deltas that drew the chip.
-const decorateArtifactChips = (body, streaming) => {
-  for (const chip of body.querySelectorAll(".artifact-chip")) {
-    const name = chip.dataset.name;
-    chip.replaceChildren(
-      Icon("file", { size: 13, strokeWidth: 2 }),
-      span({ class: "ac-name" }, name),
-      span({ class: "ac-hint" }, streaming ? "writing…" : "open in canvas"),
-    );
-    chip.onclick = () => {
-      const a = artifacts.artifacts.find((x) => x.name === name);
-      if (a) ui.openArtifact(a.id);
-    };
-  }
-};
-
 // Replace [n] markers in text nodes with Citation chips when a matching
 // citation ordinal exists. Walks only text nodes, so it never re-parses HTML.
 const injectCitations = (root, citations) => {
@@ -312,6 +302,14 @@ export const Message = component({
 
     .caret{display:inline-block; width:8px; height:16px; background:var(--coral); margin-left:2px; vertical-align:-2px; animation:blink 1.05s steps(2,start) infinite; border-radius:1px;}
 
+    /* "working" pulse: three breathing dots while the turn is live before any
+       answer text (waiting / thinking / tool execution between rounds) */
+    .working{display:inline-flex; gap:5px; align-items:center; height:18px;}
+    .working .wdot{width:6px; height:6px; border-radius:50%; background:var(--coral); opacity:.3; animation:wpulse 1.1s ease-in-out infinite;}
+    .working .wdot:nth-child(2){animation-delay:.16s;}
+    .working .wdot:nth-child(3){animation-delay:.32s;}
+    @keyframes wpulse{0%,80%,100%{opacity:.28; transform:scale(.8);} 40%{opacity:1; transform:scale(1);}}
+
     /* user-stopped turn: quiet meta line under the partial text */
     .stopped{margin-top:8px; font-size:12px; color:var(--ink-3); font-style:italic;}
 
@@ -390,8 +388,10 @@ export const Message = component({
         body.append(renderMarkdown(m.text));
         injectCitations(body, m.citations);
         decorateCodeBlocks(body);
-        decorateArtifactChips(body, m.streaming);
-        if (m.streaming) body.append(Caret());
+        // Live turn: the busy pulse shows whenever the model is working —
+        // thinking, running tools, or waiting between rounds — and the caret
+        // takes over only while answer text is actively streaming.
+        if (m.streaming) body.append(m.working ? Working() : Caret());
         return body;
       },
       // user-stopped marker (server-confirmed `cancelled` terminal)

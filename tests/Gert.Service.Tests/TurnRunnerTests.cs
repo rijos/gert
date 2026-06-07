@@ -353,47 +353,67 @@ public sealed class TurnRunnerTests
     }
 
     [Fact]
-    public async Task Named_fence_in_the_final_content_persists_and_emits_an_artifact()
+    public async Task A_tool_that_returns_an_artifact_emits_it_after_the_tool_result()
     {
-        var inserted = new List<Artifact>();
-        _repo.InsertArtifactAsync(Arg.Any<Artifact>(), Arg.Any<CancellationToken>())
-            .Returns(Task.CompletedTask)
-            .AndDoes(ci => inserted.Add(ci.Arg<Artifact>()));
+        // Canvas artifacts come from the make/edit tools now: a tool surfaces the
+        // artifact on its result and the runner emits the ArtifactEvent (the tool
+        // already persisted it). The frontend upserts by id, so the same id from a
+        // later edit updates the tab in place.
+        var artifact = new Artifact
+        {
+            Id = "art-9",
+            ConversationId = Conv,
+            MessageId = AssistantId,
+            Kind = ArtifactKind.Html,
+            Name = "demo.html",
+            Language = "html",
+            Content = "<h1>Demo</h1>",
+            Version = 1,
+            CreatedAt = DateTimeOffset.UtcNow,
+        };
+        var tool = new ArtifactStubTool(artifact);
 
-        await NewRunner(new ArtifactModel()).RunAsync(NewJob("make me a demo page"));
+        await NewRunner(new TextThenToolModel(), [tool]).RunAsync(NewJob("make me a demo page", [tool]));
 
-        // Persisted with full provenance…
-        var row = inserted.Should().ContainSingle().Subject;
-        row.ConversationId.Should().Be(Conv);
-        row.MessageId.Should().Be(AssistantId);
-        row.Kind.Should().Be(ArtifactKind.Html);
-        row.Name.Should().Be("demo.html");
-        row.Content.Should().Be("<h1>Demo</h1>");
-
-        // …and emitted AFTER the deltas, BEFORE message_end (the live canvas tab).
-        var types = Events.Select(e => e.GetType().Name).ToList();
         var artifactEvent = Events.OfType<ArtifactEvent>().Single();
-        artifactEvent.Id.Should().Be(row.Id);
+        artifactEvent.Id.Should().Be("art-9");
         artifactEvent.Kind.Should().Be(ArtifactKind.Html);
         artifactEvent.Name.Should().Be("demo.html");
         artifactEvent.Content.Should().Be("<h1>Demo</h1>");
+
+        // Emitted right after the tool_result that produced it, before message_end.
+        var types = Events.Select(e => e.GetType().Name).ToList();
         types.IndexOf(nameof(ArtifactEvent))
-            .Should().BeGreaterThan(types.LastIndexOf(nameof(DeltaEvent)))
+            .Should().BeGreaterThan(types.IndexOf(nameof(ToolResultEvent)))
             .And.BeLessThan(types.IndexOf(nameof(MessageEndEvent)));
     }
 
     [Fact]
-    public async Task Plain_code_fences_produce_no_artifact()
+    public async Task A_plain_text_turn_with_code_fences_produces_no_artifact()
     {
-        var inserted = new List<Artifact>();
-        _repo.InsertArtifactAsync(Arg.Any<Artifact>(), Arg.Any<CancellationToken>())
-            .Returns(Task.CompletedTask)
-            .AndDoes(ci => inserted.Add(ci.Arg<Artifact>()));
-
+        // Fenced code in the reply is just inline code — only the tools make artifacts.
         await NewRunner(new InlineCodeModel()).RunAsync(NewJob("show me some code"));
 
-        inserted.Should().BeEmpty();
         Events.Should().NotContain(e => e is ArtifactEvent);
+    }
+
+    [Fact]
+    public async Task A_streamed_tool_name_announces_a_running_card_before_the_call_completes()
+    {
+        var stub = new StubTool();
+        await NewRunner(new AnnouncingToolModel(), [stub]).RunAsync(NewJob("go", [stub]));
+
+        // The live-intent announce (name only, mid-stream) and the end-of-round
+        // running event (now with args) share the call id — two Running tool_call
+        // events for one call; the UI dedupes by id into a single card.
+        var calls = Events.OfType<ToolCallEvent>().Where(e => e.Id == "call_x").ToList();
+        calls.Should().HaveCount(2);
+        calls.Should().OnlyContain(e => e.Status == ToolCallStatus.Running);
+
+        // The announce precedes the tool_result (it was emitted while streaming).
+        var types = Events.Select(e => e.GetType().Name).ToList();
+        types.IndexOf(nameof(ToolCallEvent))
+            .Should().BeLessThan(types.IndexOf(nameof(ToolResultEvent)));
     }
 
     [Fact]
@@ -943,18 +963,52 @@ public sealed class TurnRunnerTests
         }
     }
 
-    /// <summary>Streams a named html fence split across deltas (the artifact path).</summary>
-    private sealed class ArtifactModel : IChatModelClient
+    /// <summary>
+    /// Round 1: a text delta, then a tool-call NAME announce (live intent), then the
+    /// completed call — exercising the early ToolCallStart path. Round 2: answers.
+    /// </summary>
+    private sealed class AnnouncingToolModel : IChatModelClient
     {
         public async IAsyncEnumerable<ChatModelChunk> StreamAsync(
             ChatCompletionRequest request,
             [EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
-            yield return new ChatModelChunk { TextDelta = "Here you go:\n\n```html " };
-            yield return new ChatModelChunk { TextDelta = "name=demo.html\n<h1>Demo</h1>\n```" };
-            yield return new ChatModelChunk { TextDelta = "\n\nOpened in the canvas." };
+            if (!request.Messages.Any(m => m.Role == "tool"))
+            {
+                yield return new ChatModelChunk { TextDelta = "working " };
+                yield return new ChatModelChunk
+                {
+                    ToolCallStart = new ToolCallStart { Id = "call_x", Name = "stub_tool" },
+                };
+                yield return new ChatModelChunk
+                {
+                    ToolCall = new ChatModelToolCall { Id = "call_x", Name = "stub_tool", ArgumentsJson = "{}" },
+                };
+            }
+            else
+            {
+                yield return new ChatModelChunk { TextDelta = "done" };
+            }
+
             await Task.Yield();
         }
+    }
+
+    /// <summary>A stub tool that surfaces an artifact on its result (the make/edit path).</summary>
+    private sealed class ArtifactStubTool(Artifact artifact) : ITool
+    {
+        public string Id => "stub";
+
+        public string Name => "stub_tool";
+
+        public string Description => "makes an artifact";
+
+        public string ParametersSchema => """{"type":"object"}""";
+
+        public Task<ToolResult> ExecuteAsync(
+            ToolInvocation invocation,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(new ToolResult { Success = true, ResultJson = "{}", Artifacts = [artifact] });
     }
 
     /// <summary>Streams an ordinary (unnamed) code fence — must stay inline.</summary>

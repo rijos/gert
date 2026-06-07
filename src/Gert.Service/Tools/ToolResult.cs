@@ -26,6 +26,14 @@ public sealed record ToolResult
     /// <summary>The todo list for the todo card (the <c>set_todos</c> tool).</summary>
     public IReadOnlyList<TodoItem>? Todos { get; init; }
 
+    /// <summary>
+    /// Artifacts this call created or updated (the make/edit canvas tools). The
+    /// orchestrator persists nothing here — the tool already did — it only emits
+    /// one <c>ArtifactEvent</c> per entry so the live canvas opens/updates. An
+    /// entry re-using an existing artifact <c>Id</c> updates that tab in place.
+    /// </summary>
+    public IReadOnlyList<Artifact>? Artifacts { get; init; }
+
     /// <summary>Error message when <see cref="Success"/> is false.</summary>
     public string? Error { get; init; }
 }

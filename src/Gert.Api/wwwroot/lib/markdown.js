@@ -108,29 +108,22 @@ export const renderMarkdown = (src) => {
       continue;
     }
 
-    // fenced code (``` or ```lang or ```lang name=file)
-    if (/^```/.test(line)) {
-      const info = line.slice(3).trim();
+    // fenced code (``` or ```lang or ```lang name=file). The fence is THREE OR
+    // MORE backticks (CommonMark); the close must repeat at least as many, so a
+    // fenced block can carry its own ``` blocks (a Markdown snippet with code in
+    // it) without the first inner fence ending it early.
+    const fence = /^(`{3,})/.exec(line);
+    if (fence) {
+      const ticks = fence[1].length;
+      const info = line.slice(ticks).trim();
+      const closes = (l) => new RegExp("^`{" + ticks + ",}[ \\t]*$").test(l);
       const buf = [];
       i++;
-      while (i < lines.length && !/^```/.test(lines[i])) buf.push(lines[i++]);
+      while (i < lines.length && !closes(lines[i])) buf.push(lines[i++]);
       i++; // closing fence
 
-      // A NAMED fence of an artifact kind is the canvas opt-in
-      // (chat-and-tools.md § artifacts) — its body lives in the canvas tab, so
-      // inline it collapses to a compact chip placeholder. The renderer stays
-      // pure: message.js decorates the chip (icon, hint, click-to-open).
-      const named = /^([A-Za-z0-9_+-]+)[ \t]+name=([^\s`]+)$/.exec(info);
-      if (named && /^(md|markdown|html|htm|svg|py|python|cs|csharp|cpp|c\+\+|cc|cxx|js|javascript|rs|rust)$/i.test(named[1])) {
-        const chip = document.createElement("button");
-        chip.type = "button";
-        chip.className = "artifact-chip";
-        chip.dataset.name = named[2];
-        chip.textContent = named[2];
-        frag.appendChild(chip);
-        continue;
-      }
-
+      // Whole files now reach the canvas through the make_artifact tool, not
+      // named fences — so every fence here renders inline as a code block.
       const pre = document.createElement("pre");
       const code = document.createElement("code");
       code.append(...highlight(buf.join("\n"), info.split(/[ \t]/, 1)[0]));
