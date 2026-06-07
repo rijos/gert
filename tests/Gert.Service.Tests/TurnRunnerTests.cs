@@ -10,6 +10,7 @@ using Gert.Database;
 using Gert.Service.External;
 using Gert.Service.Tools;
 using Gert.Testing.Fakes;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
 using Xunit;
@@ -133,7 +134,8 @@ public sealed class TurnRunnerTests
         new(_chatProvider, model, _bus, tools ?? [], Options.Create(options ?? new TurnOptions()),
             clock ?? TimeProvider.System,
             cancellation ?? new TurnCancellation(
-                Options.Create(options ?? new TurnOptions()), clock ?? TimeProvider.System));
+                Options.Create(options ?? new TurnOptions()), clock ?? TimeProvider.System),
+            NullLogger<TurnRunner>.Instance);
 
     private static TurnJob NewJob(
         string userContent,
@@ -453,7 +455,8 @@ public sealed class TurnRunnerTests
         // tools advertised, and when even that round emits tool calls it stops
         // calling upstream — before this brake the loop spun against vLLM until
         // MaxTurnDuration, 409-blocking the conversation the whole time.
-        await NewRunner(model, [stub]).RunAsync(NewJob("loop forever", [stub]));
+        await NewRunner(model, [stub], new TurnOptions { MaxToolRounds = 5 })
+            .RunAsync(NewJob("loop forever", [stub]));
 
         // 5 executed rounds + 1 refused round + 1 wind-down round = 7 upstream
         // calls, hard stop.
@@ -472,7 +475,8 @@ public sealed class TurnRunnerTests
         var stub = new StubTool();
         var model = new AlwaysToolCallingModel();
 
-        await NewRunner(model, [stub]).RunAsync(NewJob("loop forever", [stub]));
+        await NewRunner(model, [stub], new TurnOptions { MaxToolRounds = 5 })
+            .RunAsync(NewJob("loop forever", [stub]));
 
         // The refused round still answers each call in the upstream history —
         // ONE assistant message carrying the round's narration + tool calls,

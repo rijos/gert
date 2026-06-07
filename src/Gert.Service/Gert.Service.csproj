@@ -17,6 +17,10 @@
          configuration BINDING stays in the host (it knows the config system). -->
     <PackageReference Include="Microsoft.Extensions.Options"
                       Version="$(MicrosoftExtensionsOptionsVersion)" />
+    <!-- ILogger<T> for the turn pipeline's operational logging (round counts, the
+         tool-budget brake). Abstractions only — each host wires the provider. -->
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions"
+                      Version="$(MicrosoftExtensionsLoggingVersion)" />
     <!-- U6: the fail-closed validation provider + per-DTO validators (principle #6, security F6). -->
     <PackageReference Include="FluentValidation"
                       Version="$(FluentValidationVersion)" />

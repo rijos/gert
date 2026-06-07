@@ -15,6 +15,19 @@ public sealed class TurnOptions
     public TimeSpan MaxTurnDuration { get; set; } = TimeSpan.FromMinutes(5);
 
     /// <summary>
+    /// Hard cap on tool ROUNDS per turn. A round is one upstream completion
+    /// request that comes back with tool calls — executing them and re-prompting
+    /// starts the next round, so every round costs a full vLLM completion (one
+    /// upstream POST). The todo-driven flow consumes a round per
+    /// <c>set_todos</c> update, so the default leaves room for a long checklist
+    /// plus retrieval in one turn; <see cref="MaxTurnDuration"/> is the
+    /// wall-clock backstop either way. Past the cap the runner refuses further
+    /// calls with synthetic error results and winds the turn down
+    /// (see <c>TurnRunner</c>).
+    /// </summary>
+    public int MaxToolRounds { get; set; } = 16;
+
+    /// <summary>
     /// Delta coalescing window: model chunks are buffered and emitted as ONE
     /// delta event (one seq, one durable row, one publish) once this much time
     /// has passed since the last flush. <see cref="TimeSpan.Zero"/> disables

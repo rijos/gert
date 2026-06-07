@@ -138,6 +138,18 @@
       <tr><td><code>WallClockSeconds</code></td><td><code>30</code></td><td>Kill timeout backstopping <code>RLIMIT_CPU</code>.</td></tr>
     </table></div>
 
+    <h2>Gert:Turn — the detached turn pipeline</h2>
+    <p>A <strong>round</strong> is one upstream completion request that comes back with
+    tool calls — executing them and re-prompting starts the next round, so every round
+    costs a full vLLM completion.</p>
+    <div class="table-wrap"><table>
+      <tr><th>Key</th><th>Default</th><th>Notes</th></tr>
+      <tr><td><code>MaxTurnDuration</code></td><td><code>00:05:00</code></td><td>Hard wall-clock cap on one turn (model rounds + tools). Doubles as the orphan horizon for abandoned streaming rows.</td></tr>
+      <tr><td><code>MaxToolRounds</code></td><td><code>16</code></td><td>Hard cap on tool rounds per turn. The todo-driven flow consumes a round per <code>set_todos</code> update — size this to your longest expected checklist. Past the cap the runner refuses further calls and winds the turn down.</td></tr>
+      <tr><td><code>DeltaFlushInterval</code></td><td><code>150ms</code></td><td>Delta coalescing window — buffered chunks emit as one event per window.</td></tr>
+      <tr><td><code>DeltaFlushMaxChars</code></td><td><code>512</code></td><td>Size backstop for the coalescing window.</td></tr>
+    </table></div>
+
     <h2>Dev &amp; test modes</h2>
     <p>Not for production — listed so a deployment never enables them by accident.</p>
     <div class="table-wrap"><table>

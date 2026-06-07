@@ -206,7 +206,22 @@ rlimit-capped helper process.
 
 ---
 
-## 9. Dev & test modes
+## 9. `Gert:Turn` — the detached turn pipeline
+
+Binds to `TurnOptions` (`src/Gert.Service/Chat/TurnOptions.cs`). A **round** is one
+upstream completion request that comes back with tool calls — executing them and
+re-prompting starts the next round, so every round costs a full vLLM completion.
+
+| Key | Default | Notes |
+|-----|---------|-------|
+| `MaxTurnDuration` | `00:05:00` | Hard wall-clock cap on one turn (model rounds + tools). Doubles as the orphan horizon: a `streaming` row older than this reads as `error`. |
+| `MaxToolRounds` | `16` | Hard cap on tool rounds per turn. The todo-driven flow consumes a round per `set_todos` update, so size this to your longest expected checklist. Past the cap the runner refuses further calls with synthetic error results, winds down in one final round, and logs a warning. |
+| `DeltaFlushInterval` | `00:00:00.150` | Delta coalescing window — buffered model chunks emit as one event per window. `0` disables coalescing. |
+| `DeltaFlushMaxChars` | `512` | Size backstop for the coalescing window. |
+
+---
+
+## 10. Dev & test modes
 
 Not for production — listed here so a deployment never enables them by accident.
 

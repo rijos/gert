@@ -9,6 +9,7 @@ using Gert.Service.Chat.Bus;
 using Gert.Database;
 using Gert.Service.External;
 using Gert.Service.Tools;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace Gert.Service.Chat;
@@ -40,9 +41,6 @@ namespace Gert.Service.Chat;
 /// </summary>
 public sealed class TurnRunner : ITurnRunner
 {
-    /// <summary>Hard cap on tool rounds per turn, to bound a runaway tool loop.</summary>
-    private const int MaxToolRounds = 5;
-
     private readonly IChatDatabaseProvider _databases;
     private readonly IChatModelClient _model;
     private readonly IConversationBus _bus;
@@ -50,6 +48,7 @@ public sealed class TurnRunner : ITurnRunner
     private readonly TurnOptions _options;
     private readonly TimeProvider _clock;
     private readonly ITurnCancellation _cancellation;
+    private readonly ILogger<TurnRunner> _logger;
 
     public TurnRunner(
         IChatDatabaseProvider databases,
@@ -58,7 +57,8 @@ public sealed class TurnRunner : ITurnRunner
         IEnumerable<ITool> tools,
         IOptions<TurnOptions> options,
         TimeProvider clock,
-        ITurnCancellation cancellation)
+        ITurnCancellation cancellation,
+        ILogger<TurnRunner> logger)
     {
         _databases = databases ?? throw new ArgumentNullException(nameof(databases));
         _model = model ?? throw new ArgumentNullException(nameof(model));
@@ -68,6 +68,7 @@ public sealed class TurnRunner : ITurnRunner
         _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
         _clock = clock ?? throw new ArgumentNullException(nameof(clock));
         _cancellation = cancellation ?? throw new ArgumentNullException(nameof(cancellation));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
     /// <inheritdoc />
@@ -288,19 +289,29 @@ public sealed class TurnRunner : ITurnRunner
                 // and finalise with what already streamed: before this brake the
                 // loop spun against vLLM until MaxTurnDuration, 409-blocking the
                 // conversation the whole time.
-                var budgetExhausted = round >= MaxToolRounds;
+                var budgetExhausted = round >= _options.MaxToolRounds;
                 if (budgetExhausted)
                 {
                     if (toolSpecs.Count == 0)
                     {
+                        _logger.LogWarning(
+                            "Wind-down round still produced {CallCount} tool call(s) for conversation {ConversationId} — stopping upstream calls and finalising with the streamed content.",
+                            toolCalls.Count, job.ConversationId);
                         break;
                     }
 
+                    _logger.LogWarning(
+                        "Tool budget exhausted after {MaxToolRounds} rounds for conversation {ConversationId} — refusing {CallCount} call(s) and winding the turn down.",
+                        _options.MaxToolRounds, job.ConversationId, toolCalls.Count);
                     toolSpecs = [];
                 }
                 else
                 {
                     round++;
+                    _logger.LogDebug(
+                        "Tool round {Round}/{MaxToolRounds} for conversation {ConversationId}: {CallCount} call(s) ({ToolNames}).",
+                        round, _options.MaxToolRounds, job.ConversationId, toolCalls.Count,
+                        string.Join(", ", toolCalls.Select(c => c.Name)));
                 }
 
                 // The assistant turn that asked for the tools must precede their
@@ -332,7 +343,7 @@ public sealed class TurnRunner : ITurnRunner
                     var outcome = budgetExhausted
                         ? ToolOutcome.Failure(
                             ResolveKind(call.Name),
-                            $"tool budget exhausted ({MaxToolRounds} rounds) — no further tool calls will run this turn; answer with what you already have")
+                            $"tool budget exhausted ({_options.MaxToolRounds} rounds) — no further tool calls will run this turn; answer with what you already have")
                         : await ExecuteToolAsync(job, call, token).ConfigureAwait(false);
 
                     await EmitAsync(repo, topic, new ToolResultEvent
