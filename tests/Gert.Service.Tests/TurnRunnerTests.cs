@@ -443,6 +443,56 @@ public sealed class TurnRunnerTests
     }
 
     [Fact]
+    public async Task Runaway_tool_loop_is_bounded_and_finalizes_complete()
+    {
+        var stub = new StubTool();
+        var model = new AlwaysToolCallingModel();
+
+        // A model that requests a tool on EVERY round, no matter what comes back.
+        // Past the cap the runner refuses the calls, winds down once with no
+        // tools advertised, and when even that round emits tool calls it stops
+        // calling upstream — before this brake the loop spun against vLLM until
+        // MaxTurnDuration, 409-blocking the conversation the whole time.
+        await NewRunner(model, [stub]).RunAsync(NewJob("loop forever", [stub]));
+
+        // 5 executed rounds + 1 refused round + 1 wind-down round = 7 upstream
+        // calls, hard stop.
+        model.Tools.Should().HaveCount(7);
+        model.Tools.Take(6).Should().OnlyContain(t => t.Count == 1,
+            "executed and refused rounds still advertise the tool");
+        model.Tools[6].Should().BeEmpty("the wind-down round must not advertise tools");
+
+        var final = _finalized.Single();
+        final.Status.Should().Be(MessageStatus.Complete);
+    }
+
+    [Fact]
+    public async Task Capped_round_refuses_calls_with_synthetic_results_keeping_the_wire_format()
+    {
+        var stub = new StubTool();
+        var model = new AlwaysToolCallingModel();
+
+        await NewRunner(model, [stub]).RunAsync(NewJob("loop forever", [stub]));
+
+        // The refused round still answers each call in the upstream history —
+        // ONE assistant message carrying the round's narration + tool calls,
+        // then a budget-exhausted tool result per call — so the wind-down
+        // request stays wire-format valid and the model sees its own words.
+        var windDown = model.Requests[6];
+        var assistant = windDown.Last(m => m.Role == "assistant");
+        assistant.ToolCalls.Should().ContainSingle();
+        assistant.Content.Should().Contain("round 6");
+
+        var result = windDown.Last(m => m.Role == "tool");
+        result.ToolCallId.Should().Be(assistant.ToolCalls![0].Id);
+        result.Content.Should().Contain("tool budget exhausted");
+
+        // Five executed rows persisted done; the refused round's row is an error.
+        _toolRows.Count(r => r.Status == ToolCallStatus.Done).Should().Be(5);
+        _toolRows.Count(r => r.Status == ToolCallStatus.Error).Should().Be(1);
+    }
+
+    [Fact]
     public async Task Deltas_within_the_flush_window_coalesce_into_one_event()
     {
         // A clock that never advances: neither the time nor (with the default
@@ -759,6 +809,37 @@ public sealed class TurnRunnerTests
                 yield return new ChatModelChunk { TextDelta = " And file two." };
             }
 
+            await Task.Yield();
+        }
+    }
+
+    /// <summary>
+    /// Requests a tool on EVERY round, no matter what came back — the runaway
+    /// tool loop. Captures each request's messages and advertised tools.
+    /// </summary>
+    private sealed class AlwaysToolCallingModel : IChatModelClient
+    {
+        public List<List<ChatModelMessage>> Requests { get; } = [];
+
+        public List<IReadOnlyList<ChatToolSpec>> Tools { get; } = [];
+
+        public async IAsyncEnumerable<ChatModelChunk> StreamAsync(
+            ChatCompletionRequest request,
+            [EnumeratorCancellation] CancellationToken cancellationToken = default)
+        {
+            Requests.Add(request.Messages.ToList());
+            Tools.Add(request.Tools);
+
+            yield return new ChatModelChunk { TextDelta = $"round {Requests.Count} " };
+            yield return new ChatModelChunk
+            {
+                ToolCall = new ChatModelToolCall
+                {
+                    Id = $"call_{Requests.Count}",
+                    Name = "stub_tool",
+                    ArgumentsJson = "{}",
+                },
+            };
             await Task.Yield();
         }
     }

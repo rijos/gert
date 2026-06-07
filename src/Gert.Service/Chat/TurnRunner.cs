@@ -273,18 +273,35 @@ public sealed class TurnRunner : ITurnRunner
                     break;
                 }
 
-                // Round cap: stop offering tools and let the model answer with what it
-                // has. (Clearing the tools array re-renders the templated system/tools
-                // region upstream and so invalidates the vLLM prefix cache for this
-                // final round — acceptable for a runaway loop; tool_choice:"none"
-                // would preserve the prefix if vLLM support is ever confirmed.)
-                if (round >= MaxToolRounds)
+                // Round cap: past the budget the round's calls are NOT executed —
+                // each is refused with a synthetic error result instead (the wire
+                // format requires a result per call, and dropping the round whole
+                // would also drop the narration the model must see next round),
+                // tools stop being advertised, and the model gets ONE wind-down
+                // round to answer with what it has. (Clearing the tools array
+                // re-renders the templated system/tools region upstream and so
+                // invalidates the vLLM prefix cache for this final round —
+                // acceptable for a runaway loop; tool_choice:"none" would preserve
+                // the prefix if vLLM support is ever confirmed.) If the wind-down
+                // round STILL emits tool calls — a tool-heavy history invites
+                // imitation even with nothing advertised — stop calling upstream
+                // and finalise with what already streamed: before this brake the
+                // loop spun against vLLM until MaxTurnDuration, 409-blocking the
+                // conversation the whole time.
+                var budgetExhausted = round >= MaxToolRounds;
+                if (budgetExhausted)
                 {
-                    toolSpecs = [];
-                    continue;
-                }
+                    if (toolSpecs.Count == 0)
+                    {
+                        break;
+                    }
 
-                round++;
+                    toolSpecs = [];
+                }
+                else
+                {
+                    round++;
+                }
 
                 // The assistant turn that asked for the tools must precede their
                 // results in the upstream history: ONE assistant message carrying the
@@ -312,7 +329,11 @@ public sealed class TurnRunner : ITurnRunner
                         Request = ParseArgs(call.ArgumentsJson),
                     }, token).ConfigureAwait(false);
 
-                    var outcome = await ExecuteToolAsync(job, call, token).ConfigureAwait(false);
+                    var outcome = budgetExhausted
+                        ? ToolOutcome.Failure(
+                            ResolveKind(call.Name),
+                            $"tool budget exhausted ({MaxToolRounds} rounds) — no further tool calls will run this turn; answer with what you already have")
+                        : await ExecuteToolAsync(job, call, token).ConfigureAwait(false);
 
                     await EmitAsync(repo, topic, new ToolResultEvent
                     {
