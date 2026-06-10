@@ -9,7 +9,7 @@
 | Validation | **FluentValidation** (`IValidator<T>`) behind `IValidationProvider` | Validators run in the service layer, so the Console path is validated identically to the API. |
 | SQLite | `Microsoft.Data.Sqlite` + `SQLitePCLRaw.bundle_e_sqlite3` | Extension loading for sqlite-vec; WAL. |
 | Vector | **sqlite-vec** (`vec0`) + **FTS5** | Per-user KNN + lexical for hybrid search. |
-| Data access | **Dapper** (raw SQL) behind `IChatRepository` / `IRagRepository` (+ `IDatabaseProvider`) | Hand-written SQL suits `vec0`/FTS virtual tables. The **repository interfaces are the engine-portability seam** — the service layer never sees SQL, so another engine drops in as a new project (see [Engine portability](#engine-portability)). |
+| Data access | **Dapper** (raw SQL) behind `IUserRepository` / `IChatRepository` / `IRagRepository`, opened via the per-database providers (`IUserDatabaseProvider` / `IChatDatabaseProvider` / `IRagDatabaseProvider`) — contracts in `Gert.Database` | Hand-written SQL suits `vec0`/FTS virtual tables. The **repository interfaces are the engine-portability seam** — the service layer never sees SQL, so another engine drops in as a new project (see [Engine portability](#engine-portability)). |
 | Model API | OpenAI-compatible client → **vLLM** | Streaming + function calling out of the box. Lives in **`Gert.External`** behind `IChatModelClient`/`IEmbeddingClient`. |
 | HTTP | `IHttpClientFactory` + **Polly** | vLLM / SearXNG calls with resilience (in `Gert.External`); the SearXNG fetch is SSRF-guarded ([security F5](security.md#3-findings--remediations)). |
 | Background work | `System.Threading.Channels` + `BackgroundService` (Gert.Api) | Ingestion queue — an **Api hosting** concern wrapping `IIngestionService`; the Console ingests inline. |
@@ -21,7 +21,7 @@
 
 The codebase is a **host-agnostic service layer** with two hosts on top of it:
 
-- **`Gert.Service`** holds all business logic and references nothing host-specific — no `HttpContext`, no JWT, no SSE. It depends only on abstractions: `IUserContext` (who is the current user + their tool entitlement), the repository interfaces `IChatRepository` / `IRagRepository` and `IDatabaseProvider` (this user's connections + migrations), and the tool/validation interfaces.
+- **`Gert.Service`** holds all business logic and references nothing host-specific — no `HttpContext`, no JWT, no SSE. It depends only on abstractions: `IUserContext` (who is the current user + their tool entitlement), the persistence contracts in **`Gert.Database`** (the per-database providers `IUserDatabaseProvider` / `IChatDatabaseProvider` / `IRagDatabaseProvider` and their repositories — this user's connections + migrations), and the tool/validation interfaces.
 - **`Gert.Api`** drives the services over HTTP (controllers, JWT auth, SSE, the ingestion `BackgroundService`, SPA hosting).
 - **`Gert.Console`** drives the *same* services directly — a single fixed user (`LocalUserContext`, tools = `"*"`), ingestion run inline. Bypasses the entire API/controller layer; ideal for isolated testing and admin one-offs.
 
@@ -48,20 +48,21 @@ Arrows are project references. Everything points inward to `Gert.Service` → `G
             └──────────────────────┴──────────────────────┴────────────────────┘
                                     │  all ref ▼
   ── core ────────────────────────────────────────────────────────────────────
-                            Gert.Service                refs: Model only
+                            Gert.Service                refs: Model + Database (contracts)
                                     │
                                     ▼
-  ── model ───────────────────────────────────────────────────────────────────
-                            Gert.Model                  no dependencies
+  ── contracts / model ───────────────────────────────────────────────────────
+              Gert.Database (persistence contracts)      refs: Model only
+                            Gert.Model                   no dependencies
 ```
 
-The compiler enforces the inward direction: `Gert.Service` cannot reference `Gert.Api`, `Gert.Authentication`, `Gert.External`, or any `Gert.Database.*` — so "the Console must not need the API" is structural, not a convention. **`Gert.External`** is the outside-world seam, exactly parallel to the database seam: the service layer talks only to the ports (`IChatModelClient`, `IEmbeddingClient`, `IWebSearch`, `ISandbox`), and the real vLLM/SearXNG/gVisor clients live behind them — so they can be swapped (or pointed at mock upstreams for tests, see [testing](testing.md#41-the-fake-external-world)) with a single DI change.
+The compiler enforces the inward direction: `Gert.Service` cannot reference `Gert.Api`, `Gert.Authentication`, `Gert.External`, or any `Gert.Database.*` **adapter** (`Gert.Database` itself is the engine-neutral contracts kernel — providers, repositories, the gate refusal — and is the one persistence reference the service layer holds) — so "the Console must not need the API" is structural, not a convention. **`Gert.External`** is the outside-world seam, exactly parallel to the database seam: the service layer talks only to the ports (`IChatModelClient`, `IEmbeddingClient`, `IWebSearch`, `ISandbox`), and the real vLLM/SearXNG/gVisor clients live behind them — so they can be swapped (or pointed at mock upstreams for tests, see [testing](testing.md#41-the-fake-external-world)) with a single DI change.
 
 ## Engine portability
 
 The persistence seam is the **repository interfaces** (`IChatRepository`, `IRagRepository`), not a generic connection wrapper — because the RAG SQL is engine-specific and cannot be abstracted into shared SQL. The service layer talks only to those interfaces, so swapping engines means adding a new `Gert.Database.*` project and changing one DI registration; `Gert.Service` is untouched.
 
-Persistence is split along the storage/database line. **`Gert.Storage`** is the storage-backend layer: `IObjectStore` is the single seam for *every non-database byte* under a user tree — uploads, memory bodies, and the JSON config sidecars alike — with `LocalObjectStore` (local FS) today and an S3/Azure-Blob backend as a sibling `Gert.Storage.*` project + one DI swap tomorrow. `ObjectStoreUserStore` implements `IUserStore` purely over that seam, so it never changes when the backend does. **`Gert.Database`** holds what is genuinely database-adapter-shared — today the provisioning-gate refusal (`UnauthorizedDatabaseIdentityException`); `SqliteDatabasePaths` (local db-file paths) lives in `Gert.Database.Sqlite` because only a file-backed engine has paths at all (Postgres has a connection string), and key derivation lives in `Gert.Service.Storage.StorageKeys` (core policy, not adapter detail). Database files themselves (`chat.db`/`rag.db`) are *not* objects — engines need real local file handles — so they stay with `IDatabaseProvider`, and a remote object backend paired with SQLite is a split deployment (objects remote, dbs local); the full remote-storage payoff arrives with a server database. A future Postgres implementation (`Gert.Database.Postgres`) is therefore a **new project with its own SQL** reusing those shared layers, not a config flag:
+Persistence is split along the storage/database line. **`Gert.Storage`** is the storage-backend layer: `IObjectStore` is the seam for the genuine blobs under a user tree — uploads and memory bodies — plus the coarse scope lifecycle (`DeleteScopeAsync` = the `rm -rf`) and the admin footprint listing, with `LocalObjectStore` (local FS) today and an S3/Azure-Blob backend as a sibling `Gert.Storage.*` project + one DI swap tomorrow. `ObjectStoreUserStore` implements `IUserStore` purely over that seam, so it never changes when the backend does. (Structured user state — username, settings, the project registry — is **not** blob territory: it lives in `user.db`, [decisions §9](decisions.md#9-userdb--structured-user-state-is-a-database-not-json-sidecars).) **`Gert.Database`** is the engine-neutral contracts kernel: the per-database providers (`IUserDatabaseProvider` / `IChatDatabaseProvider` / `IRagDatabaseProvider`), the repository interfaces, and the provisioning-gate refusal (`UnauthorizedDatabaseIdentityException`); `SqliteDatabasePaths` (local db-file paths) lives in `Gert.Database.Sqlite` because only a file-backed engine has paths at all (Postgres has a connection string), and key derivation lives in `Gert.Service.Storage.StorageKeys` (core policy, not adapter detail). Database files themselves (`user.db`/`chat.db`/`rag.db`) are *not* objects — engines need real local file handles — so they stay behind the providers, and a remote object backend paired with SQLite is a split deployment (objects remote, dbs local); the full remote-storage payoff arrives with a server database. A future Postgres implementation (`Gert.Database.Postgres`) is therefore a **new project with its own SQL** reusing those shared layers, not a config flag:
 
 - `vec0 … MATCH … ORDER BY distance` → **pgvector** `<=>` / `<->` with an HNSW index; `FLOAT[1024]` → `vector(1024)`.
 - FTS5 `bm25()` → `tsvector` + `ts_rank_cd` (no native BM25 without `pg_search`/ParadeDB or `rum`), so the lexical rank and the RRF fusion are re-tuned.
@@ -76,36 +77,44 @@ Gert.sln
 ├─ Gert.Model/                # POCOs only, no deps — Conversation, Message, ToolCall,
 │                             #   Citation, Artifact, Document, Chunk, ChatEvent, DTOs
 │
-├─ Gert.Service/              # host-agnostic business logic — references Model only
+├─ Gert.Service/              # host-agnostic business logic — references Model + Database (contracts)
 │  ├─ IGertServices.cs        # aggregate hub: .Chat .Conversations .Documents .Artifacts .Admin
 │  ├─ IUserContext.cs         # current user's scope: Sub, AllowedTools (abstraction only)
-│  ├─ Chat/                   # IChatService → IAsyncEnumerable<ChatEvent>; orchestrator + tool loop
+│  ├─ Chat/                   # the detached turn pipeline: TurnPlanner, TurnRunner, queue, bus,
+│  │                          #   ConversationStreamer, MessageStatusRules, SystemPrompts
 │  ├─ Conversations/          # IConversationService
 │  ├─ Documents/              # IDocumentService
 │  ├─ Ingestion/              # IIngestionService.Ingest(doc) — pure pipeline (extract→chunk→embed→write)
-│  ├─ Tools/                  # ITool + ToolRegistry; RagTool, WebSearchTool, SandboxTool
-│  ├─ Validation/             # IValidationProvider + FluentValidation validators per model
-│  └─ Database/               # IDatabaseProvider (+ IChatRepository, IRagRepository) — the portability seam
+│  ├─ Provisioning/           # UserProvisioner — username refresh + default-project seed (user.db)
+│  ├─ Tools/                  # ITool + ToolRegistry + ITailReminder; rag/search/sandbox/todo/clock
+│  │                          #   + the canvas suite (make/edit/read artifact)
+│  └─ Validation/             # IValidationProvider + FluentValidation validators per model
 │
 ├─ Gert.Storage/              # THE storage-backend layer (local today; S3/Azure = sibling project)
 │  ├─ LocalObjectStore.cs     #   IObjectStore local backend — atomic PUTs under {DataRoot}/users
-│  ├─ ObjectStoreUserStore.cs #   IUserStore over IObjectStore — config files, lifecycle, admin scan
-│  └─ UserMeta.cs             #   the user-root meta.json sidecar record
+│  └─ ObjectStoreUserStore.cs #   IUserStore over IObjectStore — blob lifecycle + admin footprint scan
 │
-├─ Gert.Database/             # database-adapter-shared types (SQLite today, Postgres tomorrow)
+├─ Gert.Database/             # engine-neutral persistence contracts (SQLite today, Postgres tomorrow)
+│  ├─ IUserDatabaseProvider.cs / IChatDatabaseProvider.cs / IRagDatabaseProvider.cs
+│  ├─ IUserRepository.cs / IChatRepository.cs / IRagRepository.cs
 │  └─ UnauthorizedDatabaseIdentityException.cs  # the fail-closed provisioning-gate refusal
 │
 ├─ Gert.Database.Sqlite/      # SQLite impl — references Database, Service, Model (NOT Storage)
-│  ├─ SqliteDatabaseProvider.cs   # opens THIS user's chat.db/rag.db (WAL, vec0, busy_timeout)
-│  ├─ SqliteDatabasePaths.cs                 # LOCAL db-file paths — sqlite-only; Postgres has a connection string
-│  ├─ SqliteChatRepository.cs      # Dapper
-│  ├─ SqliteRagRepository.cs       # Dapper + sqlite-vec/FTS5
-│  ├─ SqliteHandleReleaser.cs      # IDatabaseHandleReleaser — drop pooled handles before local deletes
+│  ├─ SqliteUserDatabaseProvider.cs  # opens THIS user's user.db (self-migrating)
+│  ├─ SqliteChatDatabaseProvider.cs  # opens a project's chat.db (WAL, busy_timeout)
+│  ├─ SqliteRagDatabaseProvider.cs   # opens a project's rag.db (vec0 loaded)
+│  ├─ SqliteDatabasePaths.cs         # LOCAL db-file paths — sqlite-only; Postgres has a connection string
+│  ├─ SqliteUserRepository.cs        # user_meta + settings + project registry (Dapper)
+│  ├─ SqliteChatRepository.cs        # Dapper
+│  ├─ SqliteRagRepository.cs         # Dapper + sqlite-vec/FTS5
+│  ├─ SqliteMigrationRunner.cs       # PRAGMA user_version, per database
+│  ├─ SqliteHandleReleaser.cs        # IDatabaseHandleReleaser — drop pooled handles before local deletes
 │  └─ Migrations/
-│     ├─ chat/001_init.sql
+│     ├─ user/001_init.sql
+│     ├─ chat/001_init.sql … 004_attachments.sql
 │     └─ rag/001_init.sql
 │
-├─ Gert.Database.Postgres/    # (future) pgvector + tsvector impl, schema-per-user — same interfaces
+├─ Gert.Database.Postgres/    # (future — not yet in the repo) pgvector + tsvector, schema-per-user — same interfaces
 │  ├─ PgDatabaseProvider.cs        # schema-per-user; DROP SCHEMA CASCADE = delete user
 │  ├─ PgChatRepository.cs
 │  ├─ PgRagRepository.cs           # pgvector (<=>) + tsvector/ts_rank_cd
@@ -143,9 +152,14 @@ Gert.sln
 │  ├─ Gert.Service.Tests/     #   whitebox: tool loop, ingestion, tools, validation
 │  ├─ Gert.Database.Sqlite.Tests/ # repositories vs real temp SQLite (vec0 + FTS5); isolation
 │  ├─ Gert.Authentication.Tests/  # JWT claims → IUserContext; sub→key; RS256 pin
+│  ├─ Gert.External.Tests/    #   adapter units: SSRF guard, sandbox args, extractor hardening, Polly
 │  ├─ Gert.Api.Tests/         #   integration (WebApplicationFactory): SSE, auth, IDOR, admin, SPA fallback
-│  └─ Gert.Console.Tests/     #   drive the Console host with fakes; assert rendered stream
+│  ├─ Gert.Console.Tests/     #   drive the Console host with fakes; assert rendered stream
+│  ├─ Gert.Web.Minify.Tests/  #   the publish-time minifier stays ESM-safe
+│  ├─ shared/                 #   ONE source of truth for both fake layers (testing.md Appendix A)
+│  └─ web/                    #   harness.html — browser component-unit mount point
 │
 └─ tools/
+   ├─ Gert.Web.Minify/        # NUglify minify-in-place console, run on publish (ui-components §6)
    └─ smoke/                  # Python + Playwright E2E launcher (no npm) — admin+user × Chromium+Firefox
 ```

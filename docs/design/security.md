@@ -64,10 +64,7 @@ Four boundaries matter:
 
 ## 3. Findings & remediations
 
-Tracked items from the design review. **Status** is documentation state: *speced* = the control is
-now written into the owning doc; *to-build* = it must be implemented and tested.
-
-### F1 — Content-Security-Policy & security headers · **speced**
+### F1 — Content-Security-Policy & security headers
 The app renders LLM/user-authored HTML, SVG, and Markdown while holding a bearer token in the
 browser, so a strict CSP is the highest-value single control. Gert.Api emits, on every HTML
 response:
@@ -81,7 +78,7 @@ The no-bundle ESM design already needs **no `unsafe-inline`** for scripts (the i
 exfiltration brake — it must list the API origin and Pocket ID, nothing else. The HTML/SVG
 artifact iframe is `srcdoc` with its **own** restrictive CSP (see F3). → [operations](operations.md#http-security-headers--csp).
 
-### F2 — Token storage · **speced**
+### F2 — Token storage
 Keeping the access token in `localStorage` means any XSS reads it. Posture:
 
 - **Access token in memory only** (a module variable in `services/auth.js`), never `localStorage`.
@@ -90,20 +87,20 @@ Keeping the access token in `localStorage` means any XSS reads it. Posture:
 - CSP (F1) + sanitized rendering (F4) + sandboxed artifacts (F3) are the compensating controls; the
   short token lifetime (F9) caps the damage of a leak. → [ui-components](ui-components.md#security-token-handling--rendering).
 
-### F3 — SVG/HTML artifact rendering · **speced**
+### F3 — SVG/HTML artifact rendering
 The HTML artifact already renders in a **sandboxed `<iframe srcdoc>`**. The **SVG artifact must use
 the same path** — inline `<svg>` can carry `<script>`/`onload` that executes in the app origin and
 steals the token. Both artifact iframes use `sandbox="allow-scripts"` **without `allow-same-origin`**
 (the two together defeat the sandbox), plus a restrictive `csp` on the frame. Source-view shows the
 raw text, never an injected live node. → [ui-components](ui-components.md#security-token-handling--rendering).
 
-### F4 — Markdown sanitization · **speced**
+### F4 — Markdown sanitization
 Assistant messages and the Markdown artifact render model output. The renderer runs with **raw HTML
 disabled** (or output passed through a sanitizer allow-list), `javascript:`/`data:` URLs stripped,
 and external links forced to `rel="noopener noreferrer" target="_blank"`. VanJS text bindings escape
 by default, but any "render HTML" path is the exception that needs this. → [ui-components](ui-components.md#security-token-handling--rendering).
 
-### F5 — SSRF in web-search fetch · **speced**
+### F5 — SSRF in web-search fetch
 `web_search` may fetch result pages server-side to summarize them. The fetched URL is attacker-
 influenceable (search results, or prompt-injected document content steering the model's query), so
 the fetcher:
@@ -116,14 +113,14 @@ the fetcher:
 The same egress reasoning makes the sandbox's outbound network **off by default**
 ([chat-and-tools](chat-and-tools.md#sandbox-gvisor--security-critical)). → [chat-and-tools](chat-and-tools.md#web-search-searxng).
 
-### F6 — Admin `{key}` path validation · **to-build**
+### F6 — Admin `{key}` path validation
 `DELETE /api/admin/users/{key}` and `GET …/{key}` feed `{key}` into a `/data/users/{key}` path that
 is `rm -rf`'d — the most destructive operation in the system. `{key}` must be validated to
 `^[0-9a-f]{64}$` (a sha256 hex) **before** path-joining, and the resolved absolute path asserted to
 sit under `/data/users/` before any delete. This is the admin analog of the `pid` rule and is **not**
 covered by [configuration §2.5](configuration.md#25-path-resolution--why-a-request-supplied-project-id-is-still-idor-safe). → [rest-api](rest-api.md#admin-requires-admin-policy), tested in [testing §5/§6](testing.md#validation--the-input-security-boundary).
 
-### F7 — Upload parsing in an isolated, unprivileged subprocess (XXE / zip-bomb / memory-corruption) · **to-build**
+### F7 — Upload parsing in an isolated, unprivileged subprocess (XXE / zip-bomb / memory-corruption)
 PDF and DOCX parsers (PdfPig, OpenXML, and their native/managed internals) are a large attack
 surface fed **raw untrusted bytes** — a memory-corruption or resource-exhaustion bug there cannot be
 fully neutralised in-process, so it must not run *in* the API/worker process. Extraction runs
@@ -144,26 +141,26 @@ can reuse the same **gVisor (`runsc`)** isolation as the sandbox tool, or be a p
 ingestion analog of [the `run_python` sandbox](chat-and-tools.md#sandbox-gvisor--security-critical).
 → [tech-stack](tech-stack.md), [chat-and-tools](chat-and-tools.md#document-ingestion-pipeline).
 
-### F8 — Secrets handling · **speced**
+### F8 — Secrets handling
 vLLM/SearXNG/provider keys are configuration, not source. Real values come from environment
 variables / `dotnet user-secrets` (dev) / a secret store (prod); `appsettings.json` carries only
 non-secret defaults and placeholders. Mirrors the dev-JWT-key discipline (generated, git-ignored).
 → [tech-stack](tech-stack.md), [operations](operations.md#cross-cutting-concerns).
 
-### F9 — TLS / HSTS required · **speced**
+### F9 — TLS / HSTS required
 Bearer tokens and WebAuthn both require a secure context. Gert is deployed behind a TLS-terminating
 reverse proxy; the app sets HSTS and assumes HTTPS-only. → [operations](operations.md#cross-cutting-concerns).
 
-### F10 — Resource-exhaustion rate limits · **to-build**
+### F10 — Resource-exhaustion rate limits
 Chat (GPU), ingestion (embeddings), and sandbox (exec) are expensive and otherwise uncapped per
 user. Apply per-user concurrency/rate caps (ASP.NET rate limiter) so one client — or one stolen
 token — can't saturate the box. Low likelihood at ~20 trusted users; cheap to add. → [operations](operations.md#cross-cutting-concerns).
 
-### F11 — JWT algorithm pinning · **speced**
+### F11 — JWT algorithm pinning
 Pin `TokenValidationParameters.ValidAlgorithms` to `["RS256"]` so a future JWKS quirk can't enable
 alg-confusion or `none`. → [auth](auth.md#aspnet-core-wiring).
 
-### F12 — Folder-root derivation: anti-reuse & validate-before-disk · **speced**
+### F12 — Folder-root derivation: anti-reuse & validate-before-disk
 The user folder is the root of all isolation, so its derivation is itself a control:
 
 - **Anchor on the stable `sub`, namespaced by issuer** — key = `sha256(iss + "\n" + sub)`. `sub` is
@@ -178,12 +175,12 @@ The user folder is the root of all isolation, so its derivation is itself a cont
   configured authority, `aud` == `gert-api`, and a bounded/well-formed `sub` **before** any
   path-derive or `mkdir`. No valid identity → no folder.
 - **Past the gate, the validated JWT is trusted.** The folder key derives from the token and
-  nothing else, so there is no disk-side state to re-check per request. `meta.json` is a
-  *descriptive sidecar* — it records `(iss, sub, username, schema_version)` so the admin scan can
-  map the opaque hash folder to a person and future migrations have a version anchor. It is
-  rewritten from the token when missing or unreadable, never used as a gate (a per-request
-  equality check could only ever fire on a sha256 collision or local file tampering — neither is
-  a real threat once the IdP is trusted). → [decisions §3](decisions.md#3-folder-key),
+  nothing else, so there is no disk-side state to re-check per request. `user.db`'s `user_meta`
+  row is *descriptive* — it records the username so the admin scan can map the opaque hash
+  folder to a person (refreshed from the token when it changes in the IdP), and each database's
+  `PRAGMA user_version` is its own migration anchor. Nothing on disk is ever used as an identity
+  gate (a per-request equality check could only ever fire on a sha256 collision or local file
+  tampering — neither is a real threat once the IdP is trusted). → [decisions §3](decisions.md#3-folder-key),
   [storage-and-data](storage-and-data.md#lazy-provisioning--migrations), [auth](auth.md#the-user-context-resolved-per-request).
 
 ---

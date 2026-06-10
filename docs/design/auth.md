@@ -31,7 +31,7 @@ The API only ever needs Pocket ID's **JWKS endpoint** to validate signatures —
 | `aud` | `gert-api` | Validation (this API's client id). |
 | `exp` / `iat` / `nbf` | epoch seconds | Lifetime validation. |
 
-> **`sub` vs `preferred_username` for the folder name.** Use `sub`. Usernames can be renamed in the IdP, which would orphan a folder; `sub` is stable for the life of the account. Store the human-readable username inside the folder as metadata (`meta.json`) so admin tooling can map name → key. See [Operations → User lifecycle](operations.md#user-lifecycle--remove-a-user--remove-a-folder).
+> **`sub` vs `preferred_username` for the folder name.** Use `sub`. Usernames can be renamed in the IdP, which would orphan a folder; `sub` is stable for the life of the account. The human-readable username is stored inside the folder (`user.db`'s `user_meta` row, refreshed from the token when it changes) so admin tooling can map name → key. See [Operations → User lifecycle](operations.md#user-lifecycle--remove-a-user--remove-a-folder).
 
 ## ASP.NET Core wiring
 
@@ -95,16 +95,16 @@ public sealed class UserContext(IHttpContextAccessor http, IOptions<ToolOptions>
 The validated **`(iss, sub)`** pair is the only thing that ever decides which folder is touched — and
 only after the fail-closed provisioning gate accepts it.
 
-> **Identity is validated before any disk access.** `EnsureProvisioned(iss,
-> sub)` ([storage-and-data](storage-and-data.md#lazy-provisioning--migrations)) asserts `iss` ==
+> **Identity is validated before any disk access.** The provisioning gate
+> ([storage-and-data](storage-and-data.md#lazy-provisioning--migrations)) asserts `iss` ==
 > the configured authority, `aud` == `gert-api`, and a well-formed `sub` **before** deriving a path
 > or creating a directory — no folder is ever created for an unvalidated token. The folder key is
 > `sha256(iss + sub)`, anchored on `sub` because it is the IdP's **stable, never-recycled** UUID —
 > email is mutable and *recycled* (a reassigned address would inherit the prior owner's data) and so
 > is rejected as the anchor ([decisions §3](decisions.md#3-folder-key)). Past that gate the
-> validated JWT is trusted: the folder key derives from the token and nothing else; each folder's
-> `meta.json` is a descriptive sidecar (admin key→user mapping, migration version anchor), never a
-> per-request check ([security F12](security.md#3-findings--remediations)).
+> validated JWT is trusted: the folder key derives from the token and nothing else; the username
+> row in each folder's `user.db` is descriptive (admin key→user mapping), never a per-request
+> check ([security F12](security.md#3-findings--remediations)).
 
 ## Authorization matrix
 
@@ -116,7 +116,7 @@ Three independent things decide access:
 
 | Endpoint(s) | Anonymous | User (`gert-users`) | Admin (`gert-admins`) |
 |---|:---:|:---:|:---:|
-| `GET /healthz` | ✅ | ✅ | ✅ |
+| `GET /healthz` · `GET /readyz` | ✅ | ✅ | ✅ |
 | `GET /api/models` | ❌ | ✅ | ✅ |
 | `GET /api/settings` · `…/api/projects*` (list · create · read · update · delete) | ❌ | ✅ own | ✅ own |
 | `…/api/projects/{pid}/conversations*` (list · create · read · update · delete) | ❌ | ✅ own | ✅ own |
@@ -126,8 +126,8 @@ Three independent things decide access:
 | `GET /api/admin/users` | ❌ | ❌ | ✅ |
 | `DELETE /api/admin/users/{key}` | ❌ | ❌ | ✅ |
 
-- **✅ own** = served strictly from the caller's `sub`-folder. The user and admin columns are identical for data endpoints because **admin status grants no cross-user data read** — admin power is confined to the two `/api/admin/*` endpoints, which only scan `meta.json` and `rm -rf` a directory; they never open another user's `chat.db`/`rag.db`.
-- **Anonymous** = missing / invalid / expired token → `401` (only `GET /healthz` is open).
+- **✅ own** = served strictly from the caller's `sub`-folder. The user and admin columns are identical for data endpoints because **admin status grants no cross-user data read** — admin power is confined to the two `/api/admin/*` endpoints, which only read each folder's `user.db` username row (the footprint scan) and `rm -rf` a directory; they never open another user's `chat.db`/`rag.db`.
+- **Anonymous** = missing / invalid / expired token → `401` (only the `GET /healthz` / `GET /readyz` probes are open).
 - Enforced by the `FallbackPolicy` (authenticated-user) on everything, the `Admin` policy on `/api/admin/*`, and `sub`-folder resolution for data scope.
 - The messages endpoint carries the extra **tool-entitlement** dimension below.
 
@@ -156,8 +156,11 @@ The admin sets a custom claim in Pocket ID, per user or per user-group:
 | Sandbox — `run_python` | `sandbox` | **denied — opt-in** | gVisor; executes code, grant deliberately |
 | Todos — `set_todos` | `todo` | granted | renders the chat checklist; no external world |
 | Clock — `get_datetime` | `clock` | granted | reads the host clock via `TimeProvider`; no external world |
+| Canvas create — `make_artifact` | `make_artifact` | **denied — needs grant** | writes this conversation's `artifacts` rows; no external world ([chat-and-tools](chat-and-tools.md#artifacts-the-canvas-tool-suite)) |
+| Canvas edit — `edit_artifact` | `edit_artifact` | **denied — needs grant** | exact-substring replace on an existing artifact |
+| Canvas read — `read_artifact` | `read_artifact` | **denied — needs grant** | read-only; returns numbered lines |
 
-Sandbox defaults to *off* because it is the one tool that runs arbitrary code; it must be granted on purpose. All defaults are tunable via `Tools:DefaultGrant`.
+Sandbox defaults to *off* because it is the one tool that runs arbitrary code; it must be granted on purpose. The canvas trio (`make_artifact` / `edit_artifact` / `read_artifact`) is currently outside the built-in default grant too — grant the three ids (or `"*"`) to enable the canvas; the SPA exposes them as **one "Canvas" switch**. All defaults are tunable via `Tools:DefaultGrant`.
 
 ### Enforcement — the claim is the ceiling
 

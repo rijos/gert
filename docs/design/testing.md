@@ -96,8 +96,10 @@ tests/
                                 #   documents, ingestion pipeline, tools, validation
   Gert.Database.Sqlite.Tests/   # repositories vs real temp SQLite (vec0 + FTS5); migrations; isolation
   Gert.Authentication.Tests/    # JWT claims → IUserContext; sub→key (sha256); RS256 pin
+  Gert.External.Tests/          # adapter units — SSRF guard, sandbox invocation, extractor hardening, resilience
   Gert.Api.Tests/               # integration via GertApiFactory — controllers, SSE, auth, IDOR, admin, SPA fallback
   Gert.Console.Tests/           # drive the Console host with fakes; assert rendered ChatEvent stream
+  Gert.Web.Minify.Tests/        # the publish-time minifier stays ESM-safe (raw-fallback per file)
   web/
     harness.html                # import map + __mount helper — Fake host serves it at /tests/ for component units
   shared/                       # ONE source of truth for both fake layers (Appendix A)
@@ -108,12 +110,13 @@ tools/
   smoke/                        # Python E2E launcher (uv-managed; no npm, no .NET) — drives the Fake host
     run.py                      #   boot mocks + host (FakeE2E) → mint tokens → Playwright matrix → report
     tokens.py                   #   role→claims map; mint(role) RS256 via pyjwt; CLI for local dev
+    proxy.py                    #   dev reverse-proxy: view the FakeE2E SPA in YOUR browser (make serve-mock)
     mocks/                      #   mock upstreams for E2E — the real Gert.External adapters point here
       __main__.py               #     boots all mocks on localhost ports (one process); shared specs
       vllm.py                   #     OpenAI-compatible: /v1/chat/completions (streaming + tool calls), /v1/embeddings
       searxng.py                #     SearXNG JSON; can emit a private-IP result URL to test the SSRF guard
       specs.py                  #     canned completions + deterministic hash→1024-dim embedding (matches FakeEmbeddings)
-    requirements.txt            #   playwright, pyjwt (+ a tiny ASGI server for streaming) — via `uv pip install -r`
+    pyproject.toml + uv.lock    #   playwright, pyjwt, httpx, ruff, mypy — installed via `uv sync`
     pages.py                    #   page objects for the SPA regions (sidebar, composer, canvas)
     tests/
       test_components.py        #   component units — mount real modules via page.evaluate (§8)
@@ -122,6 +125,9 @@ tools/
       test_canvas.py            #   artifact tabs · rendered/source · html iframe · code problems
       test_rbac.py              #   admin sees /admin/users; user gets 403; IDOR is blocked
       test_chrome.py            #   theme toggle · responsive drawers · model picker
+      test_llm_tools.py         #   artifacts, memory retrieval, todos, clock through the tool loop
+      test_auth_smoke.py        #   API auth smoke (httpx, no browser): invalid/missing tokens rejected
+      test_embeddings_conformance.py  # Python embed(t) matches embeddings_golden.json (Appendix A.2)
 
 .dev/                           # git-ignored — generated on first run, NEVER committed
   jwt/                          #   dev RSA keypair + dev-jwks.json (trusted only in Dev/Test)
@@ -273,8 +279,9 @@ temp-file DB created per test by `TempDataRoot`.
 JWT claims (`iss`, `sub`, `groups`, `gert_tools`) → `IUserContext`; `sha256(iss + sub)` key
 derivation and the **anti-reuse** guarantees ([decisions §3](decisions.md#3-folder-key),
 [security F12](security.md#3-findings--remediations)): the provisioning gate rejects a malformed/
-unexpected-issuer identity **before** any folder is created, and a missing/truncated `meta.json`
-sidecar is **healed** from the token on the next touch (never a 500, never a gate).
+unexpected-issuer identity **before** any folder is created, and a username change in the IdP
+is reflected into `user.db` on the next touch (never a 500, never a gate — the stored row is
+descriptive only).
 Plus the admin policy. (No denylist — revocation is stateless via token expiry, [decisions §4](decisions.md#4-token-lifetime--revocation).)
 
 ### Validation — the input-security boundary
@@ -467,9 +474,11 @@ output parses with one reader.
   (the entitlement ceiling, [auth](auth.md#enforcement--the-claim-is-the-ceiling)).
 
 **Setup** (via **[uv](https://github.com/astral-sh/uv)** — the project's Python env manager):
-`uv venv && uv pip install -r requirements.txt && uv run playwright install chromium firefox`.
-Run the suite with `uv run python -m tools.smoke.run`, and mint a local token with
-`uv run python -m tools.smoke.tokens --role admin`.
+`cd tools/smoke && uv sync && uv run playwright install chromium firefox`.
+Run the suite with `uv run python -m tools.smoke.run`, mint a local token with
+`uv run python -m tools.smoke.tokens --role admin` — or use the Makefile wrappers
+(`make smoke-auth`, `make serve-mock`, `make serve-mock-vllm VLLM_URL=…` to point chat at a
+real vLLM while auth stays mocked).
 
 ---
 
@@ -493,13 +502,24 @@ Run the suite with `uv run python -m tools.smoke.run`, and mint a local token wi
 
 ## 11. CI
 
-1. **`dotnet test`** — runs `Gert.*.Tests` (unit + DB + API integration + console). Fast,
-   hermetic, no network.
-2. **Web tests job** — boot `tools/smoke/mocks` + `dotnet run --launch-profile FakeE2E` in the
-   background, then `python tools/smoke/run.py --browser all --role all` (component units + full-app
-   E2E). Uploads Playwright traces/screenshots on failure.
+Five jobs in `.github/workflows/ci.yml`, all gating merges:
 
-Both gate merges. The E2E job is the only one that needs browsers installed.
+1. **Docs — link check** — `make check-links` (`tools/check_links.py`, stdlib Python):
+   every relative link and `#anchor` in tracked markdown must resolve. The design docs
+   cross-link densely and code comments cite them by section, so a renamed heading or
+   moved file fails the build instead of silently stranding readers.
+2. **.NET — build + test** — `dotnet test` runs every `Gert.*.Tests` project (unit + real-SQLite
+   + API integration + console). Fast, hermetic, no network; warnings are errors.
+3. **Python — ruff + mypy + conformance** — `make lint` (ruff lint + format check, mypy
+   `--strict`) plus `make smoke-unit` (the [A.2](#a2-deterministic-embeddings-hash--1024-dim-unit-vector)
+   embedding-conformance check, no browsers).
+4. **API auth smoke** — `make smoke-auth`: boots the Python mocks + the `FakeE2E` host (no
+   browsers) and proves every endpoint rejects the bad-token taxonomy — keeps the auth signal
+   alive even when browser setup breaks.
+5. **Browser E2E smoke** — mocks + `FakeE2E` host, then the Playwright matrix
+   `{chromium, firefox} × {admin, user, limited}` plus the full pytest suite (component
+   mounts, RBAC/SSRF/IDOR). The only job that installs browsers; uploads traces/screenshots
+   on failure.
 
 ---
 

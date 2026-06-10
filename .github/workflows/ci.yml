@@ -10,6 +10,18 @@ permissions:
   contents: read
 
 jobs:
+  docs:
+    name: Docs — link check (gate)
+    # The design docs cross-link densely by section anchor, and code comments
+    # cite them — a rename or moved heading silently strands readers. This
+    # gate fails the build if any relative link/anchor in tracked markdown
+    # stops resolving. Stdlib Python only; by far the cheapest job here.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check markdown links + anchors
+        run: make check-links
+
   dotnet:
     name: .NET — build + test (gate)
     runs-on: ubuntu-latest

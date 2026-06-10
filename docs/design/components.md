@@ -27,7 +27,7 @@ The SPA bundle and the API are **served by the same ASP.NET Core app on one orig
 |-----------|------|-------------|
 | **VanJS SPA** | UI, served as static files by Gert.Api. Holds the access token, calls the API. | Browser → IdP (login), Browser → API |
 | **Pocket ID** | OIDC provider. Authenticates users **with passkeys**, issues JWTs, owns the user list. | SPA (login), API (JWKS only) |
-| **Gert.Api** | The subject of this document. Stateless REST API **+ static host for the SPA bundle**. | vLLM, SearXNG, gVisor, per-user SQLite |
+| **Gert.Api** | The subject of this design set. Stateless REST API **+ static host for the SPA bundle**. | vLLM, SearXNG, gVisor, per-user SQLite |
 | **vLLM** | Serves the chat + embedding models (OpenAI-compatible API). | API only |
 | **SearXNG** | Self-hosted web search. | API only |
 | **gVisor sandbox** | Runs untrusted Python for the code tool. | API only |

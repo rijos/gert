@@ -17,7 +17,7 @@ Caveats:
 1. **Identity lives in Pocket ID.** Removing the folder deletes their data but not their *account*. To fully off-board, also delete/deactivate the user in Pocket ID; otherwise they can log back in and a fresh (empty) folder is lazily re-provisioned on their next request.
 2. **JWTs are stateless.** A user removed in the IdP keeps a *valid* access token until it expires. Pocket ID issues **~1-hour access tokens** with no shorter, independently-configurable lifetime ([issue #792](https://github.com/pocket-id/pocket-id/issues/792), closed *not planned*), so deactivating a user in Pocket ID takes effect within **~1 hour**. There is deliberately **no `sub`-denylist**: it would be shared, mutable, per-instance auth state that breaks running multiple GERT instances, so GERT stays stateless and validates every token purely from the JWT + JWKS. For sub-hour revocation, shorten the token lifetime at the IdP (see [decisions.md §4](decisions.md#4-token-lifetime--revocation)).
 
-The admin endpoint `DELETE /api/admin/users/{key}` performs the `rm -rf` (and can optionally call Pocket ID's API to deactivate in the same step). `GET /api/admin/users` is just a directory scan reading each `meta.json` — there is no user table to keep in sync.
+The admin endpoint `DELETE /api/admin/users/{key}` performs the `rm -rf` (and can optionally call Pocket ID's API to deactivate in the same step). `GET /api/admin/users` is just a directory scan that opens each folder's `user.db` for the username plus an object-store footprint listing — there is no central user table to keep in sync.
 
 ---
 
@@ -32,7 +32,7 @@ The admin endpoint `DELETE /api/admin/users/{key}` performs the `rm -rf` (and ca
 - **Rate limits:** chat (GPU inference), ingestion (embeddings), and the sandbox (code exec) are expensive; apply per-user concurrency/rate caps (the ASP.NET rate limiter) so a single client — or a stolen token — can't saturate the box. Low-likelihood at ~20 trusted users, cheap to add ([security F10](security.md#3-findings--remediations)).
 - **Embeddings:** the embedding model and its **dimension are fixed up front** — baked into the `vec0` table (`FLOAT[1024]`). Changing models later means re-embedding every chunk. **Chosen: bge-m3 (1024-dim), served by vLLM** via `--task embed` on the OpenAI-compatible `/v1/embeddings` endpoint (see [decisions.md §1](decisions.md#1-embedding-model--dimension)).
 - **Resilience:** wrap vLLM/SearXNG calls with timeouts + retry (Polly). Surface upstream failures as `error` SSE events, not 500s mid-stream.
-- **Observability:** record per-tool `latency_ms` (the "142ms"/"searxng" tags), structured logs in the shared JSON format below (keyed by identity **hash**, never raw tokens/`sub`/email/content), and `GET /healthz` checking vLLM + SearXNG reachability.
+- **Observability:** record per-tool `latency_ms` (the "142ms"/"searxng" tags), structured logs in the shared JSON format below (keyed by identity **hash**, never raw tokens/`sub`/email/content), and two anonymous probes: `GET /healthz` (liveness — the process is up) and `GET /readyz` (readiness — vLLM + SearXNG reachable, else `503` with a per-dependency map).
 - **Backups:** because each user is a folder, backup = snapshot `/data/users/`. SQLite WAL means use `VACUUM INTO` or the SQLite backup API for consistent copies rather than `cp` on a live DB.
 - **Limits:** enforce max upload size and allowed MIME types (`pdf · docx · md · txt`) on `POST /api/documents`; reject path traversal in filenames.
 

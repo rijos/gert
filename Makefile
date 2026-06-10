@@ -1,6 +1,6 @@
 # Gert — developer Makefile
 # Quoted goals: `make test` and `make run` (mocked env), plus coverage.
-# .NET 10 + uv (Python) toolchain. See docs/design/implementation-plan.md.
+# .NET 10 + uv (Python) toolchain. See docs/design/.
 
 SLN          := Gert.sln
 CONFIG       ?= Debug
@@ -33,6 +33,10 @@ lint: ## Enforce ruff (lint + format check) + mypy --strict on the Python harnes
 .PHONY: lint-fix
 lint-fix: ## Auto-fix ruff lint + format on the Python harness
 	cd $(SMOKE_DIR) && uv run ruff check --fix . && uv run ruff format .
+
+.PHONY: check-links
+check-links: ## Verify every relative link/anchor in tracked markdown resolves (CI gate)
+	python3 tools/check_links.py
 
 .PHONY: smoke-unit
 smoke-unit: ## Run the non-browser Python checks (embedding conformance) — no Playwright needed

@@ -1,6 +1,10 @@
-# Decisions to confirm
+# Design decisions
 
-Open choices still to lock down. Each will be resolved one by one; the **Decision** line is filled in as we settle them.
+The decision record: choices that shaped the system, each with the question it answered, the
+**Decision**, and the why — including the alternatives that were rejected and what would have
+to change to revisit one. All entries below are settled; new decisions append here. Questions
+still open live with their owning doc ([configuration §9](configuration.md#9-open-decisions),
+[turn-budgets](turn-budgets.md)) until they're settled enough to record.
 
 ## 1. Embedding model + dimension
 
@@ -18,13 +22,13 @@ Split (recommended) or merged `gert.db`. See [Per-user storage → Why two datab
 
 `sha256(iss + sub)` (recommended) vs. raw `sub` vs. email. See [Per-user storage → Resolving paths](storage-and-data.md#resolving-paths).
 
-- **Decision:** **`sha256(iss + "\n" + sub)` lowercase hex**, with a fail-closed provisioning gate; `meta.json` is a descriptive sidecar, not a gate.
+- **Decision:** **`sha256(iss + "\n" + sub)` lowercase hex**, with a fail-closed provisioning gate; what's on disk is descriptive, never a gate. *(The descriptive record has since moved from a `meta.json` sidecar into `user.db` — [§9](#9-userdb--structured-user-state-is-a-database-not-json-sidecars); the anchoring rationale below is unchanged.)*
   - **Anchor on `sub`, not email or username.** `sub` is Pocket ID's stable, opaque UUID — *never renamed, never recycled*. Email is **mutable** (a rename orphans the folder) and **recycled** (a reassigned address would inherit the prior owner's data — the exact reuse attack we want to avoid); username is renamed. `sub` is also no less trusted: every claim in a signature-validated JWT is equally trusted, `sub` is just the most stable.
   - **Namespace by issuer.** `sub` is only unique *within* an issuer, so the key hashes `iss + "\n" + sub`. With one IdP today this is moot; it makes a second IdP collision-proof for free.
-  - **Hashing** gives a fixed-length, path-safe, traversal-proof folder name for any value the IdP emits; the opaque name is covered by `meta.json` and `GET /api/admin/users` for key→user mapping.
+  - **Hashing** gives a fixed-length, path-safe, traversal-proof folder name for any value the IdP emits; the opaque name is covered by the stored username (`user.db`) and `GET /api/admin/users` for key→user mapping.
   - **Collision is not the threat** — `sha256` makes cross-user collision infeasible regardless of input; the real risk is *identifier reuse*, addressed by anchoring on `sub` (above).
   - **Validate before touching disk** ([principle #6](principles.md)): provisioning asserts `iss` == configured authority, `aud` matches, and `sub` is present + within a bounded charset/length **before** any path-derive or `mkdir`. No well-formed identity → no folder.
-  - **Trust the validated JWT past the gate** ([security F12](security.md#3-findings--remediations)): the folder key derives from the token and nothing else, so no per-request disk-side re-check exists. `meta.json` records `(iss, sub, username, schema_version)` purely descriptively — key→user mapping for `GET /api/admin/users` and a version anchor for migrations — and is rewritten from the token when missing or unreadable (e.g. truncated by an interrupted write).
+  - **Trust the validated JWT past the gate** ([security F12](security.md#3-findings--remediations)): the folder key derives from the token and nothing else, so no per-request disk-side re-check exists. The username stored in `user.db` is purely descriptive — key→user mapping for `GET /api/admin/users`, refreshed from the token when it changes — and each database's `PRAGMA user_version` anchors migrations ([§9](#9-userdb--structured-user-state-is-a-database-not-json-sidecars)).
 
 ## 4. Token lifetime / revocation
 
@@ -57,8 +61,40 @@ How a user's data is organised: one flat store, or scoped workspaces? See [Confi
 Where do config sidecars (`meta.json`, `settings.json`, `projects/{pid}/meta.json`) live: direct file I/O, or the object-store seam? (Supersedes the earlier "config files are direct file I/O in the adapter" stance.)
 
 - **Decision:** **`IObjectStore` is the single storage-backend seam — every byte under a user's tree that is not a database file flows through it**: uploads (`files/…`), memory bodies (`memory/…`), and the JSON config sidecars alike. A config file is just a small object; treating it specially bought nothing once S3/Azure-Blob backends were on the table.
+- **Amended by [§9](#9-userdb--structured-user-state-is-a-database-not-json-sidecars):** the JSON config sidecars no longer exist — structured user state moved into `user.db`. `IObjectStore` remains the seam for the *genuine* blobs (uploads, memory bodies) and the coarse scope lifecycle (`DeleteScopeAsync` = the `rm -rf`; the admin footprint listing); everything else below still stands.
   - **Scopes:** an `ObjectScope` is the user root or one project root; keys are scope-relative and traversal-guarded. The scope carries only the opaque `sha256(iss+sub)` key (derivation = `StorageKeys`, core policy in `Gert.Service`).
   - **Atomic PUT is a port contract** — a reader never observes a partial object. Cloud backends give it natively; `LocalObjectStore` stages to a temp sibling + renames. This retires the truncated-`meta.json` failure class at the storage layer.
   - **Lifecycle = scope ops:** delete user/project = `DeleteScopeAsync` (the `rm -rf` of principle #5); "emptied, never removed" = `DeletePrefixAsync("")`; the admin scan = `ListUserKeysAsync` + `ListEntriesAsync` (maps 1:1 to S3 listing).
   - **Databases are NOT objects.** `chat.db`/`rag.db` need real local file handles (WAL/mmap) and stay with `IDatabaseProvider`; local whole-tree deletes release pooled handles via the `IDatabaseHandleReleaser` port. *Consequence:* a remote object backend paired with SQLite is a split deployment (objects remote, dbs local) — delete/export compose both stores; the full remote-storage payoff arrives together with a server database (`Gert.Database.Postgres`).
   - **Backends:** `Gert.Storage.LocalObjectStore` today; S3/Azure Blob = a sibling `Gert.Storage.*` project + one DI swap. `ObjectStoreUserStore` (the `IUserStore` impl) is written purely against the port and never changes with the backend.
+
+## 9. user.db — structured user state is a database, not JSON sidecars
+
+Where do the username (admin scan), user settings, and per-project config live: JSON sidecar
+files (`meta.json`, `settings.json`, `projects/{pid}/meta.json`) on the object store, or a
+database? (Amends the sidecar half of [§8](#8-storage-backend-seam--everything-non-database-through-iobjectstore).)
+
+- **Decision:** **A third per-user database — `user.db` at the user root** — holds all
+  structured user state: a single-row `user_meta` (username, refreshed from the token when it
+  changes), a single-row `settings` (the `UserSettings` record as one JSON blob, so the column
+  set never tracks the shape field-by-field), and the **`projects` registry** (one row per
+  project: name, description, instructions, defaults). Schema:
+  [storage-and-data § user.db](storage-and-data.md#userdb).
+  - **Why:** transactional and torn-write-proof by construction — the atomic-PUT/healing dance
+    a JSON sidecar needs ([§8](#8-storage-backend-seam--everything-non-database-through-iobjectstore),
+    [§3](#3-folder-key)) simply disappears; reads/writes are queryable and migratable
+    (`PRAGMA user_version`, `Migrations/user/*.sql`); and provisioning collapses to "open the
+    database" — first open creates and migrates it, the provisioner seeds the `default`
+    project row, and the steady-state request path stays read-only.
+  - **Consequences:** `IObjectStore` is demoted to genuine blobs (uploads, memory bodies) plus
+    scope lifecycle and the admin footprint listing; `IUserStore` no longer carries config.
+    The provider seam splits per database — `IUserDatabaseProvider` / `IChatDatabaseProvider` /
+    `IRagDatabaseProvider` — and the admin scan opens each folder's `user.db` for the username.
+  - **Unchanged:** everything stays inside the user's folder, so principle #1 (the API owns
+    nothing persistent of its own) and principle #5 (deletion is `rm -rf`) hold exactly as
+    before; the project *data* boundary is still the project folder
+    ([configuration §2](configuration.md#2-projects)).
+  - *Rejected:* keeping sidecars on `IObjectStore` (atomic-rename semantics papered over torn
+    writes but left config unqueryable and the healing path alive); merging this state into a
+    project `chat.db` (wrong scope — it's user-level, and the registry must outlive any
+    project).

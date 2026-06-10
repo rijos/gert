@@ -34,9 +34,9 @@ inherits from the level above.
 | Level | Owns | Stored | Set by |
 |-------|------|--------|--------|
 | **Server / admin** | provider catalog, model list, embedding model, tool grants, caps (max upload, param bounds) | `appsettings.json` ([tech-stack](tech-stack.md)) | operator only |
-| **User** | theme, UI language, default reply language, default model, default tools, memory mode | `settings.json` at the user root | the user |
-| **Project** | name, instructions, default model, default tools, params, reply language | `projects/{id}/meta.json` | the user |
-| **Conversation** | model, tools, generation params (per chat) | `conversations` row in that project's `chat.db` | the user, live (the mockup's model picker + tool chips) |
+| **User** | theme, UI language, default reply language, default model, default tools, memory mode, **per-model generation defaults** (the picker's cogwheel) | `user.db` `settings` row ([storage-and-data § user.db](storage-and-data.md#userdb)) | the user |
+| **Project** | name, instructions, default model, default tools, params, reply language | `user.db` `projects` registry row | the user |
+| **Conversation** | model, tools, generation params (per chat) | `conversations` row in that project's `chat.db` | the user, live (the model picker + tools menu) |
 
 So picking a model in the composer overrides the project default for that one conversation;
 a project with no model set inherits the user default; the user default falls back to the
@@ -50,7 +50,7 @@ server's flagged-default model.
 A project is a self-contained workspace: a name, a few defaults, an optional **instructions**
 block, and three data stores that are *only* ever opened for that project — conversations,
 documents (RAG), and memory. Nothing crosses a project boundary. A user can have many; they
-switch between them in the UI (a project picker, new in the SPA — [§8](#8-impact-on-the-spa)).
+switch between them in the UI (the sidebar's project picker — [§8](#8-the-spa-surface)).
 
 ### 2.2 "Default", not "global"
 There is no global scope and no cross-project search. On first authenticated request the user
@@ -65,8 +65,9 @@ Memory is **per project** — knowledge the assistant carries between conversati
 project*. Two mechanisms, by size and intent:
 
 - **Instructions (pinned).** A small, always-injected block — the project's custom system
-  prompt. Lives in `projects/{id}/meta.json`, length-bounded ([§6](#6-what-is-not-configurable)
-  notes the cap). This is the cheap, deterministic "always know this" memory.
+  prompt. Lives on the project's registry row in `user.db`, length-bounded
+  ([§6](#6-what-is-not-configurable) notes the cap). This is the cheap, deterministic
+  "always know this" memory.
 - **Memory entries (retrieved).** Markdown notes under `projects/{id}/memory/`, embedded into
   that project's `rag.db` alongside documents but tagged `kind='memory'`, so the
   `search_documents` tool can pull them when relevant ([chat-and-tools](chat-and-tools.md)). A
@@ -78,16 +79,16 @@ entry). Default `manual`. Whichever the mode, memory is just files + RAG rows in
 folder, so clearing it is a delete — no special machinery.
 
 ### 2.4 Storage model
-Each project mirrors what used to be the user root, one level down:
+A project's **data** is its folder; a project's **config** is a row in the user's registry:
 
 ```
 /data/users/{key}/
-  meta.json                 # identity — { sub, username, created_at, schema_version }  (unchanged)
-  settings.json             # USER-level preferences (theme, languages, defaults, memory mode)
+  user.db                   # USER-level state: username (admin scan), settings (theme,
+  │                         #   languages, defaults, memory mode), and the PROJECT REGISTRY —
+  │                         #   one row per project: { id, name, description, instructions,
+  │                         #   defaults (model_id?, tools?, params?, reply_language?) }
   projects/
     default/                # lazily created; always present
-      meta.json             #   project config — { id, name, description, instructions,
-      │                     #     model_id?, tools?, params?, reply_language?, created_at, updated_at }
       chat.db               #   conversations, messages, tool_calls, citations, artifacts  (this project)
       rag.db                #   documents, chunks, vec0, fts5  (this project)
       files/                #   original uploads for this project
@@ -96,19 +97,17 @@ Each project mirrors what used to be the user root, one level down:
       …
 ```
 
-What changed from [storage-and-data](storage-and-data.md): **`chat.db` and `rag.db` move from
-the user root into each project folder.** Their schemas are unchanged — there is just one pair
-per project instead of one pair per user. No `project_id` column anywhere; the *path* is the
-scope. Config is filesystem, not DB: `settings.json` (user) and `projects/{id}/meta.json`
-(project) — so the API still owns nothing persistent, and an admin can enumerate a user's
-projects by reading `projects/*/meta.json`, exactly as they enumerate users by `meta.json`.
+The project databases live **inside each project folder** — one `chat.db` + `rag.db` pair per
+project, not per user ([storage-and-data](storage-and-data.md)). No `project_id` column in
+them; the *path* is the scope. User settings and project config are rows in **`user.db`**
+([storage-and-data § user.db](storage-and-data.md#userdb),
+[decisions §9](decisions.md#9-userdb--structured-user-state-is-a-database-not-json-sidecars))
+— still inside the user's own folder, so the API owns nothing persistent of its own, and an
+admin enumerates a user's projects by reading that user's registry.
 
-**One schema delta** (in each project's `rag.db`) to support memory:
-
-```sql
-ALTER TABLE documents ADD COLUMN kind   TEXT    NOT NULL DEFAULT 'document'; -- document | memory
-ALTER TABLE documents ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0;          -- memory: always in context
-```
+Memory rides the document schema: `rag.db`'s `documents` table carries
+`kind` (`document | memory`) and `pinned` (always-injected memory entries) —
+see [storage-and-data § rag.db](storage-and-data.md#ragdb-sqlite-vec).
 
 ### 2.5 Path resolution & why a request-supplied project id is still IDOR-safe
 `SqliteDatabasePaths` ([storage-and-data](storage-and-data.md)) gains a project segment:
@@ -139,14 +138,17 @@ flag — one corpus, the one the conversation lives in. Simpler than the perimet
 
 ## 3. User settings
 
-Stored in `settings.json` at the user root; edited via `GET`/`PUT /api/settings`.
+Stored as the single settings row in the user's `user.db`
+([storage-and-data § user.db](storage-and-data.md#userdb)); edited via
+`GET`/`PUT /api/settings` (`PUT` merges — each supplied field overrides, absent fields stay).
 
 ### 3.1 Theme
-`light · dark · auto` — `auto` follows `prefers-color-scheme`, exactly the mockup's logic
-([uistyle.html](../../uistyle.html)). Persisted **server-side** so it follows the user across
-devices; the SPA still writes `localStorage` as a first-paint cache before settings load, so
-there's no flash ([ui-components](ui-components.md#5-cross-cutting-concerns)). The warm palette
-itself is fixed for v1 (a custom accent is a possible later addition — [§9](#9-open-decisions)).
+`light · dark · auto` — the two palettes are **Manila** (paper light) and **Ember** (refined
+dark); `auto` follows the OS via `color-scheme`. Persisted **server-side** so it follows the
+user across devices; the SPA still writes `localStorage` as a first-paint cache before settings
+load, so there's no flash ([ui-components](ui-components.md#5-cross-cutting-concerns)). The
+palettes themselves are fixed for v1 (a custom accent is a possible later addition —
+[§9](#9-open-decisions)).
 
 ### 3.2 Language
 - **UI language** — the SPA's own strings, from a small per-locale JSON dictionary loaded by
@@ -160,9 +162,11 @@ itself is fixed for v1 (a custom accent is a possible later addition — [§9](#
   behaviour, not a setting; there is nothing to toggle.
 
 ### 3.3 Defaults
-Default **model**, default **tools** (`rag`/`search`/`sandbox`, each capped by the user's
-`gert_tools` JWT entitlement — [auth](auth.md)), default **generation params**, and **memory
-mode** ([§2.3](#23-memory)). These seed every new project and conversation unless overridden.
+Default **model**, default **tools** (each capped by the user's `gert_tools` JWT entitlement —
+[auth](auth.md#tool-entitlements-allowed-tools-in-the-jwt)), **per-model generation defaults**
+(`model_params`, keyed by model id — the picker's cogwheel; conversation-level params override
+these field-by-field), and **memory mode** ([§2.3](#23-memory)). These seed every new project
+and conversation unless overridden.
 
 ---
 
@@ -224,8 +228,8 @@ Stating the boundaries as plainly as the knobs:
 
 ## 7. API surface
 
-New, and changes to existing endpoints. Full contracts belong in [rest-api](rest-api.md)
-([§8](#8-impact-on-the-spa) / impact below) — this is the shape.
+The settings/projects/memory/lifecycle endpoints, in shape form — the full contracts live
+in [rest-api](rest-api.md), the SPA surface in [§8](#8-the-spa-surface).
 
 ```
 # user settings
@@ -233,7 +237,7 @@ GET    /api/settings                       # theme, languages, defaults, memory 
 PUT    /api/settings
 
 # projects
-GET    /api/projects                       # list (reads projects/*/meta.json)
+GET    /api/projects                       # list (the user.db project registry)
 POST   /api/projects                       # { name, description?, instructions?, defaults? }
 GET    /api/projects/{pid}                  # config + counts
 PATCH  /api/projects/{pid}                  # rename / instructions / defaults
@@ -251,14 +255,14 @@ GET    /api/account/export
 DELETE /api/account                        # rm -rf users/{key}
 ```
 
-**Existing endpoints become project-scoped** — conversations, the streaming message endpoint,
-documents, and artifacts re-root under `/api/projects/{pid}/…` (with `default` a valid `pid`).
-There is still **no `userId` in any path** (it's the token); the `pid` is safe per
+**All data endpoints are project-scoped** — conversations, the message endpoint, documents,
+and artifacts live under `/api/projects/{pid}/…` (with `default` a valid `pid`).
+There is **no `userId` in any path** (it's the token); the `pid` is safe per
 [§2.5](#25-path-resolution--why-a-request-supplied-project-id-is-still-idor-safe). Example:
 
 ```
 GET  /api/projects/{pid}/conversations
-POST /api/projects/{pid}/conversations/{id}/messages   # SSE, unchanged otherwise
+POST /api/projects/{pid}/conversations/{id}/messages   # 202 — detached turn (rest-api.md)
 GET  /api/projects/{pid}/documents
 ```
 
@@ -267,25 +271,26 @@ the user's own.
 
 ---
 
-## 8. Impact on the SPA
+## 8. The SPA surface
 
-New surface in the SPA (`Gert.Api/wwwroot`, [ui-components](ui-components.md)):
+Where this lands in the SPA (`Gert.Api/wwwroot`, [ui-components](ui-components.md)):
 
-- **Project picker** — switch/create/delete projects (the sidebar gains a project context above
-  the conversation list).
-- **Settings page** (`pages/settings.js`) — theme, language, defaults, memory mode; already a
-  routed page in the layout.
+- **Project picker** (`components/sidebar/project-picker.js`) — switch/create/delete projects;
+  the sidebar's project context above the conversation list.
+- **Settings modal** (`components/settings/settings-modal.js`, opened from the user chip) —
+  theme, reply language, default model; per-model params in `model-settings-modal.js`.
 - **Project settings** — name, instructions, defaults, memory editor, "forget documents".
 - **Account** — export, delete-my-data, plus the Pocket-ID off-boarding note.
-- **i18n** — locale dictionaries loaded by `state/ui.js` keyed off the UI-language setting.
+- **i18n** — *not built yet*: the UI-language setting is reserved ([§3.2](#32-language)), but
+  locale dictionaries and an i18n pass over component strings remain an additive follow-up.
 
 ---
 
 ## 9. Open decisions
 
-- **Per-conversation param overrides vs project-only.** Recommended: allow them (the picker
-  already implies per-chat model choice); keep the surface small.
-- **Custom accent / theming beyond light-dark** — fixed warm palette for v1; revisit if asked.
+- ~~**Per-conversation param overrides vs project-only.**~~ Settled as recommended: allowed —
+  `params_json` on the conversation row, edited live from the composer.
+- **Custom accent / theming beyond Manila/Ember** — fixed palettes for v1; revisit if asked.
 - **Per-user BYO provider keys** — non-feature for now (security + keeps everything on-box);
   reconsider only if a user genuinely needs an off-box model.
 - **Export format** — JSON + original files is the floor; Markdown transcripts are a nice-to-have.

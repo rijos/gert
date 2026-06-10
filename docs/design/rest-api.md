@@ -1,6 +1,6 @@
 # REST API
 
-All endpoints require a valid bearer token except `GET /healthz`. JSON in/out unless noted. The user is always implicit (from the token) — there is **no** `userId` in any path.
+All endpoints require a valid bearer token except the probes — `GET /healthz` (liveness) and `GET /readyz` (readiness: upstream reachability). JSON in/out unless noted. The user is always implicit (from the token) — there is **no** `userId` in any path.
 
 Most data is **project-scoped**, so conversations, messages, documents, and artifacts live under `/api/projects/{pid}/…`, where `pid` is a project UUID or the literal `default`. Unlike the user (which comes only from the token), `pid` comes from the path — but it is validated and only ever resolved *inside* the token-derived user folder, so it selects among *this* user's projects and can never reach another user's data ([configuration.md §2.5](configuration.md#25-path-resolution--why-a-request-supplied-project-id-is-still-idor-safe)). The model catalog, user settings, and admin are **not** project-scoped.
 
@@ -26,14 +26,14 @@ Returns the configured vLLM models for the picker (id, display name, endpoint, c
 
 | Method | Path | Notes |
 |--------|------|-------|
-| `GET` | `/api/settings` | The user's preferences from `settings.json`: theme, UI language, default reply language, default model, default tools, memory mode ([configuration §3](configuration.md#3-user-settings)). |
-| `PUT` | `/api/settings` | Update any subset. |
+| `GET` | `/api/settings` | The user's preferences from `user.db` ([storage-and-data § user.db](storage-and-data.md#userdb)): theme, UI language, default reply language, default model, default tools, memory mode, per-model generation defaults (`model_params`) ([configuration §3](configuration.md#3-user-settings)). |
+| `PUT` | `/api/settings` | Update any subset (merge: absent fields stay; a supplied `model_params` entry replaces that model's whole record). |
 
 ## Projects
 
 | Method | Path | Body / notes |
 |--------|------|--------------|
-| `GET` | `/api/projects` | List the user's projects (reads `projects/*/meta.json`): id, name, counts, updated_at. |
+| `GET` | `/api/projects` | List the user's projects (the `user.db` registry): id, name, counts, updated_at. |
 | `POST` | `/api/projects` | `{ name, description?, instructions?, defaults? }` → a new isolated project folder. |
 | `GET` | `/api/projects/{pid}` | Project config + counts (conversations, documents, memory). |
 | `PATCH` | `/api/projects/{pid}` | `{ name?, description?, instructions?, defaults? }` (rename / edit instructions / defaults). |
@@ -133,6 +133,11 @@ footnotes sequence:
 | `cancelled` | `{ "token_count":null }` | removes caret + "Stopped" marker; the row persists as `status="cancelled"` with the partial text |
 | `error` | `{ "message":"…" }` | inline error; the assistant row persists as `status="error"` |
 
+A `tool_call` is emitted **as soon as the model starts the call** — the name
+arrives before its arguments finish streaming, so the running card shows the
+model's intent live; the same `id` is re-emitted with the full `request` once
+the arguments assemble, and the card updates in place.
+
 Every event is persisted **before** it is published, so reloading a
 conversation reproduces the same cards, citations, and artifacts — and a reload
 *mid-turn* resubscribes from the streaming assistant row's `seq` and loses
@@ -182,7 +187,9 @@ Memory entries are stored as files under `projects/{pid}/memory/` and embedded i
 
 ## Artifacts
 
-Artifacts are produced during chat (see [Chat orchestration](chat-and-tools.md#chat-orchestration-the-tool-loop)) and stored in the project's `chat.db`. They are returned inline with the thread, plus:
+Artifacts are produced during chat by the **canvas tool suite** — the model calls
+`make_artifact` / `edit_artifact` ([chat-and-tools](chat-and-tools.md#artifacts-the-canvas-tool-suite)) —
+and stored in the project's `chat.db`. They are returned inline with the thread, plus:
 
 ```
 GET    /api/projects/{pid}/conversations/{id}/artifacts   # list for the canvas tab strip
@@ -204,7 +211,7 @@ Self-service data lifecycle ([configuration §5](configuration.md#5-data-lifecyc
 
 | Method | Path | Notes |
 |--------|------|-------|
-| `GET` | `/api/admin/users` | Lists user folders by reading each `meta.json`: username, key, size, doc count, last-active. The closest thing to a "user list" the API has. |
+| `GET` | `/api/admin/users` | Lists user folders, reading each one's `user.db` for the username (plus a footprint listing): username, key, size, doc count, last-active. The closest thing to a "user list" the API has. |
 | `GET` | `/api/admin/users/{key}` | One user's folder summary. `{key}` validated as below. |
 | `DELETE` | `/api/admin/users/{key}` | **`rm -rf /data/users/{key}`.** Removes all of that user's data (see [Operations → User lifecycle](operations.md#user-lifecycle--remove-a-user--remove-a-folder)). |
 
