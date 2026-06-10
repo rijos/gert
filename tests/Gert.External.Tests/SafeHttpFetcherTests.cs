@@ -9,8 +9,9 @@ namespace Gert.External.Tests;
 /// <summary>
 /// Tests the fetcher's URL-vetting boundary — the parts that reject before any socket is
 /// opened (scheme + blocked literal host). The connect-time IP guard + redirect re-check
-/// need a live socket and are exercised in the live test tiers (U13 / staging); here we
-/// prove a non-http(s) scheme and a private literal host are refused up-front.
+/// need a live socket and are exercised against loopback listeners in
+/// <see cref="SafeHttpFetcherRedirectTests"/> (security F5); here we prove a non-http(s)
+/// scheme and a private literal host are refused up-front.
 /// </summary>
 public sealed class SafeHttpFetcherTests
 {

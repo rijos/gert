@@ -115,6 +115,7 @@ tools/
       __main__.py               #     boots all mocks on localhost ports (one process); shared specs
       vllm.py                   #     OpenAI-compatible: /v1/chat/completions (streaming + tool calls), /v1/embeddings
       searxng.py                #     SearXNG JSON; can emit a private-IP result URL to test the SSRF guard
+      monty.py                  #     monty sandbox sidecar: POST /run, whitelisted-AST calculator
       specs.py                  #     canned completions + deterministic hash→1024-dim embedding (matches FakeEmbeddings)
     pyproject.toml + uv.lock    #   playwright, pyjwt, httpx, ruff, mypy — installed via `uv sync`
     pages.py                    #   page objects for the SPA regions (sidebar, composer, canvas)
@@ -168,15 +169,16 @@ scripted behaviour, so a result proven in a unit test is the result the browser 
 | Tier | External world | Transport | How |
 |------|----------------|-----------|-----|
 | **.NET unit / integration** (`Gert.Service.Tests`, `Gert.Api.Tests`) | **in-process .NET fakes** (`AddGertFakes` swaps the `Gert.External` ports) | TestServer, no socket | `GertApiFactory : WebApplicationFactory<Program>` → `HttpClient`. Fastest, fully deterministic. |
-| **Browser E2E** (the Python launcher) | **real `Gert.External` adapters → Python mock upstreams** (HTTP); sandbox stays a .NET stub | real Kestrel on localhost | `dotnet run --launch-profile FakeE2E`: the host wires its **real** vLLM/SearXNG clients but points them at the mock URLs `tools/smoke/mocks` serves. |
+| **Browser E2E** (the Python launcher) | **real `Gert.External` adapters → Python mock upstreams** (HTTP, incl. the monty sandbox sidecar) | real Kestrel on localhost | `dotnet run --launch-profile FakeE2E`: the host wires its **real** vLLM/SearXNG/monty clients but points them at the mock URLs `tools/smoke/mocks` serves. |
 
 **Why two.** The in-process fakes give speed + determinism for the bulk of the suite. The Python
 mocks give **wire-level fidelity** for the few browser runs: pointing the *real* adapters at a fake
 upstream exercises the adapter code `AddGertFakes` skips — `IHttpClientFactory`/Polly, OpenAI request
 shaping, **streaming SSE parsing of the upstream**, and the **SSRF guard** (a mock SearXNG can return
 a private-IP result URL and assert the fetch is refused — [security F5](security.md#3-findings--remediations)).
-The **sandbox is local process-exec, not HTTP**, so it has no wire protocol to mock in Python — it
-stays a .NET `StubSandbox` for E2E; real gVisor is exercised only in the staging smoke
+The default **monty** sandbox backend is an HTTP sidecar, so it gets the same treatment: the real
+`MontySandbox` adapter points at `mocks/monty.py`. The **gVisor** backend is local process-exec
+with no wire protocol to mock — real gVisor is exercised only in the staging smoke
 ([§12](#12-non-goals)).
 
 **No drift.** The Python `mocks/` and the .NET fakes share one documented spec
@@ -250,13 +252,14 @@ gives us the cleanest possible isolation assertion: after a two-user test, two s
 
 ## 5. .NET whitebox tests
 
-**Stack:** xUnit · FluentAssertions · NSubstitute (mocks) · `FluentValidation.TestHelper` ·
-[Verify](https://github.com/VerifyTests/Verify) for snapshotting `ChatEvent` streams.
+**Stack:** xUnit · FluentAssertions · NSubstitute (mocks) · `FluentValidation.TestHelper`.
+`ChatEvent` streams are collected and asserted directly with FluentAssertions — no snapshot
+library.
 
 ### `Gert.Service.Tests` — the heart of the suite
 - **Chat orchestrator / tool loop** ([chat-and-tools](chat-and-tools.md)): drive `IChatService`
   with `FakeChatModel` scripted to request a tool, assert the emitted `ChatEvent` sequence
-  (assistant text → tool call → tool result → final text) via a Verify snapshot. Covers the
+  (assistant text → tool call → tool result → final text) collected from the stream. Covers the
   no-tool path, single tool, and a model that loops/recovers.
 - **Tools**: `RagTool` (hybrid retrieve → citations), `WebSearchTool`, `SandboxTool` (incl. the
   `StubSandbox` failure variant). Assert tool entitlement is honoured — a user whose
@@ -317,7 +320,7 @@ Four things get tested:
    | Tool name / toggles | invoking an unknown tool | must be a **registered** tool name (entitlement itself is authz — `Gert.Authentication.Tests` + [§6](#6-api-integration-tests--gertapitests)) |
    | Conversation / document id | tampered id (IDOR is structural; this is defence-in-depth) | well-formed id (e.g. GUID) **before** it reaches a repo |
    | Admin user `{key}` | path traversal → `rm -rf` of an arbitrary dir | must match `^[0-9a-f]{64}$`; resolved path asserted **under `/data/users/`** ([security F6](security.md#3-findings--remediations)) |
-   | Web-search fetch URL | SSRF to internal services / metadata IP | scheme allowlist; private/loopback/link-local blocked; re-checked after redirects ([security F5](security.md#3-findings--remediations)) |
+   | Web-search fetch URL | SSRF to internal services / metadata IP | scheme allowlist; private/loopback/link-local blocked; re-checked after redirects — `SsrfGuardTests` + `SafeHttpFetcherTests` + `SafeHttpFetcherRedirectTests` ([security F5](security.md#3-findings--remediations)) |
    | Pagination / `k` | negative/absurd values | positive, bounded |
    | RAG query text | FTS5 query-syntax abuse | carried as **data, not operators** (also a query-construction concern) |
 
@@ -369,7 +372,14 @@ that only exist once you add HTTP:
   headers; `connect-src` lists only the API origin + Pocket ID.
 - **SSRF guard** ([security F5](security.md#3-findings--remediations)): the web-search fetcher,
   pointed at a private/loopback/`file:` URL (via the `FakeWebSearch` result set), refuses it — it
-  never opens the connection.
+  never opens the connection. The live-socket halves of the control — the per-hop redirect
+  re-vet and the connect-time DNS pin — are pinned in `Gert.External.Tests/SafeHttpFetcherRedirectTests.cs`
+  via the fetcher's internal resolver/IP-check seam (loopback listeners; production wiring unchanged).
+- **Per-user rate limiting** ([security F10](security.md#3-findings--remediations)):
+  `RateLimitingTests` re-enables the limiter (skipped under the Testing environment) and turns
+  the `Gert:RateLimiting` knobs down — over-cap requests get the branded 429 `ProblemDetails`,
+  a different `sub` is served immediately after another user's 429 (partition isolation, the
+  actual per-user semantics), and `/healthz` stays outside the limited surface.
 - **Upload parser hardening** ([security F7](security.md#3-findings--remediations)): a DOCX carrying
   an external-entity reference (XXE) and an over-cap decompression-bomb each fail the *document*
   (`status='failed'`) without hanging or reading host files.
@@ -495,14 +505,13 @@ real vLLM while auth stays mocked).
 | .NET test runner | **xUnit** | De-facto for ASP.NET Core. |
 | Assertions | **FluentValidation.TestHelper** + **FluentAssertions** | Readable failures. |
 | Mocks | **NSubstitute** | Fakes for the external world live in `Gert.Testing`, not ad-hoc mocks. |
-| Snapshots | **Verify** | `ChatEvent` streams + SSE frames. |
 | API integration | **`WebApplicationFactory<Program>`** | Real pipeline, fake externals. |
 | SQLite | **`Microsoft.Data.Sqlite`** temp DB + vec0/FTS5 | Real SQL, no mocking the database. |
 | Web tests (component units + E2E) | **Playwright (Python)** | Browser as the DOM/JS engine; Chromium + Firefox; no npm, no Node. |
 | Python env | **uv** | Manages the venv + deps for `tools/smoke` (`uv venv`, `uv run`). |
 | JWT (tests) | **RS256 key generated on first run** (git-ignored) + JWKS | Exercises the real RS256/JWKS path; no key ever committed. |
 | External world (.NET tiers) | **in-process fakes** (`AddGertFakes`) | Swap the `Gert.External` ports; fast, deterministic, no sockets. |
-| External world (E2E) | **Python mock upstreams** (`tools/smoke/mocks`) | Real adapters → mock vLLM/SearXNG; exercises adapter HTTP + SSRF guard. Sandbox stays a .NET stub. |
+| External world (E2E) | **Python mock upstreams** (`tools/smoke/mocks`) | Real adapters → mock vLLM/SearXNG/monty; exercises adapter HTTP + SSRF guard. |
 
 ---
 
@@ -552,7 +561,8 @@ definition of behaviour. This appendix is that definition. The split:
 - **Algorithms are code** — each side implements A.1/A.2 from this spec, kept honest by a committed
   **golden file** both assert against.
 - **Canned data is data** — the chat/search fixtures live **once** in `tests/shared/fixtures.json`;
-  the .NET side links it as an embedded resource, the Python side reads the same file. No second copy.
+  the .NET side loads it from disk at run time (`Gert.Testing/SharedPaths` walks up to
+  `tests/shared/`), the Python side reads the same file. No second copy.
 
 ```
 tests/shared/                  # one source of truth for both fake layers
@@ -641,8 +651,8 @@ shape. At least one fixture is **adversarial by design** for the SSRF test:
 ```
 
 The second result drives [F5](security.md#3-findings--remediations): the real adapter's summarize
-step must **refuse** that URL (private/link-local), proving the SSRF guard end-to-end. The sandbox is
-not represented here — it is process-exec, not HTTP, so it stays a .NET `StubSandbox`
+step must **refuse** that URL (private/link-local), proving the SSRF guard end-to-end. The sandbox's
+mock (`mocks/monty.py`) keys off the fixtures' sandbox case
 ([§4.2](#42-two-ways-to-fake-the-outside-world)).
 
 ### A.5 Ownership

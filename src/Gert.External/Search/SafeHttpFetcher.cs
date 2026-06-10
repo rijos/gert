@@ -23,10 +23,13 @@ namespace Gert.External.Search;
 /// </list>
 ///
 /// <para>
-/// The <c>ConnectCallback</c> + redirect re-check are the parts that need a live socket
-/// to fully exercise; <see cref="SsrfGuard"/> itself is unit-tested directly. A blocked
-/// destination throws <see cref="SsrfBlockedException"/>, which the caller treats as
-/// "skip this result", never as a server error.
+/// A blocked destination throws <see cref="SsrfBlockedException"/>, which the caller
+/// treats as "skip this result", never as a server error. <see cref="SsrfGuard"/>
+/// itself is unit-tested directly; the redirect re-vet and the connect-time DNS pin
+/// are pinned by <c>SafeHttpFetcherRedirectTests</c> via the <b>internal</b>
+/// constructor's resolver / IP-check delegates — deliberately not a configuration
+/// knob, so the production wiring (real DNS + <see cref="SsrfGuard.IsIpAllowed"/>)
+/// cannot be bypassed by an operator setting.
 /// </para>
 /// </summary>
 public sealed class SafeHttpFetcher : IDisposable
@@ -34,12 +37,34 @@ public sealed class SafeHttpFetcher : IDisposable
     private readonly HttpClient _client;
     private readonly SearXngOptions _options;
     private readonly ILogger<SafeHttpFetcher> _logger;
+    private readonly Func<string, CancellationToken, ValueTask<IPAddress[]>> _resolveHost;
+    private readonly Func<IPAddress, bool> _isIpAllowed;
 
     /// <summary>Construct a fetcher whose handler enforces the connect-time IP guard.</summary>
     public SafeHttpFetcher(IOptions<SearXngOptions> options, ILogger<SafeHttpFetcher> logger)
+        : this(options, logger, resolveHost: null, isIpAllowed: null)
+    {
+    }
+
+    /// <summary>
+    /// Test seam (security F5, <c>SafeHttpFetcherRedirectTests</c>): inject the DNS
+    /// resolver and per-address vet so the connect-time pin and the redirect re-vet
+    /// are exercisable against loopback listeners — the public constructor always
+    /// wires the production pair (<see cref="System.Net.Dns.GetHostAddressesAsync(string, CancellationToken)"/>
+    /// + <see cref="SsrfGuard.IsIpAllowed"/>). Internal on purpose: an options-based
+    /// bypass would ship an SSRF hole.
+    /// </summary>
+    internal SafeHttpFetcher(
+        IOptions<SearXngOptions> options,
+        ILogger<SafeHttpFetcher> logger,
+        Func<string, CancellationToken, ValueTask<IPAddress[]>>? resolveHost,
+        Func<IPAddress, bool>? isIpAllowed)
     {
         _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _resolveHost = resolveHost
+            ?? (static (host, ct) => new ValueTask<IPAddress[]>(Dns.GetHostAddressesAsync(host, ct)));
+        _isIpAllowed = isIpAllowed ?? SsrfGuard.IsIpAllowed;
 
         var handler = new SocketsHttpHandler
         {
@@ -79,9 +104,7 @@ public sealed class SafeHttpFetcher : IDisposable
             }
 
             using var request = new HttpRequestMessage(HttpMethod.Get, current);
-            using var response = await _client
-                .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
-                .ConfigureAwait(false);
+            using var response = await SendGuardedAsync(request, cancellationToken).ConfigureAwait(false);
 
             if (IsRedirect(response.StatusCode))
             {
@@ -105,6 +128,29 @@ public sealed class SafeHttpFetcher : IDisposable
     /// <inheritdoc />
     public void Dispose() => _client.Dispose();
 
+    /// <summary>
+    /// Send, unwrapping a connect-time guard refusal: <see cref="GuardedConnectAsync"/>
+    /// throws inside the handler, so <c>SocketsHttpHandler</c> surfaces it wrapped in an
+    /// <see cref="HttpRequestException"/> — rethrow the typed <see cref="SsrfBlockedException"/>
+    /// so callers (and the F5 tests) see the documented "blocked" contract, never a
+    /// generic transport error.
+    /// </summary>
+    private async Task<HttpResponseMessage> SendGuardedAsync(
+        HttpRequestMessage request,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await _client
+                .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (HttpRequestException ex) when (ex.InnerException is SsrfBlockedException blocked)
+        {
+            throw new SsrfBlockedException(blocked.Message, ex);
+        }
+    }
+
     private static bool IsRedirect(HttpStatusCode status) =>
         status is HttpStatusCode.MovedPermanently
             or HttpStatusCode.Found
@@ -126,11 +172,11 @@ public sealed class SafeHttpFetcher : IDisposable
 
         IPAddress[] addresses = IPAddress.TryParse(host, out var literal)
             ? [literal]
-            : await Dns.GetHostAddressesAsync(host, cancellationToken).ConfigureAwait(false);
+            : await _resolveHost(host, cancellationToken).ConfigureAwait(false);
 
         foreach (var address in addresses)
         {
-            if (!SsrfGuard.IsIpAllowed(address))
+            if (!_isIpAllowed(address))
             {
                 _logger.LogWarning("SSRF guard blocked connect to {Host} → {Ip}.", host, address);
                 throw new SsrfBlockedException($"Resolved address blocked by SSRF policy: {address}");

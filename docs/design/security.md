@@ -114,6 +114,15 @@ The same egress reasoning keeps the sandbox's outbound network closed — **abse
 under monty (no network exists in the language), **off by default** under gVisor
 ([chat-and-tools](chat-and-tools.md#sandbox--security-critical)). → [chat-and-tools](chat-and-tools.md#web-search-searxng).
 
+Tested in `tests/Gert.External.Tests`: `SsrfGuardTests` (the pure URL/IP policy),
+`SafeHttpFetcherTests` (pre-socket vetting: scheme, malformed, private literal host), and
+`SafeHttpFetcherRedirectTests` (the live-socket controls — per-hop redirect re-vet and the
+connect-time DNS pin — against loopback listeners). The latter works through an **internal**
+constructor seam on `SafeHttpFetcher` that injects the DNS resolver and per-address check;
+the production wiring (real DNS + `SsrfGuard.IsIpAllowed`) is the public constructor's only
+behaviour and is deliberately **not** a configuration knob, so the guard cannot be bypassed
+by an operator setting.
+
 ### F6 — Admin `{key}` path validation
 `DELETE /api/admin/users/{key}` and `GET …/{key}` feed `{key}` into a `/data/users/{key}` path that
 is `rm -rf`'d — the most destructive operation in the system. `{key}` must be validated to
@@ -155,7 +164,13 @@ reverse proxy; the app sets HSTS and assumes HTTPS-only. → [operations](operat
 ### F10 — Resource-exhaustion rate limits
 Chat (GPU), ingestion (embeddings), and sandbox (exec) are expensive and otherwise uncapped per
 user. Apply per-user concurrency/rate caps (ASP.NET rate limiter) so one client — or one stolen
-token — can't saturate the box. Low likelihood at ~20 trusted users; cheap to add. → [operations](operations.md#cross-cutting-concerns).
+token — can't saturate the box. Low likelihood at ~20 trusted users; cheap to add.
+Implemented as a fixed-window limiter on the `/api/*` controller surface, partitioned by the
+token `sub` (remote IP for anonymous traffic); the limits bind from `Gert:RateLimiting`
+(`PermitLimit`, default 600; `Window`, default 1 minute) and a rejection is a branded 429
+ProblemDetails. Tested in `tests/Gert.Api.Tests/RateLimitingTests.cs`: over-cap → branded 429,
+a throttled user never throttles another `sub` (partition isolation — the actual per-user
+semantics), and the liveness probe stays outside the limited surface. → [operations](operations.md#cross-cutting-concerns).
 
 ### F11 — JWT algorithm pinning
 Pin `TokenValidationParameters.ValidAlgorithms` to `["RS256"]` so a future JWKS quirk can't enable
