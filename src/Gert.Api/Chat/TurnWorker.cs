@@ -3,14 +3,19 @@ using Gert.Service.Chat;
 namespace Gert.Api.Chat;
 
 /// <summary>
-/// Drains the <see cref="ChannelTurnQueue"/> and runs each <see cref="TurnJob"/>
-/// through <see cref="ITurnRunner"/> (chat-and-tools.md § detached turns; mirrors
-/// <see cref="Ingestion.IngestionWorker"/>). Opens a <b>fresh DI scope per
-/// turn</b> and seeds its <see cref="DetachedUserContext"/> from the job FIRST,
-/// so the scoped tools (rag → per-user databases) resolve with the plan-time
-/// identity + entitlement snapshot instead of a request context that does not
-/// exist here. The runner finalises its own failures (status=error); the loop's
-/// guard exists so a defect can never stop the worker.
+/// Drains the <see cref="ChannelTurnQueue"/>'s keyed lanes — one loop per shard,
+/// all under this ONE hosted service (decisions §11, remedied: the gate index is
+/// the 409/seq protection; the lanes are only throughput) — and runs each
+/// <see cref="TurnJob"/> through <see cref="ITurnRunner"/> (chat-and-tools.md
+/// § detached turns; mirrors <see cref="Ingestion.IngestionWorker"/>). A
+/// conversation always hashes to one lane, so its turns never overlap; different
+/// conversations may. Opens a <b>fresh DI scope per turn</b> and seeds its
+/// <see cref="DetachedUserContext"/> from the job FIRST, so the scoped tools
+/// (rag → per-user databases) resolve with the plan-time identity + entitlement
+/// snapshot instead of a request context that does not exist here — N lanes mean
+/// N concurrent scopes, each with its own seeded instance. The runner finalises
+/// its own failures (status=error); the per-job guard exists so a defect can
+/// never stop its lane.
 /// </summary>
 public sealed class TurnWorker : BackgroundService
 {
@@ -29,11 +34,25 @@ public sealed class TurnWorker : BackgroundService
     }
 
     /// <inheritdoc />
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    protected override Task ExecuteAsync(CancellationToken stoppingToken) =>
+        Task.WhenAll(Enumerable.Range(0, _queue.ShardCount)
+            .Select(shard => DrainShardAsync(shard, stoppingToken)));
+
+    private async Task DrainShardAsync(int shard, CancellationToken stoppingToken)
     {
-        await foreach (var job in _queue.Reader.ReadAllAsync(stoppingToken).ConfigureAwait(false))
+        try
         {
-            await ProcessAsync(job, stoppingToken).ConfigureAwait(false);
+            await foreach (var job in _queue.ReaderFor(shard).ReadAllAsync(stoppingToken).ConfigureAwait(false))
+            {
+                await ProcessAsync(job, stoppingToken).ConfigureAwait(false);
+            }
+        }
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+        {
+            // Shutdown: this lane is done; WhenAll completes when every lane has
+            // observed it. In-flight jobs error-finalise best-effort in the
+            // runner; queued jobs are dropped to the orphan rule + the planner
+            // write-back — no graceful drain by design.
         }
     }
 

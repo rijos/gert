@@ -18,13 +18,13 @@ design ambiguity. When every unit lands, this file is deleted — git history ke
 | S5 | Multi-instance topology — decide & document | ⬜ |
 | S6 | Context compaction (design → phases) | ⬜ |
 | S7 | Project import / restore | ⬜ |
-| S8 | Keyed turn parallelism with an atomic 409 gate (one combined change) | ⬜ |
+| S8 | Keyed turn parallelism with an atomic 409 gate (one combined change) | ✅ |
 
 Safe concurrent tracks: **S1 → S2a → S2b** is the spine; **S3, S4, S5, S7** are independent
 of it and of each other; **S6a** can start once [context-compaction.md](context-compaction.md)
-is settled. **S8 rides the spine too** — it edits the same planner/worker/rules files as S1
-and S2a, so it lands after them (S1 → S2a → S8), never in a parallel worktree against them.
-Use worktrees for parallel units.
+is settled. **S8 rode the spine too** — it edits the same planner/worker/rules files as S1
+and S2a. *(Deviation, orchestrator-approved: S8 landed first, against today's code — see the
+note in its section below.)* Use worktrees for parallel units.
 
 ---
 
@@ -207,7 +207,14 @@ Use worktrees for parallel units.
 
 ### S8 — Keyed turn parallelism with an atomic 409 gate (one combined change)
 
-- **Goal:** Retire [decisions §11](decisions.md#11-turn-execution--one-global-serial-worker-for-now)'s
+> **✅ Shipped** — see [decisions §11](decisions.md#11-turn-execution--keyed-lanes-over-an-atomic-per-conversation-gate)
+> (now settled). **Deviation from the Depends line below, orchestrator-approved:** S8 landed
+> *before* S1/S2a, against today's code — "expired" means the current orphan rule
+> (`CreatedAt` + `MaxTurnDuration`), and the 409 branch stays a 409. When S1/S2a land they
+> re-touch exactly two single points: the write-back predicate in `TurnPlanner.PlanAsync`
+> and its 409 branch.
+
+- **Goal:** Retire [decisions §11](decisions.md#11-turn-execution--keyed-lanes-over-an-atomic-per-conversation-gate)'s
   interim posture: the single global serial `TurnWorker` is today the *only* run-phase
   protection for the seq single-writer invariant and the TOCTOU-racy 409 check
   (check-then-insert, no transaction, no unique index). Replace it with explicit controls

@@ -18,6 +18,16 @@ public sealed class TurnOptions
     public TimeSpan MaxTurnDuration { get; set; } = TimeSpan.FromMinutes(5);
 
     /// <summary>
+    /// Number of parallel turn lanes the host worker drains. Turns are sharded
+    /// by TurnKey hash: one conversation's turns always ride one lane (strictly
+    /// ordered); different conversations may run concurrently. 1 = the old
+    /// global serial worker. The per-conversation streaming gate
+    /// (ux_messages_streaming) is the correctness control; this is only
+    /// throughput (decisions §11).
+    /// </summary>
+    public int MaxConcurrentTurns { get; set; } = 4;
+
+    /// <summary>
     /// Runaway brake on tool ROUNDS per turn — NOT a work budget. A round is one
     /// upstream completion request that comes back with tool calls — executing
     /// them and re-prompting starts the next round, so every round costs a full

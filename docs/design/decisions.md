@@ -125,41 +125,50 @@ server-side default set, or nothing?
     *explicit-but-present* (still an exception to the one-source rule — the objection was the
     exception itself, not its visibility).
 
-## 11. Turn execution — one global serial worker (for now)
+## 11. Turn execution — keyed lanes over an atomic per-conversation gate
 
 How are queued `TurnJob`s executed: one global serial consumer, or per-conversation keyed
 parallelism? See [chat-and-tools § detached turns](chat-and-tools.md#detached-turns).
 
-- **Decision (interim, remedy scheduled):** **a single global serial `TurnWorker`** drains the
-  unbounded `ChannelTurnQueue` (`SingleReader = true`) and runs turns strictly one at a time,
-  process-wide. Acceptable at current scale (~20 mostly-idle users, and the single vLLM
-  upstream serialises the expensive part anyway); the cost is head-of-line blocking — one
-  user's long turn queues everyone else's, and queue wait eats into each job's
-  `MaxTurnDuration` budget (by design: see the shared plan-time anchor below).
-  - **Load-bearing — two invariants currently DEPEND on the serial worker.** (1) The **seq
-    single-writer invariant**: only one runner ever allocates seqs / appends `turn_events`
-    for a conversation, today only because exactly one runner exists at all. (2) The
-    planner's **409 gate** is a check-then-insert with no transaction and no unique index
-    (a TOCTOU race): two concurrent plans for one conversation can both pass the
-    `IsTurnInProgress` check and both enqueue — the damage is bounded today only because the
-    two jobs still *run* serially. Do not parallelise the worker without closing the gate.
-  - **The remedy is one combined change — never one half without the other:**
-    **(a) a per-conversation atomic gate** — a partial unique index
-    `messages(conversation_id) WHERE status='streaming'` makes the placeholder insert the
-    gate itself, plus a planner write-back of expired placeholders (the orphan rule's lazy
-    read-side mapping becomes a real write, so a dead turn's row frees the index) — and
-    **(b) bounded keyed parallelism** — hash `TurnKey` onto N serial sub-workers so one
-    conversation's turns stay ordered on one lane while different conversations run
-    concurrently. Shipping (b) without (a) removes the only protection the 409/seq
-    invariants have; shipping (a) without (b) closes a race nobody can hit yet. Tracked as
-    [strengthening-plan S8](strengthening-plan.md#s8--keyed-turn-parallelism-with-an-atomic-409-gate-one-combined-change).
-  - **Until then, the two turn timers share one anchor:** `TurnJob.PlannedAt` (= the
-    placeholder row's `CreatedAt`, one clock read in the planner). The runner budgets only
-    the `MaxTurnDuration` *remaining* from that instant, so a job that waited behind the
-    global queue can never outlive the reader-facing orphan/409 horizon and read as `error`
-    while healthily running.
+- **Decision (settled — [strengthening-plan S8](strengthening-plan.md#s8--keyed-turn-parallelism-with-an-atomic-409-gate-one-combined-change),
+  shipped as one combined change):** **an engine-enforced per-conversation gate plus bounded
+  keyed parallelism.**
+  - **(a) The atomic gate.** A partial unique index
+    `ux_messages_streaming ON messages(conversation_id) WHERE status='streaming'` makes the
+    streaming-placeholder insert itself the gate: the planner persists the user row + the
+    placeholder in one IMMEDIATE transaction (`IChatRepository.TryInsertTurnMessagesAsync`),
+    and a losing concurrent plan gets the constraint violation, surfaced as
+    `TurnInProgressException` → 409 — no TOCTOU window, with the old read check kept only as
+    a fast path. The planner also **writes back expired placeholders**
+    (`TryExpireStreamingMessageAsync`, `streaming → error`, conditional so a finalised row is
+    never clobbered): the orphan rule's lazy read-side mapping became a real write, so a dead
+    turn's row frees the index instead of locking the conversation forever. Both invariants
+    that used to lean on the serial worker — the **seq single-writer invariant** and the
+    **409 rule** — are now explicit controls in the database.
+  - **(b) Keyed lanes.** The one `TurnWorker` hosted service drains
+    `Gert:Turn:MaxConcurrentTurns` (default 4) internal lanes of the sharded
+    `ChannelTurnQueue`; jobs shard by the full `TurnKey` (iss, sub, pid, conversation) hash,
+    so one conversation's turns ride one lane in strict FIFO — per-conversation ordering is
+    structural, not timing — while different conversations may overlap. `1` reproduces the
+    old global serial worker exactly. The gate is the correctness control; the lane count is
+    only throughput.
+  - **SQLite under two lanes:** the only genuinely new concurrency is *same user, same
+    project, two conversations* hitting one `chat.db` (per-user/per-project databases make
+    everything else disjoint). Open-per-use connections with WAL + `busy_timeout=5000` mean
+    readers never block and writers queue up to 5 s; every write is a short single statement
+    except the gate transaction (two INSERTs under `BEGIN IMMEDIATE` — the write lock is
+    taken up front precisely so it cannot upgrade-deadlock). Pathological contention
+    surfaces as `SQLITE_BUSY` after 5 s → the runner's catch-all finalises that turn as
+    `error`: fail-closed and visible. Adequate at this scale; no pragma changes.
+  - **The two turn timers still share one anchor:** `TurnJob.PlannedAt` (= the placeholder
+    row's `CreatedAt`, one clock read in the planner). The runner budgets only the
+    `MaxTurnDuration` *remaining* from that instant, so a job that waited behind its lane
+    can never outlive the reader-facing orphan/409 horizon and read as `error` while
+    healthily running.
   - *Rejected:* unbounded `Task.Run` per turn (no ordering, no owner — violates the
     worker-owns-detached-work rule in the style guide); a channel per conversation created
-    eagerly (unbounded channel count, no backpressure story); parallelising now and racing
-    the 409 gate "rarely" (a duplicate streaming turn corrupts seq ordering and history —
-    fail-closed loses).
+    eagerly (unbounded channel count, no backpressure story); N hosted services instead of N
+    lanes (DI churn, N owners for one queue — the style guide wants one worker owning the
+    detached work); parallelising without the gate (a duplicate streaming turn corrupts seq
+    ordering and history — fail-closed loses), or shipping the gate without the lanes (closes
+    a race nobody can hit and changes nothing user-visible).

@@ -231,6 +231,7 @@ make every trip visible on its tool card.
 | Key | Default | Notes |
 |-----|---------|-------|
 | `MaxTurnDuration` | `00:05:00` | Hard wall-clock cap on one turn (model rounds + tools) — the real budget. Doubles as the orphan horizon: a `streaming` row older than this reads as `error`. |
+| `MaxConcurrentTurns` | `4` | Parallel turn lanes. Turns shard by (user, project, conversation): one conversation never runs concurrently with itself; different conversations may overlap. `1` restores the global serial worker. Must be ≥ 1 (validated at startup). |
 | `MaxToolRounds` | `64` | **Runaway brake, not a work budget** — sized an order of magnitude above legitimate turns. Past it the runner refuses further calls with budget-exhausted errors (visible on the cards), winds down in one final round, and logs a warning. |
 | `MaxTokensPerRound` | `16384` | Per-round completion bound: the `max_tokens` sent on every upstream request. Both the default (when neither the conversation nor the user's per-model settings ask) and the ceiling (requested values clamp down). Reasoning tokens count against it on thinking models — keep it generous. `0` disables. |
 | `ToolCallTimeout` | `00:01:00` | Generic wall-clock backstop on one tool execution, behind each tool's own tighter limits (sandbox wall clock, search timeouts). A trip fails that call with a visible card error; the turn continues. `0` disables. |

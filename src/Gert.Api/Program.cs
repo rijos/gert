@@ -65,9 +65,10 @@ builder.Services.AddGertServices();
 // Detached turn pipeline tunables (chat-and-tools.md § detached turns). The service
 // layer registers the defaults; the host binds configuration over them
 // (dotnet-style-guide.md §4 — no annotations on TurnOptions, so no
-// ValidateDataAnnotations).
+// ValidateDataAnnotations; the lane count gets an explicit predicate instead).
 builder.Services.AddOptions<Gert.Service.Chat.TurnOptions>()
     .BindConfiguration("Gert:Turn")
+    .Validate(o => o.MaxConcurrentTurns >= 1, "Gert:Turn:MaxConcurrentTurns must be >= 1")
     .ValidateOnStart();
 
 // AddGertServices (U7c) registers the three built-in tools (rag/search/sandbox)

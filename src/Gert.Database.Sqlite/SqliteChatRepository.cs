@@ -118,8 +118,14 @@ public sealed class SqliteChatRepository(SqliteConnection connection) : IChatRep
     {
         ArgumentNullException.ThrowIfNull(conversation);
 
+        // OR IGNORE: the create endpoint uses server GUIDs (collision-free); the
+        // only duplicate path is two concurrent first-POSTs materialising the
+        // same client-supplied conversation id (SPA double-send on a new chat),
+        // where first-writer-wins-and-continue is exactly right — both racers
+        // then contend on the streaming gate and exactly one wins. Without this
+        // the losing racer would die with a raw PK violation (500), not the 409.
         const string sql =
-            "INSERT INTO conversations (id, title, model_id, tools_json, params_json, thinking, preserve_thinking, created_at, updated_at, archived) " +
+            "INSERT OR IGNORE INTO conversations (id, title, model_id, tools_json, params_json, thinking, preserve_thinking, created_at, updated_at, archived) " +
             "VALUES (@Id, @Title, @ModelId, @ToolsJson, @ParamsJson, @Thinking, @PreserveThinking, @CreatedAt, @UpdatedAt, @Archived);";
 
         await _connection.ExecuteAsync(new CommandDefinition(sql, new
@@ -207,11 +213,77 @@ public sealed class SqliteChatRepository(SqliteConnection connection) : IChatRep
     {
         ArgumentNullException.ThrowIfNull(message);
 
+        await InsertMessageCoreAsync(message, transaction: null, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
+    public async Task<bool> TryInsertTurnMessagesAsync(
+        Message userMessage,
+        Message assistantMessage,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(userMessage);
+        ArgumentNullException.ThrowIfNull(assistantMessage);
+
+        // IMMEDIATE (write-locking) like migrate-on-open (SqliteMigrationRunner):
+        // the write lock is taken up front, so this txn can never deadlock on a
+        // read-to-write upgrade (busy_timeout does not rescue upgrade deadlocks).
+        // No async overload takes `deferred`; the sync begin only issues
+        // "BEGIN IMMEDIATE" (a fast local op), then all real work is async.
+        await using var transaction = _connection.BeginTransaction(deferred: false);
+        try
+        {
+            await InsertMessageCoreAsync(userMessage, transaction, cancellationToken).ConfigureAwait(false);
+            await InsertMessageCoreAsync(assistantMessage, transaction, cancellationToken).ConfigureAwait(false);
+            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+            return true;
+        }
+        catch (SqliteException ex) when (ex.SqliteErrorCode == 19 && ex.SqliteExtendedErrorCode == 2067)
+        {
+            // SQLITE_CONSTRAINT (19) / SQLITE_CONSTRAINT_UNIQUE (2067): the gate
+            // index ux_messages_streaming — the only UNIQUE index on messages —
+            // rejected the placeholder, so another plan holds the gate. A PK
+            // clash is SQLITE_CONSTRAINT_PRIMARYKEY (1555) and still throws.
+            // The `await using` disposal rolls back: NEITHER row persists.
+            return false;
+        }
+    }
+
+    /// <inheritdoc />
+    public async Task<bool> TryExpireStreamingMessageAsync(
+        string messageId,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(messageId);
+
+        // Conditional transition: `AND status = 'streaming'` makes the write-back
+        // a no-op against a row the runner (or a racing planner) finalized first.
+        // Content is untouched — whatever partial text the dead turn flushed stays.
+        const string sql =
+            "UPDATE messages SET status = 'error' WHERE id = @Id AND status = 'streaming';";
+
+        var affected = await _connection.ExecuteAsync(
+            new CommandDefinition(sql, new { Id = messageId }, cancellationToken: cancellationToken))
+            .ConfigureAwait(false);
+
+        return affected == 1;
+    }
+
+    /// <summary>
+    /// The one message INSERT (shared by the plain insert and the gated turn
+    /// insert, so the column list lives in exactly one place), optionally inside
+    /// <paramref name="transaction"/>.
+    /// </summary>
+    private Task InsertMessageCoreAsync(
+        Message message,
+        SqliteTransaction? transaction,
+        CancellationToken cancellationToken)
+    {
         const string sql =
             "INSERT INTO messages (id, conversation_id, role, content, attachments_json, model_id, token_count, seq, status, created_at) " +
             "VALUES (@Id, @ConversationId, @Role, @Content, @AttachmentsJson, @ModelId, @TokenCount, @Seq, @Status, @CreatedAt);";
 
-        await _connection.ExecuteAsync(new CommandDefinition(sql, new
+        return _connection.ExecuteAsync(new CommandDefinition(sql, new
         {
             message.Id,
             message.ConversationId,
@@ -225,7 +297,7 @@ public sealed class SqliteChatRepository(SqliteConnection connection) : IChatRep
             message.Seq,
             Status = MessageStatusToString(message.Status),
             CreatedAt = FormatTime(message.CreatedAt),
-        }, cancellationToken: cancellationToken)).ConfigureAwait(false);
+        }, transaction, cancellationToken: cancellationToken));
     }
 
     /// <inheritdoc />
@@ -299,7 +371,8 @@ public sealed class SqliteChatRepository(SqliteConnection connection) : IChatRep
         ArgumentNullException.ThrowIfNull(conversationId);
 
         // Atomic increment-and-return; the single source of seq. WAL + busy_timeout
-        // serialize writers, and per-conversation single-writer is an invariant
+        // serialize writers; per-conversation single-writer is held by the
+        // ux_messages_streaming gate index + one worker lane per conversation
         // (see IChatRepository.AllocateSeqAsync docs).
         const string sql =
             "UPDATE conversations SET next_seq = next_seq + 1 WHERE id = @id RETURNING next_seq - 1;";

@@ -67,6 +67,10 @@ public sealed class InMemoryArtifactRepository : IChatRepository
 
     public Task InsertMessageAsync(Message message, CancellationToken cancellationToken = default) => Unsupported<Task>();
 
+    public Task<bool> TryInsertTurnMessagesAsync(Message userMessage, Message assistantMessage, CancellationToken cancellationToken = default) => Unsupported<Task<bool>>();
+
+    public Task<bool> TryExpireStreamingMessageAsync(string messageId, CancellationToken cancellationToken = default) => Unsupported<Task<bool>>();
+
     public Task UpdateMessageStreamAsync(string messageId, string content, MessageStatus status, int? tokenCount, CancellationToken cancellationToken = default) => Unsupported<Task>();
 
     public Task FinalizeMessageAsync(string messageId, string content, MessageStatus status, int? tokenCount, string? reasoning, long? durationMs, int? contextTokens, CancellationToken cancellationToken = default) => Unsupported<Task>();

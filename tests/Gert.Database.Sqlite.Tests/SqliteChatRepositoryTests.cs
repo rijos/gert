@@ -488,6 +488,152 @@ public class SqliteChatRepositoryTests
         (await repo.GetLatestToolCallAsync(conversation.Id, "rag")).Should().BeNull();
     }
 
+    // ---- the streaming turn gate (ux_messages_streaming, decisions §11) -----
+
+    [Fact]
+    public async Task Gate_rejects_a_second_streaming_insert_for_the_same_conversation()
+    {
+        await using var root = new TempDataRoot();
+        var provider = ProviderFixture.ProviderFor(root);
+        await provider.EnsureProvisionedAsync(ProviderFixture.ExpectedIssuer, Sub);
+
+        var conversation = NewConversation();
+        var now = DateTimeOffset.UtcNow;
+        var user1 = NewMessage(conversation.Id, MessageRole.User, "first question", now) with { Seq = 1 };
+        var assistant1 = NewMessage(conversation.Id, MessageRole.Assistant, "", now) with
+        {
+            Seq = 2,
+            Status = MessageStatus.Streaming,
+        };
+        var user2 = NewMessage(conversation.Id, MessageRole.User, "racing question", now) with { Seq = 3 };
+        var assistant2 = NewMessage(conversation.Id, MessageRole.Assistant, "", now) with
+        {
+            Seq = 4,
+            Status = MessageStatus.Streaming,
+        };
+
+        await using var repo = await provider.OpenChatAsync(ProviderFixture.ExpectedIssuer, Sub, "default");
+        await repo.InsertConversationAsync(conversation);
+
+        (await repo.TryInsertTurnMessagesAsync(user1, assistant1)).Should().BeTrue();
+        (await repo.TryInsertTurnMessagesAsync(user2, assistant2)).Should().BeFalse();
+
+        // Atomicity: the losing pair persisted NEITHER row — not even the user one.
+        var messages = await repo.ListMessagesAsync(conversation.Id);
+        messages.Select(m => m.Id).Should().BeEquivalentTo([user1.Id, assistant1.Id]);
+
+        // The index, not the helper, is the control: a direct second streaming
+        // insert hits the engine-level constraint too.
+        var direct = () => repo.InsertMessageAsync(
+            NewMessage(conversation.Id, MessageRole.Assistant, "", now) with { Seq = 5, Status = MessageStatus.Streaming });
+        await direct.Should().ThrowAsync<SqliteException>();
+    }
+
+    [Fact]
+    public async Task Gate_allows_streaming_rows_in_different_conversations()
+    {
+        await using var root = new TempDataRoot();
+        var provider = ProviderFixture.ProviderFor(root);
+        await provider.EnsureProvisionedAsync(ProviderFixture.ExpectedIssuer, Sub);
+
+        var first = NewConversation();
+        var second = NewConversation();
+        var now = DateTimeOffset.UtcNow;
+
+        await using var repo = await provider.OpenChatAsync(ProviderFixture.ExpectedIssuer, Sub, "default");
+        await repo.InsertConversationAsync(first);
+        await repo.InsertConversationAsync(second);
+
+        var firstPlanned = await repo.TryInsertTurnMessagesAsync(
+            NewMessage(first.Id, MessageRole.User, "q1", now) with { Seq = 1 },
+            NewMessage(first.Id, MessageRole.Assistant, "", now) with { Seq = 2, Status = MessageStatus.Streaming });
+        var secondPlanned = await repo.TryInsertTurnMessagesAsync(
+            NewMessage(second.Id, MessageRole.User, "q2", now) with { Seq = 1 },
+            NewMessage(second.Id, MessageRole.Assistant, "", now) with { Seq = 2, Status = MessageStatus.Streaming });
+
+        firstPlanned.Should().BeTrue();
+        secondPlanned.Should().BeTrue("the gate is per conversation, not per database");
+    }
+
+    [Fact]
+    public async Task Finalizing_a_row_frees_the_gate()
+    {
+        await using var root = new TempDataRoot();
+        var provider = ProviderFixture.ProviderFor(root);
+        await provider.EnsureProvisionedAsync(ProviderFixture.ExpectedIssuer, Sub);
+
+        var conversation = NewConversation();
+        var now = DateTimeOffset.UtcNow;
+
+        await using var repo = await provider.OpenChatAsync(ProviderFixture.ExpectedIssuer, Sub, "default");
+        await repo.InsertConversationAsync(conversation);
+
+        // Turn 1 holds the gate, completes normally → the gate frees.
+        var placeholder1 = NewMessage(conversation.Id, MessageRole.Assistant, "", now) with
+        {
+            Seq = 2,
+            Status = MessageStatus.Streaming,
+        };
+        (await repo.TryInsertTurnMessagesAsync(
+            NewMessage(conversation.Id, MessageRole.User, "q1", now) with { Seq = 1 },
+            placeholder1)).Should().BeTrue();
+        await repo.FinalizeMessageAsync(placeholder1.Id, "answer", MessageStatus.Complete, 10, null, null, null);
+
+        // Turn 2 holds the gate, dies, the planner write-back expires it → frees again.
+        var placeholder2 = NewMessage(conversation.Id, MessageRole.Assistant, "", now) with
+        {
+            Seq = 4,
+            Status = MessageStatus.Streaming,
+        };
+        (await repo.TryInsertTurnMessagesAsync(
+            NewMessage(conversation.Id, MessageRole.User, "q2", now) with { Seq = 3 },
+            placeholder2)).Should().BeTrue();
+        (await repo.TryExpireStreamingMessageAsync(placeholder2.Id)).Should().BeTrue();
+
+        // Turn 3: the conversation accepts a new streaming placeholder.
+        (await repo.TryInsertTurnMessagesAsync(
+            NewMessage(conversation.Id, MessageRole.User, "q3", now) with { Seq = 5 },
+            NewMessage(conversation.Id, MessageRole.Assistant, "", now) with { Seq = 6, Status = MessageStatus.Streaming }))
+            .Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task TryExpireStreamingMessage_is_conditional_and_keeps_content()
+    {
+        await using var root = new TempDataRoot();
+        var provider = ProviderFixture.ProviderFor(root);
+        await provider.EnsureProvisionedAsync(ProviderFixture.ExpectedIssuer, Sub);
+
+        var conversation = NewConversation();
+        var now = DateTimeOffset.UtcNow;
+        var streaming = NewMessage(conversation.Id, MessageRole.Assistant, "partial text", now) with
+        {
+            Seq = 1,
+            Status = MessageStatus.Streaming,
+        };
+        var complete = NewMessage(conversation.Id, MessageRole.Assistant, "done", now) with
+        {
+            Seq = 2,
+            Status = MessageStatus.Complete,
+        };
+
+        await using var repo = await provider.OpenChatAsync(ProviderFixture.ExpectedIssuer, Sub, "default");
+        await repo.InsertConversationAsync(conversation);
+        await repo.InsertMessageAsync(streaming);
+        await repo.InsertMessageAsync(complete);
+
+        // True exactly once; the repeat and the already-final row are no-ops.
+        (await repo.TryExpireStreamingMessageAsync(streaming.Id)).Should().BeTrue();
+        (await repo.TryExpireStreamingMessageAsync(streaming.Id)).Should().BeFalse("the transition already happened");
+        (await repo.TryExpireStreamingMessageAsync(complete.Id)).Should().BeFalse("a finalized row is never clobbered");
+
+        var rows = await repo.ListMessagesAsync(conversation.Id);
+        var expired = rows.Single(m => m.Id == streaming.Id);
+        expired.Status.Should().Be(MessageStatus.Error);
+        expired.Content.Should().Be("partial text", "the dead turn's partial content survives the write-back");
+        rows.Single(m => m.Id == complete.Id).Status.Should().Be(MessageStatus.Complete);
+    }
+
     private static Conversation NewConversation() => new()
     {
         Id = Guid.NewGuid().ToString("D"),

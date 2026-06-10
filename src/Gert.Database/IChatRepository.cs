@@ -30,6 +30,30 @@ public interface IChatRepository : IAsyncDisposable
     Task InsertMessageAsync(Message message, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Atomically insert one turn's rows — the user message and the streaming
+    /// assistant placeholder — in a single transaction. The placeholder insert is
+    /// the per-conversation turn gate (<c>ux_messages_streaming</c>): returns
+    /// false when another streaming placeholder already holds the gate (the
+    /// caller maps this to the 409 rule), in which case NEITHER row is
+    /// persisted. Any other failure throws.
+    /// </summary>
+    Task<bool> TryInsertTurnMessagesAsync(
+        Message userMessage,
+        Message assistantMessage,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// The planner's orphan write-back: finalize an expired streaming row to
+    /// <c>error</c>, conditionally — the UPDATE carries <c>AND status =
+    /// 'streaming'</c>, so a row the runner finalized in the meantime is never
+    /// clobbered. Content is kept (whatever partial text the dead turn flushed).
+    /// Returns true when this call performed the transition.
+    /// </summary>
+    Task<bool> TryExpireStreamingMessageAsync(
+        string messageId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Stream-update an assistant row: replace content, set status, and (when
     /// non-null) the token count. Used by the turn runner for incremental flushes
     /// and the final complete/error transition.
@@ -62,8 +86,11 @@ public interface IChatRepository : IAsyncDisposable
     /// Atomically allocate the next per-conversation sequence number
     /// (<c>UPDATE conversations SET next_seq = next_seq + 1 … RETURNING</c>).
     /// The single source of <c>seq</c> — single-writer per conversation by
-    /// invariant (planner finishes before the worker dequeues; concurrent turns
-    /// are rejected with 409 while one is streaming).
+    /// construction: the <c>ux_messages_streaming</c> gate index admits at most
+    /// one live turn per conversation, and the keyed worker lanes run one
+    /// conversation's turns strictly in order on one lane (decisions §11). A
+    /// losing planner's allocations leave gaps in <c>next_seq</c> — harmless:
+    /// seq is an ordering cursor, not dense.
     /// </summary>
     Task<long> AllocateSeqAsync(string conversationId, CancellationToken cancellationToken = default);
 

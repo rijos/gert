@@ -146,9 +146,14 @@ Plan phase (request scope):
 
 ```
 0. Validate (fail-closed) BEFORE any disk touch; reject a concurrent turn with 409
-   (turns are serialized per conversation — the seq single-writer invariant).
+   (turns are serialized per conversation — the seq single-writer invariant). The
+   rejection is the placeholder insert hitting the partial unique index
+   ux_messages_streaming (at most one streaming row per conversation, engine-
+   enforced); the planner's read check is only a fast path, and expired streaming
+   rows are WRITTEN BACK to error before inserting (see the orphan rule below).
 1. Materialize the conversation if new; persist the user message (status=complete)
-   and the assistant placeholder (status=streaming), each with an allocated seq.
+   and the assistant placeholder (status=streaming), each with an allocated seq —
+   both rows in one IMMEDIATE transaction (the gated insert above).
 2. Resolve offered tools + snapshot the entitlement claim; capture history
    (complete rows only), system prompt, and generation params into the TurnJob.
 3. Enqueue; respond 202 { ids, seq } — the subscribe cursor.
@@ -183,15 +188,26 @@ worker leaves rows stuck at `streaming` forever. Every *reader*
 (`MessageStatusRules`) maps a `streaming` row older than
 `Gert:Turn:MaxTurnDuration` to `error` — stateless and multi-instance-safe —
 and the planner's 409 check goes through the same rule, so an abandoned turn
-never blocks a conversation. **Both timers share the plan-time anchor:** the
-reader-facing horizon ages the row from its `CreatedAt` (stamped at plan time),
-and the runner caps its own wall clock at the *remaining* budget measured from
-the very same instant (`TurnJob.PlannedAt` — one clock read in the planner, not
-two). Time a job spends waiting in the queue therefore counts against the turn,
-and a running turn always self-cancels at or before the moment readers would
-start reporting its row as `error` — a queue wait can never open a window where
-a healthy turn reads as dead and the 409 gate reopens against incomplete
-history ([decisions §11](decisions.md#11-turn-execution--one-global-serial-worker-for-now)).
+never blocks a conversation. The planner additionally **writes the mapping
+back** (`streaming → error`, conditional on the row still being `streaming`)
+before inserting a new turn's rows: readers still map lazily, but a dead turn's
+row also durably frees the `ux_messages_streaming` gate index. **Both timers
+share the plan-time anchor:** the reader-facing horizon ages the row from its
+`CreatedAt` (stamped at plan time), and the runner caps its own wall clock at
+the *remaining* budget measured from the very same instant (`TurnJob.PlannedAt`
+— one clock read in the planner, not two). Time a job spends waiting in the
+queue therefore counts against the turn, and a running turn always self-cancels
+at or before the moment readers would start reporting its row as `error` — a
+queue wait can never open a window where a healthy turn reads as dead and the
+409 gate reopens against incomplete history
+([decisions §11](decisions.md#11-turn-execution--keyed-lanes-over-an-atomic-per-conversation-gate)).
+
+**Worker topology.** `TurnWorker` drains `Gert:Turn:MaxConcurrentTurns`
+(default 4) keyed lanes: jobs shard by the full `TurnKey` hash, so one
+conversation's turns ride one lane in strict FIFO while different
+conversations may run concurrently — the gate index is the correctness
+control, the lane count only throughput
+([decisions §11](decisions.md#11-turn-execution--keyed-lanes-over-an-atomic-per-conversation-gate)).
 
 **Scale-out.** The bus is per-process (live push is a latency optimization);
 the `turn_events` log + range endpoint are the cross-instance truth, so a

@@ -14,12 +14,21 @@
 --   published event; range/SSE/WS catch-up reads `seq > cursor`. Delta rows are
 --   coalesced (flushed on size/time thresholds and tool/message boundaries), so
 --   replay is loss-free without a row per token.
+-- * ux_messages_streaming: the atomic per-conversation turn gate (decisions §11) —
+--   at most ONE streaming assistant row per conversation, enforced by the engine.
+--   The placeholder insert IS the gate; a losing concurrent plan gets
+--   SQLITE_CONSTRAINT_UNIQUE, which the planner maps to the 409 rule.
 
 ALTER TABLE conversations ADD COLUMN next_seq INTEGER NOT NULL DEFAULT 1;
 
 ALTER TABLE messages ADD COLUMN seq INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE messages ADD COLUMN status TEXT NOT NULL DEFAULT 'complete'; -- streaming | complete | error
 CREATE INDEX ix_messages_conv_seq ON messages(conversation_id, seq);
+
+-- The atomic 409 gate (decisions §11 remedy): at most ONE streaming assistant
+-- row per conversation, enforced by the engine — the placeholder insert IS the
+-- gate. A losing concurrent plan gets SQLITE_CONSTRAINT_UNIQUE, mapped to 409.
+CREATE UNIQUE INDEX ux_messages_streaming ON messages(conversation_id) WHERE status = 'streaming';
 
 ALTER TABLE citations ADD COLUMN tool_call_id TEXT REFERENCES tool_calls(id) ON DELETE SET NULL;
 

@@ -48,6 +48,18 @@ public sealed class TurnPlannerTests
         _repo.InsertMessageAsync(Arg.Any<Message>(), Arg.Any<CancellationToken>())
             .Returns(Task.CompletedTask)
             .AndDoes(ci => _persisted.Add(ci.Arg<Message>()));
+        // The gated turn insert (ux_messages_streaming): defaults to winning the
+        // gate, persisting user row then placeholder — order matters to the
+        // _persisted assertions.
+        _repo.TryInsertTurnMessagesAsync(Arg.Any<Message>(), Arg.Any<Message>(), Arg.Any<CancellationToken>())
+            .Returns(true)
+            .AndDoes(ci =>
+            {
+                _persisted.Add(ci.ArgAt<Message>(0));
+                _persisted.Add(ci.ArgAt<Message>(1));
+            });
+        _repo.TryExpireStreamingMessageAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(true);
         _repo.ListMessagesAsync(Conv, Arg.Any<CancellationToken>())
             .Returns(_ => (IReadOnlyList<Message>)_existing.ToArray());
     }
@@ -416,16 +428,48 @@ public sealed class TurnPlannerTests
     }
 
     [Fact]
-    public async Task An_orphaned_streaming_row_does_not_block_new_turns()
+    public async Task An_orphaned_streaming_row_does_not_block_new_turns_and_is_written_back()
     {
         SeedConversation();
         // Older than MaxTurnDuration: the worker that owned it is gone (crash /
         // lost queue) — the orphan rule treats it as error, so new turns proceed.
         SeedExisting(MessageStatus.Streaming, DateTimeOffset.UtcNow - _options.MaxTurnDuration - TimeSpan.FromMinutes(1));
+        var expiredRowId = _existing.Single().Id;
 
         var job = await NewPlanner().PlanAsync(Pid, Conv, new SendMessageRequest { Content = "retry" });
 
         job.AssistantMessageId.Should().NotBeNullOrEmpty();
+        // The lazy orphan mapping became a durable write: the dead row must free
+        // the gate index, not just read as error.
+        await _repo.Received(1).TryExpireStreamingMessageAsync(expiredRowId, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task A_live_streaming_row_is_not_written_back()
+    {
+        SeedConversation();
+        SeedExisting(MessageStatus.Streaming, DateTimeOffset.UtcNow.AddSeconds(-5));
+
+        var act = () => NewPlanner().PlanAsync(Pid, Conv, new SendMessageRequest { Content = "again" });
+
+        await act.Should().ThrowAsync<TurnInProgressException>();
+        // The 409 path rejects before the write-back: a healthy turn's row is
+        // never touched.
+        await _repo.DidNotReceive().TryExpireStreamingMessageAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task Losing_the_gate_after_the_fast_path_throws_TurnInProgress()
+    {
+        SeedConversation();
+        // The fast path saw a clean conversation, but another plan grabbed the
+        // gate index between the read and the insert (the closed TOCTOU).
+        _repo.TryInsertTurnMessagesAsync(Arg.Any<Message>(), Arg.Any<Message>(), Arg.Any<CancellationToken>())
+            .Returns(false);
+
+        var act = () => NewPlanner().PlanAsync(Pid, Conv, new SendMessageRequest { Content = "raced" });
+
+        await act.Should().ThrowAsync<TurnInProgressException>();
     }
 
     private void SeedTodoSnapshot(string responseJson) =>

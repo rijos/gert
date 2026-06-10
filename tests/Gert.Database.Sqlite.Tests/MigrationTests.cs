@@ -26,6 +26,11 @@ public class MigrationTests
 
             var tables = await TableNamesAsync(connection);
             tables.Should().Contain(new[] { "conversations", "messages", "tool_calls", "citations", "artifacts", "turn_events" });
+
+            // The atomic turn gate (decisions §11): the partial unique index born in 002.
+            (await ScalarAsync(connection,
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name='ux_messages_streaming';"))
+                .Should().Be(1L);
         }
         finally
         {
@@ -93,6 +98,11 @@ public class MigrationTests
 
             // …and the v4 attachments column exists, NULL on legacy rows.
             (await ScalarAsync(connection, "SELECT attachments_json FROM messages WHERE id='m1';")).Should().Be(DBNull.Value);
+
+            // …and the upgrade path created the turn gate index (002 carries it).
+            (await ScalarAsync(connection,
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name='ux_messages_streaming';"))
+                .Should().Be(1L);
         }
         finally
         {

@@ -212,6 +212,9 @@ CREATE TABLE messages (
 );
 CREATE INDEX ix_messages_conv     ON messages(conversation_id, created_at);
 CREATE INDEX ix_messages_conv_seq ON messages(conversation_id, seq);
+-- The atomic per-conversation turn gate (decisions §11): at most one streaming
+-- row per conversation — the planner's placeholder insert IS the 409 check.
+CREATE UNIQUE INDEX ux_messages_streaming ON messages(conversation_id) WHERE status = 'streaming';
 
 CREATE TABLE tool_calls (
     id          TEXT PRIMARY KEY,
