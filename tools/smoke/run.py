@@ -321,14 +321,22 @@ def _scenario_rbac(app: AppPage, role: str) -> None:
 
 
 def _scenario_artifact(app: AppPage, role: str) -> None:
-    """The model's named html fence becomes a live canvas artifact (U7b extraction)."""
+    """The model's make_artifact call becomes a live canvas artifact for an entitled
+    role; a role without `make_artifact` in gert_tools hits the execution-time ceiling
+    (card errors, turn survives) — the same per-tool proof as todos/clock."""
     from playwright.sync_api import expect
 
     app.composer.send("make me a demo html page")
-    tab = app.canvas.tab("html")
-    expect(tab).to_be_visible(timeout=15000)
-    expect(tab).to_contain_text("demo.html")
-    expect(app.canvas.html_iframe).to_be_visible(timeout=15000)
+    if role == "admin":
+        tab = app.canvas.tab("html")
+        expect(tab).to_be_visible(timeout=15000)
+        expect(tab).to_contain_text("demo.html")
+        expect(app.canvas.html_iframe).to_be_visible(timeout=15000)
+    else:
+        # `user` carries gert_tools "rag search": make_artifact is refused at
+        # execution time, the card errors, and the turn still finishes.
+        expect(app.thread.errored_tool_cards.first).to_be_visible(timeout=15000)
+    expect(app.thread.last_bot_body).to_contain_text("in the canvas", timeout=15000)
 
 
 def _scenario_memory(app: AppPage, role: str) -> None:
