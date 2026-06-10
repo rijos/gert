@@ -30,51 +30,46 @@ export const openSettings = () => {
     })
     .catch(() => (loaded.val = {}));
 
+  // state/ui.js owns [data-theme] + the gert.theme key — delegate, never touch.
   const applyTheme = ({ value: v }) => {
     themeVal.val = v;
-    if (v === "system") {
-      localStorage.removeItem("gert.theme");
-      document.documentElement.removeAttribute("data-theme");
-      ui.theme.val = null;
-    } else {
-      document.documentElement.setAttribute("data-theme", v);
-      localStorage.setItem("gert.theme", v);
-      ui.theme.val = v;
-    }
+    ui.setTheme(v === "system" ? null : v);
   };
+
+  let replyLangEl = null; // closure-held element ref — no getElementById
 
   const body = div(
     { class: "settings-modal-body" },
     p({ class: "sub" }, "Your preferences for Gert."),
-    () =>
-      loaded.val === null
-        ? p("Loading…")
-        : div(
-            div(
-              { class: "field" },
-              label("Theme"),
-              Dropdown({ items: THEMES, value: themeVal, onSelect: applyTheme }),
-            ),
-            div(
-              { class: "field" },
-              label("Default reply language"),
-              input({
-                value: loaded.val.reply_language || "",
-                placeholder: "e.g. English",
-                id: "reply_lang",
-              }),
-            ),
-            div(
-              { class: "field" },
-              label("Default model"),
-              Dropdown({
-                items: () => models.models.map((m) => ({ value: m.id, label: m.name })),
-                value: modelVal,
-                placeholder: "Model",
-              }),
-            ),
-            div({ class: "ver" }, "v0 · homelab · 20u"),
-          ),
+    () => {
+      if (loaded.val === null) return p("Loading…");
+      replyLangEl = input({
+        value: loaded.val.reply_language || "",
+        placeholder: "e.g. English",
+      });
+      return div(
+        div(
+          { class: "field" },
+          label("Theme"),
+          Dropdown({ items: THEMES, value: themeVal, onSelect: applyTheme }),
+        ),
+        div(
+          { class: "field" },
+          label("Default reply language"),
+          replyLangEl,
+        ),
+        div(
+          { class: "field" },
+          label("Default model"),
+          Dropdown({
+            items: () => models.models.map((m) => ({ value: m.id, label: m.name })),
+            value: modelVal,
+            placeholder: "Model",
+          }),
+        ),
+        div({ class: "ver" }, "v0 · homelab · 20u"),
+      );
+    },
   );
 
   Modal({
@@ -86,9 +81,11 @@ export const openSettings = () => {
       settingsSvc
         .update({
           // empty string = "leave unchanged" — the API treats null/absent as no-op
-          reply_language: document.getElementById("reply_lang")?.value || undefined,
+          reply_language: replyLangEl?.value || undefined,
           default_model_id: modelVal.val || undefined,
-          theme: ui.theme.val || "auto", // wire enum: light | dark | auto
+          // wire enum is light | dark | auto (configuration.md §3.1), not the
+          // theme names — map back from manila/ember.
+          theme: { manila: "light", ember: "dark" }[ui.theme.val] || "auto",
         })
         .then(() => toast("Settings saved", "ok"))
         .catch(() => toast("Could not save settings", "err"));

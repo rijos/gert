@@ -1,7 +1,8 @@
-// components/main/tools-menu.js — composer dropdown of tool toggles (RAG /
-// Search / Sandbox / Todos / Clock) plus "Use my docs". Replaces the top-bar
-// chips to keep the top bar quiet. Reflects state/chat.tools and
-// state/knowledge.useInChat; rows toggle in place (the menu stays open).
+// components/main/tools-menu.js — composer dropdown of tool toggles (Search /
+// Sandbox / Todos / Clock) plus "Use my docs" (the rag tool —
+// chat-and-tools.md: off removes search_documents for that turn). Replaces
+// the top-bar chips to keep the top bar quiet. Reflects state/chat.tools;
+// rows toggle in place (the menu stays open).
 // Tool rows go inert when the selected model can't call tools (the server
 // drops them anyway — IModelCatalog gates the turn planner; this mirrors it).
 import van from "van";
@@ -11,12 +12,10 @@ import { Menu } from "../ui/menu.js";
 import { Switch } from "../ui/switch.js";
 import * as chat from "../../state/chat.js";
 import * as models from "../../state/models.js";
-import * as knowledge from "../../state/knowledge.js";
 
 const { div, button, span } = van.tags;
 
 const TOOLS = [
-  { id: "rag", label: "RAG" },
   { id: "search", label: "Search" },
   { id: "sandbox", label: "Sandbox" },
   { id: "todo", label: "Todos" },
@@ -45,7 +44,7 @@ export const ToolsMenu = component({
     const active = () =>
       TOOLS.filter((t) => chat.tools[t.id]).length +
       (chat.canvasOn() ? 1 : 0) +
-      (knowledge.useInChat.val ? 1 : 0);
+      (chat.tools.rag ? 1 : 0); // "Use my docs" — the rag row below
 
     const ToolRow = ({ id, label }) =>
       div(
@@ -101,15 +100,17 @@ export const ToolsMenu = component({
         ),
         div(
           { class: "t-docs-wrap" },
+          // "Use my docs" IS the rag tool — off removes search_documents for
+          // the turn (chat-and-tools.md).
           div(
             {
-              class: () => "t-row t-docs" + (knowledge.useInChat.val ? " on" : ""),
-              onclick: knowledge.toggleUseInChat,
+              class: () => "t-row t-docs" + (chat.tools.rag ? " on" : ""),
+              onclick: () => chat.toggleTool("rag"),
               title: "Ground replies in your uploaded documents",
             },
             Icon("file", { size: 14, strokeWidth: 2 }),
             span({ class: "t-label" }, "Use my docs"),
-            Switch({ on: () => knowledge.useInChat.val, onToggle: () => {} }),
+            Switch({ on: () => !!chat.tools.rag, onToggle: () => {} }),
           ),
           // Interleaved thinking (Qwen3.6 preserve_thinking): prior turns'
           // reasoning rides back upstream so the model builds on it instead of

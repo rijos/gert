@@ -50,32 +50,46 @@ export const showKnowledge = van.state(false);
 // theme: null = follow OS, "manila" (paper) | "ember" (dark) = explicit.
 export const theme = van.state(null);
 
+// 1079px mirrors layout.css's tablet/mobile breakpoint — the one sanctioned
+// JS copy (spa-style-guide §3); change both together.
 export const isMobile = () =>
   window.matchMedia("(max-width:1079px)").matches;
 
 // Pre-rename saves ("light"/"dark") migrate to the theme names they meant.
+// Also maps the wire enum (configuration.md §3.1: light | dark | auto) in
+// applyServerTheme below.
 const MIGRATE = { light: "manila", dark: "ember" };
+
+// The single writer of documentElement[data-theme] and the gert.theme key
+// (spa-style-guide §7). name: "manila" | "ember" | null (null = follow OS).
+export const setTheme = (name) => {
+  const next = name === "manila" || name === "ember" ? name : null;
+  if (next) {
+    document.documentElement.setAttribute("data-theme", next);
+    localStorage.setItem(THEME_KEY, next);
+  } else {
+    document.documentElement.removeAttribute("data-theme");
+    localStorage.removeItem(THEME_KEY);
+  }
+  theme.val = next;
+};
+
+// Server settings → theme. localStorage is only a first-paint cache; the
+// server-side setting is the cross-device truth (configuration.md §3.1).
+export const applyServerTheme = (wire) => setTheme(MIGRATE[wire] || null);
 
 export const restoreTheme = () => {
   const saved = localStorage.getItem(THEME_KEY);
   const name = MIGRATE[saved] || saved;
-  if (name === "manila" || name === "ember") {
-    theme.val = name;
-    document.documentElement.setAttribute("data-theme", name);
-    if (name !== saved) localStorage.setItem(THEME_KEY, name);
-  }
+  if (name === "manila" || name === "ember") setTheme(name);
 };
 
 export const toggleTheme = () => {
-  const root = document.documentElement;
-  const current = root.getAttribute("data-theme");
+  const current = document.documentElement.getAttribute("data-theme");
   const dark =
     current === "ember" ||
     (!current && window.matchMedia("(prefers-color-scheme: dark)").matches);
-  const next = dark ? "manila" : "ember";
-  root.setAttribute("data-theme", next);
-  theme.val = next;
-  localStorage.setItem(THEME_KEY, next);
+  setTheme(dark ? "manila" : "ember");
 };
 
 export const toggleNav = () => {

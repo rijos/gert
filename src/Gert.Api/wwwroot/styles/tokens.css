@@ -74,6 +74,16 @@
   --on-accent:#fff;       /* text/thumb on saturated coral fills */
   --on-coral:#2a1a10;     /* dark text on the coral-gradient avatar */
   --preview-bg:#fff;      /* html artifact preview backdrop — a page, always on white */
+  --brand:#bf4727;        /* the brand mark (icons.js) — never themed, like --display */
+  /* overlay shadows / scrims — the exact literals components used to embed
+     (menu/modal/toast/switch/composer). Identical in both themes today, so
+     plain values; split per scheme here if the themes ever diverge. */
+  --shadow-menu:0 18px 44px -14px rgba(60,46,28,.34), 0 2px 8px rgba(60,46,28,.08);
+  --shadow-modal:0 24px 60px -20px rgba(60,46,28,.5);
+  --shadow-toast:0 8px 24px -12px rgba(60,46,28,.4);
+  --shadow-thumb:0 1px 3px rgba(0,0,0,.2);   /* switch knob */
+  --scrim-chip:rgba(0,0,0,.55);              /* attachment-thumb ✕ chip */
+  --scrim-chip-hover:rgba(0,0,0,.8);
   --type-md:#3f7d8f;      /* artifact-tab type chips */
   --type-cs:#7c4d92; --type-cpp:#2f6285; --type-js:#8a6a1f; --type-rs:#8a5a2e;
   --tok-kw:var(--code-tag); --tok-str:var(--code-attr);

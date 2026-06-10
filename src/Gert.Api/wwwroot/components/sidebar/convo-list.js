@@ -1,7 +1,6 @@
 // components/sidebar/convo-list.js — grouped (Today/Yesterday/Earlier)
 // git-graph branches. Binds reactively to state/chat.conversations (van-x list).
 import van from "van";
-import { list } from "van-x";
 import { component } from "../../lib/component.js";
 import { ConvoItem } from "./convo-item.js";
 import * as chat from "../../state/chat.js";

@@ -36,7 +36,8 @@
 /* hide tool chips first as width tightens */
 @media (max-width:1180px){ .app .tools{display:none;} }
 
-/* --- tablet & mobile: sidebar + canvas become slide-over drawers --- */
+/* --- tablet & mobile: sidebar + canvas become slide-over drawers ---
+   (1079px is duplicated in state/ui.js isMobile() — keep the two in sync) */
 @media (max-width:1079px){
   .app{grid-template-columns:1fr !important;}
   .app .sidebar,.app .panel{position:fixed; top:0; bottom:0; z-index:60; width:300px; max-width:88vw;

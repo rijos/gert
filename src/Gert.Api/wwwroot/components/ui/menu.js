@@ -10,18 +10,22 @@ const { div } = van.tags;
 export const Menu = component({
   name: "menu",
   css: `
-    .menu{position:absolute; top:calc(100% + 8px); right:0; width:312px; background:var(--surface); border:1px solid var(--line); border-radius:var(--r); box-shadow:0 18px 44px -14px rgba(60,46,28,.34), 0 2px 8px rgba(60,46,28,.08); padding:7px; opacity:0; transform:translateY(-6px) scale(.98); transform-origin:top right; pointer-events:none; transition:.2s cubic-bezier(.2,.8,.2,1); z-index:30;}
+    .menu{position:absolute; top:calc(100% + 8px); right:0; width:312px; background:var(--surface); border:1px solid var(--line); border-radius:var(--r); box-shadow:var(--shadow-menu); padding:7px; opacity:0; transform:translateY(-6px) scale(.98); transform-origin:top right; pointer-events:none; transition:.2s cubic-bezier(.2,.8,.2,1); z-index:30;}
     .menu-h{font-family:var(--mono); font-size:10px; letter-spacing:.08em; text-transform:uppercase; color:var(--ink-3); padding:8px 10px 6px;}
   `,
   // trigger: node (the button). open: van.state(boolean). header optional.
   // children: menu rows.
   view: ({ trigger, open, wrapClass = "model-picker", children = [] } = {}) => {
     // ── logic ───────────────────────────────────
-    const onDoc = () => (open.val = false);
-    document.addEventListener("click", onDoc);
+    const onDoc = () => {
+      open.val = false;
+      // a menu unmounted while open never re-runs the pruned derive below —
+      // self-detach so the closer can't outlive its menu (§12 cleanup).
+      if (!wrap.isConnected) document.removeEventListener("click", onDoc);
+    };
 
     // ── content ─────────────────────────────────
-    return div(
+    const wrap = div(
       { class: () => wrapClass + (open.val ? " open" : "") },
       trigger,
       div(
@@ -32,5 +36,20 @@ export const Menu = component({
         ...children,
       ),
     );
+    // Listen only while open (§12): the document closer exists only for an
+    // open menu, and scoping the derive to `wrap` (van.derive's third arg)
+    // prunes it once the menu leaves the DOM — nothing leaks per render.
+    // Safe ordering: every trigger stopPropagation()s its toggle click, and
+    // the derive flushes in a microtask, so the opening click can't reach a
+    // just-added document listener and self-close.
+    van.derive(
+      () => {
+        if (open.val) document.addEventListener("click", onDoc);
+        else document.removeEventListener("click", onDoc);
+      },
+      undefined,
+      wrap,
+    );
+    return wrap;
   },
 });

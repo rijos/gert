@@ -7,6 +7,7 @@ import { Icon } from "../../icons/icons.js";
 import { Pill } from "../ui/pill.js";
 import * as svc from "../../services/documents.js";
 import { attempt } from "../../lib/action.js";
+import { fmtBytes } from "../../lib/format.js";
 
 const { div, button } = van.tags;
 
@@ -18,11 +19,7 @@ const subText = (d) => {
       ? `embedding ${d.progress.done ?? d.progress} / ${d.progress.total ?? d.chunk_count ?? "?"} chunks…`
       : "processing…";
   if (d.status === "failed") return d.error || "no extractable text";
-  const mb = d.size ? (d.size / 1_048_576).toFixed(d.size < 1_048_576 ? 0 : 1) : 0;
-  const sizeStr = d.size && d.size < 1024 * 1024
-    ? Math.round(d.size / 1024) + " KB"
-    : mb + " MB";
-  return `${sizeStr} · ${d.chunk_count ?? 0} chunks`;
+  return `${fmtBytes(d.size)} · ${d.chunk_count ?? 0} chunks`;
 };
 
 export const DocRow = component({

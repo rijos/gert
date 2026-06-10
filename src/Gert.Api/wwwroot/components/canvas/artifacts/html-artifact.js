@@ -16,8 +16,7 @@ import van from "van";
 import { component } from "../../../lib/component.js";
 import { highlight } from "../../../lib/highlight.js";
 import { artifactSrcdoc } from "../../../lib/artifact-sandbox.js";
-import * as http from "../../../services/http.js";
-import * as chat from "../../../state/chat.js";
+import * as artifactsSvc from "../../../services/artifacts.js";
 
 const { div, iframe } = van.tags;
 
@@ -43,11 +42,12 @@ export const HtmlArtifact = component({
         f.removeAttribute("src");
         f.srcdoc = artifactSrcdoc(artifact.content, { allowScripts: true });
       };
-      const pid = chat.activeProjectId.val;
       // Prefer the separate-origin served render; fall back to in-place srcdoc.
-      if (pid && artifact.id) {
-        http
-          .get(`/projects/${pid}/artifacts/${artifact.id}/ticket`)
+      // The ticket fetch lives in services/artifacts.js (§6 — no http.* in
+      // components); it derives the project id from the store.
+      if (artifact.id) {
+        artifactsSvc
+          .ticket(artifact.id)
           .then((r) => {
             if (r?.url) f.src = r.url;
             else fallback();

@@ -1,5 +1,6 @@
 // router.js — minimal History-API router (~40 lines).
-// Routes: "/" and "/c/:id" -> chat, "/settings", "/admin/users".
+// Routes: "/" and "/c/:id" -> chat, "/admin/users". (Settings is a modal,
+// not a route — spa-style-guide §5.)
 // A route's handler receives matched params and returns a VanJS DOM node;
 // mountRouter renders it into the host element (the main region).
 
@@ -45,11 +46,16 @@ export const navigate = (path) => {
 };
 
 // Intercept same-origin <a data-link> clicks so links use the router.
+// Only app-internal paths qualify: a single leading "/" — NOT "//host"
+// (protocol-relative = external), and not absolute URLs, mailto:/tel:/any
+// other scheme, or fragment/relative hrefs. Those fall through to the browser.
+const isInternal = (href) => href.startsWith("/") && !href.startsWith("//");
+
 const onClick = (e) => {
   const a = e.target.closest && e.target.closest("a[data-link]");
   if (!a) return;
   const href = a.getAttribute("href");
-  if (!href || href.startsWith("http")) return;
+  if (!href || !isInternal(href)) return;
   e.preventDefault();
   navigate(href);
 };

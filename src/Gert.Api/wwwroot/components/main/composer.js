@@ -99,8 +99,8 @@ export const Composer = component({
     .att-strip{display:flex; flex-wrap:wrap; gap:8px; margin-bottom:9px;}
     .att-thumb{position:relative; width:56px; height:56px; border-radius:10px; overflow:hidden; border:1px solid var(--line); box-shadow:var(--lift);}
     .att-thumb img{width:100%; height:100%; object-fit:cover; display:block;}
-    .att-x{position:absolute; top:3px; right:3px; width:18px; height:18px; border-radius:50%; border:none; background:rgba(0,0,0,.55); color:#fff; font-size:12px; line-height:1; cursor:pointer; display:grid; place-items:center; padding:0; transition:.13s;}
-    .att-x:hover{background:rgba(0,0,0,.8);}
+    .att-x{position:absolute; top:3px; right:3px; width:18px; height:18px; border-radius:50%; border:none; background:var(--scrim-chip); color:var(--on-accent); font-size:12px; line-height:1; cursor:pointer; display:grid; place-items:center; padding:0; transition:.13s;}
+    .att-x:hover{background:var(--scrim-chip-hover);}
   `,
   view: () => {
     // ── logic ───────────────────────────────────

@@ -161,23 +161,25 @@ export const Icon = (name, opts = {}) => {
   );
 };
 
-// brand mark — its own viewBox/colors, used once.
+// brand mark — its own viewBox, used once. Color rides the --brand token
+// (tokens.css; never themed) via the style: prop — SVG presentation
+// attributes can't resolve var(), inline CSSOM can.
 export const BrandMark = () =>
   svg(
     { width: 30, height: 30, viewBox: "0 0 30 30", fill: "none" },
-    circle({ cx: "8", cy: "7", r: "3.4", fill: "#bf4727" }),
-    circle({ cx: "8", cy: "23", r: "3.4", fill: "#bf4727" }),
+    circle({ cx: "8", cy: "7", r: "3.4", style: "fill:var(--brand)" }),
+    circle({ cx: "8", cy: "23", r: "3.4", style: "fill:var(--brand)" }),
     circle({
       cx: "22",
       cy: "15",
       r: "3.4",
-      stroke: "#bf4727",
+      style: "stroke:var(--brand)",
       "stroke-width": "2",
       fill: "none",
     }),
     path({
       d: "M8 10.4v9.2M8 12 Q8 15 12 15 L18.6 15M8 18 Q8 15 12 15",
-      stroke: "#bf4727",
+      style: "stroke:var(--brand)",
       "stroke-width": "2",
       fill: "none",
       "stroke-linecap": "round",

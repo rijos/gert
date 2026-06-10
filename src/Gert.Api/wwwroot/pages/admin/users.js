@@ -4,23 +4,24 @@
 import van from "van";
 import { Modal } from "../../components/ui/modal.js";
 import { toast } from "../../components/ui/toast.js";
+import { attempt } from "../../lib/action.js";
+import { fmtBytes } from "../../lib/format.js";
 import * as admin from "../../services/admin.js";
 import * as auth from "../../state/auth.js";
 
 const { div, h1, p, table, thead, tbody, tr, th, td, button } = van.tags;
 
-const fmtSize = (b) =>
-  b > 1_073_741_824
-    ? (b / 1_073_741_824).toFixed(1) + " GB"
-    : (b / 1_048_576).toFixed(1) + " MB";
-
 export const AdminUsersPage = () => {
-  const users = van.state(null);
-  const load = () =>
-    admin
-      .listUsers()
-      .then((u) => (users.val = u || []))
-      .catch(() => (users.val = []));
+  const users = van.state(null); // null = loading, [] = genuinely empty
+  const failed = van.state(false); // a failed load is NOT an empty list (§8)
+  const load = async () => {
+    failed.val = false;
+    const ok = await attempt(async () => {
+      users.val = (await admin.listUsers()) || [];
+      return true;
+    }, "Couldn't load users");
+    if (!ok) failed.val = true;
+  };
   load();
 
   const confirmDelete = (u) =>
@@ -47,7 +48,12 @@ export const AdminUsersPage = () => {
       () =>
         !auth.isAdmin.val
           ? p("You do not have admin access.")
-          : users.val === null
+          : failed.val
+            ? div(
+                p("Couldn't load users."),
+                button({ class: "btn secondary", onclick: load }, "Retry"),
+              )
+            : users.val === null
             ? p("Loading…")
             : table(
                 { class: "utable" },
@@ -65,7 +71,7 @@ export const AdminUsersPage = () => {
                     tr(
                       td(u.username || u.key),
                       td(String(u.document_count ?? 0)),
-                      td(u.size != null ? fmtSize(u.size) : "—"),
+                      td(u.size != null ? fmtBytes(u.size) : "—"),
                       td(u.last_active || "—"),
                       td(
                         button(

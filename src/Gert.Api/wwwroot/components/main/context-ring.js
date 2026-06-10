@@ -10,6 +10,7 @@ import van from "van";
 import { component } from "../../lib/component.js";
 import { Menu } from "../ui/menu.js";
 import { ProgressBar } from "../ui/progress-bar.js";
+import { fmtK } from "../../lib/format.js";
 import * as chat from "../../state/chat.js";
 import * as models from "../../state/models.js";
 
@@ -18,9 +19,6 @@ const { svg, circle } = van.tags("http://www.w3.org/2000/svg");
 
 const R = 8; // ring radius inside a 22px viewbox
 const CIRCUMFERENCE = 2 * Math.PI * R;
-
-const fmtK = (n) =>
-  n >= 1000 ? (n / 1000).toFixed(1).replace(/\.0$/, "") + "K" : String(n);
 
 const colorFor = (pct) =>
   pct > 0.9 ? "var(--coral-deep)" : pct > 0.75 ? "var(--amber)" : "var(--coral)";

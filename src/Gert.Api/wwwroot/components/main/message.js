@@ -357,11 +357,18 @@ export const Message = component({
                       src: `data:${att.mime_type};base64,${att.data}`,
                       alt: "attached image",
                       // full-size view: blob URL in a new tab (a data: URL
-                      // can't be window.open'd directly)
+                      // can't be window.open'd directly). create → use →
+                      // revoke (§11): the timeout outlives the new tab's load,
+                      // and revoking only invalidates the URL, not the
+                      // already-loaded document.
                       onclick: () =>
                         fetch(`data:${att.mime_type};base64,${att.data}`)
                           .then((r) => r.blob())
-                          .then((b) => window.open(URL.createObjectURL(b), "_blank"))
+                          .then((b) => {
+                            const url = URL.createObjectURL(b);
+                            window.open(url, "_blank");
+                            setTimeout(() => URL.revokeObjectURL(url), 30_000);
+                          })
                           .catch(() => {}),
                     }),
                   ),

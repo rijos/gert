@@ -44,11 +44,16 @@ export const ConvoItem = component({
         class: "trash",
         title: "Delete chat",
         // stop the row's onclick from opening the thread we're deleting.
-        onclick: (e) => {
+        onclick: async (e) => {
           e.stopPropagation();
           const wasActive = chat.activeId.val === convo.id;
-          attempt(() => svc.remove(convo.id), "Couldn't delete this chat");
-          if (wasActive) navigate("/");
+          // navigate only on success (§8): attempt() returns undefined on
+          // failure — a failed delete must not bounce the user home.
+          const ok = await attempt(async () => {
+            await svc.remove(convo.id);
+            return true;
+          }, "Couldn't delete this chat");
+          if (ok && wasActive) navigate("/");
         },
       },
       Icon("trash", { size: 14, strokeWidth: 2 }),

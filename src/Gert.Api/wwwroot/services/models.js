@@ -1,6 +1,7 @@
 // services/models.js — GET /api/models → state/models.js.
 import * as http from "./http.js";
 import * as models from "../state/models.js";
+import * as ui from "../state/ui.js";
 import * as settings from "./settings.js";
 
 export const load = async () => {
@@ -18,5 +19,8 @@ export const loadWithUserDefault = async () => {
   ]);
   const id = prefs?.default_model_id;
   if (id && (list || []).some((m) => m.id === id)) models.select(id);
+  // The server-side theme is the cross-device truth (configuration.md §3.1);
+  // the localStorage copy restoreTheme() applied was only a first-paint cache.
+  if (prefs) ui.applyServerTheme(prefs.theme);
   return list;
 };

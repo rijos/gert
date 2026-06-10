@@ -82,32 +82,39 @@ export async function* sse(path, { signal } = {}) {
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let buf = "";
-  while (true) {
-    const { value, done } = await reader.read();
-    if (done) break;
-    buf += decoder.decode(value, { stream: true });
-    let sep;
-    // events are separated by a blank line
-    while ((sep = buf.indexOf("\n\n")) >= 0) {
-      const raw = buf.slice(0, sep);
-      buf = buf.slice(sep + 2);
-      let event = "message";
-      let id = null;
-      const dataLines = [];
-      for (const line of raw.split("\n")) {
-        if (line.startsWith("event:")) event = line.slice(6).trim();
-        else if (line.startsWith("id:")) id = Number(line.slice(3).trim());
-        else if (line.startsWith("data:")) dataLines.push(line.slice(5).trim());
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      let sep;
+      // events are separated by a blank line
+      while ((sep = buf.indexOf("\n\n")) >= 0) {
+        const raw = buf.slice(0, sep);
+        buf = buf.slice(sep + 2);
+        let event = "message";
+        let id = null;
+        const dataLines = [];
+        for (const line of raw.split("\n")) {
+          if (line.startsWith("event:")) event = line.slice(6).trim();
+          else if (line.startsWith("id:")) id = Number(line.slice(3).trim());
+          else if (line.startsWith("data:")) dataLines.push(line.slice(5).trim());
+        }
+        if (!dataLines.length) continue;
+        let data;
+        try {
+          data = JSON.parse(dataLines.join("\n"));
+        } catch {
+          data = dataLines.join("\n");
+        }
+        yield { id, event, data };
       }
-      if (!dataLines.length) continue;
-      let data;
-      try {
-        data = JSON.parse(dataLines.join("\n"));
-      } catch {
-        data = dataLines.join("\n");
-      }
-      yield { id, event, data };
     }
+  } finally {
+    // Generator finalization — the consumer returning early on a terminal
+    // event, a throw, or natural end — tears the connection down with it
+    // (§12: revoke what you mint). No-op after a clean done/abort.
+    reader.cancel().catch(() => {});
   }
 }
 

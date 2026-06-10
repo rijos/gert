@@ -10,15 +10,15 @@ import * as settingsSvc from "../../services/settings.js";
 const { div, p, label, input } = van.tags;
 
 // number-input field; empty string round-trips as "inherit"
-const NumField = (labelText, hint, attrs) =>
+const NumField = (labelText, inputEl) =>
   div(
     { class: "field" },
     label(labelText),
-    input({ type: "number", placeholder: hint, ...attrs }),
+    inputEl,
     );
 
-const parsed = (id) => {
-  const raw = document.getElementById(id)?.value?.trim();
+const parsed = (el) => {
+  const raw = el?.value?.trim();
   if (!raw) return undefined;
   const n = Number(raw);
   return Number.isFinite(n) ? n : undefined;
@@ -31,34 +31,43 @@ export const openModelSettings = (model) => {
     .then((s) => (loaded.val = s?.model_params?.[model.id] || {}))
     .catch(() => (loaded.val = {}));
 
+  // closure-held element refs (house pattern — no getElementById)
+  const els = {};
+
   const body = div(
     { class: "settings-modal-body" },
     p({ class: "sub" }, "Generation defaults for this model. Blank = inherit."),
-    () =>
-      loaded.val === null
-        ? p("Loading…")
-        : div(
-            NumField("Temperature", "0 – 2", {
-              id: "mp_temperature",
-              min: 0,
-              max: 2,
-              step: 0.05,
-              value: loaded.val.temperature ?? "",
-            }),
-            NumField("Top P", "0 – 1", {
-              id: "mp_top_p",
-              min: 0,
-              max: 1,
-              step: 0.01,
-              value: loaded.val.top_p ?? "",
-            }),
-            NumField("Max tokens", "e.g. 4096", {
-              id: "mp_max_tokens",
-              min: 1,
-              step: 1,
-              value: loaded.val.max_tokens ?? "",
-            }),
-          ),
+    () => {
+      if (loaded.val === null) return p("Loading…");
+      els.temperature = input({
+        type: "number",
+        placeholder: "0 – 2",
+        min: 0,
+        max: 2,
+        step: 0.05,
+        value: loaded.val.temperature ?? "",
+      });
+      els.topP = input({
+        type: "number",
+        placeholder: "0 – 1",
+        min: 0,
+        max: 1,
+        step: 0.01,
+        value: loaded.val.top_p ?? "",
+      });
+      els.maxTokens = input({
+        type: "number",
+        placeholder: "e.g. 4096",
+        min: 1,
+        step: 1,
+        value: loaded.val.max_tokens ?? "",
+      });
+      return div(
+        NumField("Temperature", els.temperature),
+        NumField("Top P", els.topP),
+        NumField("Max tokens", els.maxTokens),
+      );
+    },
   );
 
   Modal({
@@ -67,14 +76,14 @@ export const openModelSettings = (model) => {
     body,
     confirmLabel: "Save",
     onConfirm: () => {
-      const maxTokens = parsed("mp_max_tokens");
+      const maxTokens = parsed(els.maxTokens);
       settingsSvc
         .update({
           model_params: {
             // whole-entry replace for this model id; blanks = inherit
             [model.id]: {
-              temperature: parsed("mp_temperature"),
-              top_p: parsed("mp_top_p"),
+              temperature: parsed(els.temperature),
+              top_p: parsed(els.topP),
               max_tokens: maxTokens != null ? Math.round(maxTokens) : undefined,
             },
           },

@@ -22,7 +22,9 @@ const sanitizeUrl = (raw) => {
   return "#";
 };
 
-const isExternal = (url) => /^https?:/i.test(url);
+// http(s) AND protocol-relative "//host" — both leave the app origin, so both
+// get target=_blank rel="noopener noreferrer" (a single "/" path stays internal).
+const isExternal = (url) => /^https?:/i.test(url) || /^\/\//.test(url);
 
 // --- inline parsing (returns an array of DOM nodes) -------------------------
 // Order matters: code spans first so their contents aren't re-parsed.

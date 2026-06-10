@@ -1,20 +1,18 @@
 // components/canvas/knowledge-panel.js — kb-view: header + privacy line +
-// use-in-chat switch + drop zone + doc list.
+// use-in-chat switch (chat.tools.rag — chat-and-tools.md: off removes
+// search_documents for the turn) + drop zone + doc list.
 import van from "van";
 import { component } from "../../lib/component.js";
 import { Icon } from "../../icons/icons.js";
 import { Switch } from "../ui/switch.js";
 import { DropZone } from "./drop-zone.js";
 import { DocList } from "./doc-list.js";
+import { fmtBytes } from "../../lib/format.js";
+import * as chat from "../../state/chat.js";
 import * as knowledge from "../../state/knowledge.js";
 import * as ui from "../../state/ui.js";
 
 const { section, div, h2, span } = van.tags;
-
-const sizeLabel = (bytes) =>
-  bytes > 1_048_576
-    ? (bytes / 1_048_576).toFixed(1) + " MB"
-    : Math.round(bytes / 1024) + " KB";
 
 export const KnowledgePanel = component({
   name: "knowledge-panel",
@@ -43,7 +41,7 @@ export const KnowledgePanel = component({
         span(
           { class: "count" },
           () =>
-            `${knowledge.documents.length} docs · ${sizeLabel(knowledge.totalBytes.val)}`,
+            `${knowledge.documents.length} docs · ${fmtBytes(knowledge.totalBytes.val)}`,
         ),
       ),
       div(
@@ -60,8 +58,8 @@ export const KnowledgePanel = component({
         div({ class: "sub" }, "retrieve from your documents"),
       ),
       Switch({
-        on: () => knowledge.useInChat.val,
-        onToggle: knowledge.toggleUseInChat,
+        on: () => !!chat.tools.rag,
+        onToggle: () => chat.toggleTool("rag"),
       }),
     ),
     DropZone(),

@@ -35,23 +35,35 @@ export const MessageStream = component({
   );
   van.add(stream, thread);
 
+  // Both derives are scoped to `stream` (van.derive's third arg) so they're
+  // pruned once this component leaves the DOM — unscoped they'd bind to the
+  // always-connected sentinel and stack up per navigation (§12).
+
   // switching conversations re-pins: a freshly opened thread starts at the end.
-  van.derive(() => {
-    chat.activeId.val;
-    pinned = true;
-  });
+  van.derive(
+    () => {
+      chat.activeId.val;
+      pinned = true;
+    },
+    undefined,
+    stream,
+  );
 
   // keep the latest content in view while streaming. Reading the last
   // message's text inside the derive subscribes to delta updates too.
-  van.derive(() => {
-    chat.messages.length;
-    chat.streaming.val;
-    const last = chat.messages[chat.messages.length - 1];
-    if (last) last.text; // subscribe to token deltas
-    queueMicrotask(() => {
-      if (pinned) stream.scrollTop = stream.scrollHeight;
-    });
-  });
+  van.derive(
+    () => {
+      chat.messages.length;
+      chat.streaming.val;
+      const last = chat.messages[chat.messages.length - 1];
+      if (last) last.text; // subscribe to token deltas
+      queueMicrotask(() => {
+        if (pinned) stream.scrollTop = stream.scrollHeight;
+      });
+    },
+    undefined,
+    stream,
+  );
 
   return stream;
   },
