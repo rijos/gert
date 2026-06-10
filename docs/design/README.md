@@ -54,6 +54,8 @@ why**; the code in [`src/`](../../src/) implements them.
   (server → user → project → conversation), the project model, user settings, model catalog,
   and the user-facing data lifecycle. (Operator knobs:
   [installation/configuration.md](../installation/configuration.md).)
+- [dotnet-style-guide.md](dotnet-style-guide.md) — how to write C# for Gert: layout, types,
+  async, DI, validation, errors, data access, doc-comment citations, testing conventions.
 
 ### Frontend
 - [ui-components.md](ui-components.md) — the SPA map: `wwwroot` layout, the four layers
@@ -107,4 +109,5 @@ why**; the code in [`src/`](../../src/) implements them.
 | Anything in `wwwroot/` | [ui-components.md](ui-components.md) + [spa-style-guide.md](spa-style-guide.md) | [security F2–F4](security.md#3-findings--remediations) |
 | New inputs, parsers, fetches, anything security-adjacent | [security.md](security.md) | [testing § validation](testing.md#validation--the-input-security-boundary), [principles #6](principles.md) |
 | Tests, fakes, fixtures, E2E | [testing.md](testing.md) | [tech-stack § architecture](tech-stack.md#architecture) |
+| Any C# (`src/`, `tests/`) — conventions, idioms | [dotnet-style-guide.md](dotnet-style-guide.md) | [tech-stack.md](tech-stack.md) |
 | Deployment, logging, headers, limits | [operations.md](operations.md) | [installation/configuration.md](../installation/configuration.md) |

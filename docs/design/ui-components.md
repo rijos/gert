@@ -176,7 +176,7 @@ the front end.
 
 The authoring rules live in the [SPA style guide](spa-style-guide.md) — the
 `component({ name, css, view })` factory, kebab-case filenames with PascalCase
-exports, tokens-only CSS, no local `@media`, VanX lists, formatting. The layout-level
+exports, token rules, no local `@media`, list rendering, formatting. The layout-level
 rules that belong here:
 
 1. **One component per file**, in the `components/<area>/` that owns it. Co-locate a
@@ -222,9 +222,11 @@ the server-side setting is the cross-device truth
 
 ### State stores
 Scalar UI state uses VanJS `van.state` / `van.derive`. Keyed collections that churn —
-the conversation list, the doc list, the message stream — use **VanX**
-(`reactive`, `list`), so a streamed message or a single doc's status change re-renders
-just that row instead of the whole list.
+the conversation list, the doc list, the message stream — hold **VanX `reactive`** row
+objects, so a streamed token or a single doc's status change re-renders just that node;
+list *membership* changes re-render via a map-rebuild binding (`vanX.list` keyed
+rendering is the documented opt-in for hot lists, not yet adopted —
+[style guide §4](spa-style-guide.md#4-lists--reactive-rows-rebuild-on-membership)).
 
 ### Routing
 `lib/router.js` is a tiny History-API router. The full route table (declared once, in
@@ -349,9 +351,12 @@ Every interactive piece of the app, and where it lives.
 ## 8. Decisions & open choices
 
 - **VanX for reactive collections — decided, shipped.** `van-x` is vendored in `lib/`
-  and used for every keyed collection: the conversation list, the doc list, and the
-  message stream. The ~1 KB buys per-item updates. Plain `van.state` is the tool for
-  scalar UI state in `state/ui.js` (theme, layout flags).
+  and every keyed collection's rows — the conversation list, the doc list, the message
+  stream — are `vanX.reactive`. The ~1 KB buys per-field updates within a row;
+  membership changes currently re-render via map-rebuild bindings, with `vanX.list`
+  per-item keyed rendering the opt-in upgrade
+  ([style guide §4](spa-style-guide.md#4-lists--reactive-rows-rebuild-on-membership)).
+  Plain `van.state` is the tool for scalar UI state in `state/ui.js` (theme, layout flags).
 - **Minifier validation — resolved.** NUglify minifies the real ESM source cleanly;
   verified on `dotnet publish` (U14). The raw-fallback safety net stays in place.
 - **i18n / UI language — not built.** The settings design reserves a UI-language

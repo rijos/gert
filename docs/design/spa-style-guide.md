@@ -7,9 +7,10 @@ logic — and all theming + responsiveness is driven by global CSS tokens.**
 This is the *conventions* half of the front-end docs; the *map* half — where files live,
 the four layers, the dev/release pipeline — is [ui-components.md](ui-components.md).
 
-Dependencies: [VanJS](https://vanjs.org) and [VanX](https://vanjs.org/x) (reactive lists),
-**vendored** in `lib/van.js` / `lib/van-x.js` and imported by the bare specifiers `van` /
-`van-x` through the import map in `index.html` (no npm — [ui-components §6](ui-components.md#6-devrelease-pipeline-no-npm)).
+Dependencies: [VanJS](https://vanjs.org) and [VanX](https://vanjs.org/x) (reactive
+objects/arrays), **vendored** in `lib/van.js` / `lib/van-x.js` and imported by the bare
+specifiers `van` / `van-x` through the import map in `index.html` (no npm —
+[ui-components §6](ui-components.md#6-devrelease-pipeline-no-npm)).
 
 ---
 
@@ -28,10 +29,11 @@ Components are just functions, but we give them a consistent shape with a small
 // lib/component.js (the real implementation)
 const injected = new Set();
 
-// Adopt a stylesheet built from a CSS string. CSP: styles go through a
-// Constructable Stylesheet (document.adoptedStyleSheets), NOT an inline <style>
-// element — CSSOM construction is exempt from `style-src`, so a strict
-// `style-src 'self'` holds with no 'unsafe-inline' / nonce / hash.
+// Adopt a stylesheet built from a CSS string. Reusable by non-component modules
+// that need to ship CSS under a strict CSP (e.g. the imperative toast host).
+// CSP: styles go through a Constructable Stylesheet (document.adoptedStyleSheets),
+// NOT an inline <style> element — CSSOM construction is exempt from `style-src`,
+// so a strict `style-src 'self'` holds with no 'unsafe-inline' / nonce / hash.
 // Adopted sheets cascade AFTER the <link>ed globals, so layout.css keeps
 // priority for responsive overrides.
 export const adoptStyles = (css) => {
@@ -52,36 +54,31 @@ export const component = ({ name, css, view }) => (...args) => {
 ### Authoring a component
 
 ```js
-// components/sidebar/convo-item.js — one .convo row with its git-graph node.
+// components/sidebar/convo-item.js — one .convo row with its git-graph node (trimmed).
 import van from "van";
 import { component } from "../../lib/component.js";
 import * as chat from "../../state/chat.js";
-import * as svc from "../../services/conversations.js";
+import { navigate } from "../../lib/router.js";
 
 const { div, span } = van.tags;
 
 export const ConvoItem = component({
   name: "convo-item",
   css: `
-    .convo{position:relative; padding:8px 10px; border-radius:var(--r-sm); cursor:pointer;
-           display:flex; align-items:center; color:var(--ink-2); transition:.14s;}
+    .convo{position:relative; padding:8px 10px 8px 8px; border-radius:var(--r-sm); cursor:pointer; display:flex; align-items:center; color:var(--ink-2); transition:.14s;}
     .convo:hover{background:var(--surface-2); color:var(--ink);}
     .convo.active{background:var(--chat-on); color:var(--coral-deep); font-weight:600;}
   `,
-  view: (convo) => {
-    // ── logic ───────────────────────────────────
-    const open = () => svc.open(convo.id);   // service updates the store; binding re-renders
-
-    // ── content ─────────────────────────────────
-    return div(
+  view: (convo) =>
+    div(
       {
         class: () => "convo" + (chat.activeId.val === convo.id ? " active" : ""),
-        onclick: open,
+        // Navigate only — ChatPage opens the thread for its route.
+        onclick: () => navigate("/c/" + convo.id),
       },
       span({ class: "node" }),
-      span({ class: "t" }, convo.title),
-    );
-  },
+      span({ class: "t" }, () => convo.title || "Untitled"),
+    ),
 });
 ```
 
@@ -89,26 +86,57 @@ export const ConvoItem = component({
 
 - **One component per file.** Filename in `kebab-case.js` matching the factory `name`
   (`convo-item.js` → `name: "convo-item"`); the exported factory is **PascalCase**
-  (`ConvoItem`), so call sites read like JSX: `ConvoItem(convo)`.
+  (`ConvoItem`), so call sites read like JSX: `ConvoItem(convo)`. Imperative *openers*
+  — functions that mount transient UI rather than return a node — are camelCase verbs:
+  `openSettings()`, `openModelSettings(model)`, `toast(msg)` (see §10).
 - **Named exports only** — no `default`. Keeps imports greppable and the import map flat.
-- The **root element** gets `class: "<name>"` matching the factory `name`. All of the
-  component's CSS is namespaced under that class.
+- The **root element gets one root class, unique app-wide**, declared in the component's
+  `css` string; **all of the component's CSS is namespaced under it.** A short form is
+  the norm (`tool-card` → `.tcard`, `dropdown` → `.dd`, `convo-item` → `.convo`); the
+  full kebab name is fine too — **uniqueness is the requirement, not the spelling.**
+  The factory `name` stays the kebab-case file name regardless (it keys the
+  inject-once set). Shared primitives applied by bare class string (`.btn`, `.field`)
+  live in `primitives.css` instead — see §2.
 - Keep `logic` (state + handlers) above `content`. A blank line and a comment
   marker between them is enough; don't split into separate functions unless the
   logic is genuinely reusable.
-- Components take a **single argument** (props object) or a plain value when there's
-  only one input. Provide defaults: `view: ({ start = 0 } = {}) => ...`.
+- **Components** take a **single argument** — a props object, or a plain value when
+  there's only one input (`ConvoItem(convo)`, `Message(m)`). Always default the object
+  itself (`view: ({ ... } = {}) =>`); default individual props where a fallback is
+  meaningful, and document *required* props in the leading comment (the house habit —
+  see `modal.js`, `dropdown.js`). Non-component helpers (`Icon(name, opts)`) are exempt.
 - **No top-level side effects** — no `fetch`, no global mutation at import time. I/O goes
   through `services/`, state through `state/` ([ui-components §3](ui-components.md#3-the-four-layers)).
+- **Non-obvious code cites its design doc** — a `//` comment naming the doc section or
+  security finding (`F2`, `F3`, `F4`…) it implements. Code comments and docs reference
+  each other; keep both ends accurate when either changes.
 
 ---
 
 ## 2. Theming — derive everything from global tokens
 
-This is the heart of the guide. **Component CSS may never hardcode a color or a
-spacing value. It may only reference `var(--token)`.** All real values live in
-`styles/tokens.css`. This single rule gives you both themes *and* responsiveness
+This is the heart of the guide. **Component CSS may never hardcode a color — anywhere,
+including box-shadows.** Colors only ever appear as `var(--token)`; all real values live
+in `styles/tokens.css`. This single rule gives you both themes *and* responsiveness
 for free (see §3).
+
+What must be a token, and what may stay literal:
+
+| Value | Rule |
+|-------|------|
+| Colors — fills, text, borders, shadows, scrims | **Always a token.** No exceptions. Shadows use `var(--lift)` or a future `--shadow-*` token, never a literal `rgba(...)`. |
+| Radii and shared rhythm — `--r`, `--r-sm`, `--head-h` | **Always a token.** These align components to each other; a literal copy drifts. |
+| Component-internal one-off spacing — an `8px 10px` padding, a `312px` menu width, a `13px` font size | **May be literal.** This is the real convention: per-component geometry that nothing else aligns to doesn't earn a token. |
+
+The boundary: **if a value would need to change at a breakpoint or between themes, it
+must be a token** (or a `layout.css` override — §3). If it's just this component's own
+geometry, a literal is fine.
+
+> **Cleanup debt:** a few components still embed literal shadow/scrim colors —
+> `rgba(60,46,28,…)` in `menu.js`/`modal.js`/`toast.js`, `rgba(0,0,0,…)` + `#fff` in
+> `switch.js`/`composer.js`, and the brand mark's `#bf4727` in `icons/icons.js`. These
+> violate the color rule; fold them into shadow/scrim tokens when touched — don't copy
+> them into new components.
 
 The two themes are **Manila** (paper / editorial light) and **Ember** (refined dark).
 Every color token is defined **once** with `light-dark()`, and the document rides
@@ -131,10 +159,12 @@ Every color token is defined **once** with `light-dark()`, and the document ride
 [data-theme="ember"] { color-scheme: dark; }
 ```
 
-Toggling the theme is owned by `state/ui.js`: it sets `documentElement[data-theme]`
-and persists the choice to `localStorage` (a first-paint cache; the server-side
-setting is the cross-device truth — [configuration §3.1](configuration.md#31-theme)).
-Components never know which theme is active — they read tokens.
+Toggling the theme is owned by `state/ui.js` — it is the **only** module that may touch
+`documentElement[data-theme]` or the `gert.theme` localStorage key. It persists the
+choice to `localStorage` as a first-paint cache; the server-side setting is the
+cross-device truth ([configuration §3.1](configuration.md#31-theme)) — note the boot
+path does not yet apply the server value, a known gap. Components never know which
+theme is active — they read tokens.
 
 > Even *conditional rendering* by theme is done with tokens where possible: the
 > sun/moon glyph swap in `theme-toggle.js` is driven by `--sun-display`/`--moon-display`
@@ -146,7 +176,7 @@ A component's `css` owns the rules namespaced under its own root class. Four kin
 of rule belong in the global stylesheets (`styles/*.css`) instead, because they aren't
 owned by any one component:
 
-- **Tokens** (`tokens.css`) — all color/spacing values + the theme scopes. Must load first.
+- **Tokens** (`tokens.css`) — all color/shared-value tokens + the theme scopes. Must load first.
 - **Reset & document chrome** (`base.css`) — body + paper grain, scrollbars, keyframes.
 - **App-frame layout + responsiveness** (`layout.css`) — the 3-column `.app` grid,
   collapse states, drawers, and **all `@media`** (see §3).
@@ -162,54 +192,75 @@ base rule.
 
 ---
 
-## 3. Responsiveness — media queries are global, and only touch tokens
+## 3. Responsiveness — media queries are global
 
 **Components never write `@media`.** All responsive behaviour lives in
-`styles/layout.css` (plus the OS-fallback block in `tokens.css`), and it works by
-*rewriting tokens / layout state at breakpoints*. Because components only read
-tokens, they adapt automatically.
+`styles/layout.css` (plus the OS-fallback block in `tokens.css`), which works two ways:
+breakpoints **rewrite the layout variables** the grid is built from, and they
+**override component rules under the `.app` prefix**:
 
 ```css
 /* styles/layout.css — the ONLY place media queries appear */
-@media (max-width: 768px) {
-  :root { --gap: 0.5rem; --pad: 1rem; }
-  /* …drawer/scrim rules for the app frame… */
+.app{--nav-col:264px; --panel-col:var(--panel-w,372px); display:grid;
+     grid-template-columns:var(--nav-col) minmax(500px,1fr) minmax(0,var(--panel-col));}
+.app.nav-collapsed{--nav-col:0px;}
+
+@media (max-width:1079px){
+  .app{grid-template-columns:1fr !important;}
+  .app .sidebar,.app .panel{position:fixed; /* …slide-over drawers… */}
+  .app .menu{width:312px; max-width:calc(100vw - 28px);}
 }
 ```
 
-A grid component then needs zero responsive code of its own:
+The `.app` prefix is load-bearing: component CSS is adopted *after* the `<link>`ed
+globals (§1), so a bare `.panel{…}` in `layout.css` would lose to the component's own
+`.panel` rule. Prefixing raises specificity so the responsive override wins regardless
+of injection order — `layout.css` says so in its header comment.
 
-```js
-export const Gallery = component({
-  name: "gallery",
-  css: `
-    .gallery {
-      display: grid;
-      grid-template-columns: repeat(var(--cols), 1fr);
-      gap: var(--gap);
-    }
-  `,
-  view: (images) => div({ class: "gallery" }, /* ... */),
-})
-```
+The breakpoint values themselves live in `layout.css`. The one JS copy —
+`ui.isMobile()`'s `(max-width:1079px)` in `state/ui.js` — must be kept in sync by hand;
+don't add more.
 
-> If a component genuinely needs a layout shift that can't be expressed as a token
-> change, that's a signal it should become two components selected by a global
-> `breakpoint` state — not a local media query.
+> If a component genuinely needs a layout shift that can't be expressed as a
+> `layout.css` override, that's a signal it should become two components selected by a
+> global `breakpoint` state — not a local media query.
 
 ---
 
-## 4. Lists & `foreach`
+## 4. Lists — reactive rows, rebuild on membership
 
-Use VanX for keyed, efficient list rendering. `vanX.list(container, items, itemFn)`
-returns the container element; the item function receives the item state and a
-`remove` deleter.
+The shipped default: **collections are arrays of `vanX.reactive` row objects, rendered
+by a plain map-rebuild binding.** Per-field updates re-render only the nested binding
+that reads the field; **membership changes re-run the outer binding and rebuild every
+row**:
+
+```js
+// components/main/message-stream.js — the house idiom
+const thread = div(
+  { class: "thread" },
+  () => div(...chat.messages.map((m) => Message(m))),
+);
+```
+
+How the two granularities split:
+
+- **A field changes** (`m.text += delta`, `doc.status = "ready"`): only the inner
+  binding that reads that field re-renders — a streamed token repaints one text node,
+  a doc-status tick repaints one pill. This is why rows must be `vanX.reactive` and
+  fields must be read *inside* a function: `span(() => convo.title)`.
+- **Membership changes** (push/splice/replace): the outer binding re-runs and rebuilds
+  **all** rows — O(n) per change, including re-running `renderMarkdown` for every
+  message and recreating any iframes. That's acceptable while membership changes are
+  user-paced (a send, an upload, a conversation switch) and lists are modest; it is
+  *not* free, and side-effectful rows (iframes, tickets) make it worse.
+
+When a rebuild is measurably hot, the opt-in upgrade is **`vanX.list`** — keyed
+per-item insert/remove instead of a wholesale rebuild. **It is not currently used
+anywhere in the tree**; the stores are already `vanX.reactive` arrays, so adopting it
+is mechanical (the canvas viewers and the message thread are the first candidates):
 
 ```js
 import * as vanX from "van-x";
-
-const items = vanX.reactive([])          // reactive array
-items.push("new value")                  // mutating it updates the DOM
 
 vanX.list(ul, items, (item, remove) =>
   li(
@@ -220,12 +271,14 @@ vanX.list(ul, items, (item, remove) =>
 ```
 
 Notes:
-- The third argument's first param is a **state** — read it as `() => item.val`.
+- With `vanX.list`, the item function's first param is a **state** — read it as
+  `() => item.val`.
 - **Do not alias** sub-fields of a reactive object into other variables; it breaks
-  VanX's dependency tracking.
+  VanX's dependency tracking. (The codebase respects this today: whole reactive
+  objects are passed around, fields are read inside bindings.)
 - For static (non-reactive) lists, plain `.map` is fine: `ul(items.map(i => li(i)))`.
 - Which collections are VanX-reactive (conversations, docs, the message stream) vs
-  plain `van.state` scalars is decided per store — see
+  plain `van.state` scalars is decided per store — see §7 and
   [ui-components §5](ui-components.md#5-cross-cutting-concerns).
 
 ---
@@ -266,7 +319,291 @@ mountRouter({
 
 ---
 
-## 6. Formatting — make it read like HTML
+## 6. Services — the shape of an API module
+
+All `/api` traffic goes through `services/` — **no `fetch` (or `http.*` call) anywhere
+else.** One module per REST resource, exporting CRUD-verb functions
+(`list / create / rename / remove / open / select`), each with the same spine:
+**call `http.*` → mutate the store → return the payload.**
+
+```js
+// services/conversations.js (trimmed)
+import * as http from "./http.js";
+import * as chat from "../state/chat.js";
+
+const pid = () => chat.activeProjectId.val;   // every project-scoped service has this
+
+export const rename = async (id, title) => {
+  await http.patch(`/projects/${pid()}/conversations/${id}`, { title });
+  const c = chat.conversations.find((x) => x.id === id);
+  if (c) c.title = title;
+  if (chat.activeId.val === id) chat.setTitle(title);
+};
+```
+
+The pieces:
+
+- **`services/http.js` is the only fetch.** It exposes `get / post / patch / put /
+  del / upload` (JSON in/out, snake_case wire shape), plus the streaming transports:
+  `sse(path)` — an async generator parsing the EventSource wire format off a fetch
+  body so the Bearer header rides along — and `ws(path)` — the token as the second
+  `Sec-WebSocket-Protocol` entry, never in the URL ([security F2](security.md#f2--token-storage)).
+- **Failures throw `ApiError { status, message, body }`** — shaped once in `http.js`'s
+  `handle()`, so callers can branch on `e.status` (`services/chat.js` turns a 409 into
+  "the previous response is still finishing").
+- **The `pid()` helper.** Project-scoped services derive the project id from the store
+  — `const pid = () => chat.activeProjectId.val;` — at the top of the module
+  (`conversations.js`, `documents.js`, `memory.js`). Components never assemble
+  `/projects/{pid}/…` paths.
+- **Services may call sibling services** (`projects.select` → `conversations.list`);
+  they never import a component.
+- **The sanctioned exception:** `services/auth.js`'s token endpoints bypass `http.js`
+  deliberately (they *produce* the token `http.js` attaches) — documented in the file.
+- **Known deviation:** `html-artifact.js` mints its preview ticket with `http.get`
+  inside the component; the target shape is a `services/artifacts.js` helper.
+
+---
+
+## 7. Stores — the shape of state
+
+`state/` modules hold the data, nothing else — with one sanctioned exception:
+`state/ui.js` owns the `documentElement[data-theme]` attribute and the `gert.*`
+localStorage preference keys (theme, panel width). No other store — and **no
+component** — touches either.
+
+What goes in which container:
+
+- **`van.state`** for scalars: `activeId`, `streaming`, `theme`, layout flags.
+- **`vanX.reactive`** for keyed collections and row objects: `conversations`,
+  `messages`, `documents`, `tools` (so field updates re-render one node — §4).
+- **`van.derive`** for computed values: `models.selected`, `knowledge.totalBytes`.
+  (Module-level derives in stores are fine — they're singletons. Derives in
+  *components* have lifetime rules — §12.)
+
+Mutators follow two shapes:
+
+- **Reset-style setters** — `setX(list)` empties in place (`length = 0`) then pushes,
+  so existing bindings stay attached to the same reactive array.
+- **`addX(item)` returns the reactive node** it pushed, so services can keep mutating
+  it as events stream in.
+
+```js
+// state/chat.js (trimmed)
+// Message shape (van-x reactive object pushed onto `messages`):
+//   { id, role: "user"|"assistant", text, streaming,
+//     tools: reactive([ { id, kind, status, … } ]),
+//     citations: reactive([ { ordinal, label, doc_id, locator } ]) }
+
+export const setConversations = (list) => {
+  conversations.length = 0;
+  list.forEach((c) => conversations.push(c));
+};
+
+export const addAssistantMessage = () => {
+  const m = reactiveMessage({ role: "assistant", text: "", streaming: true, working: true });
+  messages.push(m);
+  return m;
+};
+```
+
+**Document the row shape in a comment at the top of the store** (as above, and
+`state/knowledge.js`, `state/models.js`). With no TypeScript, these comments are the
+SPA's type system — keep them current when a field is added.
+
+---
+
+## 8. Error handling — attempt() and toasts
+
+Two tiers, by who's waiting:
+
+1. **User-initiated actions** — wrap in `attempt(fn, "Couldn't <do the thing>")`
+   (`lib/action.js`). It runs the action, toasts `kind:"err"` on failure, and returns
+   `undefined` so callers can branch. Error copy starts **"Couldn't …"**.
+2. **Background/boot loads** (initial fetches, silent refresh, sidebar refreshes) —
+   a bare `.catch(() => {})` is acceptable: nobody asked, nobody's waiting.
+
+```js
+// lib/action.js — the whole contract
+export const attempt = async (fn, errorMessage = "Something went wrong") => {
+  try {
+    return await fn();
+  } catch {
+    toast(errorMessage, "err");
+    return undefined;
+  }
+};
+```
+
+The rules that bite:
+
+- **Nothing the user just asked for may fail silently.** A click handler either
+  `attempt()`s or renders an error state. Swallowing a failed load into an empty list
+  (so "broken" reads as "no data") is the anti-pattern.
+- **Await when the next step depends on success.** `attempt` returns a promise;
+  fire-and-forget is fine only when nothing downstream assumes the action worked:
+
+  ```js
+  const ok = await attempt(() => svc.remove(id), "Couldn't delete this chat");
+  if (ok === undefined) return;   // failed — don't navigate away
+  ```
+- Stream errors don't toast — they render *into the message* (`services/chat.js`
+  appends an `_Error: …_` line to the assistant bubble), because the failure's home
+  is the thread, not a corner notification.
+
+---
+
+## 9. Streaming — one cursor, three transports
+
+`services/chat.js` is the canonical async service: read it before writing anything
+stream-shaped. The contract ([rest-api → Receiving a turn](rest-api.md#receiving-a-turn)):
+POST the message (**202 + detached turn** — the server keeps generating even if every
+client disconnects), then consume the conversation's TurnEvent stream over the best
+transport available — **WebSocket, then SSE, then range polling** — all sharing one
+`seq` cursor so a fallback resumes without gaps or duplicates.
+
+```js
+// services/chat.js — the ladder. Each consumer returns true = turn finished,
+// false = transport unavailable, fall through. One cursor spans all three.
+const consume = async (pid, cid, after, assistant, signal) => {
+  const cursor = { seq: after };
+  if (signal?.aborted) return;
+  if (await consumeWs(pid, cid, cursor, assistant, signal)) return;
+  if (signal?.aborted) return;
+  if (await consumeSse(pid, cid, cursor, assistant, signal)) return;
+  if (signal?.aborted) return;
+  await consumePoll(pid, cid, cursor, assistant, signal);
+};
+```
+
+The rules:
+
+- **The cursor is a shared watermark.** `applyTurnEvent` applies an event only if
+  `seq > cursor.seq` — that one check drops replay/live duplicates *and*
+  transport-fallback overlap. Terminal events are a fixed set
+  (`message_end`, `cancelled`, `error`).
+- **Abort means "detach", and detach is terminal.** Each consumer treats
+  `signal.aborted` as turn-over (`resolve(true)`) so a user stop never falls through
+  to the next transport. The server turn keeps running — `detach()` (conversation
+  switch) drops the client only; `stop()` POSTs a server-side cancel and stays
+  attached for the terminal `cancelled` event; `resume(cid, msg)` re-attaches after a
+  reload and replays the whole turn from the row's `seq`.
+- **Ownership guards in `finally`.** The in-flight turn's `AbortController` and
+  promise are module-level (`activeController` / `activeTurn`); every `finally` checks
+  `activeController === ac` before restoring composer state, because a newer `send()`
+  may already own it. A new `send()` **settles the previous turn first**
+  (`Promise.race([activeTurn, sleep(10_000)])`) so a stop→send can't race the cancel
+  into a 409.
+- **Components never see a transport.** The consumer maps every event onto the
+  reactive assistant message (`state/chat.js`) and `state/artifacts.js`; the
+  typewriter, tool cards, citations, and canvas tabs are just bindings re-rendering.
+
+---
+
+## 10. Overlays — imperative by design
+
+Transient UI is **not** store-driven. Modals and toasts mount themselves, clean
+themselves up, and return control to the caller — the sanctioned exception to
+"components return a DOM node":
+
+- **`Modal({ title, body, onConfirm, actions, … })`** (`components/ui/modal.js`)
+  appends its scrim to `document.body` and **returns `close`**. The default footer is
+  Cancel + a primary button; `actions(close)` is the escape hatch for custom layouts.
+  `close()` removes the node *and* its document keydown (Esc) listener — the model
+  citizen for §12.
+- **Feature modals are camelCase openers** — `openSettings()`,
+  `openModelSettings(model)` in `components/settings/` — thin functions that build a
+  body and call `Modal`. Settings is a modal, not a route (§5).
+- **`toast(message, kind)`** (`components/ui/toast.js`) appends into a lazily-created
+  fixed host and auto-dismisses. Imperative modules that never go through
+  `component()` adopt their CSS with `adoptStyles(CSS)` directly — same CSP-clean path.
+- **Menus**: `Menu({ trigger, open, wrapClass, children })` — `open` is a
+  **caller-owned `van.state`**; the wrapper renders `wrapClass + " open"` and the
+  *caller's* CSS owns the `.open .menu` reveal (positioning per call site). The
+  trigger toggles with `stopPropagation()`; a document click closes (which must be
+  cleaned up — §12, currently leaky).
+- **Snapshot primitives**: `ProgressBar({ value, max })` and `Pill` render a
+  **snapshot** and stay binding-free — the *caller's* reactive binding re-renders them
+  with fresh props. This is the house pattern for generic leaves (`progress-bar.js`'s
+  header comment says so): primitives don't subscribe, callers do.
+
+The z-index ladder (keep new layers consistent with it):
+
+| 30 | 50 | 60 | 70 | 80 |
+|----|----|----|----|----|
+| menus (`menu.js`) | scrim (`layout.css`) | mobile drawers (`layout.css`) | modal (`modal.js`) | toast (`toast.js`) |
+
+---
+
+## 11. Security rules
+
+The SPA holds a bearer token and renders hostile text in the same document. These
+rules keep the two apart **by construction**; each maps to a finding in
+[security §3](security.md#3-findings--remediations). Don't weaken one without reading
+its finding.
+
+- **LLM output is hostile.** Always. So is anything derived from it (artifact names,
+  citations, locators).
+- **No HTML-string sinks, ever.** No `innerHTML` / `outerHTML` /
+  `insertAdjacentHTML` / `DOMParser` / `document.write` anywhere in the SPA — the tree
+  is grep-clean today; keep it that way. Rich text renders **only** through
+  `lib/markdown.js` (+ `lib/highlight.js` for code), which build real DOM nodes from
+  `textContent` ([F4](security.md#f4--markdown-sanitization)). The single
+  markup-bearing sink permitted is a sandboxed `iframe.srcdoc` (next rule).
+- **Untrusted markup runs only in a sandboxed iframe — never with
+  `allow-same-origin`.** HTML/SVG artifacts go through the separate-origin ticket
+  path or `lib/artifact-sandbox.js`'s `srcdoc` + per-document CSP
+  ([F3](security.md#f3--svghtml-artifact-rendering)). `sandbox="allow-scripts"` at
+  most; adding `allow-same-origin` would hand the artifact the app origin and the
+  token. SVG counts as HTML here — it carries `<script>`/`onload`.
+- **Every data-derived `href` goes through `sanitizeUrl()`** in `lib/markdown.js` —
+  the single chokepoint that rejects `javascript:`/`data:`/`vbscript:` and de-smuggles
+  control characters. Don't re-derive `^https?:` checks inline.
+- **`blob:` URLs follow create → use → revoke.** The model is
+  `artifact.js#downloadArtifact`: mint, click, `URL.revokeObjectURL` immediately. A
+  blob URL left alive pins its bytes and is an openable same-origin document — never
+  hand one to `window.open` without a revocation plan, and never build one from
+  script-capable types (SVG) outside the sandbox.
+- **The token lives in memory only.** A module variable in `services/auth.js`, read
+  by `services/http.js` and nobody else — no component or state module imports
+  `getToken` ([F2](security.md#f2--token-storage)). It never touches `localStorage` /
+  `sessionStorage` / cookies / URLs / logs; WS auth rides the subprotocol, SSE rides a
+  fetch header. `localStorage` is for non-secret prefs only, keys namespaced `gert.*`.
+- **Styling stays CSP-clean by construction.** Component CSS through `adoptStyles`
+  (Constructable Stylesheets are exempt from `style-src`), inline values through the
+  `style:` prop (CSSOM). No inline `<style>`, `<script>`, or event-handler attributes
+  — `style-src 'self'` / `script-src 'self'` never need loosening
+  ([F1](security.md#f1--content-security-policy--security-headers)).
+
+---
+
+## 12. Cleanup discipline
+
+VanJS garbage-collects bindings whose DOM is disconnected — but only what it knows
+about. Everything else is yours to release:
+
+- **A listener on `document`/`window` must be removed** when its component leaves the
+  DOM. `Modal` is the model: `close()` removes its Esc keydown. `Menu`'s document
+  click listener is the cautionary tale — registered per render, never removed, so
+  every conversation switch leaks listeners that pin their dead subtrees forever.
+  Prefer registering when the thing opens and removing when it closes (a closed
+  menu's handler shouldn't run at all).
+- **`van.derive` outside a returned binding lives forever.** A derive created at
+  `view` top level (not inside the tag tree you return) is registered against an
+  always-connected sentinel and is never pruned — re-rendering the component stacks
+  another immortal subscriber. Create derives **inside bindings that are part of the
+  returned DOM**, or don't create them in components at all (module-level derives in
+  stores are fine — §7). `message-stream.js`'s scroll derives are current debt here,
+  not a pattern to copy.
+- **Races are settled by ownership, not hope.** Pass an `AbortController` signal into
+  anything long-running and check ownership before touching shared state in `finally`
+  (`activeController === ac` — §9). For latest-wins loads, use a monotonic ticket:
+  `conversations.open()` increments `openTicket` and discards stale responses.
+- **Revoke what you mint** — blob URLs (§11), timers tied to a component's lifetime,
+  the SSE reader when a stream module grows one.
+
+---
+
+## 13. Formatting — make it read like HTML
 
 Tag calls are nested to mirror the DOM tree.
 
@@ -275,6 +612,8 @@ Tag calls are nested to mirror the DOM tree.
 - **Trailing commas** on every child (clean diffs, easy reordering).
 - The **closing `)`** lines up under the column of its opening tag.
 - **Leaf elements** stay on one line: `span("test")`, `li(() => item.val)`.
+- **Module-level constants** in SCREAMING_CASE, with a comment citing the server cap
+  they mirror where one exists (`MAX_IMAGES`, `composer.js`).
 
 Prefer:
 
@@ -298,7 +637,7 @@ div({ class: "card" }, h2("Title"), p("Some body text."), button({ onclick: save
 
 ---
 
-## 7. Where files go
+## 14. Where files go
 
 The directory layout, the four layers (`pages → components → state/services → lib`),
 and the no-npm pipeline are documented once, in
@@ -312,11 +651,33 @@ The one-line version: components in `components/<area>/kebab-case.js`, stores in
 ## Cheat sheet
 
 - Component = `component({ name, css, view })` → style / logic / content; file is
-  `kebab-case.js`, export is `PascalCase`.
-- Component CSS references **only** `var(--token)` — never literal colors/spacing.
-- Theming = `light-dark()` tokens + `color-scheme`; `[data-theme]` just pins the scheme.
-- Responsiveness = token/layout rewrites inside `@media` in `styles/layout.css`. No local `@media`.
-- Lists = `vanX.list(container, vanX.reactive([...]), (item, remove) => ...)`.
+  `kebab-case.js`, export is `PascalCase`; imperative openers are camelCase verbs.
+- Root element = **one root class, unique app-wide** (short form fine: `.tcard`, `.dd`);
+  all component CSS namespaced under it.
+- Colors (incl. shadows) = **tokens, always**; radii/rhythm (`--r`, `--r-sm`, `--head-h`)
+  = tokens; one-off component spacing may be literal — tokenize anything a breakpoint
+  or theme would change.
+- Theming = `light-dark()` tokens + `color-scheme`; `[data-theme]` is owned by
+  `state/ui.js` alone.
+- Responsiveness = `.app`-prefixed overrides + layout vars in `styles/layout.css`.
+  No local `@media`.
+- Lists = `vanX.reactive` rows + map-rebuild binding (the default); `vanX.list` is the
+  opt-in for hot keyed lists; never alias reactive sub-fields.
 - Routing = the one `mountRouter` call in `app.js`; settings is a modal, not a route.
+- Services = `http.*` → mutate store → return; `pid()` helper; `ApiError`; no fetch
+  outside `services/`.
+- Stores = `van.state` scalars + `vanX.reactive` collections; reset-style setters;
+  `addX` returns the reactive node; row shapes documented in a top comment.
+- Errors = `attempt(fn, "Couldn't …")` for user actions, bare `.catch` for background;
+  nothing user-initiated fails silently; await when the next step depends on success.
+- Streaming = WS → SSE → poll over one `seq` cursor; abort = detach = terminal;
+  ownership checks in `finally`; components only ever bind to state.
+- Overlays = imperative `Modal` (returns `close`) / `toast` / `openX`; snapshot
+  primitives re-rendered by the caller's binding; z-ladder 30/50/60/70/80.
+- Security = no HTML-string sinks; markdown via `lib/markdown.js` only; LLM output is
+  hostile; sandboxed iframes without `allow-same-origin`; blob URLs revoked; token in
+  memory only; CSP-clean styling by construction.
+- Cleanup = remove document/window listeners; no top-level `van.derive` in components;
+  AbortController + ownership for races.
 - Formatting = HTML-like; props inline, one child per line, trailing commas.
 - I/O through `services/`, state through `state/`, never from a component directly.
