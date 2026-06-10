@@ -38,7 +38,7 @@ internal static class ProviderFixture
         new(Options.Create(OptionsFor(root)));
 
     public static IUserDatabaseProvider UserProviderFor(TempDataRoot root) =>
-        new SqliteUserDatabaseProvider(Options.Create(OptionsFor(root)), FactoryFor(root));
+        new SqliteUserDatabaseProvider(Options.Create(OptionsFor(root)), FactoryFor(root), TimeProvider.System);
 
     public static IChatDatabaseProvider ChatProviderFor(TempDataRoot root) =>
         new SqliteChatDatabaseProvider(Options.Create(OptionsFor(root)), FactoryFor(root));
@@ -63,7 +63,7 @@ internal static class ProviderFixture
         {
             var opt = Options.Create(options);
             var factory = new SqliteConnectionFactory(Options.Create(new SqliteVecOptions()));
-            Users = new SqliteUserDatabaseProvider(opt, factory);
+            Users = new SqliteUserDatabaseProvider(opt, factory, TimeProvider.System);
             Chat = new SqliteChatDatabaseProvider(opt, factory);
             Rag = new SqliteRagDatabaseProvider(opt, factory);
         }

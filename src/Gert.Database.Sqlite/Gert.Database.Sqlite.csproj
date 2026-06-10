@@ -4,6 +4,9 @@
     <ProjectReference Include="..\Gert.Database\Gert.Database.csproj" />
     <ProjectReference Include="..\Gert.Service\Gert.Service.csproj" />
     <ProjectReference Include="..\Gert.Model\Gert.Model.csproj" />
+    <!-- AddGertSqliteStorage registers the whole storage/database seam in one call
+         (dotnet-style-guide.md §4), including the local object/user stores. -->
+    <ProjectReference Include="..\Gert.Storage\Gert.Storage.csproj" />
   </ItemGroup>
 
   <ItemGroup>
@@ -11,6 +14,9 @@
     <PackageReference Include="Microsoft.Data.Sqlite" Version="$(MicrosoftDataSqliteVersion)" />
     <PackageReference Include="Dapper" Version="$(DapperVersion)" />
     <PackageReference Include="Microsoft.Extensions.Options" Version="$(MicrosoftExtensionsOptionsVersion)" />
+    <!-- AddOptions<T>().Bind(section) for AddGertSqliteStorage (dotnet-style-guide.md §4). -->
+    <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="$(MicrosoftExtensionsOptionsVersion)" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" Version="$(MicrosoftExtensionsConfigVersion)" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="$(MicrosoftExtensionsLoggingVersion)" />
   </ItemGroup>
 

@@ -79,8 +79,12 @@ public sealed class AccountService : IAccountService
 
     /// <summary>
     /// Build a <c>.zip</c> for the given pids into a throwaway temp file, then hand
-    /// back a stream factory that opens it for the host and deletes it on close, so
-    /// the service stays transport-agnostic and leaves nothing behind.
+    /// back a stream factory over it, so the service stays transport-agnostic and
+    /// leaves nothing behind. Cleanup is robust by construction: a failed/cancelled
+    /// build deletes the temp file in the catch, and the returned (already-open)
+    /// read stream carries <see cref="FileOptions.DeleteOnClose"/> — so the OS
+    /// removes the file when the host closes it after streaming, and the handle's
+    /// finalizer covers an archive whose factory is never invoked.
     /// </summary>
     private async Task<ExportArchive> BuildArchiveAsync(
         string fileName,
@@ -89,29 +93,63 @@ public sealed class AccountService : IAccountService
     {
         var tempPath = Path.Combine(Path.GetTempPath(), "gert-export-" + Guid.NewGuid().ToString("N") + ".zip");
 
-        await using (var file = File.Create(tempPath))
-        using (var zip = new ZipArchive(file, ZipArchiveMode.Create))
+        try
         {
-            foreach (var pid in pids)
+            await using (var file = File.Create(tempPath))
+            using (var zip = new ZipArchive(file, ZipArchiveMode.Create))
             {
-                cancellationToken.ThrowIfCancellationRequested();
-                await WriteProjectAsync(zip, pid, cancellationToken).ConfigureAwait(false);
+                foreach (var pid in pids)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    await WriteProjectAsync(zip, pid, cancellationToken).ConfigureAwait(false);
+                }
             }
         }
+        catch
+        {
+            // A failed/cancelled build must not strand the partial archive
+            // (dotnet-style-guide.md §7: best-effort cleanup, original fault wins).
+            TryDelete(tempPath);
+            throw;
+        }
+
+        // Open the read stream NOW and transfer ownership to the archive: with
+        // DeleteOnClose the file's lifetime is tied to this handle, so it cannot
+        // outlive the response (close → delete) nor an abandoned archive (the
+        // SafeFileHandle finalizer closes it eventually).
+        var stream = new FileStream(
+            tempPath,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.Read | FileShare.Delete,
+            bufferSize: 81920,
+            FileOptions.DeleteOnClose | FileOptions.Asynchronous);
 
         return new ExportArchive
         {
             FileName = fileName,
             ContentType = "application/zip",
-            OpenReadAsync = _ => Task.FromResult<Stream>(
-                new FileStream(
-                    tempPath,
-                    FileMode.Open,
-                    FileAccess.Read,
-                    FileShare.Read,
-                    bufferSize: 81920,
-                    FileOptions.DeleteOnClose | FileOptions.Asynchronous)),
+            // Single-use by contract: the host opens it once and streams it out.
+            OpenReadAsync = _ => Task.FromResult<Stream>(stream),
         };
+    }
+
+    /// <summary>Best-effort temp-file removal; the original exception stays the story.</summary>
+    private static void TryDelete(string path)
+    {
+        try
+        {
+            File.Delete(path);
+        }
+        catch (IOException)
+        {
+            // Swallowed by design: cleanup of a throwaway temp file must never mask
+            // the build failure; an undeletable file is left to the OS temp sweeper.
+        }
+        catch (UnauthorizedAccessException)
+        {
+            // Same degrade decision as above.
+        }
     }
 
     private async Task WriteProjectAsync(ZipArchive zip, string pid, CancellationToken cancellationToken)

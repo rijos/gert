@@ -10,7 +10,7 @@ namespace Gert.Api.Security;
 /// <summary>
 /// Per-user rate limiting (security F10) using the built-in
 /// <c>Microsoft.AspNetCore.RateLimiting</c> — no extra package. Each authenticated
-/// caller gets its own partition keyed by the token <c>sub</c> claim (anonymous
+/// caller gets its own partition keyed by the token <c>(iss, sub)</c> pair (anonymous
 /// traffic falls back to the remote IP), so one client — or one stolen token —
 /// can't saturate the box, while one user's bursts never throttle another's.
 /// Limits are lenient (the deployment is ~20 trusted users), and the limiter is
@@ -87,15 +87,19 @@ public static class RateLimiting
     }
 
     /// <summary>
-    /// Partition on the token <c>sub</c> (the user folder anchor), falling back to the
-    /// remote IP for anonymous traffic. A generous fixed window — the cap is a DoS
-    /// brake, not a usage quota. Limits come from the bound <see cref="PolicyOptions"/>.
+    /// Partition on the token <c>(iss, sub)</c> pair — the same identity anchor as
+    /// the user folder key (principles.md: the user is <c>sha256(iss + sub)</c>, so
+    /// a bare <c>sub</c> could collide across two IdPs) — falling back to the remote
+    /// IP for anonymous traffic. A generous fixed window — the cap is a DoS brake,
+    /// not a usage quota. Limits come from the bound <see cref="PolicyOptions"/>.
     /// </summary>
     private static RateLimitPartition<string> PartitionForRequest(HttpContext httpContext)
     {
         var sub = httpContext.User.FindFirstValue("sub");
+        // '\n' separator: cannot appear in a JWT iss URL or sub, so "iss\nsub" is
+        // collision-free without hashing on the hot path.
         var key = !string.IsNullOrEmpty(sub)
-            ? $"sub:{sub}"
+            ? $"user:{httpContext.User.FindFirstValue("iss")}\n{sub}"
             : $"ip:{httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown"}";
 
         // IOptions resolve, not a captured snapshot: singleton options, trivial cost,

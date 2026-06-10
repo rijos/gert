@@ -33,6 +33,7 @@ public sealed class MemoryService : IMemoryService
     private readonly IEmbeddingClient _embeddings;
     private readonly IValidationProvider _validation;
     private readonly IUserContext _user;
+    private readonly TimeProvider _time;
     private readonly ChunkingOptions _chunking;
 
     private const string MemoryMime = "text/markdown";
@@ -42,13 +43,15 @@ public sealed class MemoryService : IMemoryService
         IObjectStore objects,
         IEmbeddingClient embeddings,
         IValidationProvider validation,
-        IUserContext user)
+        IUserContext user,
+        TimeProvider time)
     {
         _databases = databases ?? throw new ArgumentNullException(nameof(databases));
         _objects = objects ?? throw new ArgumentNullException(nameof(objects));
         _embeddings = embeddings ?? throw new ArgumentNullException(nameof(embeddings));
         _validation = validation ?? throw new ArgumentNullException(nameof(validation));
         _user = user ?? throw new ArgumentNullException(nameof(user));
+        _time = time ?? throw new ArgumentNullException(nameof(time));
         _chunking = ChunkingOptions.Default;
     }
 
@@ -87,7 +90,8 @@ public sealed class MemoryService : IMemoryService
 
         var id = Guid.NewGuid().ToString("D");
         var pinned = request.Pinned ?? false;
-        var now = DateTimeOffset.UtcNow;
+        // Injected clock (dotnet-style-guide.md §5) so tests can pin the timestamp.
+        var now = _time.GetUtcNow();
         var scope = ScopeFor(pid);
         var key = MemoryKey(id);
 

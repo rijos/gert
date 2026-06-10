@@ -20,15 +20,18 @@ public sealed class ConversationService : IConversationService
     private readonly IChatDatabaseProvider _databases;
     private readonly IValidationProvider _validation;
     private readonly IUserContext _user;
+    private readonly TimeProvider _time;
 
     public ConversationService(
         IChatDatabaseProvider databases,
         IValidationProvider validation,
-        IUserContext user)
+        IUserContext user,
+        TimeProvider time)
     {
         _databases = databases ?? throw new ArgumentNullException(nameof(databases));
         _validation = validation ?? throw new ArgumentNullException(nameof(validation));
         _user = user ?? throw new ArgumentNullException(nameof(user));
+        _time = time ?? throw new ArgumentNullException(nameof(time));
     }
 
     /// <inheritdoc />
@@ -66,7 +69,8 @@ public sealed class ConversationService : IConversationService
             throw new ValidationException(validation);
         }
 
-        var now = DateTimeOffset.UtcNow;
+        // Injected clock (dotnet-style-guide.md §5) so tests can pin the timestamps.
+        var now = _time.GetUtcNow();
         var conversation = new Conversation
         {
             Id = Guid.NewGuid().ToString("D"),
@@ -120,7 +124,7 @@ public sealed class ConversationService : IConversationService
             Tools = request.Tools ?? existing.Tools,
             Params = request.Params ?? existing.Params,
             Archived = request.Archived ?? existing.Archived,
-            UpdatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = _time.GetUtcNow(),
         };
 
         await repo.UpdateConversationAsync(updated, cancellationToken).ConfigureAwait(false);

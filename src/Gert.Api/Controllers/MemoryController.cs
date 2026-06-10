@@ -1,7 +1,7 @@
 using Gert.Api.Validation;
 using Gert.Model.Dtos;
 using Gert.Model.Rag;
-using Gert.Service;
+using Gert.Service.Documents;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Gert.Api.Controllers;
@@ -15,10 +15,11 @@ namespace Gert.Api.Controllers;
 [Route("api/projects/{pid}/memory")]
 public sealed class MemoryController : ControllerBase
 {
-    private readonly IGertServices _services;
+    // Granular interface, not the IGertServices hub (dotnet-style-guide.md §4).
+    private readonly IMemoryService _memory;
 
-    public MemoryController(IGertServices services) =>
-        _services = services ?? throw new ArgumentNullException(nameof(services));
+    public MemoryController(IMemoryService memory) =>
+        _memory = memory ?? throw new ArgumentNullException(nameof(memory));
 
     /// <summary>List entries (id, title, pinned, updated_at).</summary>
     [HttpGet]
@@ -28,7 +29,7 @@ public sealed class MemoryController : ControllerBase
     {
         RouteParams.RequireValidProjectId(pid);
 
-        var entries = await _services.Memory.ListAsync(pid, cancellationToken).ConfigureAwait(false);
+        var entries = await _memory.ListAsync(pid, cancellationToken).ConfigureAwait(false);
         return Ok(entries);
     }
 
@@ -41,7 +42,7 @@ public sealed class MemoryController : ControllerBase
     {
         RouteParams.RequireValidProjectId(pid);
 
-        var entry = await _services.Memory.UpsertAsync(pid, request, cancellationToken).ConfigureAwait(false);
+        var entry = await _memory.UpsertAsync(pid, request, cancellationToken).ConfigureAwait(false);
         return Ok(entry);
     }
 
@@ -54,7 +55,7 @@ public sealed class MemoryController : ControllerBase
     {
         RouteParams.RequireValidProjectId(pid);
 
-        var deleted = await _services.Memory.DeleteAsync(pid, id, cancellationToken).ConfigureAwait(false);
+        var deleted = await _memory.DeleteAsync(pid, id, cancellationToken).ConfigureAwait(false);
         return deleted ? NoContent() : NotFound();
     }
 }

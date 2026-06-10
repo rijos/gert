@@ -2,6 +2,7 @@ using FluentAssertions;
 using Gert.Api.Security;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using Xunit;
 
 namespace Gert.Api.Tests;
@@ -38,7 +39,7 @@ public sealed class ArtifactTicketServiceTests
             Secret = secret,
             Lifetime = lifetime ?? TimeSpan.FromMinutes(5),
         };
-        return new ArtifactTicketService(options, clock);
+        return new ArtifactTicketService(Options.Create(options), clock);
     }
 
     [Fact]
@@ -129,11 +130,29 @@ public sealed class ArtifactTicketServiceTests
     [Fact]
     public void Startup_fails_fast_on_an_explicit_secret_under_32_utf8_bytes()
     {
+        // The guard is an IValidateOptions wired with ValidateOnStart (the §4
+        // options idiom): in the real host it trips at app start; here first
+        // options access stands in for that startup validation.
         var services = new ServiceCollection();
+        services.AddGertSecurityHeaders(ConfigWithSecret("too-short"));
 
-        var act = () => services.AddGertSecurityHeaders(ConfigWithSecret("too-short"));
+        using var sp = services.BuildServiceProvider();
+        var act = () => sp.GetRequiredService<IOptions<ArtifactTicketOptions>>().Value;
 
-        act.Should().Throw<InvalidOperationException>()
+        act.Should().Throw<OptionsValidationException>()
+            .WithMessage($"*{ArtifactTicketOptions.MinimumSecretBytes} bytes*");
+    }
+
+    [Fact]
+    public void Weak_secret_also_blocks_resolving_the_ticket_service()
+    {
+        var services = new ServiceCollection();
+        services.AddGertSecurityHeaders(ConfigWithSecret("too-short"));
+
+        using var sp = services.BuildServiceProvider();
+        var act = () => sp.GetRequiredService<ArtifactTicketService>();
+
+        act.Should().Throw<OptionsValidationException>()
             .WithMessage($"*{ArtifactTicketOptions.MinimumSecretBytes} bytes*");
     }
 
@@ -146,7 +165,7 @@ public sealed class ArtifactTicketServiceTests
         services.AddGertSecurityHeaders(ConfigWithSecret(secret));
 
         using var sp = services.BuildServiceProvider();
-        sp.GetRequiredService<ArtifactTicketOptions>().Secret.Should().Be(secret);
+        sp.GetRequiredService<IOptions<ArtifactTicketOptions>>().Value.Secret.Should().Be(secret);
     }
 
     [Fact]
@@ -157,7 +176,7 @@ public sealed class ArtifactTicketServiceTests
         services.AddGertSecurityHeaders(ConfigWithSecret(null));
 
         using var sp = services.BuildServiceProvider();
-        var options = sp.GetRequiredService<ArtifactTicketOptions>();
+        var options = sp.GetRequiredService<IOptions<ArtifactTicketOptions>>().Value;
         options.Secret.Should().BeNull();
         options.ResolveKeyBytes().Should().HaveCount(32, "the fallback is a random 32-byte key");
     }

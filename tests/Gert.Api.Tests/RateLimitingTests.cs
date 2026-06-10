@@ -3,7 +3,9 @@ using System.Net.Http.Headers;
 using System.Text.Json;
 using FluentAssertions;
 using Gert.Testing;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
 namespace Gert.Api.Tests;
@@ -31,15 +33,23 @@ public sealed class RateLimitingTests
     /// <summary>Permits per window the tests run with — third request must be rejected.</summary>
     private const int PermitLimit = 2;
 
+    /// <summary>
+    /// One derived host with the limiter re-enabled. Tests that assert partition
+    /// behaviour MUST create all their clients from the same returned factory —
+    /// each <c>WithWebHostBuilder</c> call builds a separate host with its own
+    /// independent limiter, which would make cross-partition assertions vacuous.
+    /// </summary>
+    private static Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory<Program> LimitedHost(
+        GertApiFactory factory) =>
+        factory.WithWebHostBuilder(b =>
+        {
+            b.UseEnvironment("Development"); // re-enable the limiter (skipped under Testing)
+            b.UseSetting("Gert:RateLimiting:PermitLimit", PermitLimit.ToString());
+            b.UseSetting("Gert:RateLimiting:Window", "00:05:00"); // can't roll mid-test
+        });
+
     private static HttpClient LimitedClient(GertApiFactory factory) =>
-        factory
-            .WithWebHostBuilder(b =>
-            {
-                b.UseEnvironment("Development"); // re-enable the limiter (skipped under Testing)
-                b.UseSetting("Gert:RateLimiting:PermitLimit", PermitLimit.ToString());
-                b.UseSetting("Gert:RateLimiting:Window", "00:05:00"); // can't roll mid-test
-            })
-            .CreateClient();
+        LimitedHost(factory).CreateClient();
 
     private static void Authenticate(HttpClient client, GertApiFactory factory, string role) =>
         client.DefaultRequestHeaders.Authorization =
@@ -75,7 +85,10 @@ public sealed class RateLimitingTests
     public async Task A_throttled_user_never_throttles_another_sub_partition_isolation()
     {
         using var factory = new GertApiFactory();
-        using var userClient = LimitedClient(factory);
+        // Both clients MUST share one host: a second WithWebHostBuilder host gets
+        // its own limiter, and "the other user is unthrottled" would pass trivially.
+        using var limited = LimitedHost(factory);
+        using var userClient = limited.CreateClient();
         Authenticate(userClient, factory, "user");
 
         // Exhaust user A's partition (sub: dev-user) until a request is rejected.
@@ -88,12 +101,56 @@ public sealed class RateLimitingTests
         rejected.StatusCode.Should().Be(HttpStatusCode.TooManyRequests);
 
         // The actual F10 semantics: the limit is per user, so a different sub
-        // (admin → dev-admin) sails through immediately after A's 429.
-        using var adminClient = LimitedClient(factory);
+        // (admin → dev-admin) sails through immediately after A's 429 — on the
+        // SAME limiter instance.
+        using var adminClient = limited.CreateClient();
         Authenticate(adminClient, factory, "admin");
         var otherUser = await adminClient.GetAsync("/api/models");
         otherUser.StatusCode.Should().Be(
             HttpStatusCode.OK, "the partition key is the token sub — one user's burst must not throttle another");
+    }
+
+    [Fact]
+    public async Task Same_sub_under_a_different_issuer_is_a_separate_partition()
+    {
+        const string otherIssuer = "https://other-idp.test.local";
+
+        // Accept a second issuer alongside the factory default, so two IdPs can
+        // mint the SAME sub — the collision the iss+sub partition key prevents.
+        using var factory = new GertApiFactory().ConfigureTestServices(services =>
+            services.PostConfigure<JwtBearerOptions>(
+                JwtBearerDefaults.AuthenticationScheme,
+                o => o.TokenValidationParameters.ValidIssuers = [otherIssuer]));
+
+        // ONE derived host (each WithWebHostBuilder call spawns a fresh server,
+        // and a fresh server means a fresh limiter) — both identities go through it.
+        using var limited = factory.WithWebHostBuilder(b =>
+        {
+            b.UseEnvironment("Development"); // re-enable the limiter (skipped under Testing)
+            b.UseSetting("Gert:RateLimiting:PermitLimit", PermitLimit.ToString());
+            b.UseSetting("Gert:RateLimiting:Window", "00:05:00"); // can't roll mid-test
+        });
+
+        using var clientA = limited.CreateClient();
+        clientA.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+            "Bearer", factory.Tokens.Mint("dev-user", groups: ["gert-users"]));
+
+        for (var i = 0; i < PermitLimit; i++)
+        {
+            (await clientA.GetAsync("/api/models")).StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+
+        (await clientA.GetAsync("/api/models")).StatusCode.Should().Be(HttpStatusCode.TooManyRequests);
+
+        // Same sub, different iss, same host: its own partition, so it sails through.
+        using var clientB = limited.CreateClient();
+        clientB.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+            "Bearer", factory.Tokens.Mint("dev-user", iss: otherIssuer, groups: ["gert-users"]));
+
+        var crossIdp = await clientB.GetAsync("/api/models");
+        crossIdp.StatusCode.Should().Be(
+            HttpStatusCode.OK,
+            "the partition key is iss+sub (the user-folder anchor) — the same sub minted by a different IdP must not share a bucket");
     }
 
     [Fact]

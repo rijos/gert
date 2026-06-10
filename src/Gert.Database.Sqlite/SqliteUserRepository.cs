@@ -27,16 +27,21 @@ public sealed class SqliteUserRepository : IUserRepository
 
     static SqliteUserRepository()
     {
-        // Bind snake_case columns to PascalCase row properties (process-wide, idempotent).
-        DefaultTypeMap.MatchNamesWithUnderscores = true;
+        // Process-wide Dapper config — one owner (DapperBootstrap), three citers.
+        DapperBootstrap.EnsureConfigured();
     }
 
     private readonly SqliteConnection _connection;
+    private readonly TimeProvider _time;
 
-    /// <summary>Wrap an already-open, migrated <c>user.db</c> connection.</summary>
-    public SqliteUserRepository(SqliteConnection connection)
+    /// <summary>
+    /// Wrap an already-open, migrated <c>user.db</c> connection. The clock is
+    /// injected (dotnet-style-guide.md §5) so tests can pin <c>created_at</c>.
+    /// </summary>
+    public SqliteUserRepository(SqliteConnection connection, TimeProvider time)
     {
         _connection = connection ?? throw new ArgumentNullException(nameof(connection));
+        _time = time ?? throw new ArgumentNullException(nameof(time));
     }
 
     // ---- user meta ---------------------------------------------------------
@@ -56,7 +61,7 @@ public sealed class SqliteUserRepository : IUserRepository
             "ON CONFLICT(id) DO UPDATE SET username = excluded.username;";
         return _connection.ExecuteAsync(new CommandDefinition(
             sql,
-            new { username, createdAt = DateTimeOffset.UtcNow.ToString("o", CultureInfo.InvariantCulture) },
+            new { username, createdAt = _time.GetUtcNow().ToString("o", CultureInfo.InvariantCulture) },
             cancellationToken: cancellationToken));
     }
 

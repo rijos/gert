@@ -1,7 +1,7 @@
 using System.Security.Claims;
 using Gert.Api.Security;
 using Gert.Model;
-using Gert.Service;
+using Gert.Service.Documents;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -44,12 +44,13 @@ public sealed class ArtifactRawController : ControllerBase
         "base-uri 'none'; " +
         "sandbox allow-scripts";
 
-    private readonly IGertServices _services;
+    // Granular interface, not the IGertServices hub (dotnet-style-guide.md §4).
+    private readonly IArtifactService _artifacts;
     private readonly ArtifactTicketService _tickets;
 
-    public ArtifactRawController(IGertServices services, ArtifactTicketService tickets)
+    public ArtifactRawController(IArtifactService artifacts, ArtifactTicketService tickets)
     {
-        _services = services ?? throw new ArgumentNullException(nameof(services));
+        _artifacts = artifacts ?? throw new ArgumentNullException(nameof(artifacts));
         _tickets = tickets ?? throw new ArgumentNullException(nameof(tickets));
     }
 
@@ -75,7 +76,7 @@ public sealed class ArtifactRawController : ControllerBase
                 [new Claim("sub", ticket.Sub), new Claim("iss", ticket.Iss)],
                 authenticationType: "ArtifactTicket"));
 
-        var artifact = await _services.Artifacts
+        var artifact = await _artifacts
             .GetAsync(ticket.Pid, ticket.ArtifactId, cancellationToken)
             .ConfigureAwait(false);
         if (artifact is null)

@@ -30,19 +30,22 @@ public sealed class DocumentService : IDocumentService
     private readonly IIngestionQueue _queue;
     private readonly IValidationProvider _validation;
     private readonly IUserContext _user;
+    private readonly TimeProvider _time;
 
     public DocumentService(
         IRagDatabaseProvider databases,
         IObjectStore objects,
         IIngestionQueue queue,
         IValidationProvider validation,
-        IUserContext user)
+        IUserContext user,
+        TimeProvider time)
     {
         _databases = databases ?? throw new ArgumentNullException(nameof(databases));
         _objects = objects ?? throw new ArgumentNullException(nameof(objects));
         _queue = queue ?? throw new ArgumentNullException(nameof(queue));
         _validation = validation ?? throw new ArgumentNullException(nameof(validation));
         _user = user ?? throw new ArgumentNullException(nameof(user));
+        _time = time ?? throw new ArgumentNullException(nameof(time));
     }
 
     /// <inheritdoc />
@@ -126,7 +129,7 @@ public sealed class DocumentService : IDocumentService
             Status = DocumentStatus.Processing,
             ChunkCount = 0,
             Kind = DocumentKind.Document,
-            CreatedAt = DateTimeOffset.UtcNow,
+            CreatedAt = _time.GetUtcNow(),
         };
 
         await using (var repo = await OpenAsync(pid, cancellationToken).ConfigureAwait(false))

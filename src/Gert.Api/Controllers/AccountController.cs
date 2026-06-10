@@ -1,6 +1,6 @@
 using Gert.Api.Validation;
-using Gert.Service;
 using Gert.Service.Account;
+using Gert.Service.Documents;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Gert.Api.Controllers;
@@ -16,10 +16,15 @@ namespace Gert.Api.Controllers;
 [Route("api")]
 public sealed class AccountController : ControllerBase
 {
-    private readonly IGertServices _services;
+    // Granular interfaces, not the IGertServices hub (dotnet-style-guide.md §4).
+    private readonly IAccountService _account;
+    private readonly IDocumentService _documents;
 
-    public AccountController(IGertServices services) =>
-        _services = services ?? throw new ArgumentNullException(nameof(services));
+    public AccountController(IAccountService account, IDocumentService documents)
+    {
+        _account = account ?? throw new ArgumentNullException(nameof(account));
+        _documents = documents ?? throw new ArgumentNullException(nameof(documents));
+    }
 
     /// <summary>Wipe a project's RAG corpus + files, keeping its chats.</summary>
     [HttpPost("projects/{pid}/forget-documents")]
@@ -27,7 +32,7 @@ public sealed class AccountController : ControllerBase
     {
         RouteParams.RequireValidProjectId(pid);
 
-        await _services.Documents.ForgetAllAsync(pid, cancellationToken).ConfigureAwait(false);
+        await _documents.ForgetAllAsync(pid, cancellationToken).ConfigureAwait(false);
         return NoContent();
     }
 
@@ -37,7 +42,7 @@ public sealed class AccountController : ControllerBase
     {
         RouteParams.RequireValidProjectId(pid);
 
-        var archive = await _services.Account.ExportProjectAsync(pid, cancellationToken).ConfigureAwait(false);
+        var archive = await _account.ExportProjectAsync(pid, cancellationToken).ConfigureAwait(false);
         return await StreamArchiveAsync(archive, cancellationToken).ConfigureAwait(false);
     }
 
@@ -45,7 +50,7 @@ public sealed class AccountController : ControllerBase
     [HttpGet("account/export")]
     public async Task<IActionResult> ExportAll(CancellationToken cancellationToken)
     {
-        var archive = await _services.Account.ExportAsync(cancellationToken).ConfigureAwait(false);
+        var archive = await _account.ExportAsync(cancellationToken).ConfigureAwait(false);
         return await StreamArchiveAsync(archive, cancellationToken).ConfigureAwait(false);
     }
 
@@ -53,7 +58,7 @@ public sealed class AccountController : ControllerBase
     [HttpDelete("account")]
     public async Task<IActionResult> DeleteAccount(CancellationToken cancellationToken)
     {
-        await _services.Account.DeleteAccountAsync(cancellationToken).ConfigureAwait(false);
+        await _account.DeleteAccountAsync(cancellationToken).ConfigureAwait(false);
         return NoContent();
     }
 

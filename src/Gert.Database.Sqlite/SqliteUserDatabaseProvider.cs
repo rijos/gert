@@ -17,13 +17,22 @@ public sealed class SqliteUserDatabaseProvider : IUserDatabaseProvider
 
     private readonly SqliteDatabasePaths _paths;
     private readonly SqliteConnectionFactory _factory;
+    private readonly TimeProvider _time;
 
-    /// <summary>Create the provider over the bound <see cref="StorageOptions"/> and shared connection factory.</summary>
-    public SqliteUserDatabaseProvider(IOptions<StorageOptions> options, SqliteConnectionFactory factory)
+    /// <summary>
+    /// Create the provider over the bound <see cref="StorageOptions"/> and shared
+    /// connection factory. The clock is injected (dotnet-style-guide.md §5) and
+    /// handed to each repository so tests can pin row timestamps.
+    /// </summary>
+    public SqliteUserDatabaseProvider(
+        IOptions<StorageOptions> options,
+        SqliteConnectionFactory factory,
+        TimeProvider time)
     {
         ArgumentNullException.ThrowIfNull(options);
         _paths = new SqliteDatabasePaths(options);
         _factory = factory ?? throw new ArgumentNullException(nameof(factory));
+        _time = time ?? throw new ArgumentNullException(nameof(time));
     }
 
     /// <inheritdoc />
@@ -35,7 +44,7 @@ public sealed class SqliteUserDatabaseProvider : IUserDatabaseProvider
         var connection = await _factory
             .OpenAsync(_paths.UserDb(iss, sub), Family, cancellationToken)
             .ConfigureAwait(false);
-        return new SqliteUserRepository(connection);
+        return new SqliteUserRepository(connection, _time);
     }
 
     /// <inheritdoc />
@@ -47,6 +56,6 @@ public sealed class SqliteUserDatabaseProvider : IUserDatabaseProvider
         var connection = await _factory
             .OpenAsync(_paths.UserDbByKey(key), Family, cancellationToken)
             .ConfigureAwait(false);
-        return new SqliteUserRepository(connection);
+        return new SqliteUserRepository(connection, _time);
     }
 }

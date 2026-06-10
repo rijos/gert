@@ -2,6 +2,7 @@ using Gert.Api.Security;
 using Gert.Api.Validation;
 using Gert.Model.Chat;
 using Gert.Service;
+using Gert.Service.Documents;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Gert.Api.Controllers;
@@ -17,16 +18,17 @@ namespace Gert.Api.Controllers;
 [Route("api/projects/{pid}")]
 public sealed class ArtifactsController : ControllerBase
 {
-    private readonly IGertServices _services;
+    // Granular interface, not the IGertServices hub (dotnet-style-guide.md §4).
+    private readonly IArtifactService _artifacts;
     private readonly ArtifactTicketService _tickets;
     private readonly IUserContext _user;
 
     public ArtifactsController(
-        IGertServices services,
+        IArtifactService artifacts,
         ArtifactTicketService tickets,
         IUserContext user)
     {
-        _services = services ?? throw new ArgumentNullException(nameof(services));
+        _artifacts = artifacts ?? throw new ArgumentNullException(nameof(artifacts));
         _tickets = tickets ?? throw new ArgumentNullException(nameof(tickets));
         _user = user ?? throw new ArgumentNullException(nameof(user));
     }
@@ -40,7 +42,7 @@ public sealed class ArtifactsController : ControllerBase
     {
         RouteParams.RequireValidProjectId(pid);
 
-        var artifacts = await _services.Artifacts
+        var artifacts = await _artifacts
             .ListAsync(pid, conversationId, cancellationToken)
             .ConfigureAwait(false);
         return Ok(artifacts);
@@ -55,7 +57,7 @@ public sealed class ArtifactsController : ControllerBase
     {
         RouteParams.RequireValidProjectId(pid);
 
-        var artifact = await _services.Artifacts.GetAsync(pid, id, cancellationToken).ConfigureAwait(false);
+        var artifact = await _artifacts.GetAsync(pid, id, cancellationToken).ConfigureAwait(false);
         return artifact is null ? NotFound() : Ok(artifact);
     }
 
@@ -75,7 +77,7 @@ public sealed class ArtifactsController : ControllerBase
     {
         RouteParams.RequireValidProjectId(pid);
 
-        var artifact = await _services.Artifacts.GetAsync(pid, id, cancellationToken).ConfigureAwait(false);
+        var artifact = await _artifacts.GetAsync(pid, id, cancellationToken).ConfigureAwait(false);
         if (artifact is null)
         {
             return NotFound();

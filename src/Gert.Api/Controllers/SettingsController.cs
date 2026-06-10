@@ -1,6 +1,7 @@
 using Gert.Model.Dtos;
 using Gert.Model.Projects;
 using Gert.Service;
+using Gert.Service.Projects;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Gert.Api.Controllers;
@@ -14,16 +15,17 @@ namespace Gert.Api.Controllers;
 [Route("api/settings")]
 public sealed class SettingsController : ControllerBase
 {
-    private readonly IGertServices _services;
+    // Granular interface, not the IGertServices hub (dotnet-style-guide.md §4).
+    private readonly ISettingsService _settings;
 
-    public SettingsController(IGertServices services) =>
-        _services = services ?? throw new ArgumentNullException(nameof(services));
+    public SettingsController(ISettingsService settings) =>
+        _settings = settings ?? throw new ArgumentNullException(nameof(settings));
 
     /// <summary>Get the caller's current preferences.</summary>
     [HttpGet]
     public async Task<ActionResult<UserSettings>> Get(CancellationToken cancellationToken)
     {
-        var settings = await _services.Settings.GetAsync(cancellationToken).ConfigureAwait(false);
+        var settings = await _settings.GetAsync(cancellationToken).ConfigureAwait(false);
         return Ok(settings);
     }
 
@@ -33,7 +35,7 @@ public sealed class SettingsController : ControllerBase
         [FromBody] UpdateSettingsRequest request,
         CancellationToken cancellationToken)
     {
-        var settings = await _services.Settings.UpdateAsync(request, cancellationToken).ConfigureAwait(false);
+        var settings = await _settings.UpdateAsync(request, cancellationToken).ConfigureAwait(false);
         return Ok(settings);
     }
 }

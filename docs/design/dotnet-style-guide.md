@@ -116,10 +116,11 @@ Where a new type goes (full map: [tech-stack § solution layout](tech-stack.md#s
   fakes rely on ([testing §4.2](testing.md#42-two-ways-to-fake-the-outside-world)). Deliberate
   exceptions: `AddScoped<ITool, …>` multi-registrations must accumulate.
 
-  **Rule (settles an inconsistency):** *every* adapter gets one — the storage/database seam
-  is today hand-registered as seven copy-pasted lines in both `Gert.Api/Program.cs` and
-  `ConsoleHostBuilder`; it migrates into an `AddGertSqliteStorage(cfg)` extension in
-  `Gert.Database.Sqlite`.
+  **Rule (settled):** *every* adapter gets one — the storage/database seam that used to be
+  hand-registered as copy-pasted lines in both `Gert.Api/Program.cs` and
+  `ConsoleHostBuilder` now lives in the `AddGertSqliteStorage(cfg)` extension in
+  `Gert.Database.Sqlite` (which therefore also references `Gert.Storage` for the local
+  object/user store registrations); both hosts call it.
 - **Every registration carries a lifetime-rationale comment.** The rule the comments encode:
   scoped if it (transitively) reads `IUserContext`; singleton for process-wide state. The
   exemplar (`src/Gert.Service/ServiceCollectionExtensions.cs`):
@@ -131,33 +132,41 @@ Where a new type goes (full map: [tech-stack § solution layout](tech-stack.md#s
   services.TryAddSingleton<Chat.Bus.IConversationBus, Chat.Bus.ConversationBus>();
   services.TryAddScoped<IConversationReader, ConversationReader>();
   ```
-- **Rule (settles an inconsistency):** inject the **granular interface** you need
+- **Rule (settled):** inject the **granular interface** you need
   (`IConversationService`, `ITurnPlanner`, `IModelCatalog`), not the `IGertServices` hub.
-  The hub is legacy — most controllers still lean on it, contradicting
-  [tech-stack § Architecture](tech-stack.md#architecture); only the Console keeps it.
-- **Rule (settles an inconsistency):** options bind via
+  Every API controller now does ([tech-stack § Architecture](tech-stack.md#architecture));
+  the hub remains solely as the Console's convenience surface (`ConsoleApp` is its one
+  consumer) — don't add new consumers.
+- **Rule (settled):** options bind via
   `services.AddOptions<T>().Bind(configuration.GetSection(T.SectionName)).ValidateDataAnnotations().ValidateOnStart()`
-  — *the* idiom, modelled on `Gert.External/ServiceCollectionExtensions.cs` (which already
-  does `.Bind(...).ValidateOnStart()` for all five of its option types) and extended with
-  data-annotation validation so a required knob fails at startup, not first use. The hosts'
-  bare `services.Configure<T>(section)` registrations (Storage, SqliteVec) migrate to it —
-  the unvalidated `Storage:DataRoot` writing databases under the process CWD is the bug this
-  rule deletes. Options classes are `sealed`, carry `public const string SectionName`, and
-  xml-doc each property with its default and whether it is a secret (security F8: secrets
-  come from env / user-secrets, never `appsettings.json`). A bound property with no consumer
-  is a bug — delete dead knobs.
+  — *the* idiom, modelled on `Gert.External/ServiceCollectionExtensions.cs` (which does
+  `.Bind(...).ValidateOnStart()` for all five of its option types); add
+  `.ValidateDataAnnotations()` only when the type carries annotations
+  (`RateLimiting.PolicyOptions` is the exemplar). The former stragglers are migrated: the
+  hosts' bare `services.Configure<T>(section)` registrations (Storage, SqliteVec) moved
+  into `AddGertSqliteStorage`, and the hand-bound `ArtifactTicketOptions` singleton became
+  a bound option whose ≥32-byte-secret fail-fast is an
+  `IValidateOptions<ArtifactTicketOptions>` run by `ValidateOnStart` (security F3).
+  Computed options that are derived rather than section-bound (`SecurityHeadersOptions`'
+  origins) use `AddOptions<T>().Configure(...)` with the derived values. Options classes
+  are `sealed`, carry `public const string SectionName`, and xml-doc each property with its
+  default and whether it is a secret (security F8: secrets come from env / user-secrets,
+  never `appsettings.json`). A bound property with no consumer is a bug — delete dead knobs.
 
 ## 5. Time & randomness
 
-- **Rule (settles an inconsistency):** all time in `Gert.Service` and the adapters comes from
+- **Rule (settled):** all time in `Gert.Service` and the adapters comes from
   the injected `TimeProvider` — `_time.GetUtcNow()` for timestamps,
   `GetTimestamp()`/`GetElapsedTime()` for intervals. Never `DateTimeOffset.UtcNow` /
-  `DateTime.Now`. The code is ~50/50 today (`ClockTool`, `MakeArtifactTool`,
-  `TurnCancellation` inject it; `TurnPlanner`, `ConversationService`, `DocumentService` still
-  call `DateTimeOffset.UtcNow` directly) — new code injects, old call sites sweep over.
+  `DateTime.Now`. The sweep is complete: every service that stamps a row
+  (`TurnPlanner`, `TurnRunner`, `ConversationService`, `ConversationReader`,
+  `DocumentService`, `MemoryService`, `ProjectService`, `UserProvisioner`,
+  `SqliteUserRepository`) takes `TimeProvider` in its constructor; the default
+  `TimeProvider.System` is `TryAdd`-registered in `AddGertServices`.
   Why: fakeable time is what lets tests pin the instant and exercise the orphan-horizon and
-  expiry rules deterministically ("tests pin the instant" — the registration comment at
-  `ServiceCollectionExtensions.cs:139` already states the intent).
+  expiry rules deterministically ("tests pin the instant" — the registration comment in
+  `ServiceCollectionExtensions.cs` states the intent). `Stopwatch`/`Environment.TickCount`
+  for pure in-process interval measurement stay as they are.
 - Randomness that matters (keys, ids) uses `RandomNumberGenerator`/`Guid.NewGuid()`; anything
   a test must reproduce gets injected or seeded, like `FakeEmbeddings`' hash-derived vectors
   ([testing Appendix A.2](testing.md#a2-deterministic-embeddings-hash--1024-dim-unit-vector)).
@@ -357,10 +366,10 @@ The tiers, the fakes, and the shared spec are defined in [testing.md](testing.md
 - Every await: `ConfigureAwait(false)`; token last and always forwarded;
   `catch (OperationCanceledException) { throw; }` before any degrade catch; detached work
   has a worker that owns it.
-- DI: `TryAdd*` + lifetime-rationale comment; granular interface, not the hub *(settlement)*;
-  one `AddGertX` per adapter *(settlement)*;
-  `AddOptions<T>().Bind(...).ValidateDataAnnotations().ValidateOnStart()` *(settlement)*.
-- Time: injected `TimeProvider`, never `DateTimeOffset.UtcNow` *(settlement)*.
+- DI: `TryAdd*` + lifetime-rationale comment; granular interface, not the hub *(settled)*;
+  one `AddGertX` per adapter *(settled)*;
+  `AddOptions<T>().Bind(...).ValidateDataAnnotations().ValidateOnStart()` *(settled)*.
+- Time: injected `TimeProvider`, never `DateTimeOffset.UtcNow` *(settled)*.
 - Validation: validator registered **and invoked** in the service *(invocation: settlement)*;
   `SafeText`; snake_case error codes; the meta-test is the net.
 - Errors: typed sealed exception + `IExceptionHandler` pair; result objects in-loop; no raw

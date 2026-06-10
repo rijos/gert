@@ -50,7 +50,7 @@ public class LifecycleServicesTests
         await dbs.EnsureProvisionedAsync(Iss, sub);
 
         return new Harness(
-            new ProjectService(dbs.Users, dbs.Chat, dbs.Rag, store, validation, user),
+            new ProjectService(dbs.Users, dbs.Chat, dbs.Rag, store, validation, user, TimeProvider.System),
             new SettingsService(dbs.Users, validation, user),
             new AccountService(store, dbs.Users, dbs.Chat, objects, user),
             new AdminService(store, dbs.Users),
@@ -189,6 +189,48 @@ public class LifecycleServicesTests
         await stream.CopyToAsync(buffer);
         buffer.Length.Should().BeGreaterThan(0);
     }
+
+    [Fact]
+    public async Task Export_temp_file_is_removed_once_the_archive_stream_is_closed()
+    {
+        await using var root = new TempDataRoot();
+        var h = await BuildAsync(root);
+
+        var before = ExportTempFiles();
+
+        var archive = await h.Account.ExportProjectAsync(SqliteDatabasePaths.DefaultProjectId);
+        ExportTempFiles().Except(before).Should().NotBeEmpty("the archive is staged in a temp file");
+
+        await using (var stream = await archive.OpenReadAsync(default))
+        {
+            using var buffer = new MemoryStream();
+            await stream.CopyToAsync(buffer);
+        }
+
+        // FileOptions.DeleteOnClose: closing the (single-use) read stream deletes
+        // the staging file — nothing left behind for the OS temp sweeper.
+        ExportTempFiles().Except(before).Should().BeEmpty("the staging temp file is delete-on-close");
+    }
+
+    [Fact]
+    public async Task Failed_export_build_deletes_its_partial_temp_file()
+    {
+        await using var root = new TempDataRoot();
+        var h = await BuildAsync(root);
+
+        var before = ExportTempFiles();
+
+        // An already-cancelled token faults the build after the temp file exists.
+        var act = () => h.Account.ExportProjectAsync(
+            SqliteDatabasePaths.DefaultProjectId, new CancellationToken(canceled: true));
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+        ExportTempFiles().Except(before).Should().BeEmpty("a failed build must not strand its partial archive");
+    }
+
+    /// <summary>The current <c>gert-export-*.zip</c> staging files in the OS temp dir.</summary>
+    private static IReadOnlyList<string> ExportTempFiles() =>
+        Directory.GetFiles(Path.GetTempPath(), "gert-export-*.zip");
 
     [Fact]
     public async Task Delete_account_removes_the_user_dir()

@@ -33,7 +33,7 @@ public sealed class ConversationServiceTests
             .Returns(_repo);
     }
 
-    private ConversationService NewService() => new(_provider, _validation, _user);
+    private ConversationService NewService() => new(_provider, _validation, _user, TimeProvider.System);
 
     [Fact]
     public async Task Create_sets_id_timestamps_and_inserts()

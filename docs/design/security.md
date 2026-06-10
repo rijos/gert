@@ -166,11 +166,13 @@ Chat (GPU), ingestion (embeddings), and sandbox (exec) are expensive and otherwi
 user. Apply per-user concurrency/rate caps (ASP.NET rate limiter) so one client — or one stolen
 token — can't saturate the box. Low likelihood at ~20 trusted users; cheap to add.
 Implemented as a fixed-window limiter on the `/api/*` controller surface, partitioned by the
-token `sub` (remote IP for anonymous traffic); the limits bind from `Gert:RateLimiting`
-(`PermitLimit`, default 600; `Window`, default 1 minute) and a rejection is a branded 429
-ProblemDetails. Tested in `tests/Gert.Api.Tests/RateLimitingTests.cs`: over-cap → branded 429,
-a throttled user never throttles another `sub` (partition isolation — the actual per-user
-semantics), and the liveness probe stays outside the limited surface. → [operations](operations.md#cross-cutting-concerns).
+token `(iss, sub)` pair — the same identity anchor as the user folder key, so two IdPs minting
+the same `sub` never share a bucket (remote IP for anonymous traffic); the limits bind from
+`Gert:RateLimiting` (`PermitLimit`, default 600; `Window`, default 1 minute) and a rejection is
+a branded 429 ProblemDetails. Tested in `tests/Gert.Api.Tests/RateLimitingTests.cs`: over-cap →
+branded 429, a throttled user never throttles another user (partition isolation — the actual
+per-user semantics, including same-`sub`-different-`iss`), and the liveness probe stays outside
+the limited surface. → [operations](operations.md#cross-cutting-concerns).
 
 ### F11 — JWT algorithm pinning
 Pin `TokenValidationParameters.ValidAlgorithms` to `["RS256"]` so a future JWKS quirk can't enable

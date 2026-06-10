@@ -16,11 +16,13 @@ public sealed class UserProvisioner : IUserProvisioner
 
     private readonly IUserDatabaseProvider _userDatabases;
     private readonly IUserContext _user;
+    private readonly TimeProvider _time;
 
-    public UserProvisioner(IUserDatabaseProvider userDatabases, IUserContext user)
+    public UserProvisioner(IUserDatabaseProvider userDatabases, IUserContext user, TimeProvider time)
     {
         _userDatabases = userDatabases ?? throw new ArgumentNullException(nameof(userDatabases));
         _user = user ?? throw new ArgumentNullException(nameof(user));
+        _time = time ?? throw new ArgumentNullException(nameof(time));
     }
 
     /// <inheritdoc />
@@ -39,7 +41,8 @@ public sealed class UserProvisioner : IUserProvisioner
 
         if (await repo.GetProjectAsync(DefaultProjectId, cancellationToken).ConfigureAwait(false) is null)
         {
-            var now = DateTimeOffset.UtcNow;
+            // Injected clock (dotnet-style-guide.md §5) so tests can pin the timestamps.
+            var now = _time.GetUtcNow();
             await repo.SaveProjectAsync(
                 new ProjectMeta
                 {

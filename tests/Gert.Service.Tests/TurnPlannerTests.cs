@@ -64,6 +64,7 @@ public sealed class TurnPlannerTests
             _validation,
             tools ?? [],
             Options.Create(_options),
+            TimeProvider.System,
             instructions,
             catalog,
             settings);
@@ -124,6 +125,27 @@ public sealed class TurnPlannerTests
             Arg.Is<Conversation>(c => c.Id == Conv && c.Title == "hello world"),
             Arg.Any<CancellationToken>());
         job.ConversationId.Should().Be(Conv);
+    }
+
+    [Fact]
+    public async Task Title_cap_cuts_on_a_grapheme_boundary_and_never_splits_a_surrogate_pair()
+    {
+        Conversation? inserted = null;
+        await _repo.InsertConversationAsync(
+            Arg.Do<Conversation>(c => inserted = c), Arg.Any<CancellationToken>());
+        _repo.ClearReceivedCalls();
+
+        // 59 ASCII chars, then an emoji (a surrogate PAIR straddling indexes 59–60):
+        // a naive text[..60] would end on the lone high surrogate — invalid UTF-16.
+        var content = new string('a', 59) + "\U0001F600 and more text well beyond the sixty-char cap";
+
+        await NewPlanner().PlanAsync(Pid, Conv, new SendMessageRequest { Content = content });
+
+        inserted.Should().NotBeNull();
+        inserted!.Title.Length.Should().BeLessThanOrEqualTo(60);
+        // The cut lands BEFORE the emoji (the whole grapheme is dropped, not torn).
+        inserted.Title.Should().Be(new string('a', 59));
+        inserted.Title.ToCharArray().Should().OnlyContain(c => !char.IsSurrogate(c), "no lone surrogate may survive the cut");
     }
 
     [Fact]

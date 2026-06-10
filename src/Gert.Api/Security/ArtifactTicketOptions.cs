@@ -9,6 +9,9 @@ namespace Gert.Api.Security;
 /// </summary>
 public sealed class ArtifactTicketOptions
 {
+    /// <summary>The configuration section these options bind from.</summary>
+    public const string SectionName = "Artifacts";
+
     /// <summary>
     /// The separate origin (<c>scheme://host[:port]</c>) that serves rendered HTML
     /// artifacts — a sandbox subdomain in prod, a second port in dev/CI. Empty means
@@ -20,7 +23,8 @@ public sealed class ArtifactTicketOptions
     /// <summary>
     /// The minimum UTF-8 byte length an explicit <see cref="Secret"/> must have —
     /// the HMAC-SHA256 block-input floor a brute-forceable short passphrase would
-    /// undercut. Enforced fail-fast at startup by
+    /// undercut. Enforced fail-fast at startup by the
+    /// <c>IValidateOptions&lt;ArtifactTicketOptions&gt;</c> registered in
     /// <see cref="SecurityHeadersExtensions.AddGertSecurityHeaders"/> (security F3).
     /// </summary>
     public const int MinimumSecretBytes = 32;

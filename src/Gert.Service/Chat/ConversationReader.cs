@@ -23,15 +23,18 @@ public sealed class ConversationReader : IConversationReader
     private readonly IChatDatabaseProvider _databases;
     private readonly IUserContext _user;
     private readonly TurnOptions _options;
+    private readonly TimeProvider _time;
 
     public ConversationReader(
         IChatDatabaseProvider databases,
         IUserContext user,
-        IOptions<TurnOptions> options)
+        IOptions<TurnOptions> options,
+        TimeProvider time)
     {
         _databases = databases ?? throw new ArgumentNullException(nameof(databases));
         _user = user ?? throw new ArgumentNullException(nameof(user));
         _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
+        _time = time ?? throw new ArgumentNullException(nameof(time));
     }
 
     /// <inheritdoc />
@@ -93,8 +96,9 @@ public sealed class ConversationReader : IConversationReader
         }
 
         // Orphan rule: report abandoned streaming rows as error (one home:
-        // MessageStatusRules — keep this the only call site shape).
-        var now = DateTimeOffset.UtcNow;
+        // MessageStatusRules — keep this the only call site shape). Injected
+        // clock (dotnet-style-guide.md §5): tests pin the orphan horizon.
+        var now = _time.GetUtcNow();
         var messages = thread.Messages
             .Select(m => m with { Status = MessageStatusRules.Effective(m, now, _options.MaxTurnDuration) })
             .ToList();

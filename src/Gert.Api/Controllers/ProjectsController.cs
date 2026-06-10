@@ -1,7 +1,6 @@
 using Gert.Api.Validation;
 using Gert.Model.Dtos;
 using Gert.Model.Projects;
-using Gert.Service;
 using Gert.Service.Projects;
 using Microsoft.AspNetCore.Mvc;
 
@@ -18,16 +17,17 @@ namespace Gert.Api.Controllers;
 [Route("api/projects")]
 public sealed class ProjectsController : ControllerBase
 {
-    private readonly IGertServices _services;
+    // Granular interface, not the IGertServices hub (dotnet-style-guide.md §4).
+    private readonly IProjectService _projects;
 
-    public ProjectsController(IGertServices services) =>
-        _services = services ?? throw new ArgumentNullException(nameof(services));
+    public ProjectsController(IProjectService projects) =>
+        _projects = projects ?? throw new ArgumentNullException(nameof(projects));
 
     /// <summary>List the caller's projects (id, name, counts, updated_at).</summary>
     [HttpGet]
     public async Task<ActionResult<IReadOnlyList<ProjectSummary>>> List(CancellationToken cancellationToken)
     {
-        var projects = await _services.Projects.ListAsync(cancellationToken).ConfigureAwait(false);
+        var projects = await _projects.ListAsync(cancellationToken).ConfigureAwait(false);
         return Ok(projects);
     }
 
@@ -37,7 +37,7 @@ public sealed class ProjectsController : ControllerBase
         [FromBody] CreateProjectRequest request,
         CancellationToken cancellationToken)
     {
-        var created = await _services.Projects.CreateAsync(request, cancellationToken).ConfigureAwait(false);
+        var created = await _projects.CreateAsync(request, cancellationToken).ConfigureAwait(false);
         return CreatedAtAction(nameof(Get), new { pid = created.Id }, created);
     }
 
@@ -47,7 +47,7 @@ public sealed class ProjectsController : ControllerBase
     {
         RouteParams.RequireValidProjectId(pid);
 
-        var project = await _services.Projects.GetAsync(pid, cancellationToken).ConfigureAwait(false);
+        var project = await _projects.GetAsync(pid, cancellationToken).ConfigureAwait(false);
         return project is null ? NotFound() : Ok(project);
     }
 
@@ -60,7 +60,7 @@ public sealed class ProjectsController : ControllerBase
     {
         RouteParams.RequireValidProjectId(pid);
 
-        var updated = await _services.Projects.UpdateAsync(pid, request, cancellationToken).ConfigureAwait(false);
+        var updated = await _projects.UpdateAsync(pid, request, cancellationToken).ConfigureAwait(false);
         return updated is null ? NotFound() : Ok(updated);
     }
 
@@ -70,7 +70,7 @@ public sealed class ProjectsController : ControllerBase
     {
         RouteParams.RequireValidProjectId(pid);
 
-        var deleted = await _services.Projects.DeleteAsync(pid, cancellationToken).ConfigureAwait(false);
+        var deleted = await _projects.DeleteAsync(pid, cancellationToken).ConfigureAwait(false);
         return deleted ? NoContent() : NotFound();
     }
 }

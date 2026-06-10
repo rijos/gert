@@ -442,7 +442,7 @@ public sealed class TurnRunner : ITurnRunner
                         RequestJson = call.ArgumentsJson,
                         ResponseJson = outcome.ResponseJson,
                         LatencyMs = outcome.LatencyMs,
-                        CreatedAt = DateTimeOffset.UtcNow,
+                        CreatedAt = _clock.GetUtcNow(),
                     };
                     await repo.InsertToolCallAsync(toolCallRow, token).ConfigureAwait(false);
 
@@ -562,7 +562,7 @@ public sealed class TurnRunner : ITurnRunner
             Seq = seq,
             Type = chatEvent.Type.ToWireName(),
             PayloadJson = JsonSerializer.Serialize(chatEvent, GertJsonOptions.Default),
-            CreatedAt = DateTimeOffset.UtcNow,
+            CreatedAt = _clock.GetUtcNow(),
         }, token).ConfigureAwait(false);
 
         _bus.Publish(topic, new TurnEvent { Seq = seq, Event = chatEvent });

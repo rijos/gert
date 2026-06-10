@@ -34,6 +34,7 @@ public sealed class ProjectService : IProjectService
     private readonly IUserStore _store;
     private readonly IValidationProvider _validation;
     private readonly IUserContext _user;
+    private readonly TimeProvider _time;
 
     public ProjectService(
         IUserDatabaseProvider userDatabases,
@@ -41,7 +42,8 @@ public sealed class ProjectService : IProjectService
         IRagDatabaseProvider ragDatabases,
         IUserStore store,
         IValidationProvider validation,
-        IUserContext user)
+        IUserContext user,
+        TimeProvider time)
     {
         _userDatabases = userDatabases ?? throw new ArgumentNullException(nameof(userDatabases));
         _chatDatabases = chatDatabases ?? throw new ArgumentNullException(nameof(chatDatabases));
@@ -49,6 +51,7 @@ public sealed class ProjectService : IProjectService
         _store = store ?? throw new ArgumentNullException(nameof(store));
         _validation = validation ?? throw new ArgumentNullException(nameof(validation));
         _user = user ?? throw new ArgumentNullException(nameof(user));
+        _time = time ?? throw new ArgumentNullException(nameof(time));
     }
 
     /// <inheritdoc />
@@ -95,7 +98,8 @@ public sealed class ProjectService : IProjectService
             throw new ValidationException(validation);
         }
 
-        var now = DateTimeOffset.UtcNow;
+        // Injected clock (dotnet-style-guide.md §5) so tests can pin the timestamps.
+        var now = _time.GetUtcNow();
         var meta = new ProjectMeta
         {
             Id = Guid.NewGuid().ToString("D"),
@@ -142,7 +146,7 @@ public sealed class ProjectService : IProjectService
             Description = request.Description ?? current.Description,
             Instructions = request.Instructions ?? current.Instructions,
             Defaults = request.Defaults ?? current.Defaults,
-            UpdatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = _time.GetUtcNow(),
         };
 
         await repo.SaveProjectAsync(merged, cancellationToken).ConfigureAwait(false);

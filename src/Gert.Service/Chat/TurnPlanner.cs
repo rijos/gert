@@ -28,6 +28,7 @@ public sealed class TurnPlanner : ITurnPlanner
     private readonly IModelCatalog _catalog;
     private readonly ISettingsService? _settings;
     private readonly TurnOptions _options;
+    private readonly TimeProvider _time;
 
     public TurnPlanner(
         IChatDatabaseProvider databases,
@@ -35,6 +36,7 @@ public sealed class TurnPlanner : ITurnPlanner
         IValidationProvider validation,
         IEnumerable<ITool> tools,
         IOptions<TurnOptions> options,
+        TimeProvider time,
         IProjectInstructionsReader? instructions,
         IModelCatalog? catalog = null,
         ISettingsService? settings = null)
@@ -45,6 +47,7 @@ public sealed class TurnPlanner : ITurnPlanner
         ArgumentNullException.ThrowIfNull(tools);
         _tools = tools.ToList();
         _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
+        _time = time ?? throw new ArgumentNullException(nameof(time));
         _instructions = instructions;
         _catalog = catalog ?? new NullModelCatalog();
         _settings = settings;
@@ -80,7 +83,9 @@ public sealed class TurnPlanner : ITurnPlanner
             ? []
             : await repo.ListMessagesAsync(conversationId, cancellationToken).ConfigureAwait(false);
 
-        var now = DateTimeOffset.UtcNow;
+        // Injected clock (dotnet-style-guide.md §5): tests pin the instant, so the
+        // orphan-horizon / 409 rules are deterministic.
+        var now = _time.GetUtcNow();
         if (priorMessages.Any(m => MessageStatusRules.IsTurnInProgress(m, now, _options.MaxTurnDuration)))
         {
             throw new TurnInProgressException(conversationId);
@@ -454,6 +459,9 @@ public sealed class TurnPlanner : ITurnPlanner
                 : null,
         }).ToList();
 
+    /// <summary>The title cap in UTF-16 code units; cuts land on grapheme boundaries.</summary>
+    private const int MaxTitleLength = 60;
+
     // Seed a conversation title from its first message (single-lined, capped).
     private static string DeriveTitle(string content)
     {
@@ -463,7 +471,30 @@ public sealed class TurnPlanner : ITurnPlanner
             return "New chat";
         }
 
-        return text.Length > 60 ? text[..60] : text;
+        if (text.Length <= MaxTitleLength)
+        {
+            return text;
+        }
+
+        // Cut on a grapheme (text-element) boundary so the cap can never split a
+        // surrogate pair (emoji) or strand combining marks — a naive text[..60]
+        // could end on a lone high surrogate, which is invalid UTF-16.
+        var elements = System.Globalization.StringInfo.GetTextElementEnumerator(text);
+        var end = 0;
+        while (elements.MoveNext())
+        {
+            var next = elements.ElementIndex + ((string)elements.Current).Length;
+            if (next > MaxTitleLength)
+            {
+                break;
+            }
+
+            end = next;
+        }
+
+        // end == 0 only for a pathological 60+-unit first grapheme: degrade to the
+        // placeholder rather than emit broken UTF-16.
+        return end > 0 ? text[..end] : "New chat";
     }
 
     private static string ToOpenAiRole(MessageRole role) => role switch

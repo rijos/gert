@@ -39,9 +39,8 @@ public sealed class SqliteRagRepository : IRagRepository
 
     static SqliteRagRepository()
     {
-        // Bind snake_case columns to PascalCase DTO properties once, process-wide
-        // (also set by the chat repository; harmless to re-assert).
-        DefaultTypeMap.MatchNamesWithUnderscores = true;
+        // Process-wide Dapper config — one owner (DapperBootstrap), three citers.
+        DapperBootstrap.EnsureConfigured();
     }
 
     private readonly SqliteConnection _connection;

@@ -43,6 +43,11 @@ public static class ServiceCollectionExtensions
         // reflection meta-test keeps that throw unreachable in production.
         AddValidation(services);
 
+        // All service-layer time flows through the injected TimeProvider
+        // (dotnet-style-guide.md §5), so tests pin the instant. Singleton:
+        // process-wide wall clock; TryAdd so tests override with a fake.
+        services.TryAddSingleton(TimeProvider.System);
+
         // Step-0 instructions reader — default to "no instructions" so the service
         // layer is self-contained; a host that can read the user.db project
         // registry overrides it.
@@ -137,8 +142,6 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ITool, MakeArtifactTool>();
         services.AddScoped<ITool, EditArtifactTool>();
         services.AddScoped<ITool, ReadArtifactTool>();
-        // ClockTool/MakeArtifactTool read time only through TimeProvider, so tests pin the instant.
-        services.TryAddSingleton(TimeProvider.System);
     }
 
     /// <summary>

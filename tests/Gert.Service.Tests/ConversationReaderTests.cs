@@ -33,7 +33,7 @@ public sealed class ConversationReaderTests
             .Returns(_repo);
     }
 
-    private ConversationReader NewReader() => new(_provider, _user, Options.Create(_options));
+    private ConversationReader NewReader() => new(_provider, _user, Options.Create(_options), TimeProvider.System);
 
     private static TurnEventRecord Row(long seq, ChatEvent evt) => new()
     {

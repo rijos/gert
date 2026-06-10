@@ -1,6 +1,8 @@
 using Gert.Database;
 using Gert.Service.External;
 using Gert.Service.Storage;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Gert.Service.Ingestion;
 
@@ -25,19 +27,22 @@ public sealed class IngestionService : IIngestionService
     private readonly ITextExtractor _extractor;
     private readonly IEmbeddingClient _embeddings;
     private readonly ChunkingOptions _chunking;
+    private readonly ILogger<IngestionService> _logger;
 
     public IngestionService(
         IRagDatabaseProvider databases,
         IObjectStore objects,
         ITextExtractor extractor,
         IEmbeddingClient embeddings,
-        ChunkingOptions? chunking = null)
+        ChunkingOptions? chunking = null,
+        ILogger<IngestionService>? logger = null)
     {
         _databases = databases ?? throw new ArgumentNullException(nameof(databases));
         _objects = objects ?? throw new ArgumentNullException(nameof(objects));
         _extractor = extractor ?? throw new ArgumentNullException(nameof(extractor));
         _embeddings = embeddings ?? throw new ArgumentNullException(nameof(embeddings));
         _chunking = chunking ?? ChunkingOptions.Default;
+        _logger = logger ?? NullLogger<IngestionService>.Instance;
     }
 
     /// <inheritdoc />
@@ -178,9 +183,10 @@ public sealed class IngestionService : IIngestionService
     /// <summary>
     /// Best-effort failure marker for the catch-all path: re-load the row (it may
     /// have advanced) and mark it failed, swallowing any secondary error so the
-    /// worker never throws.
+    /// worker never throws. The swallow is logged (dotnet-style-guide.md §7: every
+    /// intentional catch-and-continue gets a comment AND a warning).
     /// </summary>
-    private static async Task TryFailAsync(
+    private async Task TryFailAsync(
         IRagRepository repo,
         string documentId,
         string error,
@@ -194,10 +200,16 @@ public sealed class IngestionService : IIngestionService
                 await FailAsync(repo, document, error, cancellationToken).ConfigureAwait(false);
             }
         }
-        catch
+        catch (Exception ex)
         {
-            // The document could not even be marked failed (db gone, cancelled). Nothing
-            // more to do — the worker must not throw on the failure path.
+            // Degrade decision: the document could not even be marked failed (db
+            // gone, cancelled). Nothing more to do — the worker must not throw on
+            // the failure path; the orphaned 'processing' row is the visible trace.
+            // Logged so the double fault is diagnosable (no content, only the id).
+            _logger.LogWarning(
+                ex,
+                "Failed to mark document {DocumentId} as failed after an ingestion error; leaving the row as-is",
+                documentId);
         }
     }
 }

@@ -7,13 +7,9 @@ using Gert.Api.WebSockets;
 using Gert.Authentication;
 using Gert.Database.Sqlite;
 using Gert.External;
-using Gert.Storage;
 using Gert.Service;
-using Gert.Database;
 using Gert.Service.Ingestion;
 using Gert.Service.Observability;
-using Gert.Service.Storage;
-using Gert.Service.Tools;
 using Gert.Service.Chat;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.RateLimiting;
@@ -67,8 +63,12 @@ builder.Services.AddHostedService<TurnWorker>();
 builder.Services.AddGertServices();
 
 // Detached turn pipeline tunables (chat-and-tools.md § detached turns). The service
-// layer registers the defaults; the host binds configuration over them.
-builder.Services.AddOptions<Gert.Service.Chat.TurnOptions>().BindConfiguration("Gert:Turn");
+// layer registers the defaults; the host binds configuration over them
+// (dotnet-style-guide.md §4 — no annotations on TurnOptions, so no
+// ValidateDataAnnotations).
+builder.Services.AddOptions<Gert.Service.Chat.TurnOptions>()
+    .BindConfiguration("Gert:Turn")
+    .ValidateOnStart();
 
 // AddGertServices (U7c) registers the three built-in tools (rag/search/sandbox)
 // as scoped ITool and the id-only ToolRegistry singleton the auth + validation
@@ -99,8 +99,12 @@ builder.Services.Replace(ServiceDescriptor.Scoped<IUserContext>(sp =>
 // — only the key SOURCE differs. Two guards: the key is never committed, and this
 // branch is inert under Production (and only fires when the env var is present).
 var devJwksPath = builder.Configuration["Gert:Dev:JwksPath"];
-if (!builder.Environment.IsProduction() && !string.IsNullOrWhiteSpace(devJwksPath))
+var devJwksActive = !builder.Environment.IsProduction() && !string.IsNullOrWhiteSpace(devJwksPath);
+if (devJwksActive)
 {
+    // Non-null: devJwksActive above implies IsNullOrWhiteSpace was false, but that
+    // null-state doesn't flow into the PostConfigure lambda below.
+    var jwksConfigPath = devJwksPath!;
     builder.Services.PostConfigure<JwtBearerOptions>(
         JwtBearerDefaults.AuthenticationScheme,
         options =>
@@ -109,15 +113,15 @@ if (!builder.Environment.IsProduction() && !string.IsNullOrWhiteSpace(devJwksPat
             // it). ContentRootPath is the src/Gert.Api project dir under `dotnet run`,
             // so a relative path is probed there first, then two levels up (the repo root).
             string resolved;
-            if (Path.IsPathRooted(devJwksPath))
+            if (Path.IsPathRooted(jwksConfigPath))
             {
-                resolved = devJwksPath;
+                resolved = jwksConfigPath;
             }
             else
             {
-                var underContentRoot = Path.Combine(builder.Environment.ContentRootPath, devJwksPath);
+                var underContentRoot = Path.Combine(builder.Environment.ContentRootPath, jwksConfigPath);
                 var underRepoRoot = Path.GetFullPath(
-                    Path.Combine(builder.Environment.ContentRootPath, "..", "..", devJwksPath));
+                    Path.Combine(builder.Environment.ContentRootPath, "..", "..", jwksConfigPath));
                 resolved = File.Exists(underContentRoot) ? underContentRoot : underRepoRoot;
             }
 
@@ -189,32 +193,10 @@ builder.Services.PostConfigure<JwtBearerOptions>(
     });
 
 // --- Storage seam (storage-and-data.md § lazy provisioning) -----------------
-builder.Services.Configure<StorageOptions>(
-    builder.Configuration.GetSection(StorageOptions.SectionName));
-builder.Services.Configure<SqliteVecOptions>(
-    builder.Configuration.GetSection(SqliteVecOptions.SectionName));
-// Three self-provisioning database seams (no shared "ensure", no memoised cache):
-// user.db (username, settings, project registry) + per-project chat.db / rag.db.
-// The shared connection factory does the open + migrate-on-open for all of them.
-builder.Services.AddSingleton<SqliteConnectionFactory>();
-builder.Services.AddSingleton<IUserDatabaseProvider, SqliteUserDatabaseProvider>();
-builder.Services.AddSingleton<IChatDatabaseProvider, SqliteChatDatabaseProvider>();
-builder.Services.AddSingleton<IRagDatabaseProvider, SqliteRagDatabaseProvider>();
-// Lets the storage backend drop SQLite's pooled chat.db/rag.db handles before a
-// local whole-tree delete; a server-backed adapter (e.g. Postgres) registers a no-op.
-builder.Services.AddSingleton<IDatabaseHandleReleaser, SqliteHandleReleaser>();
-
-// THE storage-backend seam: every non-database byte under a user tree (uploads,
-// memory bodies, config sidecars) flows through IObjectStore. The local backend
-// writes under {DataRoot}/users; an S3/Azure-Blob backend is a drop-in:
-// S3: new IObjectStore impl, one DI registration (swap the line below).
-builder.Services.AddSingleton<IObjectStore, LocalObjectStore>();
-
-// Coarse blob lifecycle seam (scope deletes, the admin footprint scan; structured
-// config lives in user.db — storage-and-data.md § "No JSON sidecars") —
-// backend-agnostic: everything goes through IObjectStore. The four lifecycle
-// services (Projects/Settings/Account/Admin) orchestrate this port.
-builder.Services.AddSingleton<IUserStore, ObjectStoreUserStore>();
+// One AddGertX per adapter (dotnet-style-guide.md §4): the SQLite providers, the
+// local IObjectStore/IUserStore backends, and the bound Storage options. An
+// S3/Azure-Blob backend is a drop-in: one IObjectStore registration after this call.
+builder.Services.AddGertSqliteStorage(builder.Configuration);
 
 // --- External-world ports ----------------------------------------------------
 // U10: AddGertExternal registers the real IChatModelClient / IEmbeddingClient /
@@ -244,6 +226,17 @@ builder.Services.AddExceptionHandler<TurnConflictExceptionHandler>();
 builder.Services.AddSingleton<Gert.Api.WebSockets.MessageHandlerRegistry>();
 
 var app = builder.Build();
+
+// Make the dev-JWKS trust loudly visible (testing.md §4.3): it weakens token
+// validation to a static, git-ignored key file, so an operator must never see
+// this line in a real deployment's logs. (The branch above is already inert
+// under Production; this is the tripwire if an environment is mislabelled.)
+if (devJwksActive)
+{
+    app.Logger.LogWarning(
+        "dev static JWKS trust active (Gert:Dev:JwksPath={JwksPath}) — dev/test only, never production",
+        devJwksPath);
+}
 
 // Map exceptions (e.g. ValidationException from chat phase 1) to branded problems.
 app.UseExceptionHandler();

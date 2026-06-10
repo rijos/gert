@@ -1,7 +1,7 @@
 using Gert.Api.Validation;
 using Gert.Authentication;
 using Gert.Model.Projects;
-using Gert.Service;
+using Gert.Service.Admin;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -22,16 +22,17 @@ namespace Gert.Api.Controllers;
 [Route("api/admin/users")]
 public sealed class AdminController : ControllerBase
 {
-    private readonly IGertServices _services;
+    // Granular interface, not the IGertServices hub (dotnet-style-guide.md §4).
+    private readonly IAdminService _admin;
 
-    public AdminController(IGertServices services) =>
-        _services = services ?? throw new ArgumentNullException(nameof(services));
+    public AdminController(IAdminService admin) =>
+        _admin = admin ?? throw new ArgumentNullException(nameof(admin));
 
     /// <summary>List user folders: blob footprint + the <c>user.db</c> username.</summary>
     [HttpGet]
     public async Task<ActionResult<IReadOnlyList<UserSummary>>> List(CancellationToken cancellationToken)
     {
-        var users = await _services.Admin.ListUsersAsync(cancellationToken).ConfigureAwait(false);
+        var users = await _admin.ListUsersAsync(cancellationToken).ConfigureAwait(false);
         return Ok(users);
     }
 
@@ -41,7 +42,7 @@ public sealed class AdminController : ControllerBase
     {
         RouteParams.RequireValidAdminKey(key);
 
-        var user = await _services.Admin.GetUserAsync(key, cancellationToken).ConfigureAwait(false);
+        var user = await _admin.GetUserAsync(key, cancellationToken).ConfigureAwait(false);
         return user is null ? NotFound() : Ok(user);
     }
 
@@ -51,7 +52,7 @@ public sealed class AdminController : ControllerBase
     {
         RouteParams.RequireValidAdminKey(key);
 
-        var deleted = await _services.Admin.DeleteUserAsync(key, cancellationToken).ConfigureAwait(false);
+        var deleted = await _admin.DeleteUserAsync(key, cancellationToken).ConfigureAwait(false);
         return deleted ? NoContent() : NotFound();
     }
 }

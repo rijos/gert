@@ -29,10 +29,8 @@ public sealed class SqliteChatRepository(SqliteConnection connection) : IChatRep
 
     static SqliteChatRepository()
     {
-        // Bind snake_case columns to PascalCase DTO properties once, process-wide.
-        // With property binding Dapper narrows SQLite's Int64 to the property type
-        // (int?/int) automatically — so no `long` columns and no casts in the mappers.
-        DefaultTypeMap.MatchNamesWithUnderscores = true;
+        // Process-wide Dapper config — one owner (DapperBootstrap), three citers.
+        DapperBootstrap.EnsureConfigured();
     }
 
     private readonly SqliteConnection _connection = connection;
@@ -737,7 +735,7 @@ public sealed class SqliteChatRepository(SqliteConnection connection) : IChatRep
 
     // ---- row DTOs ----------------------------------------------------------
     // PascalCase properties; Dapper binds snake_case columns via
-    // MatchNamesWithUnderscores (set in the static ctor) and narrows SQLite's
+    // MatchNamesWithUnderscores (DapperBootstrap, via the static ctor) and narrows SQLite's
     // Int64 to each property's declared type — no `long` widening, no casts.
 
     private sealed record ConversationRow

@@ -1,6 +1,5 @@
 using Gert.Api.Contracts;
 using Gert.Api.Validation;
-using Gert.Service;
 using Gert.Service.Documents;
 using Microsoft.AspNetCore.Mvc;
 
@@ -20,10 +19,11 @@ namespace Gert.Api.Controllers;
 [Route("api/projects/{pid}/documents")]
 public sealed class DocumentsController : ControllerBase
 {
-    private readonly IGertServices _services;
+    // Granular interface, not the IGertServices hub (dotnet-style-guide.md §4).
+    private readonly IDocumentService _documents;
 
-    public DocumentsController(IGertServices services) =>
-        _services = services ?? throw new ArgumentNullException(nameof(services));
+    public DocumentsController(IDocumentService documents) =>
+        _documents = documents ?? throw new ArgumentNullException(nameof(documents));
 
     /// <summary>List the project's documents (decoded name, size, chunk_count, status, error).</summary>
     [HttpGet]
@@ -33,7 +33,7 @@ public sealed class DocumentsController : ControllerBase
     {
         RouteParams.RequireValidProjectId(pid);
 
-        var documents = await _services.Documents.ListAsync(pid, cancellationToken).ConfigureAwait(false);
+        var documents = await _documents.ListAsync(pid, cancellationToken).ConfigureAwait(false);
         return Ok(documents.Select(DocumentResponse.From).ToList());
     }
 
@@ -46,7 +46,7 @@ public sealed class DocumentsController : ControllerBase
     {
         RouteParams.RequireValidProjectId(pid);
 
-        var document = await _services.Documents.GetAsync(pid, id, cancellationToken).ConfigureAwait(false);
+        var document = await _documents.GetAsync(pid, id, cancellationToken).ConfigureAwait(false);
         return document is null ? NotFound() : Ok(DocumentResponse.From(document));
     }
 
@@ -80,7 +80,7 @@ public sealed class DocumentsController : ControllerBase
             OpenReadStream = file.OpenReadStream,
         };
 
-        var document = await _services.Documents.UploadAsync(pid, upload, cancellationToken).ConfigureAwait(false);
+        var document = await _documents.UploadAsync(pid, upload, cancellationToken).ConfigureAwait(false);
 
         // 202 + the created document (status: "processing"). The client renders the
         // row immediately and polls Get for the transition; Location points at it.
@@ -99,7 +99,7 @@ public sealed class DocumentsController : ControllerBase
     {
         RouteParams.RequireValidProjectId(pid);
 
-        var deleted = await _services.Documents.DeleteAsync(pid, id, cancellationToken).ConfigureAwait(false);
+        var deleted = await _documents.DeleteAsync(pid, id, cancellationToken).ConfigureAwait(false);
         return deleted ? NoContent() : NotFound();
     }
 }

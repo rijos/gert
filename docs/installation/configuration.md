@@ -261,7 +261,9 @@ the separate-origin HTML-artifact preview and the HMAC-signed capability URLs it
 
 Binds to `RateLimiting.PolicyOptions` (`src/Gert.Api/Security/RateLimiting.cs`),
 security F10. A **fixed window per user**: each authenticated caller gets its own
-partition keyed by the token `sub` (anonymous traffic falls back to the remote IP), so
+partition keyed by the token `(iss, sub)` pair — the same identity anchor as the user
+folder key, so two IdPs minting the same `sub` never share a bucket (anonymous traffic
+falls back to the remote IP). This means
 one client — or one stolen token — can't saturate the box, and one user's bursts never
 throttle another's. Applied to `/api/*` only; `/healthz` is exempt. A rejected request
 is a branded `429`. The defaults are a DoS brake, not a usage quota — leave the section

@@ -2,16 +2,16 @@ using Gert.Api.Contracts;
 using Gert.Api.Validation;
 using Gert.Model.Chat;
 using Gert.Model.Dtos;
-using Gert.Service;
 using Gert.Service.Chat;
+using Gert.Service.Conversations;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Gert.Api.Controllers;
 
 /// <summary>
 /// Project-scoped conversation CRUD (rest-api.md § conversations). Thin: it
-/// delegates to <see cref="IConversationService"/> via the <see cref="IGertServices"/>
-/// hub. The user is implicit (from the token) — there is no <c>userId</c> in the
+/// delegates to the granular <see cref="IConversationService"/>
+/// (dotnet-style-guide.md §4). The user is implicit (from the token) — there is no <c>userId</c> in the
 /// path; <c>pid</c> resolves only within the caller's own folder (configuration.md
 /// § 2.5). Every action validates <c>{pid}</c> first. Covered by the fallback
 /// authenticated-user policy.
@@ -20,12 +20,12 @@ namespace Gert.Api.Controllers;
 [Route("api/projects/{pid}/conversations")]
 public sealed class ConversationsController : ControllerBase
 {
-    private readonly IGertServices _services;
+    private readonly IConversationService _conversations;
     private readonly IConversationReader _reader;
 
-    public ConversationsController(IGertServices services, IConversationReader reader)
+    public ConversationsController(IConversationService conversations, IConversationReader reader)
     {
-        _services = services ?? throw new ArgumentNullException(nameof(services));
+        _conversations = conversations ?? throw new ArgumentNullException(nameof(conversations));
         _reader = reader ?? throw new ArgumentNullException(nameof(reader));
     }
 
@@ -37,7 +37,7 @@ public sealed class ConversationsController : ControllerBase
     {
         RouteParams.RequireValidProjectId(pid);
 
-        var conversations = await _services.Conversations
+        var conversations = await _conversations
             .ListAsync(pid, cancellationToken)
             .ConfigureAwait(false);
         return Ok(conversations);
@@ -52,7 +52,7 @@ public sealed class ConversationsController : ControllerBase
     {
         RouteParams.RequireValidProjectId(pid);
 
-        var created = await _services.Conversations
+        var created = await _conversations
             .CreateAsync(pid, request, cancellationToken)
             .ConfigureAwait(false);
 
@@ -90,7 +90,7 @@ public sealed class ConversationsController : ControllerBase
     {
         RouteParams.RequireValidProjectId(pid);
 
-        var updated = await _services.Conversations
+        var updated = await _conversations
             .UpdateAsync(pid, id, request, cancellationToken)
             .ConfigureAwait(false);
 
@@ -106,7 +106,7 @@ public sealed class ConversationsController : ControllerBase
     {
         RouteParams.RequireValidProjectId(pid);
 
-        var deleted = await _services.Conversations
+        var deleted = await _conversations
             .DeleteAsync(pid, id, cancellationToken)
             .ConfigureAwait(false);
 

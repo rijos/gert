@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Microsoft.Extensions.Options;
 
 namespace Gert.Api.Security;
 
@@ -48,13 +49,15 @@ public sealed class ArtifactTicketService
     public string Origin { get; }
 
     public ArtifactTicketService(
-        ArtifactTicketOptions options,
+        IOptions<ArtifactTicketOptions> options,
         TimeProvider? clock = null)
     {
-        ArgumentNullException.ThrowIfNull(options);
-        _key = options.ResolveKeyBytes();
-        Lifetime = options.Lifetime;
-        Origin = options.Origin ?? string.Empty;
+        // Accessing .Value also runs the registered IValidateOptions (the weak-
+        // secret guard) for hosts that resolve this before ValidateOnStart fires.
+        var value = options?.Value ?? throw new ArgumentNullException(nameof(options));
+        _key = value.ResolveKeyBytes();
+        Lifetime = value.Lifetime;
+        Origin = value.Origin ?? string.Empty;
         _clock = clock ?? TimeProvider.System;
     }
 

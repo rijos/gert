@@ -350,8 +350,8 @@ public class IngestionPipelineTests
         var ingestionQueue = queue ?? new InlineIngestionQueue(ingestion);
         var validation = new PassThroughValidationProvider();
 
-        var documents = new DocumentService(provider.Rag, objects, ingestionQueue, validation, _user);
-        var memory = new MemoryService(provider.Rag, objects, embeddings, validation, _user);
+        var documents = new DocumentService(provider.Rag, objects, ingestionQueue, validation, _user, TimeProvider.System);
+        var memory = new MemoryService(provider.Rag, objects, embeddings, validation, _user, TimeProvider.System);
 
         return new Harness(provider, objects, ingestion, documents, memory);
     }
