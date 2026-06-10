@@ -28,25 +28,26 @@ def _open(page: Page, base_url: str) -> AppPage:
 # ---- artifacts ---------------------------------------------------------------
 
 
-def test_named_fence_opens_a_canvas_artifact(page: Page, base_url: str) -> None:
+def test_make_artifact_opens_a_canvas_artifact(page: Page, base_url: str) -> None:
     app = _open(page, base_url)
     app.composer.send("make me a demo html page")
 
-    # The artifact event opens a canvas tab named after the fence…
+    # The make_artifact tool call opens a canvas tab named after the artifact…
     tab = app.canvas.tab("html")
     expect(tab).to_be_visible(timeout=15000)
     expect(tab).to_contain_text("demo.html")
 
-    # …whose sandboxed iframe renders the fence body (F3: no allow-same-origin).
+    # …whose sandboxed iframe renders the artifact content (F3: no allow-same-origin).
     frame = app.canvas.html_iframe
     expect(frame).to_be_visible(timeout=15000)
     sandbox = frame.get_attribute("sandbox") or ""
     assert "allow-same-origin" not in sandbox
     expect(frame.content_frame.locator("h1")).to_contain_text("Demo", timeout=15000)
 
-    # The fence also stays inline in the bubble (extraction is additive).
+    # The bubble carries only the bot's acknowledgement — the file content went out
+    # as a tool argument, so (unlike the old fence model) it is NOT inline.
     expect(app.thread.last_bot_body).to_contain_text(
-        "I opened it in the canvas.", timeout=15000
+        "I opened demo.html in the canvas.", timeout=15000
     )
 
 
@@ -88,7 +89,7 @@ def test_artifact_persists_across_reload(page: Page, base_url: str) -> None:
     app.composer.send("make me a demo html page")
     expect(app.canvas.tab("html")).to_be_visible(timeout=15000)
     expect(app.thread.last_bot_body).to_contain_text(
-        "I opened it in the canvas.", timeout=15000
+        "I opened demo.html in the canvas.", timeout=15000
     )
 
     cid = page.evaluate("async () => (await import('/state/chat.js')).activeId.val")
