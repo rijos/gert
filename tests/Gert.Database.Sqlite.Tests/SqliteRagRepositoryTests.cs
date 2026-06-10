@@ -180,6 +180,78 @@ public class SqliteRagRepositoryTests
     }
 
     [Fact]
+    public async Task Hybrid_search_returns_only_chunks_of_ready_documents()
+    {
+        await using var root = new TempDataRoot();
+        var provider = ProviderFixture.ProviderFor(root);
+        await using var repo = await provider.OpenRagAsync(Iss, Sub, "default");
+
+        // One document per status; every chunk shares the lexical token AND the
+        // embeddings are close enough for k=10 KNN to surface all three — only the
+        // ready one may come back (failed/processing chunks must never leak into
+        // retrieval, even while their rows exist).
+        var ready = NewDocument("ready.txt", DocumentKind.Document);
+        var processing = NewDocument("processing.txt", DocumentKind.Document) with { Status = DocumentStatus.Processing };
+        var failed = NewDocument("failed.txt", DocumentKind.Document) with { Status = DocumentStatus.Failed };
+        await repo.InsertDocumentAsync(ready);
+        await repo.InsertDocumentAsync(processing);
+        await repo.InsertDocumentAsync(failed);
+
+        await repo.InsertChunksAsync(new[] { Chunk(ready.Id, 0, "statusword from the ready document") });
+        await repo.InsertChunksAsync(new[] { Chunk(processing.Id, 0, "statusword from the processing document") });
+        await repo.InsertChunksAsync(new[] { Chunk(failed.Id, 0, "statusword from the failed document") });
+
+        var hits = await repo.HybridSearchAsync(
+            "statusword",
+            FakeEmbeddings.Embed("statusword from the ready document"),
+            k: 10);
+
+        hits.Should().NotBeEmpty("the ready document's chunk is retrievable");
+        hits.Should().OnlyContain(h => h.Document.Id == ready.Id, "non-ready documents' chunks must be filtered out");
+    }
+
+    [Fact]
+    public async Task Delete_chunks_removes_chunk_vec_and_fts_rows_and_keeps_the_document()
+    {
+        await using var root = new TempDataRoot();
+        var provider = ProviderFixture.ProviderFor(root);
+        var paths = ProviderFixture.PathsFor(root);
+        await using var repo = await provider.OpenRagAsync(Iss, Sub, "default");
+
+        var doc = NewDocument("kept.txt", DocumentKind.Document);
+        var other = NewDocument("other.txt", DocumentKind.Document);
+        await repo.InsertDocumentAsync(doc);
+        await repo.InsertDocumentAsync(other);
+        await repo.InsertChunksAsync(new[]
+        {
+            Chunk(doc.Id, 0, "compensated chunk one"),
+            Chunk(doc.Id, 1, "compensated chunk two"),
+        });
+        await repo.InsertChunksAsync(new[] { Chunk(other.Id, 0, "untouched sibling chunk") });
+
+        await repo.DeleteChunksAsync(doc.Id);
+
+        // The document row survives (the ingestion failure path flips it to
+        // failed separately); only ITS chunks + satellites are gone.
+        (await repo.GetDocumentAsync(doc.Id)).Should().NotBeNull();
+        var counts = await CountsAsync(paths);
+        counts.Chunks.Should().Be(1, "the other document's chunk is untouched");
+        counts.Vec.Should().Be(1);
+        counts.Fts.Should().Be(1);
+
+        // Vector KNN always returns the nearest remaining chunks regardless of
+        // distance, so the sibling's chunk may legitimately surface — the guarantee
+        // is that nothing from the deleted document does.
+        var hits = await repo.HybridSearchAsync(
+            "compensated",
+            FakeEmbeddings.Embed("compensated chunk one"),
+            k: 5);
+        hits.Should().NotContain(
+            h => h.Document.Id == doc.Id,
+            "deleted chunks must not be retrievable");
+    }
+
+    [Fact]
     public async Task Delete_document_removes_its_chunks_vec_and_fts_rows()
     {
         await using var root = new TempDataRoot();

@@ -2,8 +2,10 @@ using System.Text;
 using FluentAssertions;
 using Gert.Model;
 using Gert.Service.Documents;
+using Gert.Service.External;
 using Gert.Service.Ingestion;
 using Gert.Service.Storage;
+using Gert.Service.Validation;
 using Gert.Storage;
 using Gert.Testing;
 using Gert.Testing.Fakes;
@@ -116,7 +118,72 @@ public class IngestionPipelineTests
         stored.Error.Should().Contain("extractor not available");
     }
 
+    [Fact]
+    public async Task Ingest_embed_failure_mid_pipeline_leaves_no_retrievable_chunks_and_marks_failed()
+    {
+        await using var root = new TempDataRoot();
+        // Small windows + batch size 2 → several embed batches; the client succeeds
+        // once (so the first batch's chunks ARE committed — batches commit per
+        // batch) and then throws, exercising the partial-ingestion failure path.
+        var harness = await HarnessAsync(
+            root,
+            new ChunkingOptions { MaxTokens = 5, OverlapTokens = 1, EmbedBatchSize = 2 },
+            embeddings: new FailingEmbeddings(succeedCalls: 1));
+
+        var body = string.Join(' ', Enumerable.Range(0, 40).Select(i => $"word{i}"));
+        var doc = await harness.Documents.UploadAsync(Pid, Upload("flaky.txt", "text/plain", body));
+
+        // The worker never throws; the document is failed with zero chunks.
+        var stored = await harness.Documents.GetAsync(Pid, doc.Id);
+        stored!.Status.Should().Be(DocumentStatus.Failed);
+        stored.ChunkCount.Should().Be(0);
+
+        // Nothing is retrievable — "word0" was in the first (committed) batch, so
+        // this pins the compensation, not just the absence of later batches.
+        await using var repo = await harness.Provider.OpenRagAsync(Iss, Sub, Pid);
+        var hits = await repo.HybridSearchAsync("word0", FakeEmbeddings.Embed("word0 word1"), k: 10);
+        hits.Should().BeEmpty();
+
+        // Flip the row back to ready to prove the chunk ROWS were deleted — the
+        // empty result above must not be only the status filter at work.
+        await repo.UpdateDocumentAsync(stored with { Status = DocumentStatus.Ready });
+        hits = await repo.HybridSearchAsync("word0", FakeEmbeddings.Embed("word0 word1"), k: 10);
+        hits.Should().BeEmpty("the failure path deletes the already-inserted chunks themselves");
+    }
+
     // ---- document upload / delete -----------------------------------------
+
+    [Fact]
+    public async Task Upload_streamed_over_the_cap_is_rejected_with_the_validator_error_and_leaves_nothing()
+    {
+        await using var root = new TempDataRoot();
+        // The recording queue would capture any enqueued job; none may appear.
+        var recording = new RecordingQueue();
+        var harness = await HarnessAsync(root, queue: recording);
+
+        // A streaming caller that cannot know the size up front (SizeBytes null):
+        // the validator's size gate is skipped, so the CountingStream cap inside
+        // UploadAsync is the only brake (defence-in-depth — both shipped hosts
+        // pass a server-measured SizeBytes).
+        var upload = new DocumentUpload
+        {
+            Filename = "huge.txt",
+            Mime = "text/plain",
+            OpenReadStream = () => new ZeroStream(UploadConstraints.MaxSizeBytes + 1),
+            SizeBytes = null,
+        };
+
+        var act = async () => await harness.Documents.UploadAsync(Pid, upload);
+        var thrown = await act.Should().ThrowAsync<ValidationException>();
+        thrown.Which.Result.Errors.Should().ContainSingle()
+            .Which.Code.Should().Be("upload.too_large", "the streamed cap surfaces the same 400 as the validator path");
+
+        // No partial blob, no document row, no ingest job.
+        var scope = ObjectScope.Project(Iss, Sub, Pid);
+        (await harness.Objects.ListAsync(scope, "files/")).Should().BeEmpty("the partial blob is deleted");
+        (await harness.Documents.ListAsync(Pid)).Should().BeEmpty();
+        recording.Jobs.Should().BeEmpty();
+    }
 
     [Fact]
     public async Task Upload_stores_the_blob_under_the_doc_id_key_and_base64s_the_filename()
@@ -227,6 +294,28 @@ public class IngestionPipelineTests
     }
 
     [Fact]
+    public async Task Memory_upsert_embed_failure_leaves_no_row_and_no_blob()
+    {
+        await using var root = new TempDataRoot();
+        // Embedding fails on the very first call: UpsertAsync embeds BEFORE any
+        // disk touch, so the failure must leave no document row (no Ready-but-
+        // unsearchable entry) and no memory/{id}.md blob behind.
+        var harness = await HarnessAsync(root, embeddings: new FailingEmbeddings(succeedCalls: 0));
+
+        var act = async () => await harness.Memory.UpsertAsync(Pid, new Gert.Model.Dtos.CreateMemoryRequest
+        {
+            Title = "Doomed",
+            Content = "this body never gets persisted",
+        });
+
+        await act.Should().ThrowAsync<InvalidOperationException>();
+
+        (await harness.Memory.ListAsync(Pid)).Should().BeEmpty("no Ready-but-unsearchable row may survive");
+        var scope = ObjectScope.Project(Iss, Sub, Pid);
+        (await harness.Objects.ListAsync(scope, "memory/")).Should().BeEmpty("no orphan body blob may survive");
+    }
+
+    [Fact]
     public async Task Memory_does_not_appear_in_the_document_list_and_vice_versa()
     {
         await using var root = new TempDataRoot();
@@ -248,13 +337,14 @@ public class IngestionPipelineTests
     private async Task<Harness> HarnessAsync(
         TempDataRoot root,
         ChunkingOptions? chunking = null,
-        IIngestionQueue? queue = null)
+        IIngestionQueue? queue = null,
+        IEmbeddingClient? embeddings = null)
     {
         var provider = ProviderFixture.ProviderFor(root);
         await provider.EnsureProvisionedAsync(Iss, Sub);
 
         var objects = ProviderFixture.ObjectsFor(root);
-        var embeddings = new FakeEmbeddings();
+        embeddings ??= new FakeEmbeddings();
         var extractor = new CompositeTextExtractor(new ITextExtractor[] { new PlainTextExtractor() });
         var ingestion = new IngestionService(provider.Rag, objects, extractor, embeddings, chunking);
         var ingestionQueue = queue ?? new InlineIngestionQueue(ingestion);
@@ -302,5 +392,72 @@ public class IngestionPipelineTests
             Jobs.Add(job);
             return Task.CompletedTask;
         }
+    }
+
+    /// <summary>
+    /// A failure-injecting <see cref="IEmbeddingClient"/>: delegates the first
+    /// <paramref name="succeedCalls"/> calls to <see cref="FakeEmbeddings"/> (so any
+    /// committed batches are real, searchable vectors) and throws afterwards. A
+    /// local test double, not a second embedding fake — vector semantics still come
+    /// from the shared <see cref="FakeEmbeddings"/> spec.
+    /// </summary>
+    private sealed class FailingEmbeddings(int succeedCalls) : IEmbeddingClient
+    {
+        private readonly FakeEmbeddings _inner = new();
+        private int _calls;
+
+        public Task<IReadOnlyList<float[]>> EmbedAsync(
+            IReadOnlyList<string> texts,
+            CancellationToken cancellationToken = default)
+        {
+            if (_calls++ >= succeedCalls)
+            {
+                throw new InvalidOperationException("embedding backend unavailable (injected test failure)");
+            }
+
+            return _inner.EmbedAsync(texts, cancellationToken);
+        }
+    }
+
+    /// <summary>
+    /// A read-only stream of <c>length</c> zero bytes — lets the over-cap upload
+    /// test stream 50 MiB + 1 without allocating the payload.
+    /// </summary>
+    private sealed class ZeroStream(long length) : Stream
+    {
+        private long _position;
+
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => length;
+
+        public override long Position
+        {
+            get => _position;
+            set => throw new NotSupportedException();
+        }
+
+        public override int Read(byte[] buffer, int offset, int count)
+        {
+            var remaining = length - _position;
+            if (remaining <= 0)
+            {
+                return 0;
+            }
+
+            var read = (int)Math.Min(count, remaining);
+            Array.Clear(buffer, offset, read);
+            _position += read;
+            return read;
+        }
+
+        public override void Flush()
+        {
+        }
+
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
     }
 }

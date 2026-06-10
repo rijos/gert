@@ -89,12 +89,30 @@ public sealed class DocumentService : IDocumentService
         var scope = ScopeFor(pid);
 
         // 2. Store the bytes via the object store (decision: files via IObjectStore
-        //    only) under the server-generated {doc-id}.{ext} key. Track the written
-        //    size so an oversized streamed upload (unknown SizeBytes) is still recorded.
+        //    only) under the server-generated {doc-id}.{ext} key. The counting wrapper
+        //    records the true written size AND enforces the size cap mid-stream:
+        //    both shipped hosts pass a server-measured SizeBytes (already gated by
+        //    the validator above), so the streaming cap is defence-in-depth for
+        //    callers that cannot know the size up front (SizeBytes == null).
         long sizeBytes;
-        await using (var counting = new CountingStream(upload.OpenReadStream()))
+        await using (var counting = new CountingStream(upload.OpenReadStream(), UploadConstraints.MaxSizeBytes))
         {
-            await _objects.PutAsync(scope, key, counting, cancellationToken).ConfigureAwait(false);
+            try
+            {
+                await _objects.PutAsync(scope, key, counting, cancellationToken).ConfigureAwait(false);
+            }
+            catch (ValidationException)
+            {
+                // The cap tripped mid-stream: compensate by removing whatever
+                // partial blob the backend persisted (DeleteAsync is idempotent;
+                // the local store's stage-and-rename usually leaves nothing, but a
+                // cloud backend may), then surface the validator-identical 400.
+                // CancellationToken.None: best-effort cleanup must still run if
+                // the request token is already cancelled.
+                await _objects.DeleteAsync(scope, key, CancellationToken.None).ConfigureAwait(false);
+                throw;
+            }
+
             sizeBytes = counting.BytesRead;
         }
 
@@ -192,7 +210,21 @@ public sealed class DocumentService : IDocumentService
     private static string EncodeFilename(string filename) =>
         Convert.ToBase64String(Encoding.UTF8.GetBytes(filename));
 
-    /// <summary>Decode a base64 <c>documents.filename</c> back to the original (for the delete-key ext).</summary>
-    private static string DecodeFilename(string encoded) =>
-        Encoding.UTF8.GetString(Convert.FromBase64String(encoded));
+    /// <summary>
+    /// Decode a base64 <c>documents.filename</c> back to the original (for the
+    /// delete-key ext). Falls back to the raw value if it does not decode
+    /// (defensive — a malformed row must not make delete throw; mirrors
+    /// <c>RagTool.DisplayName</c>).
+    /// </summary>
+    private static string DecodeFilename(string encoded)
+    {
+        try
+        {
+            return Encoding.UTF8.GetString(Convert.FromBase64String(encoded));
+        }
+        catch (FormatException)
+        {
+            return encoded;
+        }
+    }
 }

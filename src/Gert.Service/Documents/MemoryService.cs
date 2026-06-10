@@ -91,6 +91,22 @@ public sealed class MemoryService : IMemoryService
         var scope = ScopeFor(pid);
         var key = MemoryKey(id);
 
+        // Failure order (dotnet-style-guide §8: state it): chunk + embed FIRST —
+        // pure in-memory work plus the network call, no disk effects — so an
+        // embedding failure aborts before anything is persisted (no Ready-but-
+        // unsearchable row, no orphan blob). Only then blob, then rows.
+        var chunks = TextChunker.Chunk(
+            [new ExtractedPage { Text = request.Content }],
+            _chunking);
+
+        IReadOnlyList<float[]> vectors = [];
+        if (chunks.Count > 0)
+        {
+            vectors = await _embeddings
+                .EmbedAsync(chunks.Select(c => c.Content).ToList(), cancellationToken)
+                .ConfigureAwait(false);
+        }
+
         // 1. Store the markdown body via the object store (decision: files via IObjectStore).
         var bodyBytes = Encoding.UTF8.GetBytes(request.Content);
         await using (var body = new MemoryStream(bodyBytes, writable: false))
@@ -98,8 +114,9 @@ public sealed class MemoryService : IMemoryService
             await _objects.PutAsync(scope, key, body, cancellationToken).ConfigureAwait(false);
         }
 
-        // 2. (Re)embed the body into rag.db as a kind='memory' document + chunks so it
-        //    is retrievable by search_documents alongside documents.
+        // 2. Insert the rag.db row (kind='memory', final ChunkCount up front — no
+        //    trailing update) + chunks so it is retrievable by search_documents
+        //    alongside documents.
         var document = new Document
         {
             Id = id,
@@ -107,26 +124,19 @@ public sealed class MemoryService : IMemoryService
             Mime = MemoryMime,
             SizeBytes = bodyBytes.LongLength,
             Status = DocumentStatus.Ready,
-            ChunkCount = 0,
+            ChunkCount = chunks.Count,
             Kind = DocumentKind.Memory,
             Pinned = pinned,
             CreatedAt = now,
         };
 
-        var chunks = TextChunker.Chunk(
-            [new ExtractedPage { Text = request.Content }],
-            _chunking);
-
-        await using (var repo = await OpenAsync(pid, cancellationToken).ConfigureAwait(false))
+        try
         {
+            await using var repo = await OpenAsync(pid, cancellationToken).ConfigureAwait(false);
             await repo.InsertDocumentAsync(document, cancellationToken).ConfigureAwait(false);
 
             if (chunks.Count > 0)
             {
-                var vectors = await _embeddings
-                    .EmbedAsync(chunks.Select(c => c.Content).ToList(), cancellationToken)
-                    .ConfigureAwait(false);
-
                 var inserts = chunks.Select((c, i) => new ChunkInsert
                 {
                     DocumentId = id,
@@ -138,10 +148,17 @@ public sealed class MemoryService : IMemoryService
                 }).ToList();
 
                 await repo.InsertChunksAsync(inserts, cancellationToken).ConfigureAwait(false);
-                await repo.UpdateDocumentAsync(
-                    document with { ChunkCount = chunks.Count },
-                    cancellationToken).ConfigureAwait(false);
             }
+        }
+        catch
+        {
+            // Compensate: the row/chunk write failed after the blob landed —
+            // remove the blob so no orphan body survives (the inverse of
+            // DeleteAsync's row+blob pairing), then rethrow the original failure.
+            // CancellationToken.None: cleanup must run even when the failure IS
+            // a cancel.
+            await _objects.DeleteAsync(scope, key, CancellationToken.None).ConfigureAwait(false);
+            throw;
         }
 
         return new MemoryEntry
@@ -186,6 +203,20 @@ public sealed class MemoryService : IMemoryService
     private static string EncodeTitle(string title) =>
         Convert.ToBase64String(Encoding.UTF8.GetBytes(title));
 
-    private static string DecodeTitle(string encoded) =>
-        Encoding.UTF8.GetString(Convert.FromBase64String(encoded));
+    /// <summary>
+    /// Decode a base64 <c>documents.filename</c> back to the entry title. Falls
+    /// back to the raw value if it does not decode (defensive — one malformed row
+    /// must not make the whole list throw; mirrors <c>RagTool.DisplayName</c>).
+    /// </summary>
+    private static string DecodeTitle(string encoded)
+    {
+        try
+        {
+            return Encoding.UTF8.GetString(Convert.FromBase64String(encoded));
+        }
+        catch (FormatException)
+        {
+            return encoded;
+        }
+    }
 }

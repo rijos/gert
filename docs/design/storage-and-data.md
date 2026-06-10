@@ -304,3 +304,8 @@ CREATE VIRTUAL TABLE fts_chunks USING fts5(
 ```
 
 `chunks.id`, `vec_chunks.chunk_id`, and the FTS rowid are the same integer, so the three tables join cheaply.
+
+Only `status='ready'` documents are retrievable: hybrid search filters its join-back to `documents`
+on that status, and the ingestion failure path deletes a failed document's already-inserted chunks
+(batches commit per batch, so they can exist transiently) — so neither a still-processing nor a
+failed document's text ever surfaces in `search_documents`.

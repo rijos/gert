@@ -195,6 +195,33 @@ public sealed class SqliteRagRepository : IRagRepository
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
     }
 
+    /// <inheritdoc />
+    public async Task DeleteChunksAsync(string documentId, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(documentId);
+
+        await using var transaction =
+            (SqliteTransaction)await _connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+
+        // Same shape as DeleteDocumentAsync minus the document row: satellites
+        // first (the vec0 / fts5 virtual tables are not reached by FK cascades),
+        // then the chunks, all in one transaction so a fault never leaves an
+        // index row pointing at a deleted chunk.
+        await DeleteChunkSatellitesAsync(
+            "SELECT id FROM chunks WHERE document_id = @documentId",
+            new { documentId },
+            transaction,
+            cancellationToken).ConfigureAwait(false);
+
+        await _connection.ExecuteAsync(new CommandDefinition(
+            "DELETE FROM chunks WHERE document_id = @documentId;",
+            new { documentId },
+            transaction,
+            cancellationToken: cancellationToken)).ConfigureAwait(false);
+
+        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+    }
+
     // ---- chunks + embeddings -----------------------------------------------
 
     /// <inheritdoc />
@@ -302,13 +329,19 @@ public sealed class SqliteRagRepository : IRagRepository
             return Array.Empty<RetrievedChunk>();
         }
 
-        // 4) Join the surviving chunk ids back to chunks + documents.
+        // 4) Join the surviving chunk ids back to chunks + documents. Only
+        //    status='ready' documents are retrievable (the literal matches
+        //    StatusToString): a still-processing document's chunks exist
+        //    transiently (batches commit per batch) and a failed document's
+        //    chunks are deleted by the ingestion failure path — this predicate
+        //    is the read-side guarantee. The loop below already tolerates ids
+        //    dropped by the join.
         const string joinSql =
             "SELECT c.id, c.document_id, c.ordinal, c.content, c.page, c.token_count, " +
             "       d.id AS d_id, d.filename, d.mime, d.size_bytes, d.status, d.chunk_count, " +
             "       d.error, d.kind, d.pinned, d.created_at " +
             "FROM chunks c JOIN documents d ON d.id = c.document_id " +
-            "WHERE c.id IN @ids;";
+            "WHERE c.id IN @ids AND d.status = 'ready';";
         var rows = await _connection.QueryAsync<RetrievedRow>(new CommandDefinition(
             joinSql,
             new { ids = top.Select(p => p.Key).ToArray() },

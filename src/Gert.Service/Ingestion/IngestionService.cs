@@ -163,6 +163,13 @@ public sealed class IngestionService : IIngestionService
         string error,
         CancellationToken cancellationToken)
     {
+        // Compensate first: chunk batches commit per batch, so a mid-pipeline
+        // failure can leave already-inserted chunks behind. Delete them so a
+        // failed document leaves nothing retrievable — the row deletion here and
+        // HybridSearchAsync's status='ready' join predicate are the two ends of
+        // the same guarantee. A no-op when nothing was inserted yet.
+        await repo.DeleteChunksAsync(document.Id, cancellationToken).ConfigureAwait(false);
+
         await repo.UpdateDocumentAsync(
             document with { Status = Model.DocumentStatus.Failed, Error = error, ChunkCount = 0 },
             cancellationToken).ConfigureAwait(false);

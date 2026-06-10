@@ -114,6 +114,12 @@ public sealed class DocumentUploadValidatorTests
             .ShouldHaveValidationErrorFor(u => u.SizeBytes!.Value);
     }
 
+    // A null SizeBytes is NOT a size-cap bypass: the validator can only gate what
+    // the host measured up front. For streaming callers the cap is enforced
+    // mid-stream by DocumentService's CountingStream (limit = UploadConstraints
+    // .MaxSizeBytes), which throws the same upload.too_large ValidationException —
+    // see CountingStreamTests and the streamed-oversize test in
+    // Gert.Database.Sqlite.Tests/IngestionPipelineTests.
     [Fact]
     public void Unknown_size_is_accepted_for_streamed_uploads() =>
         _validator.TestValidate(Upload(size: null))

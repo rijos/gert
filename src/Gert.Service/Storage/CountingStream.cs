@@ -1,3 +1,5 @@
+using Gert.Service.Validation;
+
 namespace Gert.Service.Storage;
 
 /// <summary>
@@ -5,16 +7,32 @@ namespace Gert.Service.Storage;
 /// stream. Used by upload to record the true size of a streamed blob (when the host
 /// did not supply <c>SizeBytes</c> up front) without buffering it — the bytes flow
 /// straight into <see cref="IObjectStore.PutAsync"/> while being counted.
+///
+/// <para>
+/// With a <c>limit</c>, the stream also <b>enforces</b> a byte cap mid-stream
+/// (testing.md §5: max upload size): the moment <see cref="BytesRead"/> exceeds it,
+/// reading throws a <see cref="ValidationException"/> carrying the same
+/// <c>upload.too_large</c> error code the <c>DocumentUploadValidator</c> produces,
+/// so the host's ValidationExceptionHandler surfaces the identical branded 400
+/// whether the size was known up front or only discovered while streaming.
+/// </para>
 /// </summary>
 public sealed class CountingStream : Stream
 {
     private readonly Stream _inner;
+    private readonly long? _limit;
     private readonly bool _leaveOpen;
 
-    /// <summary>Wrap <paramref name="inner"/>, counting bytes read. Disposes it unless <paramref name="leaveOpen"/>.</summary>
-    public CountingStream(Stream inner, bool leaveOpen = false)
+    /// <summary>
+    /// Wrap <paramref name="inner"/>, counting bytes read. With a non-null
+    /// <paramref name="limit"/>, a read that pushes <see cref="BytesRead"/> past it
+    /// throws (fail-closed, before the surplus bytes can be consumed downstream).
+    /// Disposes the inner stream unless <paramref name="leaveOpen"/>.
+    /// </summary>
+    public CountingStream(Stream inner, long? limit = null, bool leaveOpen = false)
     {
         _inner = inner ?? throw new ArgumentNullException(nameof(inner));
+        _limit = limit;
         _leaveOpen = leaveOpen;
     }
 
@@ -44,24 +62,21 @@ public sealed class CountingStream : Stream
     public override int Read(byte[] buffer, int offset, int count)
     {
         var read = _inner.Read(buffer, offset, count);
-        BytesRead += read;
-        return read;
+        return Count(read);
     }
 
     /// <inheritdoc />
     public override int Read(Span<byte> buffer)
     {
         var read = _inner.Read(buffer);
-        BytesRead += read;
-        return read;
+        return Count(read);
     }
 
     /// <inheritdoc />
     public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
     {
         var read = await _inner.ReadAsync(buffer, cancellationToken).ConfigureAwait(false);
-        BytesRead += read;
-        return read;
+        return Count(read);
     }
 
     /// <inheritdoc />
@@ -72,6 +87,30 @@ public sealed class CountingStream : Stream
     public override void Flush()
     {
         // Read-only — nothing to flush.
+    }
+
+    /// <summary>
+    /// Tally <paramref name="read"/> bytes and enforce the optional cap. The error
+    /// mirrors <c>DocumentUploadValidator</c>'s size rule (same property, message
+    /// shape and <c>upload.too_large</c> code) so both paths produce the same 400.
+    /// </summary>
+    private int Count(int read)
+    {
+        BytesRead += read;
+        if (_limit is { } limit && BytesRead > limit)
+        {
+            throw new ValidationException(ValidationResult.Failure(
+            [
+                new ValidationError
+                {
+                    Property = "SizeBytes",
+                    Message = $"Upload exceeds the {limit} byte limit.",
+                    Code = "upload.too_large",
+                },
+            ]));
+        }
+
+        return read;
     }
 
     /// <inheritdoc />

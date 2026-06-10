@@ -33,6 +33,15 @@ public interface IRagRepository : IAsyncDisposable
         IReadOnlyList<ChunkInsert> chunks,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Delete every chunk (plus its vec/fts satellite rows) belonging to
+    /// <paramref name="documentId"/>, keeping the document row itself — the
+    /// ingestion failure path's compensation: batches commit per batch, so a
+    /// mid-pipeline failure can leave chunks behind; a <c>failed</c> document must
+    /// leave nothing retrievable (chat-and-tools.md § ingestion).
+    /// </summary>
+    Task DeleteChunksAsync(string documentId, CancellationToken cancellationToken = default);
+
     // Retrieval — vector KNN + lexical BM25 fused with RRF
     Task<IReadOnlyList<RetrievedChunk>> HybridSearchAsync(
         string query,
