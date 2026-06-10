@@ -98,3 +98,29 @@ database? (Amends the sidecar half of [§8](#8-storage-backend-seam--everything-
     writes but left config unqueryable and the healing path alive); merging this state into a
     project `chat.db` (wrong scope — it's user-level, and the registry must outlive any
     project).
+
+## 10. Tool entitlement — the JWT is the sole source, no default grant
+
+When a token carries no `gert_tools` claim, what tools does the user get: a configured
+server-side default set, or nothing?
+
+- **Decision:** **Nothing — the `gert_tools` claim is the only source of tool entitlement.**
+  An absent or blank claim grants **zero tools** (fail-closed); `"*"` grants the whole
+  registry; a delimited scope string grants exactly its ids ∩ the registry. There is no
+  `Tools:DefaultGrant` config and no `ToolOptions` ([auth § tool entitlements](auth.md#tool-entitlements-allowed-tools-in-the-jwt)).
+  - **Why:** one rule with no exceptions. The previous design had a configured default set
+    *plus* a `sandbox` carve-out — two places to reason about, and a silent path where a
+    bare token gained capability the admin never typed. Anchoring entitlement entirely on
+    the signed claim makes "what can this user do?" answerable from the token alone, matches
+    the fail-closed posture of [principle #6](principles.md), and keeps Gert stateless (no
+    server config participates in an authorization decision).
+  - **Consequences:** a bare login with no claim is a working chat with no tools (plain
+    completion). Admins grant capability explicitly — e.g. a `gert-tools` group granting
+    `rag search todo clock make_artifact edit_artifact read_artifact` and a separate
+    `gert-sandbox` group adding `sandbox`. The Console host is unaffected (its
+    `LocalUserContext` hardcodes `"*"`). `ToolRegistry` still intersects every grant, so a
+    typo'd id fails closed rather than erroring the login.
+  - *Rejected:* a configured default grant (convenient, but it's server state in an authz
+    decision and reintroduces the "absent claim silently grants X" path); making the default
+    *explicit-but-present* (still an exception to the one-source rule — the objection was the
+    exception itself, not its visibility).

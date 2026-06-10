@@ -2,7 +2,6 @@ using System.Security.Claims;
 using Gert.Service;
 using Gert.Service.Tools;
 using Microsoft.AspNetCore.Http;
-using Microsoft.Extensions.Options;
 
 namespace Gert.Authentication;
 
@@ -14,8 +13,7 @@ namespace Gert.Authentication;
 /// </summary>
 public sealed class HttpUserContext(
     IHttpContextAccessor http,
-    ToolRegistry registry,
-    IOptions<ToolOptions> tools) : IUserContext
+    ToolRegistry registry) : IUserContext
 {
     private ClaimsPrincipal User =>
         http.HttpContext?.User
@@ -44,11 +42,13 @@ public sealed class HttpUserContext(
         {
             var raw = User.FindFirstValue("gert_tools");
 
-            // Claim absent / blank → the configured default grant, ∩ registry so a
-            // mis-configured default can never name a tool the system doesn't have.
+            // The JWT is the SOLE source of tool entitlement — there is no
+            // server-side default grant (auth.md § tool entitlements). A token
+            // that carries no gert_tools claim is granted NO tools: fail-closed,
+            // every capability must be granted explicitly in the IdP.
             if (string.IsNullOrWhiteSpace(raw))
             {
-                return registry.Normalize(tools.Value.DefaultGrant);
+                return EmptyTools;
             }
 
             // Blanket grant — every tool in the registry, current and future.
@@ -63,6 +63,9 @@ public sealed class HttpUserContext(
             return registry.Normalize(raw);
         }
     }
+
+    private static readonly IReadOnlySet<string> EmptyTools =
+        new HashSet<string>(StringComparer.Ordinal);
 
     /// <inheritdoc />
     public bool CanUseTool(string id) => AllowedTools.Contains(id);

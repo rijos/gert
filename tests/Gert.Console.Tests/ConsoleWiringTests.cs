@@ -104,9 +104,6 @@ public sealed class ConsoleWiringTests
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["Storage:DataRoot"] = root.Path,
-                ["Tools:DefaultGrant:0"] = "rag",
-                ["Tools:DefaultGrant:1"] = "search",
-                ["Tools:DefaultGrant:2"] = "sandbox",
             })
             .Build();
 

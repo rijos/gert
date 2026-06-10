@@ -212,8 +212,9 @@ so the dev shortcut can't hide a validation bug.
   `/admin/*` surface) and the **tool-entitlement ceiling** ([auth](auth.md#enforcement--the-claim-is-the-ceiling)).
   `admin` has everything; `user` is the common case that proves **sandbox is dropped** despite any UI
   toggle; `limited` proves a tightly-scoped grant (**only `rag`** — search *and* sandbox denied). Any
-  other shape (a non-admin *with* sandbox, an absent claim falling back to the default grant) is a
-  one-line `mint()` override in the test that needs it, not a standing role.
+  other shape (a non-admin *with* sandbox, or an **absent `gert_tools` claim that yields no tools at
+  all** — the fail-closed path, since the JWT is the sole grant source) is a one-line `mint()`
+  override in the test that needs it, not a standing role.
 
 - **The key is generated on first run, never committed.** The first invocation of `tokens.py`
   (or the Fake host) creates an RSA keypair under a **git-ignored** path (e.g.

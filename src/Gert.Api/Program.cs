@@ -183,8 +183,6 @@ builder.Services.Configure<StorageOptions>(
     builder.Configuration.GetSection(StorageOptions.SectionName));
 builder.Services.Configure<SqliteVecOptions>(
     builder.Configuration.GetSection(SqliteVecOptions.SectionName));
-builder.Services.Configure<ToolOptions>(
-    builder.Configuration.GetSection(ToolOptions.SectionName));
 // Three self-provisioning database seams (no shared "ensure", no memoised cache):
 // user.db (username, settings, project registry) + per-project chat.db / rag.db.
 // The shared connection factory does the open + migrate-on-open for all of them.

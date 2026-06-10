@@ -36,7 +36,8 @@ why**; the code in [`src/`](../../src/) implements them.
 - [tech-stack.md](tech-stack.md) — chosen libraries, the host-agnostic architecture
   (Api + Console over one service layer), the solution layout, engine/storage portability.
 - [decisions.md](decisions.md) — the decision record: embedding model, two DBs per project,
-  folder key, revocation, OCR, ingestion progress, project isolation, the `IObjectStore` seam.
+  folder key, revocation, OCR, ingestion progress, project isolation, the `IObjectStore` seam,
+  `user.db` over JSON sidecars, and JWT-only tool entitlement.
 
 ### Backend
 - [auth.md](auth.md) — OIDC/PKCE with passkeys, expected JWT claims, ASP.NET wiring, the

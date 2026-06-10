@@ -3,7 +3,6 @@ using FluentAssertions;
 using Gert.Authentication;
 using Gert.Service.Tools;
 using Microsoft.AspNetCore.Http;
-using Microsoft.Extensions.Options;
 using NSubstitute;
 using Xunit;
 
@@ -24,16 +23,13 @@ public sealed class HttpUserContextTests
         new StubTool("sandbox"),
     });
 
-    private static HttpUserContext Build(ClaimsPrincipal principal, ToolOptions? options = null)
+    private static HttpUserContext Build(ClaimsPrincipal principal)
     {
         var ctx = new DefaultHttpContext { User = principal };
         var accessor = Substitute.For<IHttpContextAccessor>();
         accessor.HttpContext.Returns(ctx);
 
-        return new HttpUserContext(
-            accessor,
-            Registry(),
-            Options.Create(options ?? new ToolOptions()));
+        return new HttpUserContext(accessor, Registry());
     }
 
     /// <summary>
@@ -100,31 +96,22 @@ public sealed class HttpUserContextTests
     }
 
     [Fact]
-    public void Absent_gert_tools_falls_back_to_default_grant()
+    public void Absent_gert_tools_grants_nothing()
     {
-        var options = new ToolOptions { DefaultGrant = ["rag", "search"] };
-        var user = Build(Principal(gertTools: null), options);
+        // The JWT is the SOLE source of entitlement — no server-side default
+        // grant. A token without the claim is fail-closed: zero tools.
+        var user = Build(Principal(gertTools: null));
 
-        user.AllowedTools.Should().BeEquivalentTo("rag", "search");
+        user.AllowedTools.Should().BeEmpty();
+        user.CanUseTool("rag").Should().BeFalse();
     }
 
     [Fact]
-    public void Blank_gert_tools_falls_back_to_default_grant()
+    public void Blank_gert_tools_grants_nothing()
     {
-        var options = new ToolOptions { DefaultGrant = ["rag"] };
-        var user = Build(Principal(gertTools: "   "), options);
+        var user = Build(Principal(gertTools: "   "));
 
-        user.AllowedTools.Should().BeEquivalentTo("rag");
-    }
-
-    [Fact]
-    public void Default_grant_is_intersected_with_registry()
-    {
-        // A default that names a non-registered id must drop it.
-        var options = new ToolOptions { DefaultGrant = ["rag", "ghost"] };
-        var user = Build(Principal(gertTools: null), options);
-
-        user.AllowedTools.Should().BeEquivalentTo("rag");
+        user.AllowedTools.Should().BeEmpty();
     }
 
     [Fact]

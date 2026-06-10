@@ -12,8 +12,8 @@ namespace Gert.Database.Sqlite;
 /// path-safe, and traversal-proof for any value the IdP emits.
 ///
 /// <para>
-/// <c>(iss, sub)</c> come only from the validated token; <c>EnsureProvisioned</c>
-/// gates them <b>before</b> any of these methods run. The <c>pid</c> comes from
+/// <c>(iss, sub)</c> come only from the validated token; the fail-closed
+/// provisioning gate vets them <b>before</b> any of these methods run. The <c>pid</c> comes from
 /// the request, so it is validated to a UUID or the literal <c>default</c> and is
 /// only ever joined <b>under</b> the user root — it can select among this user's
 /// projects but can never escape the user folder (cross-user IDOR is structurally
@@ -40,15 +40,6 @@ public sealed class SqliteDatabasePaths(IOptions<StorageOptions> options)
 
     /// <summary>The user folder root, <c>{DataRoot}/users/{key}</c>.</summary>
     public string Root(string iss, string sub) => Path.Combine(UsersDir, Key(iss, sub));
-
-    /// <summary>The user metadata sidecar <c>meta.json</c>.</summary>
-    public string MetaFile(string iss, string sub) => Path.Combine(Root(iss, sub), "meta.json");
-
-    /// <summary>The user preferences file <c>settings.json</c>.</summary>
-    public string SettingsFile(string iss, string sub) => Path.Combine(Root(iss, sub), "settings.json");
-
-    /// <summary>The <c>projects/</c> directory under the user root.</summary>
-    public string ProjectsDir(string iss, string sub) => Path.Combine(Root(iss, sub), "projects");
 
     /// <summary>The per-user database <c>user.db</c> (username, settings, project registry).</summary>
     public string UserDb(string iss, string sub) => Path.Combine(Root(iss, sub), "user.db");
@@ -97,10 +88,6 @@ public sealed class SqliteDatabasePaths(IOptions<StorageOptions> options)
 
         return projectRoot;
     }
-
-    /// <summary>The project config file <c>projects/{pid}/meta.json</c>.</summary>
-    public string ProjectMeta(string iss, string sub, string pid) =>
-        Path.Combine(ProjectRoot(iss, sub, pid), "meta.json");
 
     /// <summary>The conversations database <c>projects/{pid}/chat.db</c>.</summary>
     public string ChatDb(string iss, string sub, string pid) =>

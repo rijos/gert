@@ -66,7 +66,7 @@ builder.Services.AddAuthorization(o =>
 ## The user context (resolved per request)
 
 ```csharp
-public sealed class UserContext(IHttpContextAccessor http, IOptions<ToolOptions> tools)
+public sealed class UserContext(IHttpContextAccessor http, ToolRegistry registry)
 {
     private ClaimsPrincipal User => http.HttpContext!.User;
 
@@ -78,14 +78,15 @@ public sealed class UserContext(IHttpContextAccessor http, IOptions<ToolOptions>
     public bool   IsAdmin  => User.IsInRole("gert-admins");
 
     // Hard ceiling on which tools the model may call for this user (see "Tool entitlements").
+    // The JWT is the SOLE source — no default grant; an absent claim means no tools.
     public IReadOnlySet<string> AllowedTools
     {
         get
         {
-            var raw = User.FindFirstValue("gert_tools");    // "rag search sandbox" | JSON array | "*"
-            if (string.IsNullOrWhiteSpace(raw)) return tools.Value.DefaultGrant;  // claim absent
-            if (raw.Trim() == "*")              return ToolRegistry.AllIds;       // blanket grant
-            return ToolRegistry.Normalize(raw);             // parse (array or delimited) ∩ registry
+            var raw = User.FindFirstValue("gert_tools");    // "rag search sandbox" | "*" | absent
+            if (string.IsNullOrWhiteSpace(raw)) return EmptySet;        // claim absent → fail-closed
+            if (raw.Trim() == "*")              return registry.AllIds; // blanket grant
+            return registry.Normalize(raw);                 // delimited scope string ∩ registry
         }
     }
     public bool CanUseTool(string id) => AllowedTools.Contains(id);
@@ -137,30 +138,44 @@ Which **tools** a user may invoke is an admin-controlled entitlement carried in 
 
 ### The `gert_tools` claim
 
+The claim is the **sole source** of tool entitlement — there is no server-side default grant.
 The admin sets a custom claim in Pocket ID, per user or per user-group:
 
 | Claim value | Meaning |
 |---|---|
-| `"rag search"` (space-delimited) or `["rag","search"]` (array) | grant exactly these tool ids |
+| `"rag search"` (space/comma-delimited scope string) | grant exactly these tool ids |
 | `"*"` | grant every tool in the registry — current **and future** (blanket grant) |
-| *absent* | fall back to the configured **default grant** (`Tools:DefaultGrant`, default `rag search todo clock`) |
+| *absent / blank* | **no tools** — fail-closed; every capability must be granted explicitly |
 
-> **Pocket ID setup.** Define `gert_tools` as a custom claim and attach it to users or to a group (e.g. a `gert-sandbox` group whose members get `sandbox`). Make sure it is emitted into the **access token** the API validates. If your Pocket ID build only places custom claims in the ID token / userinfo, have the API read it from the userinfo endpoint once per session — the rest of the logic is unchanged.
+A bare login with no `gert_tools` claim is a working chat with **zero tools** (plain
+completion, no RAG/search/canvas/etc.). This is deliberate: one rule, no exceptions —
+capability comes from the token or not at all. (The claim is a **scope string**; the older
+JSON-array form `["rag","search"]` is no longer parsed — its tokens match no registered id
+and yield nothing.)
+
+> **Pocket ID setup.** Define `gert_tools` as a custom claim and attach it to users or to a group (e.g. a `gert-tools` group granting `rag search todo clock make_artifact edit_artifact read_artifact`, and a separate `gert-sandbox` group adding `sandbox`). Make sure it is emitted into the **access token** the API validates. If your Pocket ID build only places custom claims in the ID token / userinfo, have the API read it from the userinfo endpoint once per session — the rest of the logic is unchanged.
 
 ### Tool registry
 
-| Tool (model function) | Capability id | Default if claim absent | Notes |
-|---|---|:---:|---|
-| RAG — `search_documents` | `rag` | granted | reads **this** user's `rag.db` only |
-| Web search — `web_search` | `search` | granted | SearXNG; outbound egress |
-| Sandbox — `run_python` | `sandbox` | **denied — opt-in** | gVisor; executes code, grant deliberately |
-| Todos — `set_todos` | `todo` | granted | renders the chat checklist; no external world |
-| Clock — `get_datetime` | `clock` | granted | reads the host clock via `TimeProvider`; no external world |
-| Canvas create — `make_artifact` | `make_artifact` | **denied — needs grant** | writes this conversation's `artifacts` rows; no external world ([chat-and-tools](chat-and-tools.md#artifacts-the-canvas-tool-suite)) |
-| Canvas edit — `edit_artifact` | `edit_artifact` | **denied — needs grant** | exact-substring replace on an existing artifact |
-| Canvas read — `read_artifact` | `read_artifact` | **denied — needs grant** | read-only; returns numbered lines |
+Every id below must be **named in `gert_tools`** (or covered by `"*"`) to be usable — the
+"granted" / "denied" distinction of earlier drafts is gone, because there is no default set
+to be in or out of. The Notes column records why a grant is more or less sensitive:
 
-Sandbox defaults to *off* because it is the one tool that runs arbitrary code; it must be granted on purpose. The canvas trio (`make_artifact` / `edit_artifact` / `read_artifact`) is currently outside the built-in default grant too — grant the three ids (or `"*"`) to enable the canvas; the SPA exposes them as **one "Canvas" switch**. All defaults are tunable via `Tools:DefaultGrant`.
+| Tool (model function) | Capability id | Notes |
+|---|---|---|
+| RAG — `search_documents` | `rag` | reads **this** user's `rag.db` only |
+| Web search — `web_search` | `search` | SearXNG; outbound egress |
+| Sandbox — `run_python` | `sandbox` | gVisor; **executes arbitrary code** — the most sensitive grant, hand it out deliberately |
+| Todos — `set_todos` | `todo` | renders the chat checklist; no external world |
+| Clock — `get_datetime` | `clock` | reads the host clock via `TimeProvider`; no external world |
+| Canvas create — `make_artifact` | `make_artifact` | writes this conversation's `artifacts` rows; no external world ([chat-and-tools](chat-and-tools.md#artifacts-the-canvas-tool-suite)) |
+| Canvas edit — `edit_artifact` | `edit_artifact` | exact-substring replace on an existing artifact |
+| Canvas read — `read_artifact` | `read_artifact` | read-only; returns numbered lines |
+
+The SPA exposes the canvas trio (`make_artifact` / `edit_artifact` / `read_artifact`) as
+**one "Canvas" switch**, so a token granting the canvas should grant all three. An id in the
+claim that names no registered tool is silently dropped (intersected with the registry), so a
+typo fails closed rather than erroring the login.
 
 ### Enforcement — the claim is the ceiling
 
@@ -174,6 +189,6 @@ var offered = requestedTools                   // from the message request body
 // a tool the user isn't entitled to is dropped even if the client asks for it
 ```
 
-Flipping a UI toggle can therefore never escalate capability: a user without `sandbox` in `gert_tools` simply never has `run_python` advertised to the model. See [chat orchestration](chat-and-tools.md#chat-orchestration-the-tool-loop) for where this sits in the loop.
+Flipping a UI toggle can therefore never escalate capability: a user without `sandbox` in `gert_tools` simply never has `run_python` advertised to the model, and a user with **no claim at all** gets nothing advertised. See [chat orchestration](chat-and-tools.md#chat-orchestration-the-tool-loop) for where this sits in the loop.
 
 > **Optional `GET /api/capabilities`.** Returns e.g. `{ "tools": ["rag","search"], "isAdmin": false }` so the SPA can disable toggles the user can't use. This is **cosmetic** — the orchestrator filter above is the real boundary; the UI hint just avoids showing a control that would be silently dropped.

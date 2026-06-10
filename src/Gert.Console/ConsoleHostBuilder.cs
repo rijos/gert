@@ -53,8 +53,6 @@ public static class ConsoleHostBuilder
             configuration.GetSection(StorageOptions.SectionName));
         services.Configure<SqliteVecOptions>(
             configuration.GetSection(SqliteVecOptions.SectionName));
-        services.Configure<ToolOptions>(
-            configuration.GetSection(ToolOptions.SectionName));
         services.TryAddSingleton<SqliteConnectionFactory>();
         services.TryAddSingleton<IUserDatabaseProvider, SqliteUserDatabaseProvider>();
         services.TryAddSingleton<IChatDatabaseProvider, SqliteChatDatabaseProvider>();

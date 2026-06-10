@@ -96,7 +96,8 @@ public sealed class TestTokens : IDisposable
     /// <summary>
     /// Mint an RS256 JWT with ad-hoc claims, stamping <c>iss</c>/<c>aud</c>/<c>exp</c>/<c>iat</c>/<c>nbf</c>.
     /// <paramref name="groups"/> become repeated <c>groups</c> claims; <paramref name="gertTools"/>
-    /// becomes the <c>gert_tools</c> claim (omitted when null, to exercise the default-grant path).
+    /// becomes the <c>gert_tools</c> claim (omitted when null → no tools, the fail-closed path:
+    /// the JWT is the sole source of entitlement, there is no default grant).
     /// </summary>
     public string Mint(
         string sub,

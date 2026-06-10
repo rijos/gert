@@ -135,8 +135,9 @@ Gert.sln
 ├─ Gert.Api/                  # HTTP host — references Service, Authentication, Database.Sqlite, External
 │  ├─ Program.cs              # DI, JwtBearer, static files + SPA fallback, SSE, BackgroundService
 │  ├─ appsettings.json        # NON-secret defaults only: vLLM/SearXNG URLs, embedding dim, DataRoot,
-│  │                          #   Auth, Tools:DefaultGrant. Keys/secrets come from env / user-secrets
-│  │                          #   / a secret store — never committed (security F8).
+│  │                          #   Auth. Keys/secrets come from env / user-secrets / a secret store
+│  │                          #   — never committed (security F8). (No tool-grant config: the JWT
+│  │                          #   gert_tools claim is the sole source — auth.md § tool entitlements.)
 │  ├─ Controllers/            # thin — Models, Conversations, Messages(SSE), Documents, Artifacts, Admin
 │  ├─ Ingestion/              # Channel queue + IngestionWorker (BackgroundService) → IIngestionService
 │  └─ wwwroot/                # VanJS SPA source (no .NET ref, no npm) — native ES modules served

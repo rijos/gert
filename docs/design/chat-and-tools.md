@@ -4,7 +4,8 @@
 
 vLLM exposes an **OpenAI-compatible** `/v1/chat/completions` with function calling and streaming, so the orchestrator can use a standard OpenAI client pointed at the model's base URL.
 
-The API advertises five tools to the model:
+The API advertises up to eight tools to the model (each gated by entitlement,
+conversation toggles, and the request — see the intersection rule below):
 
 ```jsonc
 [
@@ -17,14 +18,23 @@ The API advertises five tools to the model:
   { "name":"set_todos", "description":"Replace the model-managed todo checklist the chat window renders",
     "parameters": { "todos":"[{ text, status: pending|active|done }]" } },
   { "name":"get_datetime", "description":"Current date/time (UTC + optional IANA timezone)",
-    "parameters": { "timezone":"string?" } }
+    "parameters": { "timezone":"string?" } },
+  // the canvas suite — model-driven file creation + iteration (§ Artifacts below)
+  { "name":"make_artifact", "description":"Create (or overwrite by name) a complete, self-contained file in the canvas",
+    "parameters": { "name":"string", "format":"html|markdown|svg|python|csharp|cpp|javascript|rust", "content":"string" } },
+  { "name":"edit_artifact", "description":"Change part of an existing artifact by exact substring replacement",
+    "parameters": { "name":"string", "old_str":"string", "new_str":"string" } },
+  { "name":"read_artifact", "description":"Return an artifact's current content, line-numbered",
+    "parameters": { "name":"string", "range":"string?" } }
 ]
 ```
 
-`set_todos` and `get_datetime` touch no external world: the todo list is
-replace-not-patch (the latest call is the truth, rendered as a checklist on its
-tool card and persisted with the `tool_calls` row — no extra storage), and the
-clock reads only through the injected `TimeProvider`, so tests pin the instant.
+`set_todos`, `get_datetime`, and the canvas suite touch no external world: the
+todo list is replace-not-patch (the latest call is the truth, rendered as a
+checklist on its tool card and persisted with the `tool_calls` row — no extra
+storage), the clock reads only through the injected `TimeProvider` (so tests
+pin the instant), and the artifact tools read/write only this conversation's
+`artifacts` rows.
 
 **Round narration rides back.** A model that narrates while it calls tools
 (qwen streams "here's file one…" AND `set_todos` in the same round) must see
@@ -74,47 +84,46 @@ bug never fails the turn. Verified live against Qwen3.6 on vLLM 0.22
 (2026-06-06): with the reminder, turn 2 picks up the one remaining `pending`
 item that only the snapshot names (`Live_todo_reminder_revives…`).
 
-### Artifacts (canvas tabs)
+### Artifacts (the canvas tool suite)
 
-The model opts a fenced block into the canvas by **naming it in the fence info
-string** — ` ```html name=demo.html ` … ` ``` ` (`filename=` is accepted as an
-alias). When the turn's final content is assembled, the runner extracts every
-named fence whose language maps onto the closed artifact-kind set
-(`md`/`markdown`, `html`/`htm`, `svg`, `py`/`python`, `cs`/`csharp`,
-`cpp`/`c++`/`cc`/`cxx`, `js`/`javascript`, `rs`/`rust`), persists each as an
-`artifacts` row (provenance: conversation + producing message), and emits an
-`artifact` event before `message_end` — the canvas tab opens live, and a reload
-gets the same artifacts back through the thread GET. Unnamed fences and unknown
-languages stay inline in the bubble; extraction is additive (the fence text
-remains part of the message).
+Artifacts are created by **explicit tool calls**, not by parsing the model's prose.
+The earlier convention — a named fenced block (` ```html name=demo.html `) that the
+runner extracted from the final content — was replaced wholesale: a file's own
+` ``` ` fences could truncate the block (the nested-fence bug), and extraction
+tolerances kept growing to chase model formatting. As tool arguments the content is
+opaque JSON, so none of that class of bug exists. Three functions:
 
-**Two near-miss placements are tolerated** — both keep the opt-in explicit (the
-model still chose the name; nothing is guessed): the `name=` may sit alone on the
-**first body line** instead of the info string (the marker line is stripped from
-the persisted content), and a fence with **no usable language token** has its
-kind inferred from the `name=`'s file extension. Real models (Qwen3.6) reliably
-name the block but occasionally misplace the marker by one line; accepting it is
-not the same as the forbidden unnamed-fence fallback below. `markdown.js` mirrors
-the same detection so the inline chip and the canvas tab always agree.
+- **`make_artifact(name, format, content)`** — create or **overwrite by name**
+  within the conversation: a re-used name saves over the prior draft (same canvas
+  tab, bumped version). `format` is the closed kind set
+  (`html · markdown · svg · python · csharp · cpp · javascript · rust`). The system
+  prompt instructs the model to use this *instead of* pasting whole files into code
+  blocks.
+- **`edit_artifact(name, old_str, new_str)`** — iterate without re-emitting the
+  whole file, mirroring Anthropic's `str_replace` contract: `old_str` must match
+  **exactly** (whitespace included) and **exactly once**; zero or many matches
+  return an error the model reads and corrects next round — the feedback loop.
+- **`read_artifact(name, range?)`** — return the current content with **1-indexed,
+  number-prefixed lines** (mirrors Anthropic's `view`), so a follow-up
+  `edit_artifact` can copy a snippet verbatim. Read-only; emits no canvas event.
 
-**How the model learns the convention.** Real models don't know `name=` on
-their own — the built-in `SystemPrompts.Canvas` fragment rides first in every
-turn's system prompt (before project pinned instructions) and teaches the
-opt-in. Measured against Qwen3.6-27B-FP8 on vLLM 0.22 (2026-06-06): **5/5
-compliance** for "make me a demo html page" with thinking ON and default
-sampling — the convention is reliable when the prompt actually reaches the
-model.
+Each call persists as a normal `tool_calls` row; created/updated artifacts ride back
+on the tool result and the runner emits the `artifact` event — the canvas tab
+opens/updates **live, mid-turn** (no longer only at `message_end`), and a reload
+gets the same artifacts back through the thread GET.
 
-**Deliberately NO unnamed-fence fallback.** A complete-document heuristic
-(auto-extracting unnamed ` ```html ` fences starting at `<!doctype>`) was tried
-and removed: it blurs the opt-in contract and invents filenames the model never
-chose. If artifacts stop appearing for prompts that should produce them,
-debug in this order: (1) is the running host built from current code —
-`SystemPrompts.Canvas` present in the upstream request? (2) did the model emit
-the fence unnamed anyway (a model/template regression — capture the completion
-and re-measure compliance)? Do not relax the extractor to *guess* names from
-unnamed fences — the placement tolerance above only accepts names the model
-explicitly wrote.
+**How the model learns the convention.** The built-in `SystemPrompts.Canvas`
+fragment rides first in every turn's system prompt (before project pinned
+instructions) and tells the model to call `make_artifact` for any complete file
+instead of a code block. If artifacts stop appearing for prompts that should
+produce them, debug in this order: (1) is the canvas suite actually *offered* —
+entitlement (`make_artifact`/`edit_artifact`/`read_artifact` ids must be in the
+`gert_tools` claim, the sole grant source — [auth § tool registry](auth.md#tool-registry)),
+the conversation's Canvas toggle, and a tool-capable model all gate it; (2) is
+`SystemPrompts.Canvas` present in the upstream request (a stale host build);
+(3) did the model paste a fenced block anyway (a model/template regression —
+capture the completion and re-measure compliance). Inline code blocks stay
+inline in the bubble; nothing is ever extracted from prose.
 
 ### Detached turns
 
@@ -156,6 +165,7 @@ Run phase (worker scope, `DetachedUserContext` seeded from the job's snapshot):
         - search_documents → hybrid query (below) on this project's rag.db (docs + memory)
         - web_search       → SearXNG
         - run_python       → gVisor sandbox
+        - make/edit/read_artifact → this conversation's artifacts rows (chat.db)
         (entitlement re-checked against the job's plan-time snapshot)
      c. emit `tool_result` + persist the tool_calls row live (with latency_ms);
         collected citations keep tool_call_id provenance
@@ -179,7 +189,7 @@ never blocks a conversation.
 the `turn_events` log + range endpoint are the cross-instance truth, so a
 client on another instance still sees everything — just less live.
 
-Only tools that are **(a) granted to the user by the `gert_tools` JWT entitlement, (b) enabled on the conversation, and (c) requested in the body** are offered to the model — the entitlement is the hard ceiling (see [Auth → Tool entitlements](auth.md#tool-entitlements-allowed-tools-in-the-jwt)), enforced at advertise time in the planner and re-checked at execution time against the job's plan-time snapshot. So flipping "Use my docs" off removes `search_documents` for that turn, and a user without the `sandbox` entitlement never gets `run_python` advertised regardless of toggles.
+Only tools that are **(a) granted to the user by the `gert_tools` JWT entitlement, (b) enabled on the conversation, (c) requested in the body, and (d) usable by the model** (a catalog entry without tool capability is never advertised tools, whatever the toggles say) are offered — the entitlement is the hard ceiling (see [Auth → Tool entitlements](auth.md#tool-entitlements-allowed-tools-in-the-jwt)), enforced at advertise time in the planner and re-checked at execution time against the job's plan-time snapshot. So flipping "Use my docs" off removes `search_documents` for that turn, and a user without the `sandbox` entitlement never gets `run_python` advertised regardless of toggles.
 
 ---
 
