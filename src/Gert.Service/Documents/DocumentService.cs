@@ -1,4 +1,3 @@
-using System.Text;
 using Gert.Model;
 using Gert.Model.Rag;
 using Gert.Database;
@@ -121,7 +120,7 @@ public sealed class DocumentService : IDocumentService
         var document = new Document
         {
             Id = documentId,
-            Filename = EncodeFilename(upload.Filename),
+            Filename = StoredFilenames.Encode(upload.Filename),
             Mime = upload.Mime,
             SizeBytes = upload.SizeBytes ?? sizeBytes,
             Status = DocumentStatus.Processing,
@@ -169,7 +168,7 @@ public sealed class DocumentService : IDocumentService
         // Remove the rag rows (repo cascades chunks/vec/fts) AND the blob.
         var removed = await repo.DeleteDocumentAsync(documentId, cancellationToken).ConfigureAwait(false);
 
-        var extension = ValidationRules.ExtensionOf(DecodeFilename(document.Filename));
+        var extension = ValidationRules.ExtensionOf(StoredFilenames.Decode(document.Filename));
         await _objects.DeleteAsync(ScopeFor(pid), ObjectKey(documentId, extension), cancellationToken)
             .ConfigureAwait(false);
 
@@ -187,8 +186,8 @@ public sealed class DocumentService : IDocumentService
             await repo.ClearAsync(cancellationToken).ConfigureAwait(false);
         }
 
-        // Clear the stored uploads and memory bodies; the project's config
-        // sidecar (meta.json) and databases are not touched here.
+        // Clear the stored uploads and memory bodies; the project's registry row
+        // (user.db) and databases are not touched here.
         await _objects.DeletePrefixAsync(ScopeFor(pid), "files/", cancellationToken)
             .ConfigureAwait(false);
         await _objects.DeletePrefixAsync(ScopeFor(pid), "memory/", cancellationToken)
@@ -205,26 +204,4 @@ public sealed class DocumentService : IDocumentService
     /// <summary>The server-generated blob key under <c>files/</c>: <c>files/{doc-id}.{ext}</c>.</summary>
     private static string ObjectKey(string documentId, string extension) =>
         extension.Length == 0 ? $"files/{documentId}" : $"files/{documentId}.{extension}";
-
-    /// <summary>Base64 of the UTF-8 original filename — stored as display metadata (decision).</summary>
-    private static string EncodeFilename(string filename) =>
-        Convert.ToBase64String(Encoding.UTF8.GetBytes(filename));
-
-    /// <summary>
-    /// Decode a base64 <c>documents.filename</c> back to the original (for the
-    /// delete-key ext). Falls back to the raw value if it does not decode
-    /// (defensive — a malformed row must not make delete throw; mirrors
-    /// <c>RagTool.DisplayName</c>).
-    /// </summary>
-    private static string DecodeFilename(string encoded)
-    {
-        try
-        {
-            return Encoding.UTF8.GetString(Convert.FromBase64String(encoded));
-        }
-        catch (FormatException)
-        {
-            return encoded;
-        }
-    }
 }

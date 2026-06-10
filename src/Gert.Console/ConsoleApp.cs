@@ -167,7 +167,7 @@ public sealed class ConsoleApp
             .ConfigureAwait(false) ?? created;
 
         // documents.Filename is base64 (display metadata, never a path) — decode for output.
-        var name = DecodeFilename(document.Filename);
+        var name = StoredFilenames.Decode(document.Filename);
         _out.WriteLine(
             $"{name}: {document.Status} ({document.ChunkCount} chunks)"
             + (document.Error is { Length: > 0 } err ? $" — {err}" : string.Empty));
@@ -185,20 +185,6 @@ public sealed class ConsoleApp
             "txt" => "text/plain",
             _ => "application/octet-stream",
         };
-
-    /// <summary>Decode the base64 display filename stored in <c>documents.filename</c>;
-    /// fall back to the raw value if it isn't valid base64.</summary>
-    private static string DecodeFilename(string stored)
-    {
-        try
-        {
-            return System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(stored));
-        }
-        catch (FormatException)
-        {
-            return stored;
-        }
-    }
 
     /// <summary>Read the value following <paramref name="name"/> in <paramref name="args"/>, or null.</summary>
     private static string? OptionValue(string[] args, string name)

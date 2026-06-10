@@ -35,11 +35,11 @@ public sealed class AdminService : IAdminService
         {
             cancellationToken.ThrowIfCancellationRequested();
 
+            // A folder with no username row (e.g. a partially provisioned user)
+            // is still a real data folder: list it with a null username rather
+            // than hiding it from the admin who may need to delete it.
             var username = await UsernameForAsync(footprint.Key, cancellationToken).ConfigureAwait(false);
-            if (username is not null)
-            {
-                results.Add(ToSummary(footprint, username));
-            }
+            results.Add(ToSummary(footprint, username));
         }
 
         return results;
@@ -54,8 +54,9 @@ public sealed class AdminService : IAdminService
             return null;
         }
 
+        // Same rule as ListUsersAsync: a missing username row does not hide the folder.
         var username = await UsernameForAsync(key, cancellationToken).ConfigureAwait(false);
-        return username is null ? null : ToSummary(footprint, username);
+        return ToSummary(footprint, username);
     }
 
     /// <inheritdoc />
@@ -68,7 +69,7 @@ public sealed class AdminService : IAdminService
         return await repo.GetUsernameAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    private static UserSummary ToSummary(UserFootprint footprint, string username) => new()
+    private static UserSummary ToSummary(UserFootprint footprint, string? username) => new()
     {
         Key = footprint.Key,
         Username = username,

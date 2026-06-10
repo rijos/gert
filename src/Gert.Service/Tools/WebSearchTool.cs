@@ -90,7 +90,7 @@ public sealed class WebSearchTool : ITool
             citations.Add(new Citation
             {
                 Id = Guid.NewGuid().ToString("D"),
-                MessageId = string.Empty, // bound to the assistant message by ChatService.
+                MessageId = string.Empty, // bound to the assistant message by TurnRunner.
                 Ordinal = ordinal,
                 SourceType = CitationSourceType.Web,
                 DocId = null,

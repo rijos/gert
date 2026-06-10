@@ -210,9 +210,10 @@ builder.Services.AddSingleton<IDatabaseHandleReleaser, SqliteHandleReleaser>();
 // S3: new IObjectStore impl, one DI registration (swap the line below).
 builder.Services.AddSingleton<IObjectStore, LocalObjectStore>();
 
-// User/project config + lifecycle seam (meta.json, settings.json, scope deletes,
-// the admin scan) — backend-agnostic: everything goes through IObjectStore. The
-// four lifecycle services (Projects/Settings/Account/Admin) orchestrate this port.
+// Coarse blob lifecycle seam (scope deletes, the admin footprint scan; structured
+// config lives in user.db — storage-and-data.md § "No JSON sidecars") —
+// backend-agnostic: everything goes through IObjectStore. The four lifecycle
+// services (Projects/Settings/Account/Admin) orchestrate this port.
 builder.Services.AddSingleton<IUserStore, ObjectStoreUserStore>();
 
 // --- External-world ports ----------------------------------------------------
@@ -238,7 +239,7 @@ builder.Services.AddExceptionHandler<ValidationExceptionHandler>();
 // per conversation — chat-and-tools.md § detached turns).
 builder.Services.AddExceptionHandler<TurnConflictExceptionHandler>();
 
-// The WS message dispatch table (subscribe/range; cancel later). Singleton —
+// The WS message dispatch table (subscribe/range/cancel). Singleton —
 // per-connection state lives on the ChatSocketSession.
 builder.Services.AddSingleton<Gert.Api.WebSockets.MessageHandlerRegistry>();
 

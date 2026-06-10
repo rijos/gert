@@ -20,12 +20,27 @@ namespace Gert.Database.Sqlite;
 /// impossible). See storage-and-data.md § resolving paths and security F12.
 /// </para>
 /// </summary>
-public sealed class SqliteDatabasePaths(IOptions<StorageOptions> options)
+public sealed class SqliteDatabasePaths
 {
     /// <summary>The literal landing-project id, always present (storage-and-data.md § layout).</summary>
     public const string DefaultProjectId = StorageKeys.DefaultProjectId;
 
-    private readonly StorageOptions _options = options.Value;
+    private readonly StorageOptions _options;
+
+    /// <summary>Resolve paths under the configured <see cref="StorageOptions.DataRoot"/>.</summary>
+    public SqliteDatabasePaths(IOptions<StorageOptions> options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        _options = options.Value;
+
+        // Mirror LocalObjectStore's fail-fast guard: an unset DataRoot would
+        // otherwise silently write ./users relative to the process CWD.
+        if (string.IsNullOrWhiteSpace(_options.DataRoot))
+        {
+            throw new InvalidOperationException(
+                $"{nameof(StorageOptions)}.{nameof(StorageOptions.DataRoot)} must be configured.");
+        }
+    }
 
     /// <summary>The configured <c>{DataRoot}/users</c> directory.</summary>
     public string UsersDir => Path.Combine(_options.DataRoot, "users");

@@ -10,6 +10,13 @@ namespace Gert.Model;
 /// </summary>
 public sealed record ModelInfo
 {
+    /// <summary>
+    /// The sentinel id meaning "the operator-configured default model" — the
+    /// fallback when neither the request nor the conversation supplies a model id,
+    /// resolved upstream to the configured chat model.
+    /// </summary>
+    public const string DefaultId = "default";
+
     /// <summary>The capability token that marks a model as tool-calling capable.</summary>
     public const string ToolsCapability = "tools";
 

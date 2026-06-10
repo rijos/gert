@@ -20,9 +20,6 @@ namespace Gert.Service.Chat;
 /// </summary>
 public sealed class TurnPlanner : ITurnPlanner
 {
-    /// <summary>Fallback model id when neither the request nor conversation supplies one.</summary>
-    private const string DefaultModelId = "default";
-
     private readonly IChatDatabaseProvider _databases;
     private readonly IUserContext _user;
     private readonly IValidationProvider _validation;
@@ -98,7 +95,7 @@ public sealed class TurnPlanner : ITurnPlanner
             {
                 Id = conversationId,
                 Title = DeriveTitle(request.Content),
-                ModelId = request.ModelId ?? DefaultModelId,
+                ModelId = request.ModelId ?? ModelInfo.DefaultId,
                 Tools = request.Tools ?? new ToolToggles(),
                 Thinking = request.Thinking,
                 PreserveThinking = request.PreserveThinking,
@@ -147,7 +144,7 @@ public sealed class TurnPlanner : ITurnPlanner
             ConversationId = conversationId,
             Role = MessageRole.Assistant,
             Content = string.Empty,
-            ModelId = request.ModelId ?? conversation.ModelId ?? DefaultModelId,
+            ModelId = request.ModelId ?? conversation.ModelId ?? ModelInfo.DefaultId,
             TokenCount = null,
             Seq = assistantSeq,
             Status = MessageStatus.Streaming,

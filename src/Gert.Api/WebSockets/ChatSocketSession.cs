@@ -94,8 +94,15 @@ public sealed class ChatSocketSession : IAsyncDisposable
         catch (Exception ex)
         {
             // Surface a non-fatal error frame (e.g. a corrupt log row); the
-            // client may re-subscribe or fall back to the range endpoint.
-            await TrySendErrorAsync(ex.Message).ConfigureAwait(false);
+            // client may re-subscribe or fall back to the range endpoint. Like
+            // TurnRunner's catch-all (style guide §7), the frame carries a
+            // generic message, never raw ex.Message — exception text can echo
+            // internal URLs or prompt fragments; the detail goes to the log.
+            Services.GetRequiredService<ILogger<ChatSocketSession>>().LogError(
+                ex,
+                "Live pump faulted unexpectedly for conversation {ConversationId} in project {Pid}.",
+                ConversationId, Pid);
+            await TrySendErrorAsync("Something went wrong streaming this conversation.").ConfigureAwait(false);
         }
     }
 

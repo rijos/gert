@@ -1,4 +1,5 @@
 using System.Net.Http.Json;
+using System.Text.Json;
 using Gert.Service.External;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -64,8 +65,8 @@ public sealed class MontySandbox : ISandbox
         {
             using var response = await _http.PostAsJsonAsync("/run", request, cancellationToken).ConfigureAwait(false);
             response.EnsureSuccessStatusCode();
-            var payload = await response.Content
-                .ReadFromJsonAsync<MontyRunResponse>(cancellationToken).ConfigureAwait(false);
+            var payload = await ReadCappedResponseAsync(response, MaxResponseBytes(_options), cancellationToken)
+                .ConfigureAwait(false);
             return MapResponse(payload);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -78,6 +79,47 @@ public sealed class MontySandbox : ISandbox
             _logger.LogWarning(ex, "monty sidecar /run failed; returning a graceful result.");
             return MapFailure(ex);
         }
+    }
+
+    /// <summary>
+    /// The byte bound for a <c>/run</c> response (capped reads are the standard for
+    /// every external body — style guide §9): the sidecar caps stdout and stderr at
+    /// <see cref="SandboxOptions.MaxOutputBytes"/> each, so a healthy response is at
+    /// most the two capped streams times worst-case JSON escaping (6×, <c>\uXXXX</c>)
+    /// plus a small envelope. Anything larger is a misbehaving sidecar.
+    /// </summary>
+    private static long MaxResponseBytes(SandboxOptions options) =>
+        (long)options.MaxOutputBytes * 2 * 6 + 4096;
+
+    /// <summary>
+    /// Read and deserialize the <c>/run</c> body with an enforced size bound, so a
+    /// misbehaving sidecar cannot balloon host memory. An over-bound body throws
+    /// <see cref="HttpRequestException"/>, which the caller maps to a graceful
+    /// <see cref="SandboxResult"/> via <see cref="MapFailure"/>.
+    /// </summary>
+    private static async Task<MontyRunResponse?> ReadCappedResponseAsync(
+        HttpResponseMessage response,
+        long maxBytes,
+        CancellationToken cancellationToken)
+    {
+        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+
+        using var buffer = new MemoryStream();
+        var chunk = new byte[8192];
+        int read;
+        while ((read = await stream.ReadAsync(chunk, cancellationToken).ConfigureAwait(false)) > 0)
+        {
+            buffer.Write(chunk, 0, read);
+            if (buffer.Length > maxBytes)
+            {
+                throw new HttpRequestException(
+                    $"monty sidecar /run response exceeded the {maxBytes}-byte bound.");
+            }
+        }
+
+        buffer.Position = 0;
+        return await JsonSerializer.DeserializeAsync<MontyRunResponse>(
+            buffer, cancellationToken: cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>

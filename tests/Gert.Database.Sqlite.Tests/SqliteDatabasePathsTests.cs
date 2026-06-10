@@ -29,6 +29,20 @@ public class SqliteDatabasePathsTests
     }
 
     [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void Unconfigured_data_root_fails_fast_at_construction(string dataRoot)
+    {
+        // Mirrors LocalObjectStore: an unset DataRoot must throw, never silently
+        // resolve ./users relative to the process CWD.
+        var act = () => new SqliteDatabasePaths(
+            Microsoft.Extensions.Options.Options.Create(
+                new Gert.Service.Storage.StorageOptions { DataRoot = dataRoot }));
+
+        act.Should().Throw<InvalidOperationException>().WithMessage("*DataRoot*");
+    }
+
+    [Theory]
     [InlineData("default")]
     [InlineData("11111111-2222-3333-4444-555555555555")]
     public void Valid_pid_resolves_under_user_root(string pid)

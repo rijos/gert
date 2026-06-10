@@ -14,7 +14,7 @@ namespace Gert.Database.Sqlite;
 /// Both the <c>chat</c> and <c>rag</c> families are applied (per-DB). The <c>rag</c>
 /// family creates <c>vec0</c> / FTS5 virtual tables, so the connection it runs on
 /// must already have the native <b>sqlite-vec</b> extension loaded — the provider
-/// loads it in <c>OpenRagConnectionAsync</c> before calling here.
+/// (<c>SqliteRagDatabaseProvider.OpenAsync</c>) loads it before calling here.
 /// </para>
 /// </summary>
 public static class SqliteMigrationRunner

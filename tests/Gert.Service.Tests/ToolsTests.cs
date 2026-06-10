@@ -86,6 +86,39 @@ public sealed class ToolsTests
             Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 
+    [Fact]
+    public async Task RagTool_fails_the_call_when_the_embedding_client_returns_no_vector()
+    {
+        var ragRepo = Substitute.For<IRagRepository>();
+        var provider = Substitute.For<IRagDatabaseProvider>();
+        provider
+            .OpenAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(ragRepo);
+
+        // Contract violation: one vector per input text is the IEmbeddingClient
+        // contract — an empty batch must fail the tool call, never silently
+        // degrade to a BM25-only search with an empty vector.
+        var embeddings = Substitute.For<IEmbeddingClient>();
+        embeddings
+            .EmbedAsync(Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
+            .Returns(Array.Empty<float[]>());
+
+        var tool = new RagTool(provider, embeddings, User);
+        var result = await tool.ExecuteAsync(new ToolInvocation
+        {
+            Pid = "default",
+            ArgumentsJson = "{\"query\":\"qdrant\"}",
+        });
+
+        result.Success.Should().BeFalse();
+        result.Error.Should().Contain("embedding");
+        await ragRepo.DidNotReceive().HybridSearchAsync(
+            Arg.Any<string>(),
+            Arg.Any<IReadOnlyList<float>>(),
+            Arg.Any<int>(),
+            Arg.Any<CancellationToken>());
+    }
+
     // ---- WebSearchTool -----------------------------------------------------
 
     [Fact]

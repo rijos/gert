@@ -6,11 +6,13 @@ namespace Gert.Service.Projects;
 /// <summary>
 /// Manages the caller's projects — folders with their own <c>chat.db</c> /
 /// <c>rag.db</c> / memory (rest-api.md § projects; configuration.md § 2).
-/// Project config lives in <c>projects/{pid}/meta.json</c>, not a database.
+/// Project config (id, name, instructions, defaults) is a row in the
+/// <c>user.db</c> project registry, not a JSON sidecar (storage-and-data.md
+/// § "No JSON sidecars").
 /// </summary>
 public interface IProjectService
 {
-    /// <summary>List the user's projects (reads <c>projects/*/meta.json</c>): id, name, counts, updated_at.</summary>
+    /// <summary>List the user's projects (the <c>user.db</c> registry): id, name, counts, updated_at.</summary>
     Task<IReadOnlyList<ProjectSummary>> ListAsync(CancellationToken cancellationToken = default);
 
     /// <summary>Get one project's config + counts (conversations, documents, memory).</summary>

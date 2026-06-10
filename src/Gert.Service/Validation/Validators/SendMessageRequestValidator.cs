@@ -24,9 +24,14 @@ public sealed class SendMessageRequestValidator : AbstractValidator<SendMessageR
             .When(r => r.Attachments is not { Count: > 0 });
 
         // With attachments an empty text is fine (an image alone is a message),
-        // but supplied text is still held to the same length/character bar.
+        // but supplied text is still held to the same length/character bar. A
+        // null text is still missing (the DTO contract is non-null) — reported
+        // accurately, not as a bogus "too long".
         RuleFor(r => r.Content)
-            .Must(v => v is not null && v.Length <= ValidationRules.LongTextMax)
+            .Must(v => v is not null)
+                .WithMessage("Text must be supplied (it may be empty when attachments are present).")
+                .WithErrorCode("text.missing")
+            .Must(v => v is null || v.Length <= ValidationRules.LongTextMax)
                 .WithMessage($"Must be at most {ValidationRules.LongTextMax} characters.")
                 .WithErrorCode("text.too_long")
             .Must(v => !ValidationRules.ContainsForbiddenControlChar(v))

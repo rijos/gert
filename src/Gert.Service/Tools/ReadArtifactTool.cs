@@ -76,8 +76,21 @@ public sealed class ReadArtifactTool : ITool
             name = root.TryGetProperty("name", out var n) ? n.GetString() : null;
             if (root.TryGetProperty("range", out var r) && r.ValueKind == JsonValueKind.Array && r.GetArrayLength() == 2)
             {
-                start = r[0].GetInt32();
-                end = r[1].GetInt32();
+                // Non-integer entries are a model mistake, not a fault: surface a
+                // normal tool error (like the other argument failures here) — the
+                // numeric getters would throw outside the JsonException catch.
+                if (r[0].ValueKind != JsonValueKind.Number || !r[0].TryGetInt32(out var rangeStart)
+                    || r[1].ValueKind != JsonValueKind.Number || !r[1].TryGetInt32(out var rangeEnd))
+                {
+                    return new ToolResult
+                    {
+                        Success = false,
+                        Error = "invalid arguments: 'range' must be two integers, [start, end]",
+                    };
+                }
+
+                start = rangeStart;
+                end = rangeEnd;
             }
         }
         catch (JsonException ex)

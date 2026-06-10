@@ -11,7 +11,8 @@ namespace Gert.Api.Controllers;
 /// The admin data-lifecycle surface (rest-api.md § admin; auth.md § matrix) — the
 /// only endpoints gated by the <see cref="GertAuthorizationExtensions.AdminPolicy"/>
 /// (<c>RequireRole("gert-admins")</c>). Admin grants <b>no</b> cross-user data read:
-/// these only scan folder <c>meta.json</c> and <c>rm -rf</c> a directory. The
+/// these only scan folder footprints (sizes/counts, plus the username from each
+/// user's <c>user.db</c>) and <c>rm -rf</c> a directory. The
 /// <c>{key}</c> is the most dangerous parameter in the API — it feeds a
 /// <c>rm -rf</c> — so it is validated to <c>^[0-9a-f]{64}$</c> (security F6)
 /// <b>before</b> it is ever handed to the service / path-joined.
@@ -26,7 +27,7 @@ public sealed class AdminController : ControllerBase
     public AdminController(IGertServices services) =>
         _services = services ?? throw new ArgumentNullException(nameof(services));
 
-    /// <summary>List user folders by reading each <c>meta.json</c>.</summary>
+    /// <summary>List user folders: blob footprint + the <c>user.db</c> username.</summary>
     [HttpGet]
     public async Task<ActionResult<IReadOnlyList<UserSummary>>> List(CancellationToken cancellationToken)
     {

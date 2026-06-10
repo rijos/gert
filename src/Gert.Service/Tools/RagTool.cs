@@ -17,9 +17,10 @@ namespace Gert.Service.Tools;
 /// <see cref="Citation"/>s that seed the message footnotes.
 /// <para>
 /// The repository is opened for the caller's validated <c>(iss, sub)</c>
-/// (<see cref="IUserContext"/>) and the turn's <c>pid</c>, exactly as
-/// <c>ChatService</c> opens chat.db — identity is never caller-supplied, so a
-/// query structurally cannot reach another user's or project's documents.
+/// (<see cref="IUserContext"/>) and the turn's <c>pid</c>, exactly as the turn
+/// pipeline (<c>TurnPlanner</c>/<c>TurnRunner</c>) opens chat.db — identity is
+/// never caller-supplied, so a query structurally cannot reach another user's
+/// or project's documents.
 /// </para>
 /// </summary>
 public sealed class RagTool : ITool
@@ -93,7 +94,20 @@ public sealed class RagTool : ITool
         k = Math.Clamp(k, MinK, MaxK);
 
         var embeddings = await _embeddings.EmbedAsync([query], cancellationToken).ConfigureAwait(false);
-        var queryVector = embeddings.Count > 0 ? embeddings[0] : [];
+        if (embeddings.Count != 1)
+        {
+            // Contract violation by the embedding client (one vector per input
+            // text): fail the call with an error the model can read — silently
+            // searching with an empty vector would degrade to BM25-only results
+            // with no signal that vector recall was lost.
+            return new ToolResult
+            {
+                Success = false,
+                Error = $"embedding failed: expected 1 query vector, got {embeddings.Count}",
+            };
+        }
+
+        var queryVector = embeddings[0];
 
         await using var repo = await _databases
             .OpenAsync(_user.Iss, _user.Sub, invocation.Pid, cancellationToken)
@@ -125,7 +139,7 @@ public sealed class RagTool : ITool
             citations.Add(new Citation
             {
                 Id = Guid.NewGuid().ToString("D"),
-                MessageId = string.Empty, // bound to the assistant message by ChatService.
+                MessageId = string.Empty, // bound to the assistant message by TurnRunner.
                 Ordinal = ordinal,
                 SourceType = CitationSourceType.Document,
                 DocId = hit.Document.Id,

@@ -89,6 +89,19 @@ public sealed class SendMessageRequestValidatorTests
     }
 
     [Fact]
+    public void Null_content_with_attachments_reports_missing_text_not_too_long()
+    {
+        // The DTO contract is non-null, but a client can still send
+        // `"content": null` on the wire — the validator must report it
+        // accurately, not as a bogus length failure.
+        var result = _validator.TestValidate(
+            new SendMessageRequest { Content = null!, Attachments = [Png()] });
+
+        result.ShouldHaveValidationErrorFor(r => r.Content).WithErrorCode("text.missing");
+        Assert.DoesNotContain(result.Errors, e => e.ErrorCode == "text.too_long");
+    }
+
+    [Fact]
     public void Content_with_attachments_keeps_the_character_and_length_bar()
     {
         _validator.TestValidate(new SendMessageRequest

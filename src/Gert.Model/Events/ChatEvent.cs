@@ -12,7 +12,7 @@ namespace Gert.Model.Events;
 /// <para>
 /// The <see cref="JsonDerivedTypeAttribute"/> discriminators are the SSE
 /// <c>event:</c> names, so the wire <c>data:</c> payload carries a matching
-/// <c>type</c> field and the union round-trips through STJ.
+/// <c>$type</c> field and the union round-trips through STJ.
 /// </para>
 /// </summary>
 [JsonPolymorphic(TypeDiscriminatorPropertyName = "$type")]
@@ -30,7 +30,7 @@ public abstract record ChatEvent
 {
     /// <summary>
     /// The kind of this event. Map it to the SSE <c>event:</c> name via
-    /// <see cref="ChatEventTypeNames.ToWireName"/>; the JSON <c>type</c>
+    /// <see cref="ChatEventTypeNames.ToWireName"/>; the JSON <c>$type</c>
     /// discriminator above carries the same string.
     /// </summary>
     [JsonIgnore]

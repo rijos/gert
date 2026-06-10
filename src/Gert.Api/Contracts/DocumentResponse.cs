@@ -1,6 +1,6 @@
-using System.Text;
 using Gert.Model;
 using Gert.Model.Rag;
+using Gert.Service.Documents;
 
 namespace Gert.Api.Contracts;
 
@@ -40,7 +40,7 @@ public sealed record DocumentResponse
         return new DocumentResponse
         {
             Id = document.Id,
-            Name = DecodeFilename(document.Filename),
+            Name = StoredFilenames.Decode(document.Filename),
             Mime = document.Mime,
             Size = document.SizeBytes,
             Status = document.Status,
@@ -48,22 +48,5 @@ public sealed record DocumentResponse
             Error = document.Error,
             CreatedAt = document.CreatedAt,
         };
-    }
-
-    /// <summary>
-    /// Decode a base64 <c>documents.filename</c> to the original UTF-8 name. A row
-    /// that somehow is not valid base64 falls back to the stored value rather than
-    /// throwing — a list response must never 500 on one odd row.
-    /// </summary>
-    private static string DecodeFilename(string stored)
-    {
-        try
-        {
-            return Encoding.UTF8.GetString(Convert.FromBase64String(stored));
-        }
-        catch (FormatException)
-        {
-            return stored;
-        }
     }
 }

@@ -46,8 +46,9 @@ public static class GertJwtAuthExtensions
 
     /// <summary>
     /// Apply Gert's <see cref="JwtBearerOptions"/> (Authority/Audience, the pinned
-    /// <see cref="TokenValidationParameters"/>, and the denylist event). Exposed so tests
-    /// can build the exact options the host uses without booting a server.
+    /// <see cref="TokenValidationParameters"/>, the verbatim claim mapping). There is
+    /// no denylist — revocation is stateless (decisions §4). Exposed so tests can
+    /// build the exact options the host uses without booting a server.
     /// </summary>
     public static void ConfigureJwtBearer(JwtBearerOptions options, IConfiguration configuration)
     {

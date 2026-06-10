@@ -1,9 +1,11 @@
 namespace Gert.Service.External;
 
 /// <summary>
-/// Port for the code sandbox (chat-and-tools.md § sandbox). The real client
-/// (ephemeral gVisor <c>runsc</c> container, egress off by default, no <c>/data</c>
-/// mount, security F5) lives in <c>Gert.External</c> (U10); tests use a stub. Only
+/// Port for the code sandbox (chat-and-tools.md § sandbox; security F5). Two real
+/// backends live in <c>Gert.External</c>, selected by <c>Gert:Sandbox:Backend</c>:
+/// <c>monty</c> (the default — Pydantic's syscall-free Rust Python interpreter via
+/// a sidecar) and <c>gvisor</c> (an ephemeral <c>runsc</c> container). Both run
+/// with egress off by default and no <c>/data</c> mount; tests use a stub. Only
 /// captured stdout/stderr returns.
 /// </summary>
 public interface ISandbox

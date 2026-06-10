@@ -44,7 +44,8 @@ public static class ServiceCollectionExtensions
         AddValidation(services);
 
         // Step-0 instructions reader — default to "no instructions" so the service
-        // layer is self-contained; a host that can read project meta.json overrides it.
+        // layer is self-contained; a host that can read the user.db project
+        // registry overrides it.
         services.TryAddScoped<IProjectInstructionsReader, NullProjectInstructionsReader>();
 
         // Granular services.

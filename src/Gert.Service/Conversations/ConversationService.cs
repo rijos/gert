@@ -1,3 +1,4 @@
+using Gert.Model;
 using Gert.Model.Chat;
 using Gert.Model.Dtos;
 using Gert.Database;
@@ -19,9 +20,6 @@ public sealed class ConversationService : IConversationService
     private readonly IChatDatabaseProvider _databases;
     private readonly IValidationProvider _validation;
     private readonly IUserContext _user;
-
-    /// <summary>The fallback model id when nothing in the cascade supplies one.</summary>
-    private const string DefaultModelId = "default";
 
     public ConversationService(
         IChatDatabaseProvider databases,
@@ -75,7 +73,7 @@ public sealed class ConversationService : IConversationService
             Title = string.IsNullOrWhiteSpace(request.Title) ? "New conversation" : request.Title,
             // TODO U7b/U6: resolve the model/tools/params cascade
             // (conversation → project defaults → user settings → server). Keep simple for M1.
-            ModelId = string.IsNullOrWhiteSpace(request.ModelId) ? DefaultModelId : request.ModelId,
+            ModelId = string.IsNullOrWhiteSpace(request.ModelId) ? ModelInfo.DefaultId : request.ModelId,
             Tools = request.Tools ?? new ToolToggles(),
             Params = request.Params ?? new GenerationParams(),
             CreatedAt = now,

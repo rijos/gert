@@ -244,6 +244,24 @@ public sealed class ArtifactToolsTests
             .And.NotContain("1\\tl1").And.NotContain("4\\tl4");
     }
 
+    [Theory]
+    [InlineData("{\"name\":\"a.md\",\"range\":[\"two\",\"three\"]}")] // strings, not ints
+    [InlineData("{\"name\":\"a.md\",\"range\":[1.5,3.5]}")] // non-integer numbers
+    [InlineData("{\"name\":\"a.md\",\"range\":[null,3]}")] // null entry
+    public async Task Read_with_a_malformed_range_is_a_tool_error_never_a_throw(string argsJson)
+    {
+        var repo = Substitute.For<IChatRepository>();
+        var tool = new ReadArtifactTool(Provider(repo), User);
+
+        var result = await tool.ExecuteAsync(Inv(argsJson));
+
+        result.Success.Should().BeFalse();
+        result.Error.Should().Contain("range");
+        // Fails before any chat.db open, like the other argument errors.
+        await repo.DidNotReceive().GetArtifactByNameAsync(
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
     [Fact]
     public async Task Read_of_an_unknown_artifact_errors()
     {

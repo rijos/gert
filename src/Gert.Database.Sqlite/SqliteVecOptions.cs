@@ -2,7 +2,7 @@ namespace Gert.Database.Sqlite;
 
 /// <summary>
 /// SQLite-adapter-specific storage options, bound to the same <c>Storage</c>
-/// configuration section as the shared <see cref="Gert.Database.StorageOptions"/>
+/// configuration section as the shared <see cref="Gert.Service.Storage.StorageOptions"/>
 /// (the binder ignores keys it doesn't own, so one section feeds both).
 /// </summary>
 public sealed class SqliteVecOptions

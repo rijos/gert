@@ -75,6 +75,22 @@ public sealed class MontySandboxTests
     }
 
     [Fact]
+    public async Task RunPythonAsync_OversizedResponseIsAGracefulFailure()
+    {
+        // A misbehaving sidecar that streams far more than the per-stream output
+        // cap allows must fail the run gracefully (capped read), never balloon
+        // host memory or throw an infra error into the tool loop.
+        var options = new SandboxOptions { MaxOutputBytes = 16 };
+        var huge = new string('a', 64 * 1024);
+        var handler = OkJson($$"""{"stdout":"{{huge}}","stderr":"","exit_code":0,"timed_out":false}""");
+
+        var result = await NewSandbox(handler, options).RunPythonAsync("print(1)");
+
+        result.ExitCode.Should().Be(1);
+        result.Stderr.Should().Contain("Sandbox run failed");
+    }
+
+    [Fact]
     public async Task RunPythonAsync_PropagatesCallerCancellation()
     {
         // A cancelled caller token must surface as cancellation, NOT a swallowed result.

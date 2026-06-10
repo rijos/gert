@@ -219,4 +219,27 @@ public class LifecycleServicesTests
         (await h.Admin.DeleteUserAsync(aliceKey)).Should().BeTrue();
         (await h.Admin.GetUserAsync(aliceKey)).Should().BeNull();
     }
+
+    [Fact]
+    public async Task Admin_lists_a_folder_with_no_username_row_with_a_null_username()
+    {
+        await using var root = new TempDataRoot();
+        var h = await BuildAsync(root);
+
+        // A partially provisioned user: user.db exists (open self-migrates) but
+        // the username row was never seeded. The folder must still be listed —
+        // an admin may need to see and delete it — with a null username.
+        await using (var repo = await h.Provider.Users.OpenAsync(Iss, "carol"))
+        {
+        }
+
+        var carolKey = SqliteDatabasePaths.Key(Iss, "carol");
+
+        var users = await h.Admin.ListUsersAsync();
+        var carol = users.Should().ContainSingle(u => u.Key == carolKey).Subject;
+        carol.Username.Should().BeNull();
+
+        (await h.Admin.GetUserAsync(carolKey))!.Username.Should().BeNull();
+        (await h.Admin.DeleteUserAsync(carolKey)).Should().BeTrue();
+    }
 }

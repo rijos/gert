@@ -389,6 +389,9 @@ public sealed class SqliteChatRepository(SqliteConnection connection) : IChatRep
         string kind,
         CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(conversationId);
+        ArgumentNullException.ThrowIfNull(kind);
+
         const string sql =
             "SELECT tc.id, tc.message_id, tc.kind, tc.status, tc.request_json, tc.response_json, " +
             "       tc.latency_ms, tc.created_at " +
