@@ -16,7 +16,7 @@ namespace Gert.Testing;
 /// The three standing roles mirror <c>tools/smoke/tokens.py</c>:
 /// <list type="bullet">
 ///   <item><c>admin</c>   — groups <c>gert-admins</c>, <c>gert_tools</c> <c>*</c>.</item>
-///   <item><c>user</c>    — groups <c>gert-users</c>, <c>gert_tools</c> <c>rag search</c>.</item>
+///   <item><c>user</c>    — groups <c>gert-users</c>, <c>gert_tools</c> <c>rag search make_artifact edit_artifact read_artifact ask_user</c>.</item>
 ///   <item><c>limited</c> — groups <c>gert-users</c>, <c>gert_tools</c> <c>rag</c>.</item>
 /// </list>
 /// Any other shape is an ad-hoc <see cref="Mint(string, string?, IReadOnlyList{string}?, string?, TimeSpan?, DateTimeOffset?)"/>.
@@ -78,7 +78,7 @@ public sealed class TestTokens : IDisposable
 
     /// <summary>Mint a token for the standard <c>user</c> role (sandbox denied).</summary>
     public string MintUser(params (string Type, string Value)[] extraClaims) =>
-        Mint("dev-user", Issuer, ["gert-users"], "rag search make_artifact edit_artifact read_artifact", extraClaims: extraClaims);
+        Mint("dev-user", Issuer, ["gert-users"], "rag search make_artifact edit_artifact read_artifact ask_user", extraClaims: extraClaims);
 
     /// <summary>Mint a token for the <c>limited</c> role (only <c>rag</c>; search + sandbox denied).</summary>
     public string MintLimited(params (string Type, string Value)[] extraClaims) =>

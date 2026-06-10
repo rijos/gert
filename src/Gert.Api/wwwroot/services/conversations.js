@@ -26,6 +26,10 @@ const toCards = (tools) => {
       stdout: t.stdout ?? "",
       error: t.error ?? "",
       todos: t.todos || [],
+      // A reloaded ask_user card is read-only (the question resolved with the
+      // turn); query/stdout carry the question + answer. Live pending state is
+      // only ever rebuilt by the resume() event replay below.
+      question: null,
       // A failed card arrives open — the error line is the information.
       open: t.status === "error" && !!t.error,
     };
@@ -67,7 +71,7 @@ export const open = async (id) => {
   for (const m of conv.messages || []) m.tools = toCards(m.tools);
   chat.setConversation(conv);
   artifacts.setArtifacts(conv.artifacts || []);
-  // `tools` is the ToolToggles map { rag, search, sandbox, todo, clock }.
+  // `tools` is the persisted ToolToggles map — one line per known id.
   const t = conv.tools;
   if (t && typeof t === "object") {
     chat.tools.rag = !!t.rag;
@@ -75,10 +79,17 @@ export const open = async (id) => {
     chat.tools.sandbox = !!t.sandbox;
     chat.tools.todo = !!t.todo;
     chat.tools.clock = !!t.clock;
+    chat.tools.make_artifact = !!t.make_artifact;
+    chat.tools.edit_artifact = !!t.edit_artifact;
+    chat.tools.read_artifact = !!t.read_artifact;
+    chat.tools.ask_user = !!t.ask_user;
   }
   // Detached turns: a still-streaming assistant row means the worker is busy on
   // this conversation — re-attach and let the bubble fill in live (the server
   // applies the orphan rule, so an abandoned row reads "error", not "streaming").
+  // Do NOT "optimize" this replay away: a pending ask_user question exists ONLY
+  // in turn_events (its tool_calls row lands when the call returns), so the
+  // resume replay is the one path that can re-render the interactive card.
   const inFlight = (conv.messages || []).findLast((m) => m.status === "streaming");
   if (inFlight) chatSvc.resume(conv.id, inFlight).catch(() => {});
   return conv;

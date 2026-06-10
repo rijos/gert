@@ -111,6 +111,11 @@ public sealed class TurnRunner : ITurnRunner
 
         lifetime.CancelAfter(remaining);
 
+        // The same wall expressed as an instant: interactive tools (ask_user)
+        // budget their wait against it so their graceful timeout result lands
+        // before this lifetime token fires.
+        var deadline = _clock.GetUtcNow() + remaining;
+
         using var registration = _cancellation.Register(TurnKey.From(job), lifetime.Token);
         var token = registration.Token;
 
@@ -124,7 +129,7 @@ public sealed class TurnRunner : ITurnRunner
                 .OpenAsync(job.Iss, job.Sub, job.Pid, token)
                 .ConfigureAwait(false);
 
-            await ExecuteTurnAsync(job, repo, topic, content, reasoning, token).ConfigureAwait(false);
+            await ExecuteTurnAsync(job, repo, topic, content, reasoning, deadline, token).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -174,6 +179,7 @@ public sealed class TurnRunner : ITurnRunner
         ConversationTopic topic,
         StringBuilder content,
         StringBuilder reasoning,
+        DateTimeOffset deadline,
         CancellationToken token)
     {
         await EmitAsync(repo, topic, new MessageStartEvent { MessageId = job.AssistantMessageId }, token)
@@ -417,7 +423,7 @@ public sealed class TurnRunner : ITurnRunner
                         ? ToolOutcome.Failure(
                             ResolveKind(call.Name),
                             $"tool budget exhausted ({_options.MaxToolRounds} rounds) — no further tool calls will run this turn; answer with what you already have")
-                        : await ExecuteToolAsync(job, call, token).ConfigureAwait(false);
+                        : await ExecuteToolAsync(job, call, repo, topic, deadline, token).ConfigureAwait(false);
 
                     await EmitAsync(repo, topic, new ToolResultEvent
                     {
@@ -650,6 +656,9 @@ public sealed class TurnRunner : ITurnRunner
     private async Task<ToolOutcome> ExecuteToolAsync(
         TurnJob job,
         ChatModelToolCall call,
+        IChatRepository repo,
+        ConversationTopic topic,
+        DateTimeOffset deadline,
         CancellationToken cancellationToken)
     {
         var tool = ResolveTool(call.Name);
@@ -672,14 +681,24 @@ public sealed class TurnRunner : ITurnRunner
             // The artifact tools key/persist canvas artifacts on the conversation.
             ConversationId = job.ConversationId,
             MessageId = job.AssistantMessageId,
+            ToolCallId = call.Id,
+            // The mid-execution emit seam (ask_user's question_asked): the
+            // runner's own persist-then-publish protocol, so a tool-emitted
+            // event is durable before it is live and replays like any other.
+            // No per-tool branch here — any tool may emit.
+            EmitAsync = (chatEvent, ct) => EmitAsync(repo, topic, chatEvent, ct),
+            Deadline = deadline,
         };
 
         // The generic per-call backstop: tools carry their own tighter limits
         // (sandbox wall clock, search timeouts); this catches a hang outside
         // them. A trip fails THIS call with a visible card error — the turn
-        // token cancelling rethrows as before and ends the turn.
+        // token cancelling rethrows as before and ends the turn. Interactive
+        // tools (ask_user) are exempt — waiting on the user IS their job; their
+        // own Deadline math is the backstop and the turn lifetime token remains
+        // the hard wall.
         using var callCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        if (_options.ToolCallTimeout > TimeSpan.Zero)
+        if (_options.ToolCallTimeout > TimeSpan.Zero && tool is not IInteractiveTool)
         {
             callCts.CancelAfter(_options.ToolCallTimeout);
         }

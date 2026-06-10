@@ -4,7 +4,7 @@
 
 vLLM exposes an **OpenAI-compatible** `/v1/chat/completions` with function calling and streaming, so the orchestrator can use a standard OpenAI client pointed at the model's base URL.
 
-The API advertises up to eight tools to the model (each gated by entitlement,
+The API advertises up to nine tools to the model (each gated by entitlement,
 conversation toggles, and the request — see the intersection rule below):
 
 ```jsonc
@@ -25,7 +25,9 @@ conversation toggles, and the request — see the intersection rule below):
   { "name":"edit_artifact", "description":"Change part of an existing artifact by exact substring replacement",
     "parameters": { "name":"string", "old_str":"string", "new_str":"string" } },
   { "name":"read_artifact", "description":"Return an artifact's current content, line-numbered",
-    "parameters": { "name":"string", "range":"string?" } }
+    "parameters": { "name":"string", "range":"string?" } },
+  { "name":"ask_user", "description":"Ask the user ONE clarifying question and wait for their answer",
+    "parameters": { "question":"string", "options":"string[]?", "allow_free_text":"boolean?" } }
 ]
 ```
 
@@ -326,3 +328,42 @@ Server-side `HttpClient` (via `IHttpClientFactory`) to the SearXNG JSON API. Tak
 - **gVisor (`runsc`)** — an **ephemeral container** running real CPython, for workloads needing the full language/stdlib: no inbound network, **outbound off by default** (an allow-list is opt-in only, never the default), read-only rootfs, a small writable `/tmp`, container destroyed after the call. Needs gVisor on the host.
 
 Both backends share the posture: **no mount of `/data`** (the sandbox must never see another user's — or this user's — DB files), a hard wall-clock + memory cap, and only captured `stdout`/`stderr` returns. Because the sandbox has no filesystem access to user data, code execution stays isolated from the per-user storage model.
+
+### Ask the user (`ask_user`)
+
+`ask_user(question, options?, allow_free_text?)` lets the model ask the user
+**one clarifying question mid-turn and block until it is answered, times out,
+or the turn is cancelled**. No external world: the question travels as a
+`question_asked` event (the one tool that emits mid-execution, through the
+optional `ToolInvocation.EmitAsync` seam the runner populates with its own
+persist-then-publish emit), and the answer arrives through the singleton
+`ITurnQuestions` registry — the awaitable mirror of the cancel registry, keyed
+by the same tenant-scoped `TurnKey` — from
+[`POST …/answer`](rest-api.md#answer-a-question). `allow_free_text` defaults to
+true for an open question and false once `options` (max 8) are offered.
+
+**Wait budget.** The wait is exempt from the generic `ToolCallTimeout`
+backstop (the `IInteractiveTool` marker — a 60 s cap would kill every wait) and
+instead runs for **min(`Gert:Turn:AskUserTimeout` (default 5 min), remaining
+turn budget − a 15 s grace)**, where the remaining budget is anchored at
+`TurnJob.PlannedAt` exactly like the runner's lifetime cap — so the graceful
+path always wins over the turn-budget error finalize. A **timeout is a
+successful tool result** (`{"answered":false,"reason":"timeout"}`, card line
+"The user did not respond."), never a turn fault: on a detached (client-gone)
+turn the question simply expires and the turn continues — the detached-turn
+guarantee is preserved. A user **cancel** (`POST …/cancel` / WS) cancels the
+wait and finalizes the turn `cancelled` like any other; the pending question is
+always released.
+
+**Replay.** A pending question lives only in `turn_events` (the `tool_calls`
+row lands when the call returns), so a reconnecting client recovers it through
+the resume replay: `tool_call(ask_user)` → `question_asked` with nothing after
+⇒ render the interactive card; a following `question_answered` (or the call's
+`tool_result`) ⇒ render the resolved/expired state. After the turn ends, the
+thread GET rebuilds a read-only card from the persisted row
+(`{answered, answer | reason}`).
+
+**UX consequence.** While the question pends the turn is in-flight, so the 409
+rule blocks new sends in that conversation — the question card (or Stop) is
+the only input. One question per turn: a second `ask_user` while one pends is
+a tool error the model reads.

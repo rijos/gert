@@ -129,6 +129,8 @@ footnotes sequence:
 | `delta` | `{ "text": "Short version: " }` | typewriter token append |
 | `citation` | `{ "ordinal":1, "label":"qdrant-benchmarks.pdf · p.4", "doc_id":"…" }` | the `[1]` marker + footnote |
 | `artifact` | `{ "id","kind":"md","name":"decision.md","content":"…" }` | opens a canvas tab |
+| `question_asked` | `{ "id","question_id","question":"Which color?","options":["red","blue"],"allow_free_text":false }` | renders the interactive question on the `ask_user` call's card (`id` = the tool-call id); non-terminal — the turn blocks until `POST …/answer`, timeout, or cancel |
+| `question_answered` | `{ "id","question_id","answer":"blue" }` | resolves the question card (answered state); non-terminal. A timeout emits no extra event — the call's ordinary `tool_result` ("The user did not respond.") is the signal |
 | `message_end` | `{ "token_count":312 }` | removes caret |
 | `cancelled` | `{ "token_count":null }` | removes caret + "Stopped" marker; the row persists as `status="cancelled"` with the partial text |
 | `error` | `{ "message":"…" }` | inline error; the assistant row persists as `status="error"` |
@@ -162,6 +164,29 @@ job leaves a tombstone that pre-cancels it at pickup). A cancelled turn does
 not block the conversation — the next `POST …/messages` is accepted
 immediately, and cancelled partials are **excluded** from the next turn's
 upstream history (UI-only context).
+
+### Answer a question
+
+`POST /api/projects/{pid}/conversations/{id}/answer` with body
+`{ "question_id": "…", "answer": "…" }` delivers the user's answer to the
+in-flight turn's pending [`ask_user`](chat-and-tools.md#ask-the-user-ask_user)
+question. The shape mirrors the cancel endpoint exactly: same route prefix,
+covered by the fallback authenticated-user policy, and **ownership is
+structural** — the registry key is built from the token's iss/sub, so a foreign
+conversation id can never address another tenant's question. `question_id` is
+the server-minted id from the `question_asked` event (never the model's
+tool-call id). Responses:
+
+* **202** — the waiting tool received the answer; the `question_answered`
+  event follows on the normal delivery transports.
+* **404** — no question is pending for this conversation, or the id is stale
+  (it just timed out / was already answered). The SPA marks its card expired.
+* **400** — validation failure (the body validator), or a closed question
+  (`allow_free_text=false`) answered with something outside its options.
+
+While a question pends the turn is in-flight, so the usual 409 rule blocks new
+`POST …/messages` in that conversation — the question card (or Stop) is the
+only input.
 
 ## Documents (knowledge panel)
 

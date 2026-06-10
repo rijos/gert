@@ -212,6 +212,21 @@
       }
     },
     {
+      "$comment": "Interactive ask_user fixture: the model asks ONE closed question; the page test clicks an option (or the API test answers via POST …/answer). after_tool.deltas are static — the fake cannot echo the chosen answer (A.3 limitation).",
+      "match": "contains",
+      "when": "ask me which color",
+      "tool_call": {
+        "name": "ask_user",
+        "arguments": "{\"question\":\"Which color?\",\"options\":[\"red\",\"blue\"]}"
+      },
+      "finish": "tool_calls",
+      "after_tool": {
+        "deltas": ["Noted — ", "proceeding with your choice."],
+        "finish": "stop",
+        "usage": { "completion_tokens": 6 }
+      }
+    },
+    {
       "$comment": "Clock tool-call fixture: get_datetime — the card shows the host's TimeProvider reading (the E2E asserts shape, not instant); the closing deltas stay fixture-fixed.",
       "match": "contains",
       "when": "what time is it",

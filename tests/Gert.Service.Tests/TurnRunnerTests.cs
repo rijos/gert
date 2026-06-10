@@ -3,6 +3,7 @@ using System.Runtime.CompilerServices;
 using FluentAssertions;
 using Gert.Model;
 using Gert.Model.Chat;
+using Gert.Model.Dtos;
 using Gert.Model.Events;
 using Gert.Model.Rag;
 using Gert.Service.Chat;
@@ -646,6 +647,98 @@ public sealed class TurnRunnerTests
     }
 
     [Fact]
+    public async Task An_interactive_tool_is_exempt_from_the_generic_tool_call_timeout()
+    {
+        // ask_user must outlive ToolCallTimeout (waiting on the user IS its
+        // job): the runner skips the per-call backstop for IInteractiveTool —
+        // the tool's own deadline math and the turn lifetime stay the walls.
+        var slow = new SlowInteractiveTool(TimeSpan.FromMilliseconds(300));
+        var options = new TurnOptions { ToolCallTimeout = TimeSpan.FromMilliseconds(50) };
+
+        await NewRunner(new TextThenToolModel(), [slow], options)
+            .RunAsync(NewJob("ask away", [slow]));
+
+        var result = Events.OfType<ToolResultEvent>().Single();
+        result.Status.Should().Be(ToolCallStatus.Done);
+        _finalized.Single().Status.Should().Be(MessageStatus.Complete);
+    }
+
+    [Fact]
+    public async Task A_tool_emitted_event_rides_the_persist_then_publish_protocol()
+    {
+        // The ToolInvocation.EmitAsync seam (ask_user's question_asked): the
+        // runner hands tools its OWN emit, so a mid-execution event is durable
+        // before it is live and lands between the call's tool_call and
+        // tool_result like any other event.
+        var emitting = new MidExecutionEmittingTool();
+
+        await NewRunner(new TextThenToolModel(), [emitting])
+            .RunAsync(NewJob("ask away", [emitting]));
+
+        var asked = Events.OfType<QuestionAskedEvent>().Single();
+        asked.Id.Should().Be("call_1");
+        asked.Question.Should().Be("Which color?");
+
+        var types = Events.Select(e => e.GetType().Name).ToList();
+        types.IndexOf(nameof(QuestionAskedEvent))
+            .Should().BeGreaterThan(types.IndexOf(nameof(ToolCallEvent)))
+            .And.BeLessThan(types.IndexOf(nameof(ToolResultEvent)));
+
+        // Same protocol assertions the runner's own events get.
+        _appended.Select(a => a.Seq).Should().Equal(_published.Select(p => p.Seq));
+        var seq = _published.Single(p => p.Event is QuestionAskedEvent).Seq;
+        _protocol.IndexOf($"append:{seq}").Should().BeLessThan(_protocol.IndexOf($"publish:{seq}"));
+
+        // The invocation carried the turn's deadline for the tool's budget math.
+        emitting.Deadline.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task Ask_user_turn_round_trips_question_answer_and_final_reply()
+    {
+        // End to end over the shared fixture ("ask me which color"): the REAL
+        // AskUserTool through the runner — question_asked emitted and durable,
+        // the registry answer resolving the wait, question_answered + the
+        // after_tool reply, and the persisted row carrying {answered, answer}
+        // for the thread GET rebuild.
+        var questions = new TurnQuestions();
+        var user = new TestUserContext
+        {
+            AllowedTools = new HashSet<string>(["ask_user"], StringComparer.Ordinal),
+        };
+        var tool = new AskUserTool(
+            questions, user, TimeProvider.System, Options.Create(new TurnOptions()));
+
+        var turn = NewRunner(new FakeChatModel(), [tool])
+            .RunAsync(NewJob("ask me which color", [tool]));
+
+        // message_start → tool_call(running) → question_asked, then the runner
+        // blocks on the wait — the published list is stable once it holds 3.
+        var deadline = DateTime.UtcNow.AddSeconds(5);
+        while (_published.Count < 3 && DateTime.UtcNow < deadline)
+        {
+            await Task.Delay(10);
+        }
+
+        var asked = Events.OfType<QuestionAskedEvent>().Single();
+        asked.Question.Should().Be("Which color?");
+        asked.Options.Should().Equal("red", "blue");
+
+        questions.Answer(
+                new TurnKey("https://idp.example", "sub-123", Pid, Conv),
+                new AnswerRequest { QuestionId = asked.QuestionId, Answer = "blue" })
+            .Should().Be(AnswerOutcome.Delivered);
+
+        await turn;
+
+        Events.OfType<QuestionAnsweredEvent>().Single().Answer.Should().Be("blue");
+        string.Concat(Events.OfType<DeltaEvent>().Select(d => d.Text))
+            .Should().Be("Noted — proceeding with your choice.");
+        _finalized.Single().Status.Should().Be(MessageStatus.Complete);
+        _toolRows.Single().ResponseJson.Should().Contain("\"answered\":true").And.Contain("blue");
+    }
+
+    [Fact]
     public async Task Deltas_within_the_flush_window_coalesce_into_one_event()
     {
         // A clock that never advances: neither the time nor (with the default
@@ -1022,6 +1115,61 @@ public sealed class TurnRunnerTests
             ToolInvocation invocation,
             CancellationToken cancellationToken = default) =>
             Task.FromResult(new ToolResult { Success = true, ResultJson = "{}" });
+    }
+
+    /// <summary>
+    /// An <see cref="IInteractiveTool"/> that takes longer than the generic
+    /// per-call timeout — must NOT be cancelled by it.
+    /// </summary>
+    private sealed class SlowInteractiveTool(TimeSpan wait) : ITool, IInteractiveTool
+    {
+        public string Id => "stub";
+
+        public string Name => "stub_tool";
+
+        public string Description => "waits on the user";
+
+        public string ParametersSchema => """{"type":"object"}""";
+
+        public async Task<ToolResult> ExecuteAsync(
+            ToolInvocation invocation,
+            CancellationToken cancellationToken = default)
+        {
+            await Task.Delay(wait, cancellationToken);
+            return new ToolResult { Success = true, ResultJson = "{}" };
+        }
+    }
+
+    /// <summary>Emits a chat event mid-execution through the invocation's emit seam.</summary>
+    private sealed class MidExecutionEmittingTool : ITool
+    {
+        public string Id => "stub";
+
+        public string Name => "stub_tool";
+
+        public string Description => "emits mid-call";
+
+        public string ParametersSchema => """{"type":"object"}""";
+
+        public DateTimeOffset? Deadline { get; private set; }
+
+        public async Task<ToolResult> ExecuteAsync(
+            ToolInvocation invocation,
+            CancellationToken cancellationToken = default)
+        {
+            Deadline = invocation.Deadline;
+            await invocation.EmitAsync!(
+                new QuestionAskedEvent
+                {
+                    Id = invocation.ToolCallId!,
+                    QuestionId = Guid.NewGuid().ToString("D"),
+                    Question = "Which color?",
+                    Options = ["red", "blue"],
+                    AllowFreeText = false,
+                },
+                cancellationToken);
+            return new ToolResult { Success = true, ResultJson = "{}" };
+        }
     }
 
     /// <summary>Hangs until cancelled — exercises the per-call timeout backstop.</summary>

@@ -67,6 +67,7 @@ public sealed class FailClosedMetaTest
             "CreateMemoryRequest",
             "UpdateSettingsRequest",
             "DocumentUpload",
+            "AnswerRequest",
         });
     }
 
@@ -83,6 +84,10 @@ public sealed class FailClosedMetaTest
         // a host-called boundary that accepts a request DTO: include it explicitly
         // so SendMessageRequest never drops out of the fail-closed net.
         serviceInterfaces.Add(typeof(Gert.Service.Chat.ITurnPlanner));
+
+        // Same for the ask_user answer registry: the controller hands it the
+        // AnswerRequest body, so that DTO must stay in the net too.
+        serviceInterfaces.Add(typeof(Gert.Service.Chat.ITurnQuestions));
 
         var dtos = new HashSet<Type>();
         foreach (var svc in serviceInterfaces)

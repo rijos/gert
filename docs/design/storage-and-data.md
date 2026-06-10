@@ -266,6 +266,15 @@ CREATE TABLE turn_events (
 ) WITHOUT ROWID;
 ```
 
+> **Pruning rule (for whenever log compaction is implemented — none exists
+> today).** Never prune events with `seq >=` the newest *streaming* assistant
+> row's seq — equivalently: only prune completed turns. An in-flight turn's
+> events are live UI state, not just history: a pending `ask_user` question
+> exists ONLY as its `question_asked` event until the call returns
+> (chat-and-tools.md § Ask the user), so pruning a live turn's log would leave
+> a reconnecting client unable to render the question the worker is still
+> blocked on.
+
 ### `rag.db` (sqlite-vec)
 
 ```sql

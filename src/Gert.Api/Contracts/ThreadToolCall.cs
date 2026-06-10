@@ -62,7 +62,7 @@ public sealed record ThreadToolCall
             Kind = call.Kind,
             Status = call.Status,
             LatencyMs = call.LatencyMs,
-            Query = GetString(request, "query"),
+            Query = QueryOf(call.Kind, request),
             Code = GetString(request, "code"),
             Stdout = StdoutOf(call.Kind, response),
             Todos = TodosOf(response),
@@ -97,6 +97,13 @@ public sealed record ThreadToolCall
             ? value.GetString()
             : null;
 
+    private static string? QueryOf(string kind, JsonElement? request) => kind switch
+    {
+        // ask_user's request line is the question itself.
+        "ask_user" => GetString(request, "question"),
+        _ => GetString(request, "query"),
+    };
+
     private static string? StdoutOf(string kind, JsonElement? response) => kind switch
     {
         // sandbox response_json carries the run verbatim: { exit_code, stdout, stderr, timed_out }
@@ -106,8 +113,25 @@ public sealed record ThreadToolCall
         // response fields, matching ClockTool's live format.
         "clock" => ClockReading(response),
 
+        // ask_user persists { answered, answer | reason } — surface the answer
+        // (or the no-response line) read-only on the reloaded card.
+        "ask_user" => AskUserReading(response),
+
         _ => null,
     };
+
+    private static string? AskUserReading(JsonElement? response)
+    {
+        if (response is not { } obj
+            || !obj.TryGetProperty("answered", out var answered))
+        {
+            return null;
+        }
+
+        return answered.ValueKind == JsonValueKind.True
+            ? GetString(response, "answer")
+            : "The user did not respond.";
+    }
 
     private static string? ClockReading(JsonElement? response)
     {

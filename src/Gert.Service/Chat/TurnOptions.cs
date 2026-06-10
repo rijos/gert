@@ -64,6 +64,17 @@ public sealed class TurnOptions
     public TimeSpan ToolCallTimeout { get; set; } = TimeSpan.FromSeconds(60);
 
     /// <summary>
+    /// How long one <c>ask_user</c> question waits for the user before the tool
+    /// returns its graceful "user did not respond" result. The effective wait
+    /// is min(this, remaining turn budget − a small grace slice) so the
+    /// graceful path always beats the <see cref="MaxTurnDuration"/> error
+    /// finalize; the wait is exempt from <see cref="ToolCallTimeout"/>
+    /// (<c>IInteractiveTool</c>) or it could never exceed that backstop
+    /// (chat-and-tools.md § Ask the user).
+    /// </summary>
+    public TimeSpan AskUserTimeout { get; set; } = TimeSpan.FromMinutes(5);
+
+    /// <summary>
     /// Delta coalescing window: model chunks are buffered and emitted as ONE
     /// delta event (one seq, one durable row, one publish) once this much time
     /// has passed since the last flush. <see cref="TimeSpan.Zero"/> disables

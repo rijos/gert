@@ -13,6 +13,13 @@ import * as ui from "../state/ui.js";
 import { activeProjectId, activeId } from "../state/chat.js";
 import { selectedId } from "../state/models.js";
 
+// The turn ended (cancelled/error) with a question still pending: there is no
+// one left to deliver an answer to — retire the card's inputs.
+const retireQuestions = (assistant) => {
+  for (const t of assistant.tools)
+    if (t.question && !t.question.answered) t.question.expired = true;
+};
+
 // Map a ChatEvent onto state. `assistant` is the reactive message object.
 const apply = (assistant, event, data) => {
   switch (event) {
@@ -54,9 +61,46 @@ const apply = (assistant, event, data) => {
         stdout: "",
         error: "",
         todos: [],
+        // ask_user's interactive payload — filled by question_asked. Declared
+        // up-front so the later assignment stays reactive (van-x tracks
+        // existing fields).
+        question: null,
         // The todo card IS the artifact — open it so the checklist shows.
         open: data.kind === "todo",
       });
+      break;
+    }
+
+    case "question_asked": {
+      // The ask_user tool opened a question: fold the FULL payload (the
+      // tool_call request caps long strings) onto the call's card and open it
+      // — the card IS the input while the turn blocks on the answer.
+      const card = assistant.tools.find((t) => t.id === data.id);
+      if (card) {
+        card.question = {
+          questionId: data.question_id,
+          text: data.question,
+          options: data.options || [],
+          allowFreeText: !!data.allow_free_text,
+          answered: false,
+          answer: "",
+          expired: false,
+          posting: false,
+        };
+        card.open = true;
+      }
+      break;
+    }
+
+    case "question_answered": {
+      // Resolved (also on replay: this event after question_asked means "no
+      // longer pending" — rest-api.md SSE table). Idempotent boolean sets keep
+      // the watermark-deduped replay safe.
+      const card = assistant.tools.find((t) => t.id === data.id);
+      if (card?.question) {
+        card.question.answered = true;
+        card.question.answer = data.answer || "";
+      }
       break;
     }
 
@@ -76,6 +120,11 @@ const apply = (assistant, event, data) => {
           data.latency_ms != null
             ? `${data.kind} · ${data.latency_ms}ms`
             : data.kind;
+        // An ask_user result with no question_answered before it = the wait
+        // timed out (or errored): retire the inputs; the stdout line already
+        // says "The user did not respond."
+        if (data.kind === "ask_user" && card.question && !card.question.answered)
+          card.question.expired = true;
         // The todo card auto-collapses to its summary row once every step is
         // checked off (header + progress bar stay visible) — after a short
         // beat so the last ✓ is seen landing. Only this transition collapses;
@@ -139,12 +188,14 @@ const apply = (assistant, event, data) => {
       // with exactly the text we already rendered. Not an error.
       assistant.streaming = false;
       assistant.cancelled = true;
+      retireQuestions(assistant);
       break;
 
     case "error":
       assistant.streaming = false;
       assistant.text +=
         (assistant.text ? "\n\n" : "") + "_Error: " + (data?.message || "stream failed") + "_";
+      retireQuestions(assistant);
       break;
   }
 };
@@ -161,7 +212,16 @@ export const labelFor = (kind) =>
     make_artifact: "Creating a file",
     edit_artifact: "Editing a file",
     read_artifact: "Reading a file",
+    ask_user: "Asking you a question",
   })[kind] || kind;
+
+// answer(questionId, text) — deliver the user's answer to the in-flight
+// turn's pending ask_user question (202; 404 = the question is stale).
+export const answer = (questionId, text) =>
+  http.post(
+    `/projects/${activeProjectId.val}/conversations/${activeId.val}/answer`,
+    { question_id: questionId, answer: text },
+  );
 
 // --- the turn consumer: one cursor, three transports -------------------------
 

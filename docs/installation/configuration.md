@@ -234,7 +234,8 @@ make every trip visible on its tool card.
 | `MaxConcurrentTurns` | `4` | Parallel turn lanes. Turns shard by (user, project, conversation): one conversation never runs concurrently with itself; different conversations may overlap. `1` restores the global serial worker. Must be ≥ 1 (validated at startup). |
 | `MaxToolRounds` | `64` | **Runaway brake, not a work budget** — sized an order of magnitude above legitimate turns. Past it the runner refuses further calls with budget-exhausted errors (visible on the cards), winds down in one final round, and logs a warning. |
 | `MaxTokensPerRound` | `16384` | Per-round completion bound: the `max_tokens` sent on every upstream request. Both the default (when neither the conversation nor the user's per-model settings ask) and the ceiling (requested values clamp down). Reasoning tokens count against it on thinking models — keep it generous. `0` disables. |
-| `ToolCallTimeout` | `00:01:00` | Generic wall-clock backstop on one tool execution, behind each tool's own tighter limits (sandbox wall clock, search timeouts). A trip fails that call with a visible card error; the turn continues. `0` disables. |
+| `ToolCallTimeout` | `00:01:00` | Generic wall-clock backstop on one tool execution, behind each tool's own tighter limits (sandbox wall clock, search timeouts). A trip fails that call with a visible card error; the turn continues. `0` disables. Interactive tools (`ask_user`) are exempt — see `AskUserTimeout`. |
+| `AskUserTimeout` | `00:05:00` | How long one `ask_user` question waits for the user before the tool returns its graceful "user did not respond" result. The effective wait is min(this, remaining turn budget − 15 s grace), so it can never outlive `MaxTurnDuration`. |
 | `DeltaFlushInterval` | `00:00:00.150` | Delta coalescing window — buffered model chunks emit as one event per window. `0` disables coalescing. |
 | `DeltaFlushMaxChars` | `512` | Size backstop for the coalescing window. |
 

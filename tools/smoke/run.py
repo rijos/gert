@@ -333,7 +333,7 @@ def _scenario_artifact(app: AppPage, role: str) -> None:
         expect(tab).to_contain_text("demo.html")
         expect(app.canvas.html_iframe).to_be_visible(timeout=15000)
     else:
-        # `user` carries gert_tools "rag search": make_artifact is refused at
+        # `user` carries gert_tools "rag search ask_user": make_artifact is refused at
         # execution time, the card errors, and the turn still finishes.
         expect(app.thread.errored_tool_cards.first).to_be_visible(timeout=15000)
     expect(app.thread.last_bot_body).to_contain_text("in the canvas", timeout=15000)
@@ -387,7 +387,7 @@ def _scenario_todos(app: AppPage, role: str) -> None:
             "aria-valuenow", "1"
         )
     else:
-        # `user` carries gert_tools "rag search": set_todos is refused at
+        # `user` carries gert_tools "rag search ask_user": set_todos is refused at
         # execution time, the card errors, and the turn still finishes.
         expect(app.thread.errored_tool_cards.first).to_be_visible(timeout=15000)
     expect(app.thread.last_bot_body).to_contain_text("Plan is up", timeout=15000)

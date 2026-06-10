@@ -5,6 +5,7 @@ import van from "van";
 import { component } from "../../lib/component.js";
 import { Icon } from "../../icons/icons.js";
 import { ProgressBar } from "../ui/progress-bar.js";
+import { QuestionCard } from "./question-card.js";
 
 const { div, span, pre } = van.tags;
 
@@ -18,6 +19,7 @@ const iconFor = (kind) =>
     make_artifact: "file",
     edit_artifact: "file",
     read_artifact: "file",
+    ask_user: "user",
   })[kind] || "file";
 
 const DocHit = (h) =>
@@ -152,7 +154,10 @@ export const ToolCard = component({
       },
       div(
         { class: () => "tbody" + (card.open ? "" : " hide") },
-        () => (card.query ? div({ class: "q" }, card.query) : div()),
+        // ask_user: the interactive question (buttons / free text) lives in
+        // its own sub-component — this stays the single toolzone node.
+        () => (card.question ? QuestionCard(card.question) : div()),
+        () => (card.query && !card.question ? div({ class: "q" }, card.query) : div()),
         () =>
           card.hits && card.hits.length
             ? div(...card.hits.map((h) => DocHit(h)))

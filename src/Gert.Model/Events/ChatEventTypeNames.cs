@@ -19,6 +19,8 @@ public static class ChatEventTypeNames
             [ChatEventType.Delta] = "delta",
             [ChatEventType.Citation] = "citation",
             [ChatEventType.Artifact] = "artifact",
+            [ChatEventType.QuestionAsked] = "question_asked",
+            [ChatEventType.QuestionAnswered] = "question_answered",
             [ChatEventType.MessageEnd] = "message_end",
             [ChatEventType.Cancelled] = "cancelled",
             [ChatEventType.Error] = "error",

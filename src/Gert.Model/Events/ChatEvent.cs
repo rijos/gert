@@ -23,6 +23,8 @@ namespace Gert.Model.Events;
 [JsonDerivedType(typeof(DeltaEvent), "delta")]
 [JsonDerivedType(typeof(CitationEvent), "citation")]
 [JsonDerivedType(typeof(ArtifactEvent), "artifact")]
+[JsonDerivedType(typeof(QuestionAskedEvent), "question_asked")]
+[JsonDerivedType(typeof(QuestionAnsweredEvent), "question_answered")]
 [JsonDerivedType(typeof(MessageEndEvent), "message_end")]
 [JsonDerivedType(typeof(CancelledEvent), "cancelled")]
 [JsonDerivedType(typeof(ErrorEvent), "error")]

@@ -16,6 +16,8 @@ public enum ChatEventType
     Delta,
     Citation,
     Artifact,
+    QuestionAsked,
+    QuestionAnswered,
     MessageEnd,
     Cancelled,
     Error,

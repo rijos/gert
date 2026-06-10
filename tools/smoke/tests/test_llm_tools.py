@@ -230,7 +230,7 @@ def test_todo_card_survives_reload(page: Page, base_url: str) -> None:
 def test_todo_tool_is_refused_without_the_entitlement(
     user_page: Page, base_url: str
 ) -> None:
-    # `user` carries gert_tools "rag search" — set_todos is refused at execution
+    # `user` carries gert_tools "rag search ask_user" — set_todos is refused at execution
     # time (the claim is the ceiling), the card errors, the turn still completes.
     app = _open(user_page, base_url)
     app.composer.send("plan the homelab upgrade")

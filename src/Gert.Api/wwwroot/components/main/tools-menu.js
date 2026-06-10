@@ -20,6 +20,7 @@ const TOOLS = [
   { id: "sandbox", label: "Sandbox" },
   { id: "todo", label: "Todos" },
   { id: "clock", label: "Clock" },
+  { id: "ask_user", label: "Ask me" },
 ];
 
 export const ToolsMenu = component({

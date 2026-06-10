@@ -63,6 +63,10 @@ public static class ServiceCollectionExtensions
         // The cancel registry is process-wide for the same reason the bus is:
         // the in-process queue means the addressed turn always lives here.
         services.TryAddSingleton<ITurnCancellation, TurnCancellation>();
+        // The ask_user question registry mirrors the cancel registry: the
+        // waiting turn always lives in this process, so the answer endpoint
+        // can reach it here (chat-and-tools.md § Ask the user).
+        services.TryAddSingleton<ITurnQuestions, TurnQuestions>();
         services.TryAddScoped<IConversationReader, ConversationReader>();
         services.TryAddScoped<IConversationStreamer, ConversationStreamer>();
         services.TryAddScoped<ITurnPlanner, TurnPlanner>();
@@ -110,7 +114,7 @@ public static class ServiceCollectionExtensions
     /// <see cref="AddTools"/>.
     /// </summary>
     private static readonly string[] BuiltInToolIds =
-        ["rag", "search", "sandbox", "todo", "clock", "make_artifact", "edit_artifact", "read_artifact"];
+        ["rag", "search", "sandbox", "todo", "clock", "make_artifact", "edit_artifact", "read_artifact", "ask_user"];
 
     /// <summary>
     /// DI key for the per-type leaf <see cref="ITextExtractor"/>s the
@@ -142,6 +146,9 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ITool, MakeArtifactTool>();
         services.AddScoped<ITool, EditArtifactTool>();
         services.AddScoped<ITool, ReadArtifactTool>();
+        // ask_user blocks on the ITurnQuestions singleton; scoped like the rest
+        // (it reads the per-request/worker IUserContext for its TurnKey).
+        services.AddScoped<ITool, AskUserTool>();
     }
 
     /// <summary>
@@ -206,6 +213,7 @@ public static class ServiceCollectionExtensions
         AddValidator<CreateMemoryRequest, CreateMemoryRequestValidator>(services);
         AddValidator<UpdateSettingsRequest, UpdateSettingsRequestValidator>(services);
         AddValidator<DocumentUpload, DocumentUploadValidator>(services);
+        AddValidator<AnswerRequest, AnswerRequestValidator>(services);
     }
 
     /// <summary>
