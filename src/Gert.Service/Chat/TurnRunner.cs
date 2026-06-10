@@ -35,8 +35,18 @@ namespace Gert.Service.Chat;
 /// Failure semantics: a fault (model error, tool defect, the
 /// <see cref="TurnOptions.MaxTurnDuration"/> timeout) finalises the assistant row
 /// as <c>error</c> with whatever content streamed, and emits a terminal
-/// <c>error</c> event. The row persisting (unlike the old pipeline, which
-/// dropped the turn) is what lets resuming clients see the failure.
+/// <c>error</c> event carrying a generic message — the exception detail goes to
+/// the log only, never the user-visible event (style guide §7). The row
+/// persisting (unlike the old pipeline, which dropped the turn) is what lets
+/// resuming clients see the failure.
+/// </para>
+///
+/// <para>
+/// The shared-anchor invariant: the wall-clock cap is the budget REMAINING
+/// from <see cref="TurnJob.PlannedAt"/> — the same instant
+/// <see cref="MessageStatusRules"/> ages the streaming row from — so the
+/// runner can only end earlier than the reader-facing orphan/409 horizon,
+/// never outlive it (chat-and-tools.md § detached turns).
 /// </para>
 /// </summary>
 public sealed class TurnRunner : ITurnRunner
@@ -78,8 +88,28 @@ public sealed class TurnRunner : ITurnRunner
 
         // The turn's clock: the host token (shutdown) + the wall-clock cap, then
         // the user-cancel source the registry links in (rest-api.md § stop).
+        // The cap is the REMAINING budget measured from the plan-time anchor
+        // (TurnJob.PlannedAt = the placeholder's CreatedAt), not a fresh window
+        // from run start: readers and the planner's 409 gate age the row from
+        // that same instant (MessageStatusRules), so queue wait counts against
+        // the turn and the runner always self-cancels at or before the moment
+        // readers would start reporting the row as error — never after, which
+        // would let a healthy running turn read as error and reopen the 409
+        // gate against incomplete history.
         using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        lifetime.CancelAfter(_options.MaxTurnDuration);
+        var remaining = _options.MaxTurnDuration - (_clock.GetUtcNow() - job.PlannedAt);
+        if (remaining < TimeSpan.Zero)
+        {
+            // Already past the horizon (a long queue wait): cancel at once.
+            remaining = TimeSpan.Zero;
+        }
+        else if (remaining > _options.MaxTurnDuration)
+        {
+            // A PlannedAt in the future (clock skew) must never EXTEND the budget.
+            remaining = _options.MaxTurnDuration;
+        }
+
+        lifetime.CancelAfter(remaining);
 
         using var registration = _cancellation.Register(TurnKey.From(job), lifetime.Token);
         var token = registration.Token;
@@ -112,9 +142,28 @@ public sealed class TurnRunner : ITurnRunner
         }
         catch (Exception ex)
         {
-            var reason = lifetime.IsCancellationRequested
-                ? $"turn exceeded the {_options.MaxTurnDuration} limit"
-                : ex.Message;
+            // Catch-all converted to a user-visible error (style guide §7): the
+            // detail goes to the log — exception only, never message content
+            // (operations.md § Logging format) — and the persisted/published
+            // event carries a generic message, never raw ex.Message (upstream
+            // exception text can echo internal URLs or prompt fragments).
+            string reason;
+            if (lifetime.IsCancellationRequested)
+            {
+                reason = $"turn exceeded the {_options.MaxTurnDuration} limit";
+                _logger.LogWarning(
+                    "Turn exceeded its {MaxTurnDuration} budget for conversation {ConversationId} in project {Pid} and was cancelled.",
+                    _options.MaxTurnDuration, job.ConversationId, job.Pid);
+            }
+            else
+            {
+                reason = "Something went wrong running this turn.";
+                _logger.LogError(
+                    ex,
+                    "Turn faulted unexpectedly for conversation {ConversationId} in project {Pid}.",
+                    job.ConversationId, job.Pid);
+            }
+
             await FinalizeErrorAsync(job, topic, content, reasoning, reason).ConfigureAwait(false);
         }
     }
@@ -545,9 +594,14 @@ public sealed class TurnRunner : ITurnRunner
             await EmitAsync(repo, topic, new ErrorEvent { Message = reason }, CancellationToken.None)
                 .ConfigureAwait(false);
         }
-        catch
+        catch (Exception ex)
         {
-            // Orphan rule territory: the streaming row ages into an error.
+            // Swallowed by design — the orphan rule ages the streaming row into
+            // an error — but an unlogged swallow is a defect (style guide §7).
+            _logger.LogWarning(
+                ex,
+                "Error finalise failed for conversation {ConversationId} in project {Pid}; the orphan rule is the backstop.",
+                job.ConversationId, job.Pid);
         }
     }
 
@@ -577,9 +631,14 @@ public sealed class TurnRunner : ITurnRunner
             await EmitAsync(repo, topic, new CancelledEvent(), CancellationToken.None)
                 .ConfigureAwait(false);
         }
-        catch
+        catch (Exception ex)
         {
-            // Orphan rule territory: the streaming row ages into an error.
+            // Swallowed by design — the orphan rule ages the streaming row into
+            // an error — but an unlogged swallow is a defect (style guide §7).
+            _logger.LogWarning(
+                ex,
+                "Cancelled finalise failed for conversation {ConversationId} in project {Pid}; the orphan rule is the backstop.",
+                job.ConversationId, job.Pid);
         }
     }
 

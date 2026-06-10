@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using FluentAssertions;
 using Gert.Model;
@@ -10,6 +11,7 @@ using Gert.Database;
 using Gert.Service.External;
 using Gert.Service.Tools;
 using Gert.Testing.Fakes;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
@@ -130,17 +132,19 @@ public sealed class TurnRunnerTests
         IEnumerable<ITool>? tools = null,
         TurnOptions? options = null,
         TimeProvider? clock = null,
-        ITurnCancellation? cancellation = null) =>
+        ITurnCancellation? cancellation = null,
+        ILogger<TurnRunner>? logger = null) =>
         new(_chatProvider, model, _bus, tools ?? [], Options.Create(options ?? new TurnOptions()),
             clock ?? TimeProvider.System,
             cancellation ?? new TurnCancellation(
                 Options.Create(options ?? new TurnOptions()), clock ?? TimeProvider.System),
-            NullLogger<TurnRunner>.Instance);
+            logger ?? NullLogger<TurnRunner>.Instance);
 
     private static TurnJob NewJob(
         string userContent,
         IReadOnlyList<ITool>? offered = null,
-        IReadOnlySet<string>? allowed = null) => new()
+        IReadOnlySet<string>? allowed = null,
+        DateTimeOffset? plannedAt = null) => new()
     {
         Iss = "https://idp.example",
         Sub = "sub-123",
@@ -151,6 +155,7 @@ public sealed class TurnRunnerTests
         UserMessageId = "user-msg-1",
         AssistantMessageId = AssistantId,
         AssistantSeq = 2,
+        PlannedAt = plannedAt ?? DateTimeOffset.UtcNow,
         ModelId = "default",
         History = [new ChatModelMessage { Role = "user", Content = userContent }],
         ToolIds = offered?.Select(t => t.Id).ToList() ?? [],
@@ -278,11 +283,13 @@ public sealed class TurnRunnerTests
         await NewRunner(new ExplodingModel()).RunAsync(NewJob("hello"));
 
         // Behavior change vs the old pipeline (which persisted nothing): the
-        // partial content survives on an error row, and the log ends in `error`.
+        // partial content survives on an error row, and the log ends in `error`
+        // — a generic one: exception detail never reaches the user-visible
+        // event (style guide §7; the detail-vs-log split has its own test).
         Events.First().Should().BeOfType<MessageStartEvent>();
         Events.OfType<DeltaEvent>().Single().Text.Should().Be("partial ");
         Events.Last().Should().BeOfType<ErrorEvent>()
-            .Which.Message.Should().Contain("model exploded");
+            .Which.Message.Should().NotContain("model exploded");
         Events.Should().NotContain(e => e is MessageEndEvent);
 
         var final = _streamUpdates.Last();
@@ -300,6 +307,85 @@ public sealed class TurnRunnerTests
         Events.Last().Should().BeOfType<ErrorEvent>()
             .Which.Message.Should().Contain("exceeded");
         _streamUpdates.Last().Status.Should().Be(MessageStatus.Error);
+    }
+
+    [Fact]
+    public async Task A_job_already_past_its_plan_time_budget_is_cancelled_promptly_as_error()
+    {
+        // The shared-anchor invariant: the wall clock measures from PLAN time
+        // (TurnJob.PlannedAt = the placeholder's CreatedAt), not run start. A
+        // job that aged past MaxTurnDuration in the queue is already past the
+        // reader-facing orphan horizon — the runner must not grant it a fresh
+        // window during which readers report `error` while it streams.
+        var clock = new ManualClock();
+        var options = new TurnOptions { MaxTurnDuration = TimeSpan.FromMinutes(5) };
+        var job = NewJob("hello", plannedAt: clock.GetUtcNow() - TimeSpan.FromMinutes(6));
+
+        await NewRunner(new NeverFinishingModel(), options: options, clock: clock).RunAsync(job);
+
+        Events.Last().Should().BeOfType<ErrorEvent>()
+            .Which.Message.Should().Contain("exceeded");
+        _streamUpdates.Last().Status.Should().Be(MessageStatus.Error);
+    }
+
+    [Fact]
+    public async Task Queue_wait_counts_against_the_budget_so_the_cap_is_only_the_remainder()
+    {
+        // Most of the budget elapsed while the job waited in the queue: the
+        // runner's effective cap is the slice that remains. The budget is
+        // deliberately long — the turn ending within the elapsed bound below
+        // proves the cap was the REMAINDER; a fresh full window would keep the
+        // never-finishing model streaming for the whole 30 s.
+        var clock = new ManualClock();
+        var options = new TurnOptions { MaxTurnDuration = TimeSpan.FromSeconds(30) };
+        var job = NewJob(
+            "hello",
+            plannedAt: clock.GetUtcNow() - (options.MaxTurnDuration - TimeSpan.FromMilliseconds(200)));
+
+        var stopwatch = Stopwatch.StartNew();
+        await NewRunner(new NeverFinishingModel(), options: options, clock: clock).RunAsync(job);
+        stopwatch.Stop();
+
+        stopwatch.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(10),
+            "the effective cap must be the remaining ~200ms slice, never a fresh full budget");
+        Events.Last().Should().BeOfType<ErrorEvent>()
+            .Which.Message.Should().Contain("exceeded");
+        _streamUpdates.Last().Status.Should().Be(MessageStatus.Error);
+    }
+
+    [Fact]
+    public async Task Unexpected_fault_detail_goes_to_the_log_never_the_user_visible_event()
+    {
+        var logger = new CapturingLogger<TurnRunner>();
+
+        await NewRunner(new ExplodingModel("secret detail"), logger: logger)
+            .RunAsync(NewJob("hello"));
+
+        // The persisted/published error event is generic — upstream exception
+        // text can echo internal URLs or prompt fragments (style guide §7)…
+        var error = Events.Last().Should().BeOfType<ErrorEvent>().Subject;
+        error.Message.Should().Be("Something went wrong running this turn.");
+        _appended.Last().PayloadJson.Should().NotContain("secret detail");
+
+        // …and the detail lands on the log instead: error level, exception attached.
+        var entry = logger.Entries.Should().ContainSingle(e => e.Level == LogLevel.Error).Subject;
+        entry.Exception.Should().BeOfType<InvalidOperationException>()
+            .Which.Message.Should().Be("secret detail");
+    }
+
+    [Fact]
+    public async Task A_failed_finalise_never_throws_but_is_logged_at_warning()
+    {
+        // Every append fails (db on fire): the first emit faults the turn, the
+        // best-effort error finalise fails too — still swallowed by design (the
+        // orphan rule is the backstop) but no longer silently (style guide §7).
+        var logger = new CapturingLogger<TurnRunner>();
+        _repo.AppendTurnEventAsync(Arg.Any<TurnEventRecord>(), Arg.Any<CancellationToken>())
+            .Returns<Task>(_ => throw new InvalidOperationException("db on fire"));
+
+        await NewRunner(new FakeChatModel(), logger: logger).RunAsync(NewJob("hello"));
+
+        logger.Entries.Should().Contain(e => e.Level == LogLevel.Warning && e.Exception != null);
     }
 
     [Fact]
@@ -754,15 +840,25 @@ public sealed class TurnRunnerTests
         }
     }
 
-    /// <summary>A TimeProvider whose timestamp only moves when the test advances it.</summary>
+    /// <summary>
+    /// A TimeProvider whose timestamp and wall clock only move when the test
+    /// advances them. The wall clock anchors at construction so a job whose
+    /// <c>PlannedAt</c> the test does not back-date keeps its full budget.
+    /// </summary>
     private sealed class ManualClock : TimeProvider
     {
         private long _timestamp;
+        private DateTimeOffset _utcNow = DateTimeOffset.UtcNow;
 
         public override long GetTimestamp() => _timestamp;
 
-        public void Advance(TimeSpan by) =>
+        public override DateTimeOffset GetUtcNow() => _utcNow;
+
+        public void Advance(TimeSpan by)
+        {
             _timestamp += (long)(by.TotalSeconds * TimestampFrequency);
+            _utcNow += by;
+        }
     }
 
     /// <summary>Streams the given text chunks, then stops.</summary>
@@ -1023,7 +1119,7 @@ public sealed class TurnRunnerTests
         }
     }
 
-    private sealed class ExplodingModel : IChatModelClient
+    private sealed class ExplodingModel(string message = "model exploded") : IChatModelClient
     {
         public async IAsyncEnumerable<ChatModelChunk> StreamAsync(
             ChatCompletionRequest request,
@@ -1031,7 +1127,44 @@ public sealed class TurnRunnerTests
         {
             yield return new ChatModelChunk { TextDelta = "partial " };
             await Task.Yield();
-            throw new InvalidOperationException("model exploded");
+            throw new InvalidOperationException(message);
+        }
+    }
+
+    /// <summary>
+    /// Captures log entries in-memory so the fault-hygiene tests can assert on
+    /// level and attached exception (no FakeLogger package in this suite).
+    /// </summary>
+    private sealed class CapturingLogger<T> : ILogger<T>
+    {
+        private readonly List<(LogLevel Level, string Message, Exception? Exception)> _entries = [];
+
+        public IReadOnlyList<(LogLevel Level, string Message, Exception? Exception)> Entries
+        {
+            get
+            {
+                lock (_entries)
+                {
+                    return _entries.ToList();
+                }
+            }
+        }
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            lock (_entries)
+            {
+                _entries.Add((logLevel, formatter(state, exception), exception));
+            }
         }
     }
 

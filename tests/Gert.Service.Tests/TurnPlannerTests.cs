@@ -151,6 +151,20 @@ public sealed class TurnPlannerTests
     }
 
     [Fact]
+    public async Task PlannedAt_is_the_exact_instant_stamped_on_the_placeholder_row()
+    {
+        var job = await NewPlanner().PlanAsync(Pid, Conv, new SendMessageRequest { Content = "hello" });
+
+        // One clock read, not two: the job's anchor IS the placeholder's
+        // CreatedAt, so the runner's remaining-budget cap and the readers'
+        // orphan/409 horizon measure from the identical instant
+        // (chat-and-tools.md § detached turns — the shared-anchor invariant).
+        var assistant = _persisted.Single(m => m.Role == MessageRole.Assistant);
+        job.PlannedAt.Should().Be(assistant.CreatedAt);
+        job.PlannedAt.Should().Be(_persisted.Single(m => m.Role == MessageRole.User).CreatedAt);
+    }
+
+    [Fact]
     public async Task History_carries_prior_complete_turns_plus_the_new_user_message_only()
     {
         SeedConversation();

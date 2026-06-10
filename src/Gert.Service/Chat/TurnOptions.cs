@@ -10,7 +10,10 @@ public sealed class TurnOptions
     /// past it and finalises the assistant row as error. Doubles as the orphan
     /// horizon: a <c>streaming</c> row older than this is REPORTED as error by
     /// readers — the in-memory queue is not durable, so a crashed worker never
-    /// finalises its row (chat-and-tools.md § detached turns).
+    /// finalises its row (chat-and-tools.md § detached turns). Both uses measure
+    /// from the plan instant (<see cref="TurnJob.PlannedAt"/> = the placeholder's
+    /// <c>CreatedAt</c>): the runner budgets only what REMAINS of this cap after
+    /// queue wait, so it can never outlive the readers' horizon.
     /// </summary>
     public TimeSpan MaxTurnDuration { get; set; } = TimeSpan.FromMinutes(5);
 

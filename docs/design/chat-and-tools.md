@@ -183,7 +183,15 @@ worker leaves rows stuck at `streaming` forever. Every *reader*
 (`MessageStatusRules`) maps a `streaming` row older than
 `Gert:Turn:MaxTurnDuration` to `error` — stateless and multi-instance-safe —
 and the planner's 409 check goes through the same rule, so an abandoned turn
-never blocks a conversation.
+never blocks a conversation. **Both timers share the plan-time anchor:** the
+reader-facing horizon ages the row from its `CreatedAt` (stamped at plan time),
+and the runner caps its own wall clock at the *remaining* budget measured from
+the very same instant (`TurnJob.PlannedAt` — one clock read in the planner, not
+two). Time a job spends waiting in the queue therefore counts against the turn,
+and a running turn always self-cancels at or before the moment readers would
+start reporting its row as `error` — a queue wait can never open a window where
+a healthy turn reads as dead and the 409 gate reopens against incomplete
+history ([decisions §11](decisions.md#11-turn-execution--one-global-serial-worker-for-now)).
 
 **Scale-out.** The bus is per-process (live push is a latency optimization);
 the `turn_events` log + range endpoint are the cross-instance truth, so a

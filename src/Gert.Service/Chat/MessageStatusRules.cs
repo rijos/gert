@@ -11,6 +11,17 @@ namespace Gert.Service.Chat;
 /// duration to <see cref="MessageStatus.Error"/>. Stateless and
 /// multi-instance-safe. Both the thread/range read side and the planner's
 /// "turn in progress" (409) check MUST go through this.
+///
+/// <para>
+/// The shared-anchor invariant: the horizon ages the row from its
+/// <c>CreatedAt</c> — the PLAN instant — and <see cref="TurnRunner"/> caps its
+/// own lifetime at the budget remaining from the very same instant
+/// (<see cref="TurnJob.PlannedAt"/>, one clock read in the planner). A running
+/// turn therefore always self-cancels at or before the moment this rule starts
+/// reporting its row as <see cref="MessageStatus.Error"/> — a queue wait can
+/// never open a window where a healthy turn reads as dead and the 409 gate
+/// reopens against incomplete history.
+/// </para>
 /// </summary>
 public static class MessageStatusRules
 {

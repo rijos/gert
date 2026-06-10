@@ -18,10 +18,13 @@ design ambiguity. When every unit lands, this file is deleted — git history ke
 | S5 | Multi-instance topology — decide & document | ⬜ |
 | S6 | Context compaction (design → phases) | ⬜ |
 | S7 | Project import / restore | ⬜ |
+| S8 | Keyed turn parallelism with an atomic 409 gate (one combined change) | ⬜ |
 
 Safe concurrent tracks: **S1 → S2a → S2b** is the spine; **S3, S4, S5, S7** are independent
 of it and of each other; **S6a** can start once [context-compaction.md](context-compaction.md)
-is settled. Use worktrees for parallel units.
+is settled. **S8 rides the spine too** — it edits the same planner/worker/rules files as S1
+and S2a, so it lands after them (S1 → S2a → S8), never in a parallel worktree against them.
+Use worktrees for parallel units.
 
 ---
 
@@ -41,6 +44,14 @@ is settled. Use worktrees for parallel units.
 - **Design:** [chat-and-tools § detached turns](chat-and-tools.md#detached-turns) (the
   orphan rule), [turn-budgets §2b](turn-budgets.md#2b-what-open-webui-does-surveyed-2026-06-07-open-webuiopen-webuimain)
   (bound every part, visible trips).
+- **Caveat — queued jobs emit no heartbeats:** the runner only starts beating once the
+  worker dequeues the job, but the placeholder row exists from *plan* time
+  (`TurnJob.PlannedAt` = its `CreatedAt`, the shared anchor with the runner's remaining
+  budget). A job sitting in the queue longer than `StaleTurnAfter` would read as dead while
+  perfectly healthy. S1 must therefore either heartbeat at the enqueue/dequeue boundaries
+  (the planner stamp counts as the first beat; the worker touches on dequeue) or treat
+  not-yet-started turns distinctly (a null `heartbeat_at` falls back to the `MaxTurnDuration`
+  horizon, not `StaleTurnAfter`) — pick one and test the queue-wait case explicitly.
 - **Docs to update:** chat-and-tools (orphan rule), [installation §9](../installation/configuration.md#9-gertturn--the-detached-turn-pipeline).
 - **Acceptance:** a streaming row with a stale heartbeat reads as `error` and a new
   `POST …/messages` is accepted within `StaleTurnAfter` (not `MaxTurnDuration`); a live turn
@@ -193,3 +204,41 @@ is settled. Use worktrees for parallel units.
 - **Acceptance:** export → import round-trips to an equivalent project (chats readable,
   docs `ready`, memory retrievable); traversal-named/oversized/bomb archives are rejected
   with 400s and no partial state; the new input boundary has `NaughtyStrings` coverage.
+
+### S8 — Keyed turn parallelism with an atomic 409 gate (one combined change)
+
+- **Goal:** Retire [decisions §11](decisions.md#11-turn-execution--one-global-serial-worker-for-now)'s
+  interim posture: the single global serial `TurnWorker` is today the *only* run-phase
+  protection for the seq single-writer invariant and the TOCTOU-racy 409 check
+  (check-then-insert, no transaction, no unique index). Replace it with explicit controls
+  and unlock cross-conversation concurrency. **One combined change, never one half without
+  the other:**
+  - **(a) Per-conversation atomic gate:** a partial unique index
+    `messages(conversation_id) WHERE status='streaming'` makes the placeholder insert
+    itself the gate (a losing racer gets the constraint violation → 409, no window); plus a
+    planner **write-back of expired placeholders** — the orphan rule's lazy read-side
+    mapping becomes a real `streaming → error` write for rows past the horizon, so a dead
+    turn's row releases the index instead of blocking it forever.
+  - **(b) Bounded keyed parallelism:** hash `TurnKey` onto N serial sub-workers (N small,
+    configurable), so one conversation's turns stay strictly ordered on one lane while
+    different conversations run concurrently.
+  - Shipping (b) without (a) removes the only protection those invariants have; shipping
+    (a) without (b) closes a race nobody can hit yet and changes nothing user-visible.
+- **Depends:** S1 (the write-back must use S1's staleness rule to decide "expired" —
+  heartbeat-stale, not just old); S2a (it rewrites the planner's 409 branch into steering —
+  the atomic gate becomes the "is a turn live" predicate under whichever branch survives;
+  land S8 after S2a or rebase whichever lands second). Touches the same files as both —
+  same-track, no parallel worktree.
+- **Touches:** `Migrations/chat/NNN_streaming_gate.sql` (partial unique index),
+  `TurnPlanner` (constraint-violation → `TurnInProgressException`; expired-placeholder
+  write-back), `IChatRepository` (write-back method), `ChannelTurnQueue`/`TurnWorker`
+  (keyed lanes), `TurnOptions` (lane count), tests (a concurrent-plan race test that fails
+  on today's code, lane-ordering tests).
+- **Docs to update:** decisions §11 (mark remedied), chat-and-tools (detached turns —
+  worker topology), storage-and-data (the new index), installation §9 (the lane knob).
+- **Acceptance:** two concurrent plans for one conversation yield exactly one streaming
+  placeholder and one 409/steer (asserted at the SQLite tier, real database); turns for one
+  conversation never interleave (event seqs stay monotonic per conversation under load);
+  turns for different conversations provably overlap; an expired placeholder is written
+  back and a new turn proceeds; the whole suite stays green with N = 1 (the degenerate
+  serial config).

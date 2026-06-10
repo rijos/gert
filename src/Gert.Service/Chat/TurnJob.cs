@@ -49,6 +49,18 @@ public sealed record TurnJob
     /// </summary>
     public required long AssistantSeq { get; init; }
 
+    /// <summary>
+    /// The plan instant — the same clock read that stamped the placeholder
+    /// row's <c>CreatedAt</c>, and the SHARED ANCHOR of the turn's two timers
+    /// (chat-and-tools.md § detached turns): readers age the streaming row
+    /// from it (<see cref="MessageStatusRules"/>, the orphan/409 horizon), and
+    /// <see cref="TurnRunner"/> caps its lifetime at the REMAINING
+    /// <see cref="TurnOptions.MaxTurnDuration"/> measured from it — so queue
+    /// wait counts against the turn and the runner can never outlive the
+    /// horizon readers enforce.
+    /// </summary>
+    public required DateTimeOffset PlannedAt { get; init; }
+
     public required string ModelId { get; init; }
 
     /// <summary>Prior turns (system prompt excluded), ending with the user message.</summary>

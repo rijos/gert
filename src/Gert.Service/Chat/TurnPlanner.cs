@@ -241,6 +241,11 @@ public sealed class TurnPlanner : ITurnPlanner
             UserMessageId = userMessage.Id,
             AssistantMessageId = assistantMessage.Id,
             AssistantSeq = assistantSeq,
+            // The shared anchor (one clock read, not two): the SAME instant
+            // that stamped the placeholder's CreatedAt, so the runner's
+            // remaining-budget cap and the readers' orphan/409 horizon can
+            // never disagree (see TurnJob.PlannedAt).
+            PlannedAt = now,
             ModelId = assistantMessage.ModelId!,
             History = history,
             ToolIds = offered.Select(t => t.Id).ToList(),
