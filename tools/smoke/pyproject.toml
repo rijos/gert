@@ -40,6 +40,9 @@ ignore = ["E501"]
 
 [dependency-groups]
 dev = ["ruff>=0.6", "mypy>=1.11"]
+monty = [
+    "pydantic-monty>=0.0.18",
+]
 
 [tool.mypy]
 python_version = "3.13"

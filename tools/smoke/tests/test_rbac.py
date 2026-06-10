@@ -77,3 +77,24 @@ def test_limited_role_drops_search_and_sandbox(
     app.composer.send("search the web for sqlite-vec benchmarks")
     # No web-search tool card should appear (the tag for search is "search").
     expect(app.thread.tool_card("Searching the web")).to_have_count(0)
+
+
+def test_absent_gert_tools_grants_no_tools(untooled_page: Page, base_url: str) -> None:
+    """The fail-closed floor: a JWT with NO ``gert_tools`` claim grants ZERO tools
+    — not even ``rag``, which every standing role has. The JWT is the sole source
+    of entitlement; there is no default grant (auth.md §10).
+
+    Driven through the canvas, which gives an unambiguous side-effect signal: the
+    scripted model still emits a ``make_artifact`` call (the mock doesn't know the
+    grant), but the orchestrator refuses it (the claim is the ceiling at execution
+    time too), so NO artifact is persisted and NO canvas tab opens — even though
+    the canned reply claims it did.
+    """
+    app = AppPage(untooled_page)
+    app.goto(base_url, "/")
+    app.wait_ready()
+    app.composer.send("make me a demo html page")
+    # The turn runs to completion (the model plays its scripted acknowledgement)…
+    expect(app.thread.last_bot_body).to_contain_text("in the canvas.", timeout=15000)
+    # …but the make_artifact tool was refused, so nothing reached the canvas.
+    expect(app.canvas.tab("html")).to_have_count(0)

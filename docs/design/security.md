@@ -23,7 +23,7 @@ don't belong to a single feature — CSP, SSRF, parser hardening — and the pla
      ├─▶ Filesystem  /data/users/{key}/projects/{pid}/…   (the data boundary)│
      ├─▶ vLLM        (chat + embeddings)         server-side only            │
      ├─▶ SearXNG     (web search) ── optional outbound fetch  ◀── SSRF edge  │
-     └─▶ gVisor      (run_python) ── code exec   ◀── strongest blast radius  ┘
+     └─▶ Sandbox     (run_python) ── code exec   ◀── strongest blast radius  ┘
 ```
 
 Four boundaries matter:
@@ -52,7 +52,7 @@ Four boundaries matter:
 | Bearer token | Theft via XSS | CSP + sanitized rendering + sandboxed artifacts; token kept out of long-lived storage where possible | [§3 / F1-F4](#3-findings--remediations) |
 | Tool capability | Privilege escalation via UI toggle | `gert_tools` JWT entitlement is the hard ceiling; intersect before advertising | [auth](auth.md#enforcement--the-claim-is-the-ceiling) |
 | Internal network | SSRF via web-search fetch | Block private/link-local/loopback + non-HTTP(S); no redirect into them; size/time cap | [§3 / F5](#3-findings--remediations), [chat-and-tools](chat-and-tools.md#web-search-searxng) |
-| The host | RCE / escape via `run_python` | gVisor: no `/data` mount, read-only rootfs, **egress off by default**, CPU/mem/PID/wall caps, ephemeral | [chat-and-tools](chat-and-tools.md#sandbox-gvisor--security-critical) |
+| The host | RCE / escape via `run_python` | Behind `ISandbox`: **monty** (Rust Python, no syscalls) in an unprivileged, no-`/data`, egress-off sidecar by default — or **gVisor** (ephemeral container); both with mem/wall caps | [chat-and-tools](chat-and-tools.md#sandbox--security-critical) |
 | Ingestion worker / host | XXE · zip-bomb · **memory-corruption in parsers** | Extraction in an **isolated unprivileged subprocess** (dropped privs, no net, `RLIMIT_*` + timeout); DTD/external-entities **off**; decompressed-size & entry caps | [§3 / F7](#3-findings--remediations), [tech-stack](tech-stack.md) |
 | Upload storage | Path traversal / overwrite via filename | Store under server-generated `{doc-id}.{ext}`; reject separators/`..`; extension allowlist | [operations](operations.md#cross-cutting-concerns), [testing §5](testing.md#validation--the-input-security-boundary) |
 | Any service input | Malformed/abusive payload | Fail-closed `IValidationProvider` in the service layer (API + Console); reflection meta-test | [principle #6](principles.md), [testing §5](testing.md#validation--the-input-security-boundary) |
@@ -110,8 +110,9 @@ the fetcher:
   (incl. IPv6 and the cloud metadata IP), re-checking **after each redirect**;
 - caps response size, time, and redirect count.
 
-The same egress reasoning makes the sandbox's outbound network **off by default**
-([chat-and-tools](chat-and-tools.md#sandbox-gvisor--security-critical)). → [chat-and-tools](chat-and-tools.md#web-search-searxng).
+The same egress reasoning keeps the sandbox's outbound network closed — **absent entirely**
+under monty (no network exists in the language), **off by default** under gVisor
+([chat-and-tools](chat-and-tools.md#sandbox--security-critical)). → [chat-and-tools](chat-and-tools.md#web-search-searxng).
 
 ### F6 — Admin `{key}` path validation
 `DELETE /api/admin/users/{key}` and `GET …/{key}` feed `{key}` into a `/data/users/{key}` path that
@@ -138,7 +139,7 @@ out-of-process in a locked-down helper:
 A crash, OOM, or timeout fails **that document** (`status='failed'`), never the host. On Linux this
 can reuse the same **gVisor (`runsc`)** isolation as the sandbox tool, or be a plain
 `seccomp`+`rlimits` child; the Console may extract in-process for single-user local use. This is the
-ingestion analog of [the `run_python` sandbox](chat-and-tools.md#sandbox-gvisor--security-critical).
+ingestion analog of [the `run_python` sandbox](chat-and-tools.md#sandbox--security-critical).
 → [tech-stack](tech-stack.md), [chat-and-tools](chat-and-tools.md#document-ingestion-pipeline).
 
 ### F8 — Secrets handling

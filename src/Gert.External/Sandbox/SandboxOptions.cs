@@ -1,17 +1,35 @@
 namespace Gert.External.Sandbox;
 
 /// <summary>
-/// Limits + wiring for the gVisor (<c>runsc</c>) Python sandbox (chat-and-tools.md
+/// Shared limits + backend selection for the <c>run_python</c> sandbox (chat-and-tools.md
 /// § sandbox; security F5). Bound from configuration section <c>Gert:Sandbox</c>. All
 /// non-secret. The defaults are the security posture: <b>egress off</b>, read-only
-/// rootfs, no <c>/data</c> mount, hard CPU/mem/PID/wall caps.
+/// rootfs, no <c>/data</c> mount, hard mem/wall caps.
+///
+/// <para>
+/// Two backends sit behind the one <see cref="Gert.Service.External.ISandbox"/> port,
+/// chosen by <see cref="Backend"/>: <c>monty</c> (Pydantic's Rust Python interpreter via a
+/// sidecar — the default, no container infra needed; reads <see cref="MontyOptions"/>) and
+/// <c>gvisor</c> (the <c>runsc</c> container backend). The limit fields below are read by
+/// both where they apply; <see cref="RunscPath"/>, <see cref="Image"/>,
+/// <see cref="EgressEnabled"/>, <see cref="PidLimit"/>, and <see cref="TmpSizeMiB"/> are
+/// gVisor-specific (monty has no processes, filesystem, or network to limit).
+/// </para>
 /// </summary>
 public sealed class SandboxOptions
 {
     /// <summary>The configuration section these options bind from.</summary>
     public const string SectionName = "Gert:Sandbox";
 
-    /// <summary>Path to the <c>runsc</c> binary.</summary>
+    /// <summary>
+    /// Which backend <see cref="Gert.Service.External.ISandbox"/> resolves to:
+    /// <c>monty</c> (default — the Rust Python interpreter sidecar, no container infra) or
+    /// <c>gvisor</c> (the <c>runsc</c> container). Case-insensitive; an unknown value fails
+    /// fast at startup.
+    /// </summary>
+    public string Backend { get; set; } = "monty";
+
+    /// <summary>Path to the <c>runsc</c> binary (gVisor backend only).</summary>
     public string RunscPath { get; set; } = "runsc";
 
     /// <summary>Container image / OCI bundle root with a Python runtime.</summary>

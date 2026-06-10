@@ -41,7 +41,10 @@ def base_url(request: pytest.FixtureRequest) -> str:
 
 
 def _make_context(browser: Browser, role: str) -> BrowserContext:
-    token = tokens.mint(role)
+    return _context_for_token(browser, tokens.mint(role))
+
+
+def _context_for_token(browser: Browser, token: str) -> BrowserContext:
     context = browser.new_context()
     context.add_init_script(f"window.GERT_DEV_TOKEN = {token!r};")
     return context
@@ -66,6 +69,20 @@ def user_page(browser: Browser, base_url: str) -> Iterator[Page]:
 @pytest.fixture
 def limited_page(browser: Browser, base_url: str) -> Iterator[Page]:
     context = _make_context(browser, "limited")
+    page = context.new_page()
+    yield page
+    context.close()
+
+
+@pytest.fixture
+def untooled_page(browser: Browser, base_url: str) -> Iterator[Page]:
+    """A user whose JWT carries NO ``gert_tools`` claim — the fail-closed path.
+
+    The JWT is the sole source of tool entitlement: there is no default grant, so
+    an absent claim yields ZERO tools (auth.md §10). ``mint(..., gert_tools=None)``
+    omits the claim entirely (not a null value), exercising exactly that path.
+    """
+    context = _context_for_token(browser, tokens.mint("user", gert_tools=None))
     page = context.new_page()
     yield page
     context.close()

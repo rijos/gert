@@ -123,7 +123,11 @@ def mint(
 
     Stamps iss/aud/exp/iat/nbf to match the FakeE2E host. ``overrides`` tweak any
     claim without a new role — e.g. ``mint("user", gert_tools="rag search sandbox")``
-    to prove the positive sandbox-entitlement path.
+    to prove the positive sandbox-entitlement path. An override of ``None`` OMITS
+    that claim entirely (mirrors .NET ``TestTokens.Mint``): ``mint("user",
+    gert_tools=None)`` mints a token with NO ``gert_tools`` claim — the fail-closed
+    path, since the JWT is the sole grant source and there is no default grant
+    (auth.md §10).
     """
     if role not in ROLES:
         raise ValueError(f"Unknown role {role!r}; use one of {sorted(ROLES)}.")
@@ -133,6 +137,8 @@ def mint(
 
     claims = dict(ROLES[role])
     claims.update(overrides)
+    # A None override removes the claim, so it is genuinely ABSENT (not null-valued).
+    claims = {key: value for key, value in claims.items() if value is not None}
 
     payload = {
         **claims,

@@ -38,7 +38,7 @@ public static class ServiceCollectionExtensions
         AddOptions(services, configuration);
         AddVllm(services);
         AddSearch(services);
-        AddSandbox(services);
+        AddSandbox(services, configuration);
         AddIsolatedExtractor(services);
 
         // The operator model catalog (Gert:Models + vLLM fallback) — feeds both
@@ -62,6 +62,9 @@ public static class ServiceCollectionExtensions
             .ValidateOnStart();
         services.AddOptions<SandboxOptions>()
             .Bind(configuration.GetSection(SandboxOptions.SectionName))
+            .ValidateOnStart();
+        services.AddOptions<MontyOptions>()
+            .Bind(configuration.GetSection(MontyOptions.SectionName))
             .ValidateOnStart();
         services.AddOptions<ExtractorOptions>()
             .Bind(configuration.GetSection(ExtractorOptions.SectionName))
@@ -121,9 +124,46 @@ public static class ServiceCollectionExtensions
             sp.GetRequiredService<ILogger<SearXngWebSearch>>()));
     }
 
-    private static void AddSandbox(IServiceCollection services)
+    private static void AddSandbox(IServiceCollection services, IConfiguration configuration)
     {
-        services.AddSingleton<ISandbox, GVisorSandbox>();
+        // Both backends sit behind the one ISandbox port; the operator picks via
+        // Gert:Sandbox:Backend. Default monty — it needs no container infra, so it is the
+        // backend we can actually run today (the gVisor bundle writer is still TODO).
+        var backend = (configuration[$"{SandboxOptions.SectionName}:Backend"] ?? "monty")
+            .Trim().ToLowerInvariant();
+
+        switch (backend)
+        {
+            case "":
+            case "monty":
+                AddMonty(services);
+                break;
+            case "gvisor":
+                services.AddSingleton<ISandbox, GVisorSandbox>();
+                break;
+            default:
+                throw new InvalidOperationException(
+                    $"Unknown {SandboxOptions.SectionName}:Backend '{backend}'. Use 'monty' or 'gvisor'.");
+        }
+    }
+
+    private static void AddMonty(IServiceCollection services)
+    {
+        // A plain typed client: NO standard resilience handler. A sandbox run is not safely
+        // retryable (re-running code wastes a run, and under code-mode would re-invoke
+        // tools), so the only time bounds are monty's own wall clock + this HTTP backstop.
+        services.AddHttpClient(MontySandbox.HttpClientName)
+            .ConfigureHttpClient((sp, client) =>
+            {
+                var opt = sp.GetRequiredService<IOptions<MontyOptions>>().Value;
+                client.BaseAddress = new Uri(opt.BaseUrl, UriKind.Absolute);
+                client.Timeout = TimeSpan.FromSeconds(opt.RequestTimeoutSeconds);
+            });
+
+        services.AddSingleton<ISandbox>(sp => new MontySandbox(
+            sp.GetRequiredService<IHttpClientFactory>().CreateClient(MontySandbox.HttpClientName),
+            sp.GetRequiredService<IOptions<SandboxOptions>>(),
+            sp.GetRequiredService<ILogger<MontySandbox>>()));
     }
 
     private static void AddIsolatedExtractor(IServiceCollection services)

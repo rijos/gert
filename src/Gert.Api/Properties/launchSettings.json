@@ -30,6 +30,10 @@
         "Gert__Vllm__BaseUrl": "http://127.0.0.1:8000",
         "Gert__Search__BaseUrl": "http://127.0.0.1:8080",
 
+        "$comment_sandbox": "run_python runs on the default monty backend, pointed at the Python monty mock (tools/smoke/mocks/monty.py) on :8077 — so the real MontySandbox adapter HTTP path is exercised against a wire-level fake.",
+        "Gert__Sandbox__Backend": "monty",
+        "Gert__Sandbox__Monty__BaseUrl": "http://127.0.0.1:8077",
+
         "Gert__Models__0__Id": "default",
         "Gert__Models__0__Name": "Echo Server",
         "Gert__Models__0__Default": "true",

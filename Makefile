@@ -49,14 +49,14 @@ smoke-auth: ## Boot mocks + FakeE2E host and run the API auth smoke (httpx only,
 
 .PHONY: serve-mock
 serve-mock: ## Boot python mocks + FakeE2E host + a dev proxy; open the printed URL in YOUR browser (no Playwright). ROLE=admin|user|limited
-	cd $(SMOKE_DIR) && uv sync
-	PYTHONPATH=. $(SMOKE_DIR)/.venv/bin/python -m tools.smoke.run --proxy --role $(or $(ROLE),admin)
+	cd $(SMOKE_DIR) && uv sync --group monty
+	PYTHONPATH=. $(SMOKE_DIR)/.venv/bin/python -m tools.smoke.run --proxy --monty-real --role $(or $(ROLE),admin)
 
 .PHONY: serve-mock-vllm
 serve-mock-vllm: ## serve-mock, but chat hits a REAL vLLM at VLLM_URL; optional SEARXNG_URL makes web search real too (e.g. https://searx.zaggy.nl — needs format=json). Auth stays mocked. [VLLM_MODEL=...] [ROLE=admin]
 	@test -n "$(VLLM_URL)" || { echo "usage: make serve-mock-vllm VLLM_URL=http://<host>:8000/v1 [SEARXNG_URL=https://searx.zaggy.nl] [VLLM_MODEL=<id>] [ROLE=admin|user|limited]"; exit 2; }
-	cd $(SMOKE_DIR) && uv sync
-	PYTHONPATH=. $(SMOKE_DIR)/.venv/bin/python -m tools.smoke.run --proxy --role $(or $(ROLE),admin) \
+	cd $(SMOKE_DIR) && uv sync --group monty
+	PYTHONPATH=. $(SMOKE_DIR)/.venv/bin/python -m tools.smoke.run --proxy --monty-real --role $(or $(ROLE),admin) \
 		--vllm-url $(VLLM_URL) $(if $(VLLM_MODEL),--vllm-model $(VLLM_MODEL)) \
 		$(if $(SEARXNG_URL),--searxng-url $(SEARXNG_URL))
 

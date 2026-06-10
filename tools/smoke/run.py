@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -48,7 +49,8 @@ from playwright.sync_api import ConsoleMessage, Error
 from starlette.applications import Starlette
 
 from . import tokens
-from .mocks import SEARXNG_PORT, VLLM_PORT
+from .mocks import MONTY_PORT, SEARXNG_PORT, VLLM_PORT
+from .mocks.monty import app as monty_app
 from .mocks.searxng import app as searxng_app
 from .mocks.vllm import app as vllm_app
 from .pages import AppPage
@@ -93,16 +95,38 @@ class _ServerThread:
 
 
 def _boot_mocks(
-    *, include_vllm: bool = True, include_searxng: bool = True
+    *,
+    include_vllm: bool = True,
+    include_searxng: bool = True,
+    include_monty: bool = True,
 ) -> list[_ServerThread]:
     servers: list[_ServerThread] = []
     if include_vllm:
         servers.append(_ServerThread(vllm_app, VLLM_PORT))
     if include_searxng:
         servers.append(_ServerThread(searxng_app, SEARXNG_PORT))
+    if include_monty:
+        servers.append(_ServerThread(monty_app, MONTY_PORT))
     for s in servers:
         s.start()
     return servers
+
+
+def _boot_real_monty() -> subprocess.Popen[bytes]:
+    """Boot the REAL tools/monty sidecar (pydantic-monty) on MONTY_PORT in this venv.
+
+    serve-mock uses this so run_python executes arbitrary Python on the real interpreter;
+    the deterministic mock (mocks/monty.py) is skipped when this runs. The sidecar shares
+    this harness's venv, where ``uv sync`` has installed pydantic-monty.
+    """
+    return subprocess.Popen(
+        [sys.executable, str(REPO_ROOT / "tools" / "monty" / "app.py")],
+        env={
+            **os.environ,
+            "GERT_MONTY_HOST": "127.0.0.1",
+            "GERT_MONTY_PORT": str(MONTY_PORT),
+        },
+    )
 
 
 # --- the host ----------------------------------------------------------------
@@ -606,6 +630,13 @@ def main(argv: list[str] | None = None) -> int:
         help="Point web search at a REAL SearXNG (e.g. https://searx.zaggy.nl) "
         "instead of the python mock. The instance must allow format=json.",
     )
+    parser.add_argument(
+        "--monty-real",
+        action="store_true",
+        help="Run run_python on the REAL monty interpreter (the tools/monty sidecar, "
+        "needs pydantic-monty) instead of the deterministic mock. Used by serve-mock so "
+        "you can execute arbitrary Python in the browser; the CI suite keeps the mock.",
+    )
     args = parser.parse_args(argv)
 
     browsers = BROWSERS if args.browser == "all" else [args.browser]
@@ -616,12 +647,14 @@ def main(argv: list[str] | None = None) -> int:
 
     mocks: list[_ServerThread] = []
     host_proc: subprocess.Popen[bytes] | None = None
+    monty_proc: subprocess.Popen[bytes] | None = None
     base_url = args.base_url or DEFAULT_HOST
 
     try:
         if args.base_url is None:
             real_vllm = args.vllm_url is not None
             real_searxng = args.searxng_url is not None
+            real_monty = args.monty_real
             extra_config: list[str] = []
             if real_vllm:
                 vllm_url = _normalize_vllm_url(args.vllm_url)
@@ -640,14 +673,20 @@ def main(argv: list[str] | None = None) -> int:
                 for name, mock_it in [
                     ("vLLM", not real_vllm),
                     ("SearXNG", not real_searxng),
+                    ("monty", not real_monty),
                 ]
                 if mock_it
             ]
             if mocked:
                 print(f"Booting mock upstreams ({' + '.join(mocked)})…")
             mocks = _boot_mocks(
-                include_vllm=not real_vllm, include_searxng=not real_searxng
+                include_vllm=not real_vllm,
+                include_searxng=not real_searxng,
+                include_monty=not real_monty,
             )
+            if real_monty:
+                print(f"Sandbox -> REAL monty sidecar (tools/monty) on :{MONTY_PORT}")
+                monty_proc = _boot_real_monty()
             time.sleep(1.0)
             # Deterministic runs: the host's user data is recreated from scratch on
             # every harness-owned boot, so stale state from a previous/killed run
@@ -692,12 +731,13 @@ def main(argv: list[str] | None = None) -> int:
             return matrix_rc or pytest_rc
         return matrix_rc
     finally:
-        if host_proc is not None:
-            host_proc.terminate()
-            try:
-                host_proc.wait(timeout=10)
-            except subprocess.TimeoutExpired:
-                host_proc.kill()
+        for proc in (host_proc, monty_proc):
+            if proc is not None:
+                proc.terminate()
+                try:
+                    proc.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
         for s in mocks:
             s.stop()
 

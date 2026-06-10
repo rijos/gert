@@ -172,22 +172,34 @@ SSRF-exposed part and is **off by default**.
 
 ---
 
-## 7. `Gert:Sandbox` — the gVisor Python sandbox
+## 7. `Gert:Sandbox` — the `run_python` sandbox
 
-Binds to `SandboxOptions`. The defaults *are* the security posture: egress off,
-read-only rootfs, hard caps. Raise them knowingly.
+Binds to `SandboxOptions`. Two backends sit behind one `ISandbox` port; `Backend`
+picks. The defaults *are* the security posture: egress off, no `/data` mount, hard
+caps. Raise them knowingly.
 
 | Key | Default | Notes |
 |-----|---------|-------|
-| `RunscPath` | `runsc` | Path to the gVisor binary. |
-| `Image` | `gert-sandbox-python` | OCI bundle with a Python runtime. |
-| `EgressEnabled` | `false` | Outbound network for sandboxed code — the exfiltration brake. Leave off unless you must. |
-| `WallClockSeconds` | `10` | Kill timeout per run. |
-| `CpuSeconds` | `5` | CPU-time limit. |
-| `MemoryMiB` | `256` | Memory limit. |
-| `PidLimit` | `64` | Max processes/threads. |
-| `TmpSizeMiB` | `32` | Writable `/tmp`; rootfs stays read-only. |
-| `MaxOutputBytes` | `65536` | Captured stdout/stderr cap. |
+| `Backend` | `monty` | Which backend runs `run_python`: `monty` (Pydantic's Rust Python interpreter via the sidecar — no container infra) or `gvisor` (runsc container). An unknown value fails fast at startup. |
+| `WallClockSeconds` | `10` | Kill timeout per run (both backends). |
+| `MemoryMiB` | `256` | Memory limit (both backends). |
+| `MaxOutputBytes` | `65536` | Captured stdout/stderr cap (both backends). |
+| `CpuSeconds` | `5` | CPU-time limit (gVisor only). |
+| `PidLimit` | `64` | Max processes/threads (gVisor only). |
+| `TmpSizeMiB` | `32` | Writable `/tmp`; rootfs stays read-only (gVisor only). |
+| `RunscPath` | `runsc` | Path to the gVisor binary (gVisor only). |
+| `Image` | `gert-sandbox-python` | OCI bundle with a Python runtime (gVisor only). |
+| `EgressEnabled` | `false` | gVisor outbound network — the exfiltration brake. Leave off unless you must. (Monty has no network at all.) |
+
+### 7a. `Gert:Sandbox:Monty` — the monty sidecar (`Backend=monty`)
+
+Binds to `MontyOptions`. Run the sidecar from [tools/monty](../../tools/monty/README.md);
+it is reached server-side only.
+
+| Key | Default | Notes |
+|-----|---------|-------|
+| `BaseUrl` | `http://localhost:8077` | Where the monty sidecar listens. |
+| `RequestTimeoutSeconds` | `30` | HTTP backstop above the run's wall clock, for a hung sidecar. |
 
 ---
 

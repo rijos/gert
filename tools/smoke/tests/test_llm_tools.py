@@ -240,6 +240,26 @@ def test_todo_tool_is_refused_without_the_entitlement(
     expect(app.thread.last_bot_body).to_contain_text("Plan is up", timeout=15000)
 
 
+# ---- sandbox (run_python) ----------------------------------------------------
+
+
+def test_run_python_card_shows_stdout(page: Page, base_url: str) -> None:
+    """run_python runs on the default monty backend (through the monty mock) and the
+    captured stdout lands verbatim on the tool card; the turn then completes. Proves
+    the real MontySandbox adapter HTTP path end to end (admin holds gert_tools '*')."""
+    app = _open(page, base_url)
+    app.composer.send("run python to add two and two")
+
+    card = app.thread.tool_cards.first
+    expect(card).to_be_visible(timeout=15000)
+    app.thread.expand_tool_card(card)
+
+    # The mock evaluates print(2 + 2) → "4"; MontySandbox carries it through the tool
+    # loop to the card's verbatim stdout pre-block.
+    expect(app.thread.tool_stdout.first).to_contain_text("4", timeout=15000)
+    expect(app.thread.last_bot_body).to_contain_text("The result is 4", timeout=15000)
+
+
 # ---- clock -------------------------------------------------------------------
 
 

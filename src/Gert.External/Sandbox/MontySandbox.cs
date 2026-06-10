@@ -1,0 +1,134 @@
+using System.Net.Http.Json;
+using Gert.Service.External;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+
+namespace Gert.External.Sandbox;
+
+/// <summary>
+/// Real <see cref="ISandbox"/> backed by the <b>monty</b> sidecar — Pydantic's minimal
+/// Python interpreter written in Rust (chat-and-tools.md § sandbox; security F5). Monty
+/// has <b>no syscalls</b>: there is no filesystem, network, or env access in the language
+/// at all, so untrusted code can only reach the outside world through host callbacks —
+/// and plain <c>run_python</c> grants none. The sidecar <i>process</i> is the OS-level
+/// boundary wrapped around that (unprivileged, no <c>/data</c> mount, egress off): monty's
+/// capability sandbox nested inside a process sandbox.
+///
+/// <para>
+/// This adapter is a thin typed-<see cref="HttpClient"/> client — it POSTs the code plus
+/// the shared per-run limits (<see cref="SandboxOptions"/>) to the sidecar's <c>/run</c>
+/// and maps the JSON back to a <see cref="SandboxResult"/>. A transport failure or the
+/// HTTP-timeout backstop is mapped to a graceful result by <see cref="MapFailure"/> — the
+/// sandbox must never throw an infra error into the tool loop. <b>No automatic retries:</b>
+/// a code run is not safely repeatable (and under code-mode would re-invoke tools), so the
+/// only time bounds are monty's own wall clock and the HTTP-timeout backstop.
+/// </para>
+///
+/// <para>
+/// <b>Integration-only:</b> the live call needs a running monty sidecar. CI exercises the
+/// pure <see cref="MapResponse"/> / <see cref="MapFailure"/> mapping and the FakeE2E mock
+/// upstream; the real <c>pydantic-monty</c> path is validated on a host that has it.
+/// </para>
+/// </summary>
+public sealed class MontySandbox : ISandbox
+{
+    /// <summary>The named <c>HttpClient</c> for the monty sidecar.</summary>
+    public const string HttpClientName = "monty";
+
+    private readonly HttpClient _http;
+    private readonly SandboxOptions _options;
+    private readonly ILogger<MontySandbox> _logger;
+
+    /// <summary>Construct over the monty typed client + the shared per-run limits.</summary>
+    public MontySandbox(HttpClient http, IOptions<SandboxOptions> options, ILogger<MontySandbox> logger)
+    {
+        _http = http ?? throw new ArgumentNullException(nameof(http));
+        _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+    }
+
+    /// <inheritdoc />
+    public async Task<SandboxResult> RunPythonAsync(string code, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(code);
+
+        var request = new MontyRunRequest
+        {
+            Code = code,
+            WallClockSeconds = _options.WallClockSeconds,
+            MemoryMiB = _options.MemoryMiB,
+            MaxOutputBytes = _options.MaxOutputBytes,
+        };
+
+        try
+        {
+            using var response = await _http.PostAsJsonAsync("/run", request, cancellationToken).ConfigureAwait(false);
+            response.EnsureSuccessStatusCode();
+            var payload = await response.Content
+                .ReadFromJsonAsync<MontyRunResponse>(cancellationToken).ConfigureAwait(false);
+            return MapResponse(payload);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // The caller cancelled (e.g. the turn was abandoned) — propagate, don't swallow.
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "monty sidecar /run failed; returning a graceful result.");
+            return MapFailure(ex);
+        }
+    }
+
+    /// <summary>
+    /// Map the sidecar's JSON response to a <see cref="SandboxResult"/>. A null/empty body
+    /// (a sidecar bug) degrades to a non-zero exit the model can read rather than a throw.
+    /// Pure + unit-tested.
+    /// </summary>
+    public static SandboxResult MapResponse(MontyRunResponse? payload)
+    {
+        if (payload is null)
+        {
+            return new SandboxResult
+            {
+                ExitCode = 1,
+                Stderr = "monty sidecar returned an empty response.",
+            };
+        }
+
+        return new SandboxResult
+        {
+            ExitCode = payload.ExitCode,
+            Stdout = payload.Stdout,
+            Stderr = payload.Stderr,
+            TimedOut = payload.TimedOut,
+        };
+    }
+
+    /// <summary>
+    /// Map a transport failure — sidecar unreachable, a non-success status, or the
+    /// HTTP-timeout backstop — to a graceful <see cref="SandboxResult"/>. By the time we
+    /// get here a caller cancellation has already been re-thrown, so a remaining
+    /// cancellation/timeout means the run overran: a timed-out result. Pure + unit-tested.
+    /// </summary>
+    public static SandboxResult MapFailure(Exception exception)
+    {
+        ArgumentNullException.ThrowIfNull(exception);
+
+        if (exception is TimeoutException or OperationCanceledException)
+        {
+            return new SandboxResult
+            {
+                ExitCode = 124, // conventional timeout exit code
+                Stderr = "Sandbox run exceeded the wall-clock limit and was terminated.",
+                TimedOut = true,
+            };
+        }
+
+        return new SandboxResult
+        {
+            ExitCode = 1,
+            Stderr = $"Sandbox run failed: {exception.Message}",
+        };
+    }
+}

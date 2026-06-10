@@ -164,7 +164,7 @@ Run phase (worker scope, `DetachedUserContext` seeded from the job's snapshot):
      b. execute the tool against THIS project's resources
         - search_documents → hybrid query (below) on this project's rag.db (docs + memory)
         - web_search       → SearXNG
-        - run_python       → gVisor sandbox
+        - run_python       → sandbox (monty by default, or gVisor)
         - make/edit/read_artifact → this conversation's artifacts rows (chat.db)
         (entitlement re-checked against the job's plan-time snapshot)
      c. emit `tool_result` + persist the tool_calls row live (with latency_ms);
@@ -291,12 +291,10 @@ Server-side `HttpClient` (via `IHttpClientFactory`) to the SearXNG JSON API. Tak
 > IP), **re-checking after every redirect**; and cap response size, time, and redirect count. The
 > fetcher must never reach vLLM, SearXNG, or any other internal service.
 
-### Sandbox (gVisor) — security-critical
-Each `run_python` call executes in an **ephemeral gVisor (`runsc`) container**:
+### Sandbox — security-critical
+`run_python` runs untrusted, model-written code — the strongest blast radius in the system ([security F5](security.md#3-findings--remediations)). Two backends sit behind one `ISandbox` port, chosen by the operator (`Gert:Sandbox:Backend`):
 
-- no inbound network; **outbound disabled by default** (an allow-list is opt-in only, never the default) — the egress/exfiltration brake for arbitrary code ([security F5](security.md#3-findings--remediations)),
-- read-only rootfs, a small writable `/tmp`, **no mount of `/data`** (the sandbox must never see another user's — or this user's — DB files),
-- CPU/memory/PID limits and a hard wall-clock timeout,
-- container destroyed after the call; only captured `stdout`/`stderr` returns.
+- **monty** *(default)* — [Pydantic Monty](https://github.com/pydantic/monty), a minimal Python interpreter written in Rust with **no syscalls**: the language itself has no filesystem, network, or env access, so untrusted code can only reach the world through host callbacks (plain `run_python` grants none — that arrives with code-mode). It runs in a **sidecar process** Gert reaches server-side over HTTP ([tools/monty](../../tools/monty/README.md)) — unprivileged, no `/data`, egress off: monty's capability sandbox nested in an OS sandbox. Microsecond startup, no container, no infra. A Python *subset* (no classes/`match`, small stdlib) — fine for "calculations and quick data transforms"; an unsupported construct returns an error the model reads.
+- **gVisor (`runsc`)** — an **ephemeral container** running real CPython, for workloads needing the full language/stdlib: no inbound network, **outbound off by default** (an allow-list is opt-in only, never the default), read-only rootfs, a small writable `/tmp`, container destroyed after the call. Needs gVisor on the host.
 
-Because the sandbox has no filesystem access to user data, code execution stays isolated from the per-user storage model.
+Both backends share the posture: **no mount of `/data`** (the sandbox must never see another user's — or this user's — DB files), a hard wall-clock + memory cap, and only captured `stdout`/`stderr` returns. Because the sandbox has no filesystem access to user data, code execution stays isolated from the per-user storage model.

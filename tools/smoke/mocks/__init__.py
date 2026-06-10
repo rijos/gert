@@ -9,3 +9,4 @@ deterministic spec in :mod:`tools.smoke.mocks.specs`.
 # Default localhost ports the FakeE2E launch profile expects.
 VLLM_PORT = 8000
 SEARXNG_PORT = 8080
+MONTY_PORT = 8077

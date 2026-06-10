@@ -15,7 +15,7 @@
 | Background work | `System.Threading.Channels` + `BackgroundService` (Gert.Api) | Ingestion queue — an **Api hosting** concern wrapping `IIngestionService`; the Console ingests inline. |
 | Logging | **Serilog** → JSON lines (NDJSON) on stdout | `ts`/`level`-first schema **shared with the Python tooling** so one parser reads every process; never logs tokens/`sub`/content ([operations § Logging format](operations.md#logging-format-shared)). |
 | Extraction | **PdfPig** (PDF), **OpenXML** (DOCX) | Text extraction for chunking. Parses **untrusted** bytes, so it runs in an **isolated, unprivileged subprocess** (dropped privs, no net, `RLIMIT_AS`/`CPU`/`NPROC` + timeout) with DTD/external-entity **off** (XXE) and decompressed-size/zip-entry caps (bombs) — may reuse gVisor ([security F7](security.md#3-findings--remediations)). |
-| Sandbox | **gVisor (`runsc`)** containers | Isolated Python execution, **outbound egress off by default** (in `Gert.External` behind `ISandbox`); the Console can wire a null/stub sandbox. |
+| Sandbox | **monty** (Rust Python) *default* · **gVisor (`runsc`)** | Isolated `run_python` behind one `ISandbox` port, operator-picked (`Gert:Sandbox:Backend`): monty has **no syscalls** and runs in an unprivileged sidecar (no container infra); gVisor runs real CPython in an ephemeral container. **Egress off** either way; no `/data` mount. |
 
 ## Architecture
 
@@ -128,7 +128,7 @@ Gert.sln
 ├─ Gert.External/             # outside-world adapters — references Service, Model
 │  ├─ Vllm/                   #   IChatModelClient + IEmbeddingClient — OpenAI-compatible (IHttpClientFactory + Polly)
 │  ├─ Search/                 #   IWebSearch — SearXNG client + SSRF-guarded fetch (security F5)
-│  ├─ Sandbox/                #   ISandbox — gVisor (runsc) exec, egress off by default
+│  ├─ Sandbox/                #   ISandbox — monty sidecar (default) or gVisor (runsc); Gert:Sandbox:Backend picks
 │  ├─ Isolation/             #   IIsolatedExtractor — unprivileged subprocess for PDF/DOCX parsing (security F7)
 │  └─ ServiceCollectionExtensions.cs  # AddGertExternal(cfg): one registration; swap any provider in isolation
 │

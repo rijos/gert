@@ -1,0 +1,23 @@
+[project]
+name = "gert-monty-sidecar"
+version = "0.1.0"
+description = "HTTP sidecar wrapping Pydantic Monty as Gert's run_python sandbox backend."
+requires-python = ">=3.11"
+dependencies = [
+    "pydantic-monty>=0.0.18",
+    "starlette>=0.37",
+    "uvicorn>=0.30",
+]
+
+[dependency-groups]
+dev = ["ruff>=0.6", "mypy>=1.11"]
+
+[tool.ruff]
+line-length = 88
+
+[tool.mypy]
+strict = true
+# pydantic-monty is a young package; don't fail the type check on its missing stubs.
+[[tool.mypy.overrides]]
+module = ["pydantic_monty.*"]
+ignore_missing_imports = true

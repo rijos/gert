@@ -123,7 +123,8 @@ tools/
       test_chat.py              #   new chat → send → streaming → tool cards → citations
       test_knowledge.py         #   upload → status pills → use-in-chat toggle
       test_canvas.py            #   artifact tabs · rendered/source · html iframe · code problems
-      test_rbac.py              #   admin sees /admin/users; user gets 403; IDOR is blocked
+      test_rbac.py              #   admin sees /admin/users; user gets 403; IDOR blocked;
+                                #   entitlement ceiling (limited) + absent-claim → no tools
       test_chrome.py            #   theme toggle · responsive drawers · model picker
       test_llm_tools.py         #   artifacts, memory retrieval, todos, clock through the tool loop
       test_auth_smoke.py        #   API auth smoke (httpx, no browser): invalid/missing tokens rejected
@@ -472,7 +473,11 @@ output parses with one reader.
 - **RBAC + IDOR + entitlement**: as **admin**, `/admin/users` loads; as **user**, it's hidden and
   the API returns 403; a user cannot open another user's document. As **`limited`**, the Search and
   Sandbox tool chips are unavailable and the API drops those tools even if the request asks for them
-  (the entitlement ceiling, [auth](auth.md#enforcement--the-claim-is-the-ceiling)).
+  (the entitlement ceiling, [auth](auth.md#enforcement--the-claim-is-the-ceiling)). With **no
+  `gert_tools` claim at all** (a `mint(..., gert_tools=None)` override — the fail-closed floor,
+  [decisions §10](decisions.md#10-tool-entitlement--the-jwt-is-the-sole-source-no-default-grant)), even a
+  tool every other role has is refused: the scripted model still calls `make_artifact`, but the
+  orchestrator drops it, so no artifact is persisted and the canvas stays empty.
 
 **Setup** (via **[uv](https://github.com/astral-sh/uv)** — the project's Python env manager):
 `cd tools/smoke && uv sync && uv run playwright install chromium firefox`.
