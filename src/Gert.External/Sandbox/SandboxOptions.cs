@@ -41,7 +41,11 @@ public sealed class SandboxOptions
     /// </summary>
     public bool EgressEnabled { get; set; }
 
-    /// <summary>Wall-clock kill timeout for a run (seconds).</summary>
+    /// <summary>
+    /// Wall-clock kill timeout for a run (seconds). With the monty backend this must sit
+    /// <b>below</b> <see cref="MontyOptions.RequestTimeoutSeconds"/> (its HTTP backstop) —
+    /// enforced fail-fast at startup.
+    /// </summary>
     public int WallClockSeconds { get; set; } = 10;
 
     /// <summary>CPU-time limit (seconds).</summary>

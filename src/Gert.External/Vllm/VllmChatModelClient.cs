@@ -14,7 +14,11 @@ namespace Gert.External.Vllm;
 ///
 /// <para>
 /// The typed <c>HttpClient</c> is configured by <see cref="ServiceCollectionExtensions"/>
-/// with the base URL, bearer key (secret, F8), and a Polly timeout+retry pipeline.
+/// with the base URL, bearer key (secret, F8), an <b>infinite</b> client timeout, and a
+/// Polly pipeline that bounds only the pre-stream phase (time to response headers, bound
+/// to <see cref="VllmOptions.RequestTimeoutSeconds"/>/<see cref="VllmOptions.RetryCount"/>).
+/// The stream itself is owned by the turn-lifetime token the caller passes in
+/// (turn-budgets.md §4a) — HTTP-layer timeouts never cap a healthy generation.
 /// </para>
 ///
 /// <para>

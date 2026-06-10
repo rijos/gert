@@ -15,6 +15,9 @@ namespace Gert.External.Vllm;
 /// <para>
 /// The typed <c>HttpClient</c> (base URL + secret bearer key, F8) and the Polly
 /// timeout+retry pipeline are configured by <see cref="ServiceCollectionExtensions"/>.
+/// Unlike chat, this call is <b>buffered</b>, so its named client keeps a finite overall
+/// timeout sitting just outside the pipeline's total; embedding POSTs are idempotent
+/// (a pure function of the input batch), so options-bound retries are safe.
 /// </para>
 ///
 /// <para>
@@ -25,8 +28,12 @@ namespace Gert.External.Vllm;
 /// </summary>
 public sealed class VllmEmbeddingClient : IEmbeddingClient
 {
-    /// <summary>The named <c>HttpClient</c> for the vLLM upstream (shared with chat).</summary>
-    public const string HttpClientName = VllmChatModelClient.HttpClientName;
+    /// <summary>
+    /// The named <c>HttpClient</c> for the vLLM embeddings path — split from the chat
+    /// client because their timeout ownership differs: chat streams (infinite client
+    /// timeout), embeddings buffer (finite).
+    /// </summary>
+    public const string HttpClientName = "vllm-embeddings";
 
     private readonly HttpClient _http;
     private readonly VllmOptions _options;

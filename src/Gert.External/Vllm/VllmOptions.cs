@@ -28,9 +28,21 @@ public sealed class VllmOptions
     /// <summary>Expected embedding dimension (bge-m3 = 1024). Mismatch is rejected.</summary>
     public int EmbeddingDimensions { get; set; } = 1024;
 
-    /// <summary>Per-request timeout for a single attempt (seconds). Polly wraps this.</summary>
+    /// <summary>
+    /// Max wait, per attempt, for the upstream to <b>accept</b> a request — time to
+    /// response headers, in seconds — <b>not</b> the stream duration. The chat SSE body
+    /// that follows the headers is bounded by the turn-lifetime token, never by HTTP
+    /// timeouts (turn-budgets.md §4a, <c>MaxTurnDuration</c>); the buffered embeddings
+    /// body is covered by that client's finite overall timeout. Default 120.
+    /// </summary>
     public int RequestTimeoutSeconds { get; set; } = 120;
 
-    /// <summary>Retry attempts on transient upstream failure.</summary>
+    /// <summary>
+    /// Retry attempts on transient pre-stream failure (connect / headers phase), for both
+    /// chat and embeddings. Safe for the non-idempotent chat POST because the pipeline
+    /// completes at the response headers — a retried attempt means no tokens were ever
+    /// streamed; embedding POSTs are idempotent outright. <c>0</c> disables retries.
+    /// Default 2.
+    /// </summary>
     public int RetryCount { get; set; } = 2;
 }

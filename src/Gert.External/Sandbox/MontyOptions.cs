@@ -24,7 +24,9 @@ public sealed class MontyOptions
     /// Per-request HTTP timeout for a <c>/run</c> call (seconds). A backstop set
     /// <b>above</b> monty's own wall clock (<see cref="SandboxOptions.WallClockSeconds"/>)
     /// so the interpreter's limit trips first and returns a clean timed-out result; the
-    /// HTTP timeout only fires if the sidecar itself hangs.
+    /// HTTP timeout only fires if the sidecar itself hangs. The relation is enforced at
+    /// startup when the monty backend is selected (a validator in
+    /// <c>Gert.External.ServiceCollectionExtensions</c> fails fast otherwise).
     /// </summary>
     public int RequestTimeoutSeconds { get; set; } = 30;
 }
