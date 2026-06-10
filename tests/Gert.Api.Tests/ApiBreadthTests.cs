@@ -195,6 +195,33 @@ public sealed class ApiBreadthTests : IClassFixture<GertApiFactory>
         body.Should().Contain("\"service\":\"gert\"");
     }
 
+    [Fact]
+    public async Task Non_uuid_pid_on_conversations_is_400_problem_details_not_500()
+    {
+        var client = Authed();
+
+        var response = await client.GetAsync("/api/projects/not-a-guid/conversations");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        response.Content.Headers.ContentType!.MediaType.Should().Be("application/problem+json");
+        var body = await response.Content.ReadAsStringAsync();
+        body.Should().Contain("\"service\":\"gert\"");
+    }
+
+    [Fact]
+    public async Task N_format_guid_pid_on_conversations_is_400_not_a_storage_500()
+    {
+        // The storage guards require the canonical "D" GUID shape; a no-dash "N"
+        // GUID must be rejected at the route boundary, never reach a path-join.
+        var client = Authed();
+
+        var response = await client.GetAsync(
+            $"/api/projects/{Guid.NewGuid():N}/conversations");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        response.Content.Headers.ContentType!.MediaType.Should().Be("application/problem+json");
+    }
+
     [Theory]
     [InlineData("..")]
     [InlineData("%2e%2e")]

@@ -1,3 +1,5 @@
+using System.Text;
+
 namespace Gert.Api.Security;
 
 /// <summary>
@@ -32,6 +34,20 @@ public static class SecurityHeadersExtensions
         var ticketOptions = new ArtifactTicketOptions { Origin = artifactOrigin };
         configuration.GetSection("Artifacts").Bind(ticketOptions);
         ticketOptions.Origin = artifactOrigin; // normalized origin wins over raw config
+
+        // Fail fast on a weak explicit HMAC key (security F3): a short passphrase
+        // makes minted tickets forgeable offline, so refuse to boot rather than run
+        // weakened. Unset keeps the random per-process key above.
+        if (!string.IsNullOrEmpty(ticketOptions.Secret) &&
+            Encoding.UTF8.GetByteCount(ticketOptions.Secret)
+                < ArtifactTicketOptions.MinimumSecretBytes)
+        {
+            throw new InvalidOperationException(
+                "Artifacts:Secret is set but too short for an HMAC key. Provide at least " +
+                $"{ArtifactTicketOptions.MinimumSecretBytes} bytes (UTF-8) — e.g. " +
+                "`openssl rand -base64 32` — or unset it to use a random per-process key.");
+        }
+
         services.AddSingleton(ticketOptions);
         services.AddSingleton<ArtifactTicketService>();
 

@@ -18,9 +18,19 @@ public sealed class ArtifactTicketOptions
     public string Origin { get; set; } = string.Empty;
 
     /// <summary>
-    /// HMAC signing key. When unset a random 32-byte key is generated at startup —
-    /// fine for a single instance (tickets are short-lived and process-local); set
-    /// an explicit shared secret only when running multiple instances behind a LB.
+    /// The minimum UTF-8 byte length an explicit <see cref="Secret"/> must have —
+    /// the HMAC-SHA256 block-input floor a brute-forceable short passphrase would
+    /// undercut. Enforced fail-fast at startup by
+    /// <see cref="SecurityHeadersExtensions.AddGertSecurityHeaders"/> (security F3).
+    /// </summary>
+    public const int MinimumSecretBytes = 32;
+
+    /// <summary>
+    /// HMAC signing key (a secret — env / user-secrets, never <c>appsettings.json</c>;
+    /// security F8). When unset a random 32-byte key is generated at startup — fine
+    /// for a single instance (tickets are short-lived and process-local); set an
+    /// explicit shared secret only when running multiple instances behind a LB. An
+    /// explicit secret must be at least <see cref="MinimumSecretBytes"/> UTF-8 bytes.
     /// </summary>
     public string? Secret { get; set; }
 

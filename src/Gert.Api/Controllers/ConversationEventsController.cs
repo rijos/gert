@@ -1,4 +1,5 @@
 using Gert.Api.Sse;
+using Gert.Api.Validation;
 using Gert.Model.Dtos;
 using Gert.Service.Chat;
 using Microsoft.AspNetCore.Mvc;
@@ -41,6 +42,8 @@ public sealed class ConversationEventsController : ControllerBase
         [FromQuery] int limit = 200,
         CancellationToken cancellationToken = default)
     {
+        RouteParams.RequireValidProjectId(pid);
+
         var range = await _reader
             .ReadRangeAsync(pid, id, after, limit, cancellationToken)
             .ConfigureAwait(false);
@@ -60,6 +63,8 @@ public sealed class ConversationEventsController : ControllerBase
         [FromQuery] long after = 0,
         CancellationToken cancellationToken = default)
     {
+        RouteParams.RequireValidProjectId(pid);
+
         var events = _streamer.StreamAsync(pid, id, after, cancellationToken);
         return TurnSseWriter.WriteAsync(Response, events, cancellationToken);
     }

@@ -30,6 +30,18 @@ public sealed class JwtAuthConfigTests
     }
 
     [Fact]
+    public void MapInboundClaims_is_disabled_so_claim_types_stay_verbatim()
+    {
+        // Without this pin the JWT handler remaps short OIDC claims (sub, iss) to
+        // long WS-* URIs and HttpUserContext can't find "sub" (auth.md § the user
+        // context).
+        var options = new JwtBearerOptions();
+        GertJwtAuthExtensions.ConfigureJwtBearer(options, Config());
+
+        options.MapInboundClaims.Should().BeFalse();
+    }
+
+    [Fact]
     public void Validation_flags_and_claim_mappings_are_set()
     {
         var options = new JwtBearerOptions();

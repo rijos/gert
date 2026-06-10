@@ -1,4 +1,6 @@
 using System.Net.WebSockets;
+using Gert.Api.Validation;
+
 namespace Gert.Api.WebSockets;
 
 /// <summary>
@@ -37,6 +39,14 @@ public static class ChatWebSocketEndpoint
 
     private static async Task HandleAsync(string pid, string id, HttpContext context)
     {
+        // {pid} shape guard (configuration.md § 2.5) BEFORE the socket is accepted:
+        // the thrown ValidationException reaches UseExceptionHandler →
+        // ValidationExceptionHandler, which renders the same branded 400
+        // ProblemDetails the sibling controllers produce — the upgrade response has
+        // not started yet, so a malformed pid never becomes an accepted-then-closed
+        // socket.
+        RouteParams.RequireValidProjectId(pid);
+
         if (!context.WebSockets.IsWebSocketRequest)
         {
             context.Response.StatusCode = StatusCodes.Status400BadRequest;

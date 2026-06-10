@@ -102,6 +102,23 @@ public sealed class AdminSurfaceTests
     }
 
     [Fact]
+    public async Task Non_admin_delete_user_is_403_and_never_reaches_the_service()
+    {
+        var fake = new FakeAdminService();
+        using var factory = WithFakeAdmin(fake);
+
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization =
+            new AuthenticationHeaderValue("Bearer", factory.TokenFor("user"));
+
+        var key = new string('a', 64); // well-formed, so only RBAC stands between us and the delete
+        var response = await client.DeleteAsync($"/api/admin/users/{key}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        fake.SeenKeys.Should().BeEmpty("the admin policy rejects a non-admin before the service is called");
+    }
+
+    [Fact]
     public async Task Delete_with_well_formed_key_reaches_the_service()
     {
         var fake = new FakeAdminService();

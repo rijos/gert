@@ -172,11 +172,17 @@ public static class ValidationRules
 
     /// <summary>
     /// True if <paramref name="value"/> is a well-formed conversation/document/memory
-    /// identifier: a GUID in any standard format. IDOR is structural (key from token),
-    /// so this is defence-in-depth before an id reaches a repo (testing.md section 5).
+    /// identifier: a GUID in the canonical "D" format (8-4-4-4-12, the shape
+    /// <c>Guid.NewGuid().ToString("D")</c> produces and every server-generated id
+    /// uses). Pinned to "D" — not <see cref="Guid.TryParse(string?, out Guid)"/> —
+    /// because the storage guards (<c>StorageKeys.ValidatePid</c>,
+    /// <c>SqliteDatabasePaths.ValidatePid</c>) require exactly that shape, so an
+    /// "N"/"B"/"P"-format GUID must 400 at this boundary instead of 500 at storage.
+    /// IDOR is structural (key from token), so this is defence-in-depth before an id
+    /// reaches a repo (testing.md section 5).
     /// </summary>
     public static bool IsWellFormedId(string? value) =>
-        !string.IsNullOrWhiteSpace(value) && Guid.TryParse(value, out _);
+        !string.IsNullOrWhiteSpace(value) && Guid.TryParseExact(value, "D", out _);
 
     /// <summary>
     /// True if <paramref name="value"/> is a valid project id: a GUID or the literal

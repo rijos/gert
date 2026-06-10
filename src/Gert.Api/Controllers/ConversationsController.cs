@@ -1,4 +1,5 @@
 using Gert.Api.Contracts;
+using Gert.Api.Validation;
 using Gert.Model.Chat;
 using Gert.Model.Dtos;
 using Gert.Service;
@@ -12,7 +13,8 @@ namespace Gert.Api.Controllers;
 /// delegates to <see cref="IConversationService"/> via the <see cref="IGertServices"/>
 /// hub. The user is implicit (from the token) — there is no <c>userId</c> in the
 /// path; <c>pid</c> resolves only within the caller's own folder (configuration.md
-/// § 2.5). Covered by the fallback authenticated-user policy.
+/// § 2.5). Every action validates <c>{pid}</c> first. Covered by the fallback
+/// authenticated-user policy.
 /// </summary>
 [ApiController]
 [Route("api/projects/{pid}/conversations")]
@@ -33,6 +35,8 @@ public sealed class ConversationsController : ControllerBase
         string pid,
         CancellationToken cancellationToken)
     {
+        RouteParams.RequireValidProjectId(pid);
+
         var conversations = await _services.Conversations
             .ListAsync(pid, cancellationToken)
             .ConfigureAwait(false);
@@ -46,6 +50,8 @@ public sealed class ConversationsController : ControllerBase
         [FromBody] CreateConversationRequest request,
         CancellationToken cancellationToken)
     {
+        RouteParams.RequireValidProjectId(pid);
+
         var created = await _services.Conversations
             .CreateAsync(pid, request, cancellationToken)
             .ConfigureAwait(false);
@@ -63,6 +69,8 @@ public sealed class ConversationsController : ControllerBase
         string id,
         CancellationToken cancellationToken)
     {
+        RouteParams.RequireValidProjectId(pid);
+
         // Through the reader, not the CRUD service: it applies the orphan rule, so
         // an abandoned streaming row reads as error (chat-and-tools.md § detached turns).
         var thread = await _reader
@@ -80,6 +88,8 @@ public sealed class ConversationsController : ControllerBase
         [FromBody] UpdateConversationRequest request,
         CancellationToken cancellationToken)
     {
+        RouteParams.RequireValidProjectId(pid);
+
         var updated = await _services.Conversations
             .UpdateAsync(pid, id, request, cancellationToken)
             .ConfigureAwait(false);
@@ -94,6 +104,8 @@ public sealed class ConversationsController : ControllerBase
         string id,
         CancellationToken cancellationToken)
     {
+        RouteParams.RequireValidProjectId(pid);
+
         var deleted = await _services.Conversations
             .DeleteAsync(pid, id, cancellationToken)
             .ConfigureAwait(false);

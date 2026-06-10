@@ -1,3 +1,4 @@
+using Gert.Api.Validation;
 using Gert.Model.Dtos;
 using Gert.Service;
 using Gert.Service.Chat;
@@ -47,6 +48,8 @@ public sealed class MessagesController : ControllerBase
         [FromBody] SendMessageRequest request,
         CancellationToken cancellationToken)
     {
+        RouteParams.RequireValidProjectId(pid);
+
         var job = await _planner.PlanAsync(pid, id, request, cancellationToken).ConfigureAwait(false);
         await _queue.EnqueueAsync(job, cancellationToken).ConfigureAwait(false);
 
@@ -68,8 +71,12 @@ public sealed class MessagesController : ControllerBase
     /// <c>cancelled</c> event arrives on the normal delivery transports.
     /// </summary>
     [HttpPost("~/api/projects/{pid}/conversations/{id}/cancel")]
-    public IActionResult Cancel(string pid, string id) =>
-        _cancellation.Cancel(new TurnKey(_user.Iss, _user.Sub, pid, id))
+    public IActionResult Cancel(string pid, string id)
+    {
+        RouteParams.RequireValidProjectId(pid);
+
+        return _cancellation.Cancel(new TurnKey(_user.Iss, _user.Sub, pid, id))
             ? Accepted()
             : NoContent();
+    }
 }

@@ -99,6 +99,30 @@ public sealed class ValidationRulesTests
     public void IsWellFormedProjectId_accepts_a_real_guid() =>
         ValidationRules.IsWellFormedProjectId(Guid.NewGuid().ToString()).Should().BeTrue();
 
+    [Fact]
+    public void IsWellFormedId_is_pinned_to_the_canonical_D_format_the_storage_guards_require()
+    {
+        // The storage guards (StorageKeys/SqliteDatabasePaths.ValidatePid) require
+        // TryParseExact("D"); any other Guid format must 400 here, not 500 there.
+        var guid = Guid.NewGuid();
+
+        ValidationRules.IsWellFormedId(guid.ToString("D")).Should().BeTrue();
+        ValidationRules.IsWellFormedId(guid.ToString("N")).Should().BeFalse("no-dash format");
+        ValidationRules.IsWellFormedId(guid.ToString("B")).Should().BeFalse("braced format");
+        ValidationRules.IsWellFormedId(guid.ToString("P")).Should().BeFalse("parenthesised format");
+        ValidationRules.IsWellFormedId(guid.ToString("X")).Should().BeFalse("hex-grouped format");
+    }
+
+    [Fact]
+    public void IsWellFormedProjectId_rejects_non_D_guid_formats()
+    {
+        var guid = Guid.NewGuid();
+
+        ValidationRules.IsWellFormedProjectId(guid.ToString("N")).Should().BeFalse();
+        ValidationRules.IsWellFormedProjectId(guid.ToString("B")).Should().BeFalse();
+        ValidationRules.IsWellFormedProjectId(guid.ToString("P")).Should().BeFalse();
+    }
+
     [Theory]
     [InlineData("qwen2.5:7b", true)]
     [InlineData("llama-3.1-8b-instruct", true)]

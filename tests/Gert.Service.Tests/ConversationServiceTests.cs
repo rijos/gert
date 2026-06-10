@@ -2,20 +2,28 @@ using FluentAssertions;
 using Gert.Model.Chat;
 using Gert.Model.Dtos;
 using Gert.Service.Conversations;
+using Gert.Service.Tests.Validation;
+using Gert.Service.Validation;
 using Gert.Database;
+using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
 using Xunit;
 
 namespace Gert.Service.Tests;
 
 /// <summary>
-/// CRUD + scoping tests for <see cref="ConversationService"/>. The repo and
-/// provider are NSubstitute fakes; the user is a fixed <see cref="TestUserContext"/>.
+/// CRUD + scoping + fail-closed validation tests for <see cref="ConversationService"/>
+/// (dotnet-style-guide.md §6: the registered validator must be invoked). The repo and
+/// provider are NSubstitute fakes; validation is the <b>production</b>
+/// <see cref="IValidationProvider"/> from <see cref="ValidationTestHost"/>; the user
+/// is a fixed <see cref="TestUserContext"/>.
 /// </summary>
 public sealed class ConversationServiceTests
 {
     private readonly IChatRepository _repo = Substitute.For<IChatRepository>();
     private readonly IChatDatabaseProvider _provider = Substitute.For<IChatDatabaseProvider>();
+    private readonly IValidationProvider _validation =
+        ValidationTestHost.Build().GetRequiredService<IValidationProvider>();
     private readonly TestUserContext _user = new();
 
     public ConversationServiceTests()
@@ -25,7 +33,7 @@ public sealed class ConversationServiceTests
             .Returns(_repo);
     }
 
-    private ConversationService NewService() => new(_provider, _user);
+    private ConversationService NewService() => new(_provider, _validation, _user);
 
     [Fact]
     public async Task Create_sets_id_timestamps_and_inserts()
@@ -58,6 +66,65 @@ public sealed class ConversationServiceTests
         var result = await sut.CreateAsync("default", new CreateConversationRequest());
 
         result.Title.Should().NotBeNullOrWhiteSpace();
+    }
+
+    // --- Fail-closed validation (dotnet-style-guide.md §6) -------------------
+
+    [Theory]
+    [InlineData("bad\u0007title")] // forbidden control char (BEL)
+    [InlineData("bad\u202Etitle")] // bidi override (RLO)
+    public async Task Create_with_unsafe_title_throws_before_any_disk_touch(string badTitle)
+    {
+        var act = () => NewService().CreateAsync(
+            "default", new CreateConversationRequest { Title = badTitle });
+
+        await act.Should().ThrowAsync<ValidationException>();
+        await _provider.DidNotReceiveWithAnyArgs().OpenAsync(default!, default!, default!, default);
+    }
+
+    [Fact]
+    public async Task Create_with_overlong_title_throws_before_any_disk_touch()
+    {
+        var act = () => NewService().CreateAsync(
+            "default",
+            new CreateConversationRequest { Title = new string('a', ValidationRules.ShortTextMax + 1) });
+
+        await act.Should().ThrowAsync<ValidationException>();
+        await _provider.DidNotReceiveWithAnyArgs().OpenAsync(default!, default!, default!, default);
+    }
+
+    [Fact]
+    public async Task Create_with_unsafe_model_id_throws_before_any_disk_touch()
+    {
+        var act = () => NewService().CreateAsync(
+            "default", new CreateConversationRequest { ModelId = "model with spaces {}" });
+
+        await act.Should().ThrowAsync<ValidationException>();
+        await _provider.DidNotReceiveWithAnyArgs().OpenAsync(default!, default!, default!, default);
+    }
+
+    [Theory]
+    [InlineData("bad\u0007title")] // forbidden control char (BEL)
+    [InlineData("bad\u202Etitle")] // bidi override (RLO)
+    public async Task Update_with_unsafe_title_throws_before_any_disk_touch(string badTitle)
+    {
+        var act = () => NewService().UpdateAsync(
+            "default", "a", new UpdateConversationRequest { Title = badTitle });
+
+        await act.Should().ThrowAsync<ValidationException>();
+        await _provider.DidNotReceiveWithAnyArgs().OpenAsync(default!, default!, default!, default);
+        await _repo.DidNotReceiveWithAnyArgs().UpdateConversationAsync(default!, default);
+    }
+
+    [Fact]
+    public async Task Update_with_unsafe_model_id_throws_before_any_disk_touch()
+    {
+        var act = () => NewService().UpdateAsync(
+            "default", "a", new UpdateConversationRequest { ModelId = "model with spaces {}" });
+
+        await act.Should().ThrowAsync<ValidationException>();
+        await _provider.DidNotReceiveWithAnyArgs().OpenAsync(default!, default!, default!, default);
+        await _repo.DidNotReceiveWithAnyArgs().UpdateConversationAsync(default!, default);
     }
 
     [Fact]

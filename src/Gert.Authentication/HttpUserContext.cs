@@ -33,7 +33,7 @@ public sealed class HttpUserContext(
     public string Username => User.Identity?.Name ?? Sub;
 
     /// <inheritdoc />
-    public bool IsAdmin => User.IsInRole("gert-admins");
+    public bool IsAdmin => User.IsInRole(GertJwtAuthExtensions.AdminRole);
 
     /// <inheritdoc />
     public IReadOnlySet<string> AllowedTools

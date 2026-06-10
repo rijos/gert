@@ -1,5 +1,7 @@
 using FluentAssertions;
 using Gert.Api.Security;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
 namespace Gert.Api.Tests;
@@ -109,5 +111,54 @@ public sealed class ArtifactTicketServiceTests
 
         svc.TryValidate(ticket, out var payload).Should().BeTrue();
         payload.Pid.Should().Be("default");
+    }
+
+    // --- Startup secret guard (security F3) ----------------------------------
+
+    private static IConfiguration ConfigWithSecret(string? secret)
+    {
+        var pairs = new Dictionary<string, string?>();
+        if (secret is not null)
+        {
+            pairs["Artifacts:Secret"] = secret;
+        }
+
+        return new ConfigurationBuilder().AddInMemoryCollection(pairs).Build();
+    }
+
+    [Fact]
+    public void Startup_fails_fast_on_an_explicit_secret_under_32_utf8_bytes()
+    {
+        var services = new ServiceCollection();
+
+        var act = () => services.AddGertSecurityHeaders(ConfigWithSecret("too-short"));
+
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage($"*{ArtifactTicketOptions.MinimumSecretBytes} bytes*");
+    }
+
+    [Fact]
+    public void Startup_accepts_an_explicit_secret_of_at_least_32_bytes()
+    {
+        var services = new ServiceCollection();
+        var secret = new string('s', ArtifactTicketOptions.MinimumSecretBytes);
+
+        services.AddGertSecurityHeaders(ConfigWithSecret(secret));
+
+        using var sp = services.BuildServiceProvider();
+        sp.GetRequiredService<ArtifactTicketOptions>().Secret.Should().Be(secret);
+    }
+
+    [Fact]
+    public void Startup_with_no_secret_keeps_the_random_per_process_key()
+    {
+        var services = new ServiceCollection();
+
+        services.AddGertSecurityHeaders(ConfigWithSecret(null));
+
+        using var sp = services.BuildServiceProvider();
+        var options = sp.GetRequiredService<ArtifactTicketOptions>();
+        options.Secret.Should().BeNull();
+        options.ResolveKeyBytes().Should().HaveCount(32, "the fallback is a random 32-byte key");
     }
 }

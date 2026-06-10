@@ -22,6 +22,16 @@ using Serilog;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// --- Request body cap (testing.md §5 upload limits) --------------------------
+// Kestrel's default MaxRequestBodySize (~28.6 MB) would 413 a legitimate upload
+// before DocumentUploadValidator ever saw it. Raise the transport cap to the
+// 50 MiB upload limit plus 1 MiB of headroom for multipart framing (boundaries,
+// part headers), so a full-size file still reaches the validator and over-limit
+// uploads get the authoritative, branded 400 — not a bare Kestrel 413.
+builder.WebHost.ConfigureKestrel(kestrel =>
+    kestrel.Limits.MaxRequestBodySize =
+        Gert.Service.Validation.UploadConstraints.MaxSizeBytes + 1_048_576);
+
 // --- Shared NDJSON logging (operations.md § Logging format) -----------------
 // Serilog as the host logger, emitting the shared schema (ts/level first) via the
 // custom GertNdjsonFormatter. FromLogContext picks up the per-request comp/req/uid

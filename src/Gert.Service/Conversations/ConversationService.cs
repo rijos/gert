@@ -1,6 +1,7 @@
 using Gert.Model.Chat;
 using Gert.Model.Dtos;
 using Gert.Database;
+using Gert.Service.Validation;
 
 namespace Gert.Service.Conversations;
 
@@ -16,14 +17,19 @@ namespace Gert.Service.Conversations;
 public sealed class ConversationService : IConversationService
 {
     private readonly IChatDatabaseProvider _databases;
+    private readonly IValidationProvider _validation;
     private readonly IUserContext _user;
 
     /// <summary>The fallback model id when nothing in the cascade supplies one.</summary>
     private const string DefaultModelId = "default";
 
-    public ConversationService(IChatDatabaseProvider databases, IUserContext user)
+    public ConversationService(
+        IChatDatabaseProvider databases,
+        IValidationProvider validation,
+        IUserContext user)
     {
         _databases = databases ?? throw new ArgumentNullException(nameof(databases));
+        _validation = validation ?? throw new ArgumentNullException(nameof(validation));
         _user = user ?? throw new ArgumentNullException(nameof(user));
     }
 
@@ -54,6 +60,14 @@ public sealed class ConversationService : IConversationService
     {
         ArgumentNullException.ThrowIfNull(request);
 
+        // Validate (fail-closed at the service boundary, before any disk touch —
+        // dotnet-style-guide.md §6: the registered validator must be invoked).
+        var validation = _validation.Validate(request);
+        if (!validation.IsValid)
+        {
+            throw new ValidationException(validation);
+        }
+
         var now = DateTimeOffset.UtcNow;
         var conversation = new Conversation
         {
@@ -82,6 +96,14 @@ public sealed class ConversationService : IConversationService
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
+
+        // Validate (fail-closed at the service boundary, before any disk touch —
+        // dotnet-style-guide.md §6: the registered validator must be invoked).
+        var validation = _validation.Validate(request);
+        if (!validation.IsValid)
+        {
+            throw new ValidationException(validation);
+        }
 
         await using var repo = await OpenAsync(pid, cancellationToken).ConfigureAwait(false);
 
