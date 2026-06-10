@@ -225,7 +225,7 @@ The mockup labels the retrieval a **hybrid query**, so combine lexical + vector 
    LIMIT  :k;
    ```
 
-3. **Reciprocal Rank Fusion** to merge the two ranked lists into the final top-k, then join back to `chunks` + `documents` for content, `page`, filename, and score (the `0.89`, `0.81`, `0.77` in the mockup).
+3. **Reciprocal Rank Fusion** to merge the two ranked lists into the final top-k, then join back to `chunks` + `documents` for content, `page`, filename, and score (the `0.89`, `0.81`, `0.77` in the mockup). The join-back filters to `documents.status = 'ready'`, so chunks of a failed or still-processing document are never retrievable — the read-side end of the ingestion failure cleanup below.
 
 The result becomes the `tool_result` SSE and seeds the citations.
 
@@ -272,7 +272,11 @@ IngestionWorker (per job):
 > read-only access to the one input file, hard `RLIMIT_AS`/`RLIMIT_CPU`/`RLIMIT_NPROC` + a wall-clock
 > timeout, and in-process XML hardening inside it (**DTD/external-entity off** for XXE,
 > **decompressed-size + zip-entry caps** for bombs). A crash/OOM/timeout fails *that document*
-> (`status='failed'`), never the host — the ingestion analog of the `run_python` sandbox below. It
+> (`status='failed'`), never the host — the ingestion analog of the `run_python` sandbox below.
+> Failure also **deletes any already-inserted chunks** (`IngestionService.FailAsync` →
+> `DeleteChunksAsync`): chunk batches commit per batch, so without the compensation a
+> mid-pipeline fault would leave a half-ingested document's chunks behind; together with the
+> retrieval-side `status='ready'` join above, a failed document leaves nothing retrievable. It
 > may reuse the same **gVisor (`runsc`)** lever ([security F7](security.md#3-findings--remediations),
 > [tech-stack](tech-stack.md)).
 

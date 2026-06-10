@@ -89,8 +89,8 @@ One OpenAI-compatible upstream serves **both chat and embeddings**. Binds to
 | `ChatModelId` | `default` | Sent as `model` on `/v1/chat/completions`. Must be a model id your server actually serves (check `GET <BaseUrl>/v1/models`). |
 | `EmbeddingModelId` | `bge-m3` | Sent as `model` on `/v1/embeddings`. Knowledge upload (RAG) fails if the upstream doesn't serve it. |
 | `EmbeddingDimensions` | `1024` | Must match the embedding model (bge-m3 = 1024). Effectively immutable once data exists — it bakes into every `rag.db` ([design §4](../design/configuration.md)). |
-| `RequestTimeoutSeconds` | `120` | Per-attempt timeout; Polly retries wrap it. |
-| `RetryCount` | `2` | Retries on transient upstream failure. |
+| `RequestTimeoutSeconds` | `120` | Max wait, **per attempt**, for vLLM to *accept* a request (time to response headers) — **not** the stream duration; the chat stream is bounded by the turn budget ([§9](#9-gertturn--the-detached-turn-pipeline)). |
+| `RetryCount` | `2` | Retries on transient pre-stream (connect/headers) failures, for chat and embeddings. Safe for chat — a retried attempt means no tokens were streamed. `0` disables. |
 
 > **vLLM prefix caching.** Gert's requests are built to be prefix-cache friendly:
 > the system prompt is static per project, history is replayed verbatim, tool specs
@@ -168,7 +168,7 @@ SSRF-exposed part and is **off by default**.
 | `MaxFetchBytes` | `2097152` | Body-size cap per fetched page. |
 | `FetchTimeoutSeconds` | `10` | Wall-clock cap per page fetch. |
 | `MaxRedirects` | `3` | Each hop re-vetted by the SSRF guard. |
-| `SearchTimeoutSeconds` | `15` | Timeout on the search API call itself. |
+| `SearchTimeoutSeconds` | `15` | Total budget for the search API call, retries included; the HTTP client timeout sits 1 s above as a backstop. |
 
 ---
 
@@ -199,7 +199,7 @@ it is reached server-side only.
 | Key | Default | Notes |
 |-----|---------|-------|
 | `BaseUrl` | `http://localhost:8077` | Where the monty sidecar listens. |
-| `RequestTimeoutSeconds` | `30` | HTTP backstop above the run's wall clock, for a hung sidecar. |
+| `RequestTimeoutSeconds` | `30` | HTTP backstop above the run's wall clock, for a hung sidecar. Must be strictly greater than `Gert:Sandbox:WallClockSeconds`; enforced at startup when the monty backend is selected. |
 
 ---
 
@@ -243,7 +243,54 @@ the cascade's last fallback *and* its ceiling.
 
 ---
 
-## 10. Dev & test modes
+## 10. `Artifacts` — served-artifact tickets
+
+Binds to `ArtifactTicketOptions` (`src/Gert.Api/Security/ArtifactTicketOptions.cs`):
+the separate-origin HTML-artifact preview and the HMAC-signed capability URLs it rides
+(security F3). Top-level section, like `Auth`/`Storage`.
+
+| Key | Default | Notes |
+|-----|---------|-------|
+| `Origin` | *(empty)* | The separate origin (`scheme://host[:port]`) that serves rendered HTML artifacts — a sandbox subdomain in prod, a second port in dev/CI. Empty means same origin: the ticket URL is relative and isolation rests on the iframe sandbox alone. |
+| `Secret` | *(unset)* | **Secret** — env / user-secrets only. HMAC signing key for ticket URLs. An explicit value must be at least **32 UTF-8 bytes** (e.g. `openssl rand -base64 32`) — the host refuses to start on a shorter one. Unset = a random per-process key: fine for a single instance, but tickets stop surviving restarts and multiple instances behind a LB won't accept each other's tickets. |
+| `Lifetime` | `00:05:00` | Ticket validity window. Long enough to load the iframe, short enough that a leaked URL is near-useless. |
+
+---
+
+## 11. `Gert:RateLimiting` — the per-user API limiter
+
+Binds to `RateLimiting.PolicyOptions` (`src/Gert.Api/Security/RateLimiting.cs`),
+security F10. A **fixed window per user**: each authenticated caller gets its own
+partition keyed by the token `sub` (anonymous traffic falls back to the remote IP), so
+one client — or one stolen token — can't saturate the box, and one user's bursts never
+throttle another's. Applied to `/api/*` only; `/healthz` is exempt. A rejected request
+is a branded `429`. The defaults are a DoS brake, not a usage quota — leave the section
+absent and nothing changes.
+
+| Key | Default | Notes |
+|-----|---------|-------|
+| `PermitLimit` | `600` | Max requests per partition (per user / per anonymous IP) within one window. |
+| `Window` | `00:01:00` | The fixed window length. |
+
+---
+
+## 12. Request size limits
+
+Not knobs — compile-time constants, listed so the numbers are findable:
+
+- **Document uploads are capped at 50 MiB** (`UploadConstraints.MaxSizeBytes`), enforced
+  fail-closed by `DocumentUploadValidator` and re-checked on the streamed bytes, so an
+  over-limit upload gets the branded 400.
+- **Kestrel's request-body limit is set to that cap + 1 MiB** of multipart-framing
+  headroom (`src/Gert.Api/Program.cs`), so a full-size file reaches the validator
+  instead of dying as a bare Kestrel 413.
+
+> **Reverse proxy:** a proxy in front needs a matching body-size setting — e.g. nginx
+> `client_max_body_size 51m;` — or it will reject big uploads before Gert sees them.
+
+---
+
+## 13. Dev & test modes
 
 Not for production — listed here so a deployment never enables them by accident.
 

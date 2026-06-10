@@ -124,7 +124,7 @@ What must be a token, and what may stay literal:
 
 | Value | Rule |
 |-------|------|
-| Colors — fills, text, borders, shadows, scrims | **Always a token.** No exceptions. Shadows use `var(--lift)` or a future `--shadow-*` token, never a literal `rgba(...)`. |
+| Colors — fills, text, borders, shadows, scrims | **Always a token.** No exceptions. Shadows use `var(--lift)` or a `--shadow-*` token, scrims a `--scrim*` token — never a literal `rgba(...)`. |
 | Radii and shared rhythm — `--r`, `--r-sm`, `--head-h` | **Always a token.** These align components to each other; a literal copy drifts. |
 | Component-internal one-off spacing — an `8px 10px` padding, a `312px` menu width, a `13px` font size | **May be literal.** This is the real convention: per-component geometry that nothing else aligns to doesn't earn a token. |
 
@@ -132,11 +132,10 @@ The boundary: **if a value would need to change at a breakpoint or between theme
 must be a token** (or a `layout.css` override — §3). If it's just this component's own
 geometry, a literal is fine.
 
-> **Cleanup debt:** a few components still embed literal shadow/scrim colors —
-> `rgba(60,46,28,…)` in `menu.js`/`modal.js`/`toast.js`, `rgba(0,0,0,…)` + `#fff` in
-> `switch.js`/`composer.js`, and the brand mark's `#bf4727` in `icons/icons.js`. These
-> violate the color rule; fold them into shadow/scrim tokens when touched — don't copy
-> them into new components.
+> The overlay shadows, scrim chips, and the brand mark's `#bf4727` used to be embedded
+> literals in `menu.js`/`modal.js`/`toast.js`/`switch.js`/`composer.js`/`icons/icons.js`;
+> they now live in `tokens.css` as `--shadow-*`, `--scrim-*`, and `--brand` (closed by
+> the fabletest review wave). Reach for those tokens — don't reintroduce literals.
 
 The two themes are **Manila** (paper / editorial light) and **Ember** (refined dark).
 Every color token is defined **once** with `light-dark()`, and the document rides
@@ -160,10 +159,11 @@ Every color token is defined **once** with `light-dark()`, and the document ride
 ```
 
 Toggling the theme is owned by `state/ui.js` — it is the **only** module that may touch
-`documentElement[data-theme]` or the `gert.theme` localStorage key. It persists the
-choice to `localStorage` as a first-paint cache; the server-side setting is the
-cross-device truth ([configuration §3.1](configuration.md#31-theme)) — note the boot
-path does not yet apply the server value, a known gap. Components never know which
+`documentElement[data-theme]` or the `gert.theme` localStorage key (its `setTheme` /
+`applyServerTheme` are the only mutators). It persists the choice to `localStorage` as a
+first-paint cache; the server-side setting is the cross-device truth
+([configuration §3.1](configuration.md#31-theme)) and is applied at boot via
+`ui.applyServerTheme` when the initial prefs load lands. Components never know which
 theme is active — they read tokens.
 
 > Even *conditional rendering* by theme is done with tokens where possible: the
@@ -359,8 +359,9 @@ The pieces:
   they never import a component.
 - **The sanctioned exception:** `services/auth.js`'s token endpoints bypass `http.js`
   deliberately (they *produce* the token `http.js` attaches) — documented in the file.
-- **Known deviation:** `html-artifact.js` mints its preview ticket with `http.get`
-  inside the component; the target shape is a `services/artifacts.js` helper.
+- Even a one-call resource earns a module: `services/artifacts.js` exists solely to mint
+  the html-artifact preview ticket (`html-artifact.js` used to call `http.get` inline —
+  closed by the fabletest review wave).
 
 ---
 
@@ -519,8 +520,8 @@ themselves up, and return control to the caller — the sanctioned exception to
 - **Menus**: `Menu({ trigger, open, wrapClass, children })` — `open` is a
   **caller-owned `van.state`**; the wrapper renders `wrapClass + " open"` and the
   *caller's* CSS owns the `.open .menu` reveal (positioning per call site). The
-  trigger toggles with `stopPropagation()`; a document click closes (which must be
-  cleaned up — §12, currently leaky).
+  trigger toggles with `stopPropagation()`; a document click closes — the listener
+  exists only while the menu is open (the §12 pattern).
 - **Snapshot primitives**: `ProgressBar({ value, max })` and `Pill` render a
   **snapshot** and stay binding-free — the *caller's* reactive binding re-renders them
   with fresh props. This is the house pattern for generic leaves (`progress-bar.js`'s
@@ -582,24 +583,37 @@ VanJS garbage-collects bindings whose DOM is disconnected — but only what it k
 about. Everything else is yours to release:
 
 - **A listener on `document`/`window` must be removed** when its component leaves the
-  DOM. `Modal` is the model: `close()` removes its Esc keydown. `Menu`'s document
-  click listener is the cautionary tale — registered per render, never removed, so
-  every conversation switch leaks listeners that pin their dead subtrees forever.
-  Prefer registering when the thing opens and removing when it closes (a closed
-  menu's handler shouldn't run at all).
+  DOM. `Modal` is the model: `close()` removes its Esc keydown. `Menu` used to be the
+  cautionary tale — its document click listener was registered per render and never
+  removed, so every conversation switch leaked listeners that pinned their dead
+  subtrees forever (closed by the fabletest review wave). The shipped pattern is
+  **listen only while open**: register when the thing opens, remove when it closes —
+  a closed menu's handler shouldn't run at all.
 - **`van.derive` outside a returned binding lives forever.** A derive created at
   `view` top level (not inside the tag tree you return) is registered against an
   always-connected sentinel and is never pruned — re-rendering the component stacks
   another immortal subscriber. Create derives **inside bindings that are part of the
-  returned DOM**, or don't create them in components at all (module-level derives in
-  stores are fine — §7). `message-stream.js`'s scroll derives are current debt here,
-  not a pattern to copy.
+  returned DOM**, or scope a top-level derive to the component root via `van.derive`'s
+  third argument so van prunes it when the component leaves the DOM —
+  `message-stream.js`'s scroll derives are the worked example:
+
+  ```js
+  // components/main/message-stream.js — scoped to `stream`, pruned on disconnect
+  van.derive(
+    () => { /* … scroll work reading chat state … */ },
+    undefined,
+    stream,
+  );
+  ```
+
+  (Module-level derives in stores are fine — §7.)
 - **Races are settled by ownership, not hope.** Pass an `AbortController` signal into
   anything long-running and check ownership before touching shared state in `finally`
   (`activeController === ac` — §9). For latest-wins loads, use a monotonic ticket:
   `conversations.open()` increments `openTicket` and discards stale responses.
-- **Revoke what you mint** — blob URLs (§11), timers tied to a component's lifetime,
-  the SSE reader when a stream module grows one.
+- **Revoke what you mint** — blob URLs (§11), timers tied to a component's lifetime.
+  `http.sse()` is the model for streams: a `try/finally` cancels its reader on
+  generator finalization, so a finished or abandoned turn never parks a connection.
 
 ---
 
@@ -677,7 +691,8 @@ The one-line version: components in `components/<area>/kebab-case.js`, stores in
 - Security = no HTML-string sinks; markdown via `lib/markdown.js` only; LLM output is
   hostile; sandboxed iframes without `allow-same-origin`; blob URLs revoked; token in
   memory only; CSP-clean styling by construction.
-- Cleanup = remove document/window listeners; no top-level `van.derive` in components;
-  AbortController + ownership for races.
+- Cleanup = document/window listeners live only while needed; component derives are
+  scoped (inside a returned binding, or `van.derive`'s third arg); AbortController +
+  ownership for races.
 - Formatting = HTML-like; props inline, one child per line, trailing commas.
 - I/O through `services/`, state through `state/`, never from a component directly.

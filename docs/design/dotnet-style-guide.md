@@ -183,9 +183,10 @@ Fail-closed, in the service layer, so the API and the Console enforce identical 
   }
   ```
 
-  This is the dominant shape (`TurnPlanner`, `DocumentService`, `MemoryService`,
-  `SettingsService`, `ProjectService`); `ConversationService` skipped it and shipped a
-  registered-but-never-called validator pair — the gap this rule closes.
+  This is the uniform shape (`TurnPlanner`, `DocumentService`, `MemoryService`,
+  `SettingsService`, `ProjectService`, `ConversationService`). The rule was settled by
+  `ConversationService`, which shipped a registered-but-never-called validator pair —
+  closed by the fabletest review wave; a service-tier test now pins the invocation.
 - Shared vocabulary lives in `ValidationRules`: the `SafeText`/`OptionalSafeText` extensions
   (length, control chars, bidi overrides) for every human-text field, and pure predicates
   (`IsWellFormedId`, `IsSafeIdentifier`, `IsSafeFilename`) usable from validators and route
@@ -194,8 +195,9 @@ Fail-closed, in the service layer, so the API and the Console enforce identical 
 - Every rule carries `.WithMessage` + `.WithErrorCode` with dotted **snake_case** codes:
   `text.too_long`, `attachments.too_many`, `model_id.invalid`, `upload.extension`.
 - Route params that feed paths get throwing guards (`RouteParams.RequireValid*` at the top of
-  **every** `{pid}`/`{key}` action — no exceptions; the conversation surface currently misses
-  it and 500s where siblings 400) wired to the same `ValidationException` → 400 handler.
+  **every** `{pid}`/`{key}` action — no exceptions; the conversation surface used to miss it
+  and 500 where siblings 400'd, closed by the fabletest review wave) wired to the same
+  `ValidationException` → 400 handler.
 
 ## 7. Errors & logging
 
@@ -211,7 +213,7 @@ Fail-closed, in the service layer, so the API and the Console enforce identical 
 - **Rule (settles an inconsistency):** never serialize a raw `ex.Message` into a user-visible
   payload or persisted event — upstream exception text can echo internal URLs or prompt
   fragments. Emit a generic message; the detail goes to the log. (`TurnRunner`'s
-  catch-all currently does the opposite — it migrates.)
+  catch-all used to do the opposite — closed by the fabletest review wave.)
 - **Rule (settles an inconsistency):** every intentional catch-and-continue gets **both** a
   comment naming the degrade decision *and* a log line — `LogWarning` for a swallowed
   best-effort failure, `LogError` for a catch-all converted to a user-visible error. Today
@@ -270,8 +272,9 @@ Fail-closed, in the service layer, so the API and the Console enforce identical 
   **Rule (settles an inconsistency):** a *streaming* client's `HttpClient.Timeout` must not
   cap the stream — set it to `Timeout.InfiniteTimeSpan` and let the turn budget
   (`MaxTurnDuration`) own the wall clock; resilience handlers must be configured *from* the
-  bound options, not stock defaults (the current vLLM wiring leaves `RetryCount` dead and
-  caps a 5-minute turn at ~30 s — the bug this rule deletes).
+  bound options, not stock defaults (the wiring this rule settled used to leave `RetryCount`
+  dead and cap a 5-minute turn at ~30 s — deleted by the fabletest review wave;
+  `HttpClientWiringTests` pins the wiring).
 - **Never disable TLS validation.** The only `RequireHttpsMetadata = false` in the codebase
   is the doubly-gated dev-JWKS branch; no outbound client ever weakens server-cert checks.
 - **Anything URL-shaped that originates from a user or the LLM goes through the SSRF guard**
