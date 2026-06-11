@@ -19,13 +19,13 @@ export const KnowledgePanel = component({
   css: `
     .panel-h{padding:18px 18px 12px;}
     .panel-h .row1{display:flex; align-items:center; gap:8px;}
-    .panel-h h2{font-family:var(--display); font-size:16px; font-weight:600;}
-    .panel-h .count{font-family:var(--mono); font-size:11px; color:var(--ink-3); margin-left:auto;}
-    .privacy{font-family:var(--mono); font-size:10.5px; color:var(--green); display:flex; align-items:center; gap:5px; margin-top:7px;}
+    .panel-h h2{font-family:var(--display); font-size:var(--fs-lg); font-weight:600;}
+    .panel-h .count{font-family:var(--mono); font-size:var(--fs-xs); color:var(--ink-3); margin-left:auto;}
+    .privacy{font-family:var(--mono); font-size:var(--fs-2xs); color:var(--green); display:flex; align-items:center; gap:5px; margin-top:7px;}
     .privacy svg{width:11px; height:11px;}
     .usein{margin:11px 18px 4px; display:flex; align-items:center; gap:10px; padding:10px 12px; background:var(--green-soft); border:1px solid var(--usein-line); border-radius:var(--r-sm);}
-    .usein .lab{font-size:12.5px; font-weight:600; color:var(--usein-fg); flex:1;}
-    .usein .sub{font-size:10.5px; color:var(--green); font-weight:400;}
+    .usein .lab{font-size:var(--fs-sm); font-weight:600; color:var(--usein-fg); flex:1;}
+    .usein .sub{font-size:var(--fs-2xs); color:var(--green); font-weight:400;}
     /* kb-view base display lives with the stage (canvas-panel); here just its overflow */
     .kb-view{overflow:hidden;}
     .kb-view .doclist{flex:1;}

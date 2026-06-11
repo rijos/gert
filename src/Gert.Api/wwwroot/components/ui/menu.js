@@ -10,8 +10,8 @@ const { div } = van.tags;
 export const Menu = component({
   name: "menu",
   css: `
-    .menu{position:absolute; top:calc(100% + 8px); right:0; width:312px; background:var(--surface); border:1px solid var(--line); border-radius:var(--r); box-shadow:var(--shadow-menu); padding:7px; opacity:0; transform:translateY(-6px) scale(.98); transform-origin:top right; pointer-events:none; transition:.2s cubic-bezier(.2,.8,.2,1); z-index:30;}
-    .menu-h{font-family:var(--mono); font-size:10px; letter-spacing:.08em; text-transform:uppercase; color:var(--ink-3); padding:8px 10px 6px;}
+    .menu{position:absolute; top:calc(100% + 8px); right:0; width:312px; background:var(--surface); border:1px solid var(--line); border-radius:var(--r); box-shadow:var(--shadow-menu); padding:6px; opacity:0; transform:translateY(-6px) scale(.98); transform-origin:top right; pointer-events:none; transition:var(--t-slow) var(--ease); z-index:30;}
+    .menu-h{font-family:var(--mono); font-size:var(--fs-2xs); letter-spacing:.08em; text-transform:uppercase; color:var(--ink-3); padding:8px 10px 6px;}
   `,
   // trigger: node (the button). open: van.state(boolean). header optional.
   // children: menu rows.

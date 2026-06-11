@@ -1,24 +1,26 @@
-/* base.css — reset, body + paper grain, scrollbars, keyframes. */
+/* base.css — reset, body + paper grain, focus ring, scrollbars, keyframes,
+   reduced-motion guard. */
 *{box-sizing:border-box; margin:0; padding:0;}
 html,body{height:100%;}
 body{
   font-family:var(--sans); color:var(--ink); background:var(--bg);
-  font-size:14px; line-height:1.5; -webkit-font-smoothing:antialiased;
+  font-size:var(--fs-md); line-height:var(--lh-ui); -webkit-font-smoothing:antialiased;
   background-image:
     radial-gradient(circle at 12% 8%, color-mix(in srgb, var(--coral) 4%, transparent), transparent 38%),
     radial-gradient(circle at 90% 92%, color-mix(in srgb, var(--green) 5%, transparent), transparent 42%);
   overflow:hidden;
 }
-/* grain: a subtle dot texture over the app background for warmth. currentColor
-   is the body's ink, the level comes from the theme's --grain token, and the
-   overlay is non-interactive behind content. */
-body::before{
-  content:""; position:fixed; inset:0; pointer-events:none; z-index:9;
-  opacity:calc(var(--grain) * .09);
-  color:var(--ink);
-  background-image:radial-gradient(currentColor 1px, transparent 1px);
-  background-size:18px 18px;
-}
+/* grain: the subtle dot texture (--grain-img, tokens.css) is painted by the
+   app panes themselves (.sidebar/.main/.panel in their own css) so it sits
+   UNDER content by construction — opaque surfaces (code blocks, cards, the
+   composer) mask it. It used to be a fixed body::before at z-index:9, which
+   dotted message text and code. */
+
+/* one coral focus ring for every interactive element, both themes (the coral
+   pair clears 3:1 non-text contrast on either paper). Components that paint
+   their own focus treatment (the composer's :focus-within ring) opt out with
+   outline:none on the inner control. */
+:focus-visible{outline:2px solid var(--coral); outline-offset:2px;}
 
 /* fenced-code token tints (lib/highlight.js). Code blocks always sit on
    --code-bg, which is dark in both themes, so these are fixed warm values. */
@@ -41,9 +43,22 @@ body::before{
 ::-webkit-scrollbar-thumb{background:var(--scroll-thumb); border-radius:10px; border:3px solid transparent; background-clip:padding-box;}
 ::-webkit-scrollbar-thumb:hover{background:var(--scroll-thumb-hover); border-width:2px; background-clip:padding-box;}
 @supports not selector(::-webkit-scrollbar){
-  *{scrollbar-width:auto; scrollbar-color:var(--scroll-thumb) transparent;}
+  *{scrollbar-width:thin; scrollbar-color:var(--scroll-thumb) transparent;}
 }
 
 @keyframes rise{from{opacity:0; transform:translateY(10px);} to{opacity:1; transform:none;}}
 @keyframes blink{to{visibility:hidden;}}
 @keyframes pulse{50%{opacity:.35;}}
+
+/* vestibular safety: collapse every transition/animation (the --t-* vocabulary
+   and the keyframes above) to imperceptible durations. Global by nature, so it
+   lives here beside the keyframes — components never write @media (style guide
+   §3); layout.css owns responsive, base.css owns motion + document chrome. */
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{
+    animation-duration:.01ms !important;
+    animation-iteration-count:1 !important;
+    transition-duration:.01ms !important;
+  }
+  .caret{animation:none;}   /* keep the caret visible, just not blinking */
+}

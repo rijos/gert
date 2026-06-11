@@ -11,10 +11,10 @@ export const UserChip = component({
   name: "user-chip",
   css: `
     .userchip{border-top:1px solid var(--line); padding:13px 16px; display:flex; align-items:center; gap:11px;}
-    .avatar{width:32px; height:32px; border-radius:9px; flex:none; background:linear-gradient(140deg,var(--coral),var(--coral-deep)); color:var(--on-accent); font-family:var(--display); font-weight:600; font-size:15px; display:grid; place-items:center;}
+    .avatar{width:32px; height:32px; border-radius:9px; flex:none; background:linear-gradient(140deg,var(--coral),var(--coral-deep)); color:var(--on-accent); font-family:var(--display); font-weight:600; font-size:var(--fs-base); display:grid; place-items:center;}
     .userchip .who{flex:1; min-width:0;}
-    .userchip .name{font-weight:600; font-size:13px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
-    .userchip .auth{font-family:var(--mono); font-size:10px; color:var(--ink-3); display:flex; align-items:center; gap:4px;}
+    .userchip .name{font-weight:600; font-size:var(--fs-md); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+    .userchip .auth{font-family:var(--mono); font-size:var(--fs-2xs); color:var(--ink-3); display:flex; align-items:center; gap:4px;}
     .userchip .auth svg{width:9px; height:9px;}
   `,
   view: () =>

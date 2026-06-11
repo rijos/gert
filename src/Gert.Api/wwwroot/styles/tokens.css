@@ -18,8 +18,28 @@
   --display:'Fraunces',Georgia,serif;            /* logo only — do not theme */
   --sans:'Hanken Grotesk',-apple-system,sans-serif;
   --mono:'JetBrains Mono',ui-monospace,monospace;
-  --r:12px; --r-sm:8px;
+  --r:12px; --r-sm:8px; --r-xs:6px; --r-lg:16px;
   --head-h:56px;   /* shared pane-header height: brand, topbar, canvas-bar align */
+
+  /* ---- type scale (7 steps) + line heights — components reference these
+     instead of literal px so near-identical sizes can't drift apart ---- */
+  --fs-2xs:10px;   /* mono micro-labels: menu-h, table th, tags, badges */
+  --fs-xs:11px;    /* meta: msg-meta, s-domain, timestamps */
+  --fs-sm:12.5px;  /* dense UI: menu rows, thinking body, tool labels */
+  --fs-md:13.5px;  /* default UI: buttons, fields, sidebar rows, body */
+  --fs-base:15px;  /* reading text: bot body, composer textarea */
+  --fs-lg:18px;    /* conv-title, modal h2 */
+  --fs-xl:24px;    /* page h1, brand */
+  --lh-tight:1.35; --lh-ui:1.5; --lh-reading:1.62;
+
+  /* ---- spacing rhythm ---- */
+  --sp-1:4px; --sp-2:8px; --sp-3:12px; --sp-4:16px; --sp-5:24px; --sp-6:32px;
+
+  /* ---- motion: one timing vocabulary. base.css neutralizes both under
+     prefers-reduced-motion ---- */
+  --t-fast:.14s;                       /* hovers, reveals */
+  --t-slow:.28s;                       /* drawers, grid, menus, modal rise */
+  --ease:cubic-bezier(.2,.8,.2,1);
 
   /* ---- palette: light-dark(Manila, Ember) ---- */
   --bg:            light-dark(#f4ede1,             #16110e);
@@ -34,18 +54,22 @@
   --track:         light-dark(rgba(70,50,28,.10),  rgba(255,255,255,.08));   /* progress bar track */
   --ink:           light-dark(#3a2c20,             #efe7df);   /* primary text */
   --ink-2:         light-dark(#6f5d4c,             #b3a79c);   /* secondary */
-  --ink-3:         light-dark(#9d8c78,             #7c7167);   /* faint / mono meta */
+  /* quiet/meta text — deep enough for WCAG AA (≥4.5) on --bg/--surface/--side-bg
+     in both themes (was #9d8c78/#7c7167 at 2.8/3.9 on --bg) */
+  --ink-3:         light-dark(#746450,             #968b7f);
   --coral:         light-dark(#dd5728,             #ff6b3d);   /* manila: deepened for cream */
   --coral-2:       light-dark(#ef7a4d,             #ff9a6e);   /* gradient end / accents */
   --coral-soft:    light-dark(rgba(221,87,40,.10), rgba(255,107,61,.14));
   --coral-line:    light-dark(rgba(221,87,40,.30), rgba(255,107,61,.42));
-  --green:         light-dark(#3f9b63,             #62c281);
+  /* manila green deepened for small text on cream (≥4.5 on --bg; was #3f9b63 at 3.0) */
+  --green:         light-dark(#286e43,             #62c281);
   --green-soft:    light-dark(rgba(63,155,99,.13), rgba(98,194,129,.16));
   --green-line:    light-dark(rgba(63,155,99,.30), rgba(98,194,129,.40));
   --chat-on:       light-dark(rgba(221,87,40,.10), rgba(255,107,61,.12));   /* active sidebar item */
-  /* code syntax: tags / attributes (ember leans on the accent pair) */
-  --code-tag:      light-dark(#c0392b,             var(--coral));
-  --code-attr:     light-dark(#2e7d4f,             var(--green));
+  /* code syntax: tags / attributes. Code panels are DARK in both themes (see
+     --code-bg), so both sides are picked against the dark ground (≥4.5). */
+  --code-tag:      light-dark(#ef7a4d,             var(--coral));
+  --code-attr:     light-dark(#62c281,             #62c281);
   /* "deep" coral for small text/icons: darker on cream (WCAG AA), LIGHTER on dark */
   --coral-deep:    light-dark(#b8431c,             var(--coral-2));
 
@@ -58,21 +82,29 @@
   --proc-fg:       light-dark(#83611f,             #d8a44d);
   --fail-bg:       light-dark(#f0d8d1,             #3a201a);
   --fail-fg:       light-dark(#8a2917,             #df5b41);
-  --code-bg:       light-dark(#f1eadb,             #2a241b);
-  --code-fg:       light-dark(#3a2f20,             #e9dfcb);
-  --tok-num:       light-dark(#8a6a1f,             #d9b86a);
-  --tok-com:       light-dark(#94855f,             #8d7f6a);
-  --tok-key:       light-dark(#2f6285,             #9fc1e0);
-  --tok-dec:       light-dark(#7c4d92,             #c79bd6);
+  /* code panels: dark warm "ink-block print" ground in BOTH themes (base.css
+     relies on this); every --tok-* below clears 4.5 on both code-bg values */
+  --code-bg:       light-dark(#2e2620,             #2a241b);
+  --code-fg:       light-dark(#ece2cd,             #e9dfcb);
+  --tok-num:       light-dark(#d9b86a,             #d9b86a);
+  --tok-com:       light-dark(#ab9c85,             #ab9c85);
+  --tok-key:       light-dark(#9fc1e0,             #9fc1e0);
+  --tok-dec:       light-dark(#c79bd6,             #c79bd6);
   --usein-line:    light-dark(#cfd9bf,             #3a4a2c);
   --usein-fg:      light-dark(#3f5235,             #bcd0a4);
   --scrim:         light-dark(rgba(36,26,16,.42),  rgba(0,0,0,.6));
   --scroll-thumb:       light-dark(rgba(58,44,32,.18), rgba(239,231,223,.16));
   --scroll-thumb-hover: light-dark(rgba(58,44,32,.34), rgba(239,231,223,.3));
 
+  /* text on saturated accent fills (.btn, .send, .stop, avatars): white holds
+     AA on manila's deep coral; ember's bright coral needs DARK text (white was
+     2.8:1). Pairs .btn with --coral-deep as its resting fill (primitives.css). */
+  --on-accent:     light-dark(#fff,                #2a1a10);
+
   /* ---- theme-invariant ---- */
-  --on-accent:#fff;       /* text/thumb on saturated coral fills */
   --on-coral:#2a1a10;     /* dark text on the coral-gradient avatar */
+  --on-chip:#fff;         /* text on the fixed --type-* chips + switch knob */
+  --on-scrim:#fff;        /* glyphs on --scrim-chip overlays */
   --preview-bg:#fff;      /* html artifact preview backdrop — a page, always on white */
   --brand:#bf4727;        /* the brand mark (icons.js) — never themed, like --display */
   /* overlay shadows / scrims — the exact literals components used to embed
@@ -82,11 +114,18 @@
   --shadow-modal:0 24px 60px -20px rgba(60,46,28,.5);
   --shadow-toast:0 8px 24px -12px rgba(60,46,28,.4);
   --shadow-thumb:0 1px 3px rgba(0,0,0,.2);   /* switch knob */
+  --shadow-drawer:0 0 50px -8px rgba(0,0,0,.5);   /* mobile slide-over drawers */
   --scrim-chip:rgba(0,0,0,.55);              /* attachment-thumb ✕ chip */
   --scrim-chip-hover:rgba(0,0,0,.8);
   --type-md:#3f7d8f;      /* artifact-tab type chips */
   --type-cs:#7c4d92; --type-cpp:#2f6285; --type-js:#8a6a1f; --type-rs:#8a5a2e;
   --tok-kw:var(--code-tag); --tok-str:var(--code-attr);
+
+  /* paper grain: the dot texture the app panes (.sidebar/.main/.panel) paint
+     UNDER their content (pair with background-size:18px 18px). Lives here so
+     the dot color/level resolve per theme; it used to be a body::before
+     overlay that sat ON TOP of text and code. */
+  --grain-img:radial-gradient(color-mix(in srgb, var(--ink) calc(var(--grain) * 9%), transparent) 1px, transparent 1px);
 }
 
 /* ---- the toggle (state/ui.js) pins the scheme; light-dark() does the rest ---- */

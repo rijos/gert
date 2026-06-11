@@ -26,7 +26,7 @@
        target, ui-components.md §6) — robust with no SDK-state assumptions. Minifies in
        place, same relative paths, so the ESM import graph + import map still resolve. -->
   <Target Name="MinifyWebAssets" AfterTargets="Publish" Condition="'$(Configuration)'=='Release'">
-    <Exec Command="dotnet run --project &quot;$(MSBuildThisFileDirectory)..\tools\Gert.Web.Minify\Gert.Web.Minify.csproj&quot; -c $(Configuration) --no-launch-profile -- &quot;$(PublishDir)wwwroot&quot;" />
+    <Exec Command="dotnet run --project &quot;$(MSBuildThisFileDirectory)..\..\tools\Gert.Web.Minify\Gert.Web.Minify.csproj&quot; -c $(Configuration) --no-launch-profile -- &quot;$(PublishDir)wwwroot&quot;" />
   </Target>
 
 </Project>

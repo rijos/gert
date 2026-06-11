@@ -27,9 +27,9 @@ export const ArtifactTabs = component({
   css: `
     .ctabs{display:flex; gap:3px; flex:1; min-width:0; overflow-x:auto; scrollbar-width:none;}
     .ctabs::-webkit-scrollbar{display:none;}
-    .ctab{display:flex; align-items:center; gap:6px; padding:6px 9px; border-radius:7px 7px 0 0; cursor:pointer; color:var(--ink-2); font-family:var(--mono); font-size:11px; white-space:nowrap; border:1px solid transparent; border-bottom:none; transition:.13s;}
+    .ctab{display:flex; align-items:center; gap:6px; padding:6px 9px; border-radius:7px 7px 0 0; cursor:pointer; color:var(--ink-2); font-family:var(--mono); font-size:var(--fs-xs); white-space:nowrap; border:1px solid transparent; border-bottom:none; transition:var(--t-fast);}
     .ctab:hover{background:var(--surface-2); color:var(--ink);}
-    .ctab .ti{width:12px; height:12px; flex:none; border-radius:3px; display:grid; place-items:center; font-size:7.5px; font-weight:700; color:var(--on-accent); letter-spacing:-.02em;}
+    .ctab .ti{min-width:13px; height:13px; padding:0 2px; flex:none; border-radius:3px; display:grid; place-items:center; font-size:7.5px; font-weight:700; color:var(--on-chip); letter-spacing:-.02em;}
     .ti.md{background:var(--type-md);} .ti.html{background:var(--coral);} .ti.svg{background:var(--amber);} .ti.py{background:var(--green);}
     .ctab.active{background:var(--surface); color:var(--ink); border-color:var(--line); box-shadow:0 -1px 0 var(--coral) inset;}
   `,

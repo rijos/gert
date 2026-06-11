@@ -128,7 +128,12 @@ export const renderMarkdown = (src) => {
       // named fences — so every fence here renders inline as a code block.
       const pre = document.createElement("pre");
       const code = document.createElement("code");
-      code.append(...highlight(buf.join("\n"), info.split(/[ \t]/, 1)[0]));
+      const lang = info.split(/[ \t]/, 1)[0];
+      code.append(...highlight(buf.join("\n"), lang));
+      // surface the fence language for chrome (message.js code-head label).
+      // Model-controlled, so keep it to a short identifier-ish slice; it only
+      // ever lands in textContent/dataset — never parsed as HTML.
+      if (/^[\w+#.-]{1,16}$/.test(lang)) pre.dataset.lang = lang.toLowerCase();
       pre.appendChild(code);
       frag.appendChild(pre);
       continue;

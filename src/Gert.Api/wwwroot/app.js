@@ -29,9 +29,20 @@ const boot = async () => {
       mainHost.replaceChildren(node);
     },
     routes: (route) => {
-      route("/", () => ChatPage({}));
-      route("/c/:id", (p) => ChatPage(p));
-      route("/admin/users", () => AdminUsersPage());
+      // each handler flags whether we're on the admin route so the shell can
+      // fold the canvas column away (ui.adminRoute -> .app.route-admin).
+      route("/", () => {
+        ui.adminRoute.val = false;
+        return ChatPage({});
+      });
+      route("/c/:id", (p) => {
+        ui.adminRoute.val = false;
+        return ChatPage(p);
+      });
+      route("/admin/users", () => {
+        ui.adminRoute.val = true;
+        return AdminUsersPage();
+      });
     },
   });
 

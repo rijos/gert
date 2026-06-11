@@ -125,12 +125,25 @@ What must be a token, and what may stay literal:
 | Value | Rule |
 |-------|------|
 | Colors — fills, text, borders, shadows, scrims | **Always a token.** No exceptions. Shadows use `var(--lift)` or a `--shadow-*` token, scrims a `--scrim*` token — never a literal `rgba(...)`. |
-| Radii and shared rhythm — `--r`, `--r-sm`, `--head-h` | **Always a token.** These align components to each other; a literal copy drifts. |
-| Component-internal one-off spacing — an `8px 10px` padding, a `312px` menu width, a `13px` font size | **May be literal.** This is the real convention: per-component geometry that nothing else aligns to doesn't earn a token. |
+| Radii and shared rhythm — `--r`, `--r-sm`, `--r-xs`, `--r-lg`, `--head-h` | **Always a token.** These align components to each other; a literal copy drifts. |
+| Font sizes and line heights — the `--fs-*` / `--lh-*` scale | **Use the scale.** Seven steps (`--fs-2xs` 10px → `--fs-xl` 24px) plus `--lh-tight/-ui/-reading`; a new size off the scale needs a reason (the only shipped exception is the 7.5px artifact-tab type glyph). |
+| Transition timing — `--t-fast`, `--t-slow`, `--ease` | **Always a token.** `var(--t-fast)` for hovers/reveals, `var(--t-slow) var(--ease)` for drawers/menus/modal rise. The `prefers-reduced-motion` guard in `base.css` neutralizes both. |
+| Component-internal one-off spacing — an `8px 10px` padding, a `312px` menu width | **May be literal**, though menu/list rows share `var(--sp-2) var(--sp-3)` and the `--sp-1…--sp-6` scale (4/8/12/16/24/32px) is preferred where it fits. Per-component geometry that nothing else aligns to doesn't earn a token. |
 
 The boundary: **if a value would need to change at a breakpoint or between themes, it
 must be a token** (or a `layout.css` override — §3). If it's just this component's own
 geometry, a literal is fine.
+
+The non-color token families at a glance (all in `styles/tokens.css`):
+
+| family | values | used for |
+|--------|--------|----------|
+| `--fs-2xs/-xs/-sm/-md/-base/-lg/-xl` | 10 / 11 / 12.5 / 13.5 / 15 / 18 / 24px | mono micro-labels · meta · dense UI · default UI (body) · reading text · headings · page h1/brand |
+| `--lh-tight/-ui/-reading` | 1.35 / 1.5 / 1.62 | headings · UI text · bot prose |
+| `--sp-1…--sp-6` | 4 / 8 / 12 / 16 / 24 / 32px | row padding, modal padding, gutters |
+| `--r-xs/--r-sm/--r/--r-lg` | 6 / 8 / 12 / 16px | chips · buttons/rows · cards · composer |
+| `--t-fast`, `--t-slow`, `--ease` | .14s / .28s / `cubic-bezier(.2,.8,.2,1)` | every transition/reveal |
+| `--grain-img` | the paper-grain dot layer | pane backgrounds (`.sidebar`/`.main`/`.panel`) paint it with `background-size:18px 18px` so grain sits *under* content |
 
 > The overlay shadows, scrim chips, and the brand mark's `#bf4727` used to be embedded
 > literals in `menu.js`/`modal.js`/`toast.js`/`switch.js`/`composer.js`/`icons/icons.js`;
@@ -145,7 +158,8 @@ Every color token is defined **once** with `light-dark()`, and the document ride
 /* styles/tokens.css — every color token defined exactly once */
 :root{
   color-scheme: light dark;                       /* no explicit choice → follow the OS */
-  --r:12px; --r-sm:8px;
+  --r:12px; --r-sm:8px; --r-xs:6px; --r-lg:16px;
+  --fs-md:13.5px; /* …the 7-step type scale + --lh-*, --sp-*, --t-* live here too */
   --bg:    light-dark(#f4ede1, #16110e);
   --ink:   light-dark(#3a2c20, #efe7df);          /* primary text */
   --ink-2: light-dark(#6f5d4c, #b3a79c);          /* secondary */
@@ -177,9 +191,14 @@ of rule belong in the global stylesheets (`styles/*.css`) instead, because they 
 owned by any one component:
 
 - **Tokens** (`tokens.css`) — all color/shared-value tokens + the theme scopes. Must load first.
-- **Reset & document chrome** (`base.css`) — body + paper grain, scrollbars, keyframes.
+- **Reset & document chrome** (`base.css`) — body, the global `:focus-visible` ring,
+  scrollbars, keyframes, and the `prefers-reduced-motion` guard. (Motion is a global
+  concern like the reset: components reference `--t-*`, base.css neutralizes them.
+  The paper grain itself is painted by the pane components via `--grain-img` so it
+  stays under their content.)
 - **App-frame layout + responsiveness** (`layout.css`) — the 3-column `.app` grid,
-  collapse states, drawers, and **all `@media`** (see §3).
+  collapse states, drawers, and **all `@media`** (see §3) — `@media` for *motion*
+  being base.css's one carve-out above.
 - **Shared utilities applied by bare class-string** (`primitives.css`) — e.g.
   `.btn`, `.ghost`, `.trash`, form/`.field` scaffolding. These are used across many
   components and have no single owner; a component using `class:"btn"` may render
@@ -668,9 +687,10 @@ The one-line version: components in `components/<area>/kebab-case.js`, stores in
   `kebab-case.js`, export is `PascalCase`; imperative openers are camelCase verbs.
 - Root element = **one root class, unique app-wide** (short form fine: `.tcard`, `.dd`);
   all component CSS namespaced under it.
-- Colors (incl. shadows) = **tokens, always**; radii/rhythm (`--r`, `--r-sm`, `--head-h`)
-  = tokens; one-off component spacing may be literal — tokenize anything a breakpoint
-  or theme would change.
+- Colors (incl. shadows) = **tokens, always**; radii/rhythm (`--r*`, `--head-h`),
+  type scale (`--fs-*`/`--lh-*`), and motion (`--t-fast`/`--t-slow`/`--ease`) = tokens;
+  one-off component spacing may be literal (prefer `--sp-*`) — tokenize anything a
+  breakpoint or theme would change.
 - Theming = `light-dark()` tokens + `color-scheme`; `[data-theme]` is owned by
   `state/ui.js` alone.
 - Responsiveness = `.app`-prefixed overrides + layout vars in `styles/layout.css`.

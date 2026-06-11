@@ -22,11 +22,12 @@ export const Modal = component({
   name: "modal",
   css: `
     .modal-scrim{position:fixed; inset:0; background:var(--scrim); backdrop-filter:blur(2px); z-index:70; display:grid; place-items:center;}
-    .modal{background:var(--surface); border:1px solid var(--line); border-radius:var(--r); box-shadow:var(--shadow-modal); padding:20px 22px; width:min(440px,calc(100vw - 32px)); animation:rise .26s cubic-bezier(.2,.8,.2,1) backwards; position:relative;}
-    .modal h2{font-family:var(--display); font-size:18px; font-weight:600; margin-bottom:6px;}
+    .modal{background:var(--surface); border:1px solid var(--line); border-radius:var(--r); box-shadow:var(--shadow-modal); padding:var(--sp-5); width:min(440px,calc(100vw - 32px)); animation:rise var(--t-slow) var(--ease) backwards; position:relative;}
+    .modal h2{font-family:var(--display); font-size:var(--fs-lg); font-weight:600; margin-bottom:6px;}
     .modal .modal-close{position:absolute; top:12px; right:12px;}
-    .modal .modal-acts{display:flex; gap:8px; justify-content:flex-end; margin-top:18px;}
-    .modal .ver{font-family:var(--mono); font-size:10px; color:var(--ink-3); letter-spacing:.02em; margin-top:14px;}
+    /* the footer reads as a region — same hairline language as .t-docs-wrap */
+    .modal .modal-acts{display:flex; gap:8px; justify-content:flex-end; margin-top:18px; padding-top:14px; border-top:1px solid var(--line);}
+    .modal .ver{font-family:var(--mono); font-size:var(--fs-2xs); color:var(--ink-3); letter-spacing:.02em; margin-top:14px;}
   `,
   view: ({
     title,

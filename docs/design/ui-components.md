@@ -130,7 +130,7 @@ wwwroot/
 
   styles/                    # the global cascade — only rules no single component owns (style guide §2)
     tokens.css               # design tokens — light-dark(Manila, Ember), [data-theme] scheme pins; loads first
-    base.css                 # reset, body + paper grain, scrollbars, keyframes
+    base.css                 # reset, body, focus ring, scrollbars, keyframes, reduced-motion guard
     layout.css               # .app grid, collapse states, responsive drawers + ALL @media
     primitives.css           # shared bare-class utilities (.btn, .ghost, .trash, .field …)
 ```
@@ -199,7 +199,7 @@ The global cascade is only what no single component owns
 | File | Holds |
 |------|-------|
 | `tokens.css` | every design token, defined once with `light-dark(manila, ember)`; the `[data-theme]` scheme pins; **must load first** |
-| `base.css` | reset, `body` + paper grain, scrollbars, `@keyframes` |
+| `base.css` | reset, `body`, the global `:focus-visible` ring, scrollbars, `@keyframes`, the `prefers-reduced-motion` guard |
 | `layout.css` | the `.app` grid, collapse/wide states, responsive drawers, scrim — and **all `@media`** |
 | `primitives.css` | shared bare-class utilities (`.btn`, `.ghost`, `.trash`, `.field` …) applied by class string across many components |
 

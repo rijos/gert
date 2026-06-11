@@ -48,6 +48,11 @@ export const preserveThinking = van.state(false);
 // tokens of the final model round) — feeds the composer's ring.
 export const contextTokens = van.state(null);
 
+// one-shot composer hand-off: the empty-thread starter chips
+// (message-stream.js) write a prompt here; the composer consumes it into its
+// textarea and resets it to "" (it is a signal, not persistent draft state).
+export const draft = van.state("");
+
 // Message shape (van-x reactive object pushed onto `messages`):
 //   { id, role: "user"|"assistant", text, streaming,
 //     attachments: [ { mime_type, data } ],  // pasted images (base64), user rows only

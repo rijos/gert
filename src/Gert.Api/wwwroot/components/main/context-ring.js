@@ -33,14 +33,14 @@ export const ContextRing = component({
     /* the composer sits at the viewport bottom — open the stats upward */
     .ctx-ring .menu{top:auto; bottom:calc(100% + 10px); left:auto; right:-44px; width:232px; transform-origin:bottom right; transform:translateY(6px) scale(.98);}
     .ctx-ring.open .menu{opacity:1; transform:none; pointer-events:auto;}
-    .ctx-btn{display:grid; place-items:center; width:30px; height:30px; flex:none; border:none; background:none; padding:0; cursor:pointer; border-radius:9px; transition:.13s;}
+    .ctx-btn{display:grid; place-items:center; width:30px; height:30px; flex:none; border:none; background:none; padding:0; cursor:pointer; border-radius:9px; transition:var(--t-fast);}
     .ctx-btn:hover{background:var(--surface-2);}
     .ctx-btn svg{display:block;}
     .ctx-btn .track{stroke:var(--line); fill:none;}
-    .ctx-btn .fill{fill:none; stroke-linecap:round; transform:rotate(-90deg); transform-origin:center; transition:stroke-dashoffset .35s ease, stroke .35s ease;}
-    .cx-row{display:flex; align-items:baseline; justify-content:space-between; gap:12px; padding:5px 10px; font-size:12.5px;}
+    .ctx-btn .fill{fill:none; stroke-linecap:round; transform:rotate(-90deg); transform-origin:center; transition:stroke-dashoffset var(--t-slow) var(--ease), stroke var(--t-slow) var(--ease);}
+    .cx-row{display:flex; align-items:baseline; justify-content:space-between; gap:12px; padding:5px 10px; font-size:var(--fs-sm);}
     .cx-row .cx-l{color:var(--ink-2);}
-    .cx-row .cx-v{font-family:var(--mono); font-size:12px; color:var(--ink); text-align:right;}
+    .cx-row .cx-v{font-family:var(--mono); font-size:var(--fs-sm); color:var(--ink); text-align:right;}
     .pbar.cx-bar{height:5px; border-radius:3px; margin:7px 10px 9px;}
     .pbar.cx-bar > i{border-radius:3px;}
   `,

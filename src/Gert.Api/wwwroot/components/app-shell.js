@@ -16,6 +16,7 @@ const appClass = () => {
   if (ui.panelWide.val) c.push("panel-wide");
   if (ui.navOpen.val) c.push("nav-open");
   if (ui.panelOpen.val) c.push("panel-open");
+  if (ui.adminRoute.val) c.push("route-admin"); // folds the canvas column away
   return c.join(" ");
 };
 
@@ -27,7 +28,8 @@ export const mainHost = div({ class: "main" });
 export const AppShell = component({
   name: "app-shell",
   css: `
-    .main{display:flex; flex-direction:column; min-width:0; min-height:0; background:var(--bg); position:relative;}
+    /* paper grain rides the pane background (tokens.css --grain-img) */
+    .main{display:flex; flex-direction:column; min-width:0; min-height:0; background:var(--bg); background-image:var(--grain-img); background-size:18px 18px; position:relative;}
   `,
   view: () =>
     div(

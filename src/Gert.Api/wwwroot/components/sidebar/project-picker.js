@@ -16,10 +16,10 @@ export const ProjectPicker = component({
   name: "project-picker",
   css: `
     .project-picker{margin:12px 16px 8px;}
-    .project-picker .dd-btn{padding:8px 11px; border-color:var(--line); background:var(--surface-2); font-weight:600; font-size:12.5px;}
+    .project-picker .dd-btn{padding:8px 11px; border-color:var(--line); background:var(--surface-2); font-weight:600; font-size:var(--fs-sm);}
     .project-picker .dd-btn:hover{border-color:var(--coral); background:var(--coral-soft);}
-    .project-picker .dd-item{font-size:12.5px;}
-    .p-new{padding:8px 10px; border-radius:var(--r-sm); cursor:pointer; transition:.12s; font-size:12.5px; font-weight:500; border-top:1px solid var(--line); margin-top:5px; color:var(--coral-deep);}
+    .project-picker .dd-item{font-size:var(--fs-sm);}
+    .p-new{padding:var(--sp-2) var(--sp-3); border-radius:var(--r-sm); cursor:pointer; transition:var(--t-fast); font-size:var(--fs-sm); font-weight:500; border-top:1px solid var(--line); margin-top:5px; color:var(--coral-deep);}
     .p-new:hover{background:var(--surface-2);}
   `,
   view: () => {

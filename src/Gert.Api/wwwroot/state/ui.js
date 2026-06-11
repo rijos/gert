@@ -42,6 +42,9 @@ export const panelCollapsed = van.state(false);
 export const panelWide = van.state(false);
 export const navOpen = van.state(false); // mobile drawer
 export const panelOpen = van.state(false); // mobile drawer
+// true on non-chat routes (admin) — the canvas column folds away there
+// (.app.route-admin, layout.css). Set by the route table in app.js.
+export const adminRoute = van.state(false);
 
 // canvas: which artifact id is active, or "kb" for the knowledge view
 export const activeArtifact = van.state(null);

@@ -5,11 +5,11 @@ import van from "van";
 import { Modal } from "../../components/ui/modal.js";
 import { toast } from "../../components/ui/toast.js";
 import { attempt } from "../../lib/action.js";
-import { fmtBytes } from "../../lib/format.js";
+import { fmtBytes, fmtRelative } from "../../lib/format.js";
 import * as admin from "../../services/admin.js";
 import * as auth from "../../state/auth.js";
 
-const { div, h1, p, table, thead, tbody, tr, th, td, button } = van.tags;
+const { div, h1, p, a, table, thead, tbody, tr, th, td, button } = van.tags;
 
 export const AdminUsersPage = () => {
   const users = van.state(null); // null = loading, [] = genuinely empty
@@ -43,6 +43,8 @@ export const AdminUsersPage = () => {
     { class: "page" },
     div(
       { class: "page-inner" },
+      // route escape — admin has no topbar, so the page carries its own way home
+      a({ class: "backlink", href: "/", "data-link": "" }, "← Back to chat"),
       h1("Users"),
       p({ class: "sub" }, "User data folders (admin only)."),
       () =>
@@ -72,7 +74,11 @@ export const AdminUsersPage = () => {
                       td(u.username || u.key),
                       td(String(u.document_count ?? 0)),
                       td(u.size != null ? fmtBytes(u.size) : "—"),
-                      td(u.last_active || "—"),
+                      // human-relative, with the precise ISO on the tooltip
+                      td(
+                        { title: u.last_active || "" },
+                        u.last_active ? fmtRelative(u.last_active) : "—",
+                      ),
                       td(
                         button(
                           { class: "btn secondary", onclick: () => confirmDelete(u) },

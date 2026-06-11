@@ -89,19 +89,20 @@ export const Artifact = component({
   name: "artifact",
   css: `
     .art-head{display:flex; align-items:center; gap:9px; padding:11px 13px; border-bottom:1px solid var(--line); flex:none;}
-    .art-head .atype{font-family:var(--mono); font-size:9px; font-weight:700; letter-spacing:.04em; padding:3px 6px; border-radius:5px; color:var(--on-accent);}
+    .art-head .atype{font-family:var(--mono); font-size:var(--fs-2xs); font-weight:700; letter-spacing:.04em; padding:2px 6px; border-radius:5px; color:var(--on-chip);}
     .atype.md{background:var(--type-md);} .atype.html{background:var(--coral);} .atype.svg{background:var(--amber);} .atype.py{background:var(--green);}
     .atype.cs{background:var(--type-cs);} .atype.cpp{background:var(--type-cpp);} .atype.js{background:var(--type-js);} .atype.rs{background:var(--type-rs);}
-    .art-head .aname{font-family:var(--mono); font-size:12.5px; font-weight:500; color:var(--ink); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; flex:1; min-width:0; unicode-bidi:isolate;}
-    .art-head .gen{font-family:var(--mono); font-size:9.5px; color:var(--ink-3); display:flex; align-items:center; gap:4px; flex:none;}
+    .art-head .aname{font-family:var(--mono); font-size:var(--fs-sm); font-weight:500; color:var(--ink); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; flex:1; min-width:0; unicode-bidi:isolate;}
+    .art-head .gen{font-family:var(--mono); font-size:var(--fs-2xs); color:var(--ink-3); display:flex; align-items:center; gap:4px; flex:none;}
     .art-head .gen .gd{width:5px; height:5px; border-radius:50%; background:var(--coral);}
-    .art-head .art-dl{display:flex; align-items:center; justify-content:center; width:26px; height:26px; flex:none; background:none; border:1px solid var(--line); border-radius:7px; color:var(--ink-2); cursor:pointer; transition:.14s;}
+    .art-head .art-dl{display:flex; align-items:center; justify-content:center; width:26px; height:26px; flex:none; background:none; border:1px solid var(--line); border-radius:7px; color:var(--ink-2); cursor:pointer; transition:var(--t-fast);}
     .art-head .art-dl:hover{border-color:var(--coral); color:var(--coral);}
     .art-doc[data-mode="source"] .render{display:none;}
     .art-doc[data-mode="render"] .source{display:none;}
     .art-body{flex:1; min-height:0; overflow:auto; position:relative;}
-    /* highlighted source view, shared by the markdown/html/svg viewers */
-    .source-view{padding:18px 20px 40px; font-family:var(--mono); font-size:12px; line-height:1.7; color:var(--ink); white-space:pre-wrap; tab-size:2;}
+    /* highlighted source view, shared by the markdown/html/svg viewers — code
+       surfaces sit on the dark --code-bg ground in both themes (tokens.css) */
+    .source-view{min-height:100%; padding:18px 20px 40px; font-family:var(--mono); font-size:var(--fs-sm); line-height:1.7; background:var(--code-bg); color:var(--code-fg); white-space:pre-wrap; tab-size:2;}
   `,
   // active: () => boolean — whether this artifact's tab is selected.
   view: ({ artifact, active } = {}) => {

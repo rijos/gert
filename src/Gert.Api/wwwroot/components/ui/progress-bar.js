@@ -14,7 +14,7 @@ export const ProgressBar = component({
   name: "progress-bar",
   css: `
     .pbar{height:4px; background:var(--surface-2); overflow:hidden;}
-    .pbar > i{display:block; height:100%; background:var(--coral); transition:width .3s ease, background .35s ease;}
+    .pbar > i{display:block; height:100%; background:var(--coral); transition:width var(--t-slow) var(--ease), background var(--t-slow) var(--ease);}
   `,
   view: ({ value = 0, max = 1, color = "", class: cls = "" } = {}) => {
     const pct = max > 0 ? Math.min(Math.max(value / max, 0), 1) * 100 : 0;

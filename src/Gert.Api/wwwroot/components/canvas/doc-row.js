@@ -25,12 +25,12 @@ const subText = (d) => {
 export const DocRow = component({
   name: "doc-row",
   css: `
-    .doc{display:flex; align-items:center; gap:10px; padding:10px; border-radius:var(--r-sm); transition:.12s; cursor:default;}
+    .doc{display:flex; align-items:center; gap:10px; padding:10px; border-radius:var(--r-sm); transition:var(--t-fast); cursor:default;}
     .doc:hover{background:var(--surface-2);}
     .doc .fi{width:16px; height:16px; flex:none; color:var(--ink-3);}
     .doc .meta{flex:1; min-width:0;}
-    .doc .dname{font-size:12.5px; font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; unicode-bidi:isolate;}
-    .doc .dsub{font-family:var(--mono); font-size:10px; color:var(--ink-3); margin-top:1px;}
+    .doc .dname{font-size:var(--fs-sm); font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; unicode-bidi:isolate;}
+    .doc .dsub{font-family:var(--mono); font-size:var(--fs-2xs); color:var(--ink-3); margin-top:1px;}
     .doc:hover .trash{opacity:1;}
   `,
   // `d` is one reactive document: { name, status, size, chunk_count, progress, error }

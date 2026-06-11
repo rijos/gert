@@ -13,15 +13,17 @@ const { div, span, button } = van.tags;
 export const ConvoItem = component({
   name: "convo-item",
   css: `
-    .convo{position:relative; padding:8px 10px 8px 8px; border-radius:var(--r-sm); cursor:pointer; display:flex; align-items:center; color:var(--ink-2); transition:.14s;}
-    .convo .node{position:absolute; left:-21.5px; top:50%; transform:translateY(-50%); width:9px; height:9px; border-radius:50%; background:var(--side-bg); border:1.5px solid var(--line); transition:.14s;}
+    .convo{position:relative; padding:var(--sp-2) 10px var(--sp-2) 8px; border-radius:var(--r-sm); cursor:pointer; display:flex; align-items:center; color:var(--ink-2); transition:var(--t-fast);}
+    .convo .node{position:absolute; left:-21.5px; top:50%; transform:translateY(-50%); width:9px; height:9px; border-radius:50%; background:var(--side-bg); border:1.5px solid var(--line); transition:var(--t-fast);}
     /* flex:1 + min-width:0 lets the title shrink so text-overflow:ellipsis fires */
-    .convo .t{flex:1; min-width:0; font-size:13px; font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+    .convo .t{flex:1; min-width:0; font-size:var(--fs-md); font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
     .convo .trash{margin-left:6px;}     /* base .trash (hidden, hover-reveal) is a shared primitive */
     .convo:hover{background:var(--surface-2); color:var(--ink);}
     .convo:hover .node{border-color:var(--ink-3);}
     .convo:hover .trash{opacity:1;}
-    .convo.active{background:var(--chat-on); color:var(--coral-deep); font-weight:600; box-shadow:inset 0 0 0 1px var(--coral-line);}
+    /* active = fill + edge bar + coral node; the old fourth signal (an inset
+       coral ring) stacked on top of those read as noise */
+    .convo.active{background:var(--chat-on); color:var(--coral-deep); font-weight:600;}
     /* 3px coral bar pinned to the active row's left edge */
     .convo.active::before{content:""; position:absolute; left:0; top:6px; bottom:6px; width:3px; border-radius:0 2px 2px 0; background:var(--coral);}
     .convo.active .node{background:var(--coral); border-color:var(--coral); box-shadow:0 0 0 3px var(--coral-soft);}

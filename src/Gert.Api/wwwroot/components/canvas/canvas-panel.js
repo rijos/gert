@@ -3,6 +3,7 @@
 // behaviour comes from the .app state classes (app-shell.js).
 import van from "van";
 import { component } from "../../lib/component.js";
+import { Icon } from "../../icons/icons.js";
 import { CanvasBar } from "./canvas-bar.js";
 import { Artifact } from "./artifact.js";
 import { KnowledgePanel } from "./knowledge-panel.js";
@@ -30,12 +31,14 @@ const startResize = (e) => {
 export const CanvasPanel = component({
   name: "canvas-panel",
   css: `
-    .panel{background:var(--canvas-bg); border-left:1px solid var(--line); display:flex; flex-direction:column; overflow:hidden; min-width:0; position:relative;}
+    /* paper grain rides the pane background (tokens.css --grain-img) */
+    .panel{background:var(--canvas-bg); background-image:var(--grain-img); background-size:18px 18px; border-left:1px solid var(--line); display:flex; flex-direction:column; overflow:hidden; min-width:0; position:relative;}
     .canvas-stage{flex:1; min-height:0; overflow:hidden; display:flex; flex-direction:column;}
     /* the stage's two pane kinds (artifact viewer / knowledge view) show one at a time */
     .art-doc,.kb-view{display:none; flex:1; min-height:0; flex-direction:column;}
     .art-doc.active,.kb-view.active{display:flex;}
-    .canvas-empty{flex:1; display:grid; place-items:center; color:var(--ink-3); font-family:var(--mono); font-size:11px; padding:24px; text-align:center;}
+    .canvas-empty{flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px; color:var(--ink-3); font-family:var(--mono); font-size:var(--fs-xs); padding:24px; text-align:center; max-width:280px; margin:0 auto; line-height:var(--lh-ui);}
+    .canvas-empty svg{width:22px; height:22px; opacity:.7;}
   `,
   view: () =>
   aside(
@@ -61,6 +64,7 @@ export const CanvasPanel = component({
         !artifacts.artifacts.length && !ui.showKnowledge.val
           ? div(
               { class: "canvas-empty" },
+              Icon("file", { size: 22, strokeWidth: 1.6 }),
               "Artifacts Gert produces in this thread appear here.",
             )
           : div(),

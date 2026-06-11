@@ -61,38 +61,38 @@ export const ToolCard = component({
     .tcard.done .tnode{background:var(--coral);}
     .thead{display:flex; align-items:center; gap:9px; padding:10px 13px; cursor:pointer;}
     .thead .ic{width:15px; height:15px; color:var(--coral-deep); flex:none;}
-    .thead .lab{font-family:var(--mono); font-size:12px; font-weight:500; color:var(--ink); min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+    .thead .lab{font-family:var(--mono); font-size:var(--fs-sm); font-weight:500; color:var(--ink); min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
     /* n/N fraction chip */
-    .thead .tcount{font-family:var(--mono); font-size:10.5px; color:var(--ink-2); background:var(--surface-2); border:1px solid var(--line); border-radius:6px; padding:1.5px 7px; flex:none;}
-    .thead .tag{font-family:var(--mono); font-size:10px; color:var(--ink-3); margin-left:auto; border:1px solid var(--line); border-radius:5px; padding:2px 6px; flex:none;}
+    .thead .tcount{font-family:var(--mono); font-size:var(--fs-2xs); color:var(--ink-2); background:var(--surface-2); border:1px solid var(--line); border-radius:6px; padding:1.5px 7px; flex:none;}
+    .thead .tag{font-family:var(--mono); font-size:var(--fs-2xs); color:var(--ink-3); margin-left:auto; border:1px solid var(--line); border-radius:5px; padding:2px 6px; flex:none;}
     /* checklist progress: coral gradient while working, green once complete */
     .pbar.tprog{height:3px; background:var(--track);}
     .pbar.tprog > i{background:linear-gradient(90deg, var(--coral), var(--coral-2));}
     .tcard.complete .pbar.tprog > i{background:var(--green);}
-    .tbody{padding:0 13px 13px 13px; border-top:1px dashed var(--line); margin-top:0; font-size:13px; color:var(--ink-2);}
+    .tbody{padding:0 13px 13px 13px; border-top:1px dashed var(--line); margin-top:0; font-size:var(--fs-md); color:var(--ink-2);}
     .tbody.hide{display:none;}
-    .tbody .q{font-family:var(--mono); font-size:12px; background:var(--surface-2); border:1px solid var(--line); border-radius:6px; padding:7px 10px; margin:11px 0; color:var(--ink);}
+    .tbody .q{font-family:var(--mono); font-size:var(--fs-sm); background:var(--surface-2); border:1px solid var(--line); border-radius:6px; padding:7px 10px; margin:11px 0; color:var(--ink);}
     .doc-hit{display:flex; align-items:center; gap:8px; padding:6px 0; border-bottom:1px solid var(--line);}
     .doc-hit:last-child{border-bottom:none;}
     .doc-hit .fi{width:13px; height:13px; color:var(--ink-3);}
-    .doc-hit .dn{font-family:var(--mono); font-size:11.5px; color:var(--ink);}
-    .doc-hit .pg{font-family:var(--mono); font-size:10.5px; color:var(--ink-3); margin-left:auto;}
-    .doc-hit .score{font-family:var(--mono); font-size:10px; color:var(--green);}
-    .stdout{font-family:var(--mono); font-size:11.5px; background:var(--surface-2); border:1px solid var(--line); border-left:2.5px solid var(--green); border-radius:6px; padding:8px 11px; color:var(--ink); white-space:pre-wrap;}
+    .doc-hit .dn{font-family:var(--mono); font-size:var(--fs-xs); color:var(--ink);}
+    .doc-hit .pg{font-family:var(--mono); font-size:var(--fs-2xs); color:var(--ink-3); margin-left:auto;}
+    .doc-hit .score{font-family:var(--mono); font-size:var(--fs-2xs); color:var(--green);}
+    .stdout{font-family:var(--mono); font-size:var(--fs-xs); background:var(--surface-2); border:1px solid var(--line); border-left:2.5px solid var(--green); border-radius:6px; padding:8px 11px; color:var(--ink); white-space:pre-wrap;}
     /* failure text: timeout, refused budget-exhausted call, tool defect */
-    .terror{font-family:var(--mono); font-size:11.5px; background:var(--surface-2); border:1px solid var(--line); border-left:2.5px solid var(--brick); border-radius:6px; padding:8px 11px; margin-top:11px; color:var(--ink); white-space:pre-wrap;}
+    .terror{font-family:var(--mono); font-size:var(--fs-xs); background:var(--surface-2); border:1px solid var(--line); border-left:2.5px solid var(--brick); border-radius:6px; padding:8px 11px; margin-top:11px; color:var(--ink); white-space:pre-wrap;}
     .todo-row{display:flex; align-items:center; gap:9px; padding:5px 0; border-bottom:1px solid var(--line-soft);}
     .todo-row:last-child{border-bottom:none;}
-    .todo-row .tmark{font-family:var(--mono); font-size:11px; width:18px; height:18px; flex:none; display:grid; place-items:center; color:var(--ink-3); border:1px solid var(--line); border-radius:5px;}
+    .todo-row .tmark{font-family:var(--mono); font-size:var(--fs-xs); width:18px; height:18px; flex:none; display:grid; place-items:center; color:var(--ink-3); border:1px solid var(--line); border-radius:5px;}
     .todo-row.done .tmark{color:var(--green); border-color:var(--green-line); background:var(--green-soft);}
     .todo-row.active .tmark{color:var(--coral-deep); border-color:var(--coral-line); background:var(--coral-soft); animation:tcard-breathe 1.6s ease-in-out infinite;}
-    .todo-row .ttext{font-size:12.5px; color:var(--ink-2);}
+    .todo-row .ttext{font-size:var(--fs-sm); color:var(--ink-2);}
     .todo-row.done .ttext{color:var(--ink-3); text-decoration:line-through;}
     .todo-row.active .ttext{font-weight:600; color:var(--ink);}
     @keyframes tcard-breathe{50%{transform:scale(1.12); opacity:.8;}}
     /* all-done + collapsed: a single summary row that re-expands on click */
-    .tsummary{display:flex; align-items:center; gap:9px; padding:9px 13px; cursor:pointer; font-size:12.5px; color:var(--ink-2);}
-    .tsummary .tmark{width:16px; height:16px; flex:none; display:grid; place-items:center; font-family:var(--mono); font-size:10px; color:var(--green); border:1px solid var(--green-line); background:var(--green-soft); border-radius:5px;}
+    .tsummary{display:flex; align-items:center; gap:9px; padding:9px 13px; cursor:pointer; font-size:var(--fs-sm); color:var(--ink-2);}
+    .tsummary .tmark{width:16px; height:16px; flex:none; display:grid; place-items:center; font-family:var(--mono); font-size:var(--fs-2xs); color:var(--green); border:1px solid var(--green-line); background:var(--green-soft); border-radius:5px;}
     .tsummary .tchev{margin-left:auto; color:var(--ink-3); flex:none;}
     .tcard.err{border-color:var(--brick);}
   `,

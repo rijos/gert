@@ -29,13 +29,17 @@ export const ToolsMenu = component({
     /* the composer sits at the viewport bottom — open upward */
     .tools-menu .menu{top:auto; bottom:calc(100% + 8px); left:0; right:auto; width:224px; transform-origin:bottom left; transform:translateY(6px) scale(.98);}
     .tools-menu.open .menu{opacity:1; transform:none; pointer-events:auto;}
-    .tools-menu .chev{transition:.2s;}
+    .tools-menu .chev{transition:var(--t-slow) var(--ease);}
     .tools-menu.open .chev{transform:rotate(180deg);}
-    .tools-menu .tcount{min-width:16px; height:16px; padding:0 4px; border-radius:9px; background:var(--green-soft); color:var(--green); font-family:var(--mono); font-size:10px; font-weight:600; display:grid; place-items:center;}
-    .t-row{display:flex; align-items:center; gap:9px; padding:7px 10px; border-radius:var(--r-sm); cursor:pointer; transition:.12s; font-size:12.5px; font-weight:500;}
+    .tools-menu .tcount{min-width:16px; height:16px; padding:0 4px; border-radius:9px; background:var(--green-soft); color:var(--green); font-family:var(--mono); font-size:var(--fs-2xs); font-weight:600; display:grid; place-items:center;}
+    .t-row{display:flex; align-items:center; gap:9px; padding:var(--sp-2) var(--sp-3); border-radius:var(--r-sm); cursor:pointer; transition:var(--t-fast); font-size:var(--fs-sm); font-weight:500;}
     .t-row:hover{background:var(--surface-2);}
     .t-row .t-label{flex:1;}
-    .t-row.disabled{opacity:.4; cursor:not-allowed;}
+    /* inert ≠ invisible: the label keeps AA contrast (--ink-3), the switch
+       greys out — replaces the old opacity:.4 (2.3:1) treatment */
+    .t-row.disabled{color:var(--ink-3); cursor:not-allowed;}
+    .t-row.disabled:hover{background:none;}
+    .t-row.disabled .switch{filter:grayscale(1); opacity:.6;}
     .t-docs-wrap{border-top:1px solid var(--line); margin-top:5px; padding-top:5px;}
   `,
   view: () => {

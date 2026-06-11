@@ -25,19 +25,20 @@ export const Dropdown = component({
   name: "dropdown",
   css: `
     .dd{position:relative;}
-    .dd-btn{display:flex; align-items:center; gap:8px; width:100%; padding:9px 12px; border:1px solid var(--line); background:var(--surface); border-radius:var(--r-sm); cursor:pointer; font-family:var(--sans); font-weight:500; font-size:13.5px; color:var(--ink); transition:.14s; text-align:left;}
+    .dd-btn{display:flex; align-items:center; gap:8px; width:100%; padding:9px 12px; border:1px solid var(--line); background:var(--surface); border-radius:var(--r-sm); cursor:pointer; font-family:var(--sans); font-weight:500; font-size:var(--fs-md); color:var(--ink); transition:var(--t-fast); text-align:left;}
     .dd-btn:hover{border-color:var(--coral); background:var(--coral-soft);}
     .dd-btn .dd-label{flex:1; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
-    .dd-btn .chev{width:13px; height:13px; color:var(--ink-3); transition:.2s; flex:none;}
+    .dd-btn .chev{width:13px; height:13px; color:var(--ink-3); transition:var(--t-slow) var(--ease); flex:none;}
     .dd.open .chev{transform:rotate(180deg);}
     .dd .menu{left:0; right:auto; width:100%; min-width:200px; transform-origin:top left;}
     .dd.open .menu{opacity:1; transform:none; pointer-events:auto;}
-    .dd-search{width:100%; font-family:var(--sans); font-size:13px; color:var(--ink); background:var(--surface-2); border:1px solid var(--line); border-radius:var(--r-sm); padding:7px 10px; margin-bottom:5px;}
-    .dd-search:focus{outline:none; border-color:var(--coral);}
-    .dd-item{padding:8px 10px; border-radius:var(--r-sm); cursor:pointer; transition:.12s; font-size:13px; font-weight:500;}
+    /* border tint on focus is a bonus — the global :focus-visible ring stays */
+    .dd-search{width:100%; font-family:var(--sans); font-size:var(--fs-md); color:var(--ink); background:var(--surface-2); border:1px solid var(--line); border-radius:var(--r-sm); padding:7px 10px; margin-bottom:5px;}
+    .dd-search:focus{border-color:var(--coral);}
+    .dd-item{padding:var(--sp-2) var(--sp-3); border-radius:var(--r-sm); cursor:pointer; transition:var(--t-fast); font-size:var(--fs-md); font-weight:500;}
     .dd-item:hover{background:var(--surface-2);}
     .dd-item.sel{background:var(--coral-soft); color:var(--coral-deep); font-weight:600;}
-    .dd-empty{padding:8px 10px; font-size:12.5px; color:var(--ink-3);}
+    .dd-empty{padding:8px 10px; font-size:var(--fs-sm); color:var(--ink-3);}
   `,
   view: ({
     items,

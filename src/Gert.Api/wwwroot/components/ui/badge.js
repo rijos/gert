@@ -7,7 +7,7 @@ const { span } = van.tags;
 export const Badge = component({
   name: "badge",
   css: `
-    .badge{font-family:var(--mono); font-size:9.5px; padding:2px 6px; border-radius:5px; background:var(--surface-2); color:var(--ink-2); border:1px solid var(--line);}
+    .badge{font-family:var(--mono); font-size:var(--fs-2xs); padding:2px 6px; border-radius:5px; background:var(--surface-2); color:var(--ink-2); border:1px solid var(--line);}
     .badge.cap{color:var(--coral-deep); background:var(--coral-soft); border-color:transparent;}
   `,
   // cap: true → accent capability badge; otherwise neutral meta badge.
