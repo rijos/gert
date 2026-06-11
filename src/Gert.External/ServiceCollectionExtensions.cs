@@ -227,6 +227,11 @@ public static class ServiceCollectionExtensions
         // not share a handler whose connect path we don't control.
         services.AddSingleton<SafeHttpFetcher>();
 
+        // The web_fetch tool's port over the same guarded fetcher (F5). Registered
+        // unconditionally — it needs no SearXNG instance, only the SearXngOptions
+        // caps (Gert:Search size/time/redirect knobs), which always bind.
+        services.AddSingleton<IWebFetcher, SafeWebFetcher>();
+
         services.AddSingleton<IWebSearch>(sp => new SearXngWebSearch(
             sp.GetRequiredService<IHttpClientFactory>().CreateClient(SearXngWebSearch.HttpClientName),
             sp.GetRequiredService<IOptions<SearXngOptions>>(),

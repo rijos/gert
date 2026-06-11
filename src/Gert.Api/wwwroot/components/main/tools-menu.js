@@ -17,10 +17,12 @@ const { div, button, span } = van.tags;
 
 const TOOLS = [
   { id: "search", label: "Search" },
+  { id: "fetch", label: "Fetch pages" },
   { id: "sandbox", label: "Sandbox" },
   { id: "todo", label: "Todos" },
   { id: "clock", label: "Clock" },
   { id: "ask_user", label: "Ask me" },
+  { id: "memory", label: "Save memories" },
 ];
 
 export const ToolsMenu = component({

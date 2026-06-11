@@ -31,6 +31,11 @@ public sealed class Fixtures
     public IReadOnlyDictionary<string, SearchFixture> Search { get; init; } =
         new Dictionary<string, SearchFixture>();
 
+    /// <summary>Canned web-fetch outcomes keyed by URL (the web_fetch tool's fake).</summary>
+    [JsonPropertyName("fetch")]
+    public IReadOnlyDictionary<string, FetchFixture> Fetch { get; init; } =
+        new Dictionary<string, FetchFixture>();
+
     /// <summary>Parse fixtures from a JSON string.</summary>
     public static Fixtures Parse(string json) =>
         JsonSerializer.Deserialize<Fixtures>(json, Options)

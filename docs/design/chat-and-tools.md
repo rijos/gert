@@ -4,7 +4,7 @@
 
 vLLM exposes an **OpenAI-compatible** `/v1/chat/completions` with function calling and streaming, so the orchestrator can use a standard OpenAI client pointed at the model's base URL.
 
-The API advertises up to nine tools to the model (each gated by entitlement,
+The API advertises up to eleven tools to the model (each gated by entitlement,
 conversation toggles, and the request — see the intersection rule below):
 
 ```jsonc
@@ -27,7 +27,11 @@ conversation toggles, and the request — see the intersection rule below):
   { "name":"read_artifact", "description":"Return an artifact's current content, line-numbered",
     "parameters": { "name":"string", "range":"string?" } },
   { "name":"ask_user", "description":"Ask the user ONE clarifying question and wait for their answer",
-    "parameters": { "question":"string", "options":"string[]?", "allow_free_text":"boolean?" } }
+    "parameters": { "question":"string", "options":"string[]?", "allow_free_text":"boolean?" } },
+  { "name":"web_fetch", "description":"Fetch one public web page by URL, return its raw content (clipped)",
+    "parameters": { "url":"string", "max_chars":"integer?" } },
+  { "name":"save_memory", "description":"Save ONE durable fact or preference for future conversations in this project",
+    "parameters": { "title":"string", "content":"string" } }
 ]
 ```
 
@@ -320,6 +324,45 @@ Server-side `HttpClient` (via `IHttpClientFactory`) to the SearXNG JSON API. Tak
 > loopback, link-local, and unique-local ranges** (IPv4 *and* IPv6, including the cloud metadata
 > IP), **re-checking after every redirect**; and cap response size, time, and redirect count. The
 > fetcher must never reach vLLM, SearXNG, or any other internal service.
+
+### Web fetch (`web_fetch`)
+
+`web_fetch(url, max_chars?)` pulls **one model-named URL** server-side and
+returns the raw body, clipped to `max_chars` (default 8 000, hard ceiling
+20 000 — larger asks are clamped, never errored; the byte-level cap stays the
+fetcher's `MaxFetchBytes`). No text extraction — parity with the search
+summarize step's raw clip; HTML→text is a separate, future improvement. One
+web-type citation is seeded for the fetched URL, mirroring web search.
+
+> **Same SSRF guard, same knobs.** The tool only calls the `IWebFetcher` port;
+> the adapter wraps the **same hardened fetcher** as web search's page pulls
+> ([security F5](security.md#3-findings--remediations) — the box above), and it
+> deliberately shares the `Gert:Search` size/time/redirect caps rather than
+> growing a parallel set. A **policy block or HTTP failure is a tool error the
+> model reads** (card-visible, exactly like a sandbox error) — never a turn
+> fault: the model fetched an attacker-influenceable URL, so the refusal must
+> be visible, not fatal.
+
+### Save memory (`save_memory`)
+
+`save_memory(title, content)` is the write side of memory: it calls the same
+`MemoryService.UpsertAsync` the knowledge panel's POST uses, so the entry is
+chunked + embedded into the project's `rag.db` as `kind='memory'` and is
+**immediately retrievable by `search_documents`**
+([memory rides the same query](#rag-hybrid-retrieval)). The embed runs inline
+(one vLLM embeddings round-trip) — comfortably inside the generic
+`ToolCallTimeout`.
+
+Two deliberate restrictions:
+
+- **No `pinned` argument.** Pinned entries are prepended to every future
+  system prompt; letting the model pin would let one turn quietly steer all
+  later ones, so pinning stays a human action in the knowledge panel.
+- **No dedup.** Each call creates a NEW entry (the DTO carries no id; editing
+  is add + delete at the host) — the tool description warns the model to never
+  re-save something it already saved this conversation. A validation failure
+  (title > 200 chars, content > 100 000) returns a correctable tool error the
+  model can shorten and retry.
 
 ### Sandbox — security-critical
 `run_python` runs untrusted, model-written code — the strongest blast radius in the system ([security F5](security.md#3-findings--remediations)). Two backends sit behind one `ISandbox` port, chosen by the operator (`Gert:Sandbox:Backend`):

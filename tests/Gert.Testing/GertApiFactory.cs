@@ -48,6 +48,9 @@ public sealed class GertApiFactory : WebApplicationFactory<Program>
     /// <summary>Web-search fake.</summary>
     public FakeWebSearch WebSearch { get; set; } = new();
 
+    /// <summary>Web-fetch fake (the real fetcher rightly blocks loopback mocks).</summary>
+    public FakeWebFetcher WebFetcher { get; set; } = new();
+
     /// <summary>Sandbox stub; swap for <see cref="StubSandbox.ThatThrows"/> to drive the failure path.</summary>
     public StubSandbox Sandbox { get; set; } = new();
 
@@ -111,10 +114,10 @@ public sealed class GertApiFactory : WebApplicationFactory<Program>
     }
 
     /// <summary>
-    /// Swap the <c>Gert.External</c> ports for the in-process fakes — the single DI
-    /// registration that makes the whole stack run against the fake outside world
-    /// (testing.md §4.2). <c>Replace</c> wins regardless of order once the real
-    /// adapters land (U10).
+    /// Swap the <c>Gert.External</c> ports (chat, embeddings, search, fetch, sandbox)
+    /// for the in-process fakes — the single DI registration that makes the whole
+    /// stack run against the fake outside world (testing.md §4.2). <c>Replace</c>
+    /// wins regardless of order once the real adapters land (U10).
     /// </summary>
     public void AddGertFakes(IServiceCollection services)
     {
@@ -123,6 +126,7 @@ public sealed class GertApiFactory : WebApplicationFactory<Program>
         services.Replace(ServiceDescriptor.Singleton<IEmbeddingClient>(Embeddings));
         services.Replace(ServiceDescriptor.Singleton<IChatModelClient>(ChatModel));
         services.Replace(ServiceDescriptor.Singleton<IWebSearch>(WebSearch));
+        services.Replace(ServiceDescriptor.Singleton<IWebFetcher>(WebFetcher));
         services.Replace(ServiceDescriptor.Singleton<ISandbox>(Sandbox));
     }
 

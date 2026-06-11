@@ -20,6 +20,8 @@ const iconFor = (kind) =>
     edit_artifact: "file",
     read_artifact: "file",
     ask_user: "user",
+    fetch: "globe",
+    memory: "brain",
   })[kind] || "file";
 
 const DocHit = (h) =>

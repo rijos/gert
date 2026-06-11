@@ -158,7 +158,10 @@ set it on a real deployment.
 ## 6. `Gert:Search` — SearXNG web search
 
 Binds to `SearXngOptions`. The fetch step (downloading result pages) is the
-SSRF-exposed part and is **off by default**.
+SSRF-exposed part and is **off by default**. The `web_fetch` tool shares this
+section's fetch caps (`MaxFetchBytes` / `FetchTimeoutSeconds` / `MaxRedirects`)
+— same guarded fetcher, no parallel knob set; it needs no SearXNG instance and
+ignores `BaseUrl` / `FetchPages`.
 
 | Key | Default | Notes |
 |-----|---------|-------|

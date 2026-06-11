@@ -49,11 +49,11 @@ DEFAULT_LIFETIME_SECONDS = 3600
 ROLES: dict[str, dict[str, Any]] = {
     # admin surface + every tool.
     "admin": {"sub": "dev-admin", "groups": ["gert-admins"], "gert_tools": "*"},
-    # standard non-admin; sandbox denied (rag + search + ask_user).
+    # standard non-admin; sandbox denied (rag + search + ask_user + fetch + memory).
     "user": {
         "sub": "dev-user",
         "groups": ["gert-users"],
-        "gert_tools": "rag search ask_user",
+        "gert_tools": "rag search ask_user fetch memory",
     },
     # restricted: only rag (search AND sandbox denied).
     "limited": {"sub": "dev-limited", "groups": ["gert-users"], "gert_tools": "rag"},

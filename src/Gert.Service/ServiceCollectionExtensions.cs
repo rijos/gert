@@ -114,7 +114,7 @@ public static class ServiceCollectionExtensions
     /// <see cref="AddTools"/>.
     /// </summary>
     private static readonly string[] BuiltInToolIds =
-        ["rag", "search", "sandbox", "todo", "clock", "make_artifact", "edit_artifact", "read_artifact", "ask_user"];
+        ["rag", "search", "sandbox", "todo", "clock", "make_artifact", "edit_artifact", "read_artifact", "ask_user", "fetch", "memory"];
 
     /// <summary>
     /// DI key for the per-type leaf <see cref="ITextExtractor"/>s the
@@ -149,6 +149,12 @@ public static class ServiceCollectionExtensions
         // ask_user blocks on the ITurnQuestions singleton; scoped like the rest
         // (it reads the per-request/worker IUserContext for its TurnKey).
         services.AddScoped<ITool, AskUserTool>();
+        // web_fetch only calls the IWebFetcher port — the SSRF hardening (F5)
+        // is the adapter's job, mirroring WebSearchTool.
+        services.AddScoped<ITool, WebFetchTool>();
+        // save_memory wraps the scoped IMemoryService (which owns user context,
+        // clock, and fail-closed validation).
+        services.AddScoped<ITool, SaveMemoryTool>();
     }
 
     /// <summary>

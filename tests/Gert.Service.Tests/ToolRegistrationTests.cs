@@ -27,12 +27,15 @@ public sealed class ToolRegistrationTests
         services.AddGertServices();
 
         // The host-supplied ports the tools ctor-inject — substitutes suffice;
-        // nothing executes here.
+        // nothing executes here. (IObjectStore feeds the MemoryService that
+        // SaveMemoryTool wraps.)
         services.AddSingleton(Substitute.For<IChatDatabaseProvider>());
         services.AddSingleton(Substitute.For<IRagDatabaseProvider>());
         services.AddSingleton(Substitute.For<IEmbeddingClient>());
         services.AddSingleton(Substitute.For<IWebSearch>());
+        services.AddSingleton(Substitute.For<IWebFetcher>());
         services.AddSingleton(Substitute.For<ISandbox>());
+        services.AddSingleton(Substitute.For<Gert.Service.Storage.IObjectStore>());
         services.AddScoped<IUserContext>(_ => new TestUserContext());
 
         return services.BuildServiceProvider();
@@ -53,22 +56,35 @@ public sealed class ToolRegistrationTests
             "BuiltInToolIds and AddTools are hand-synced lists — they must name the same capability ids");
     }
 
-    [Fact]
-    public void Ask_user_is_a_registered_capability()
+    [Theory]
+    [InlineData("ask_user")]
+    [InlineData("fetch")]
+    [InlineData("memory")]
+    public void The_new_tool_is_a_registered_capability(string id)
     {
         using var sp = BuildProductionHost();
 
-        sp.GetRequiredService<ToolRegistry>().Contains("ask_user").Should().BeTrue();
+        sp.GetRequiredService<ToolRegistry>().Contains(id).Should().BeTrue();
     }
 
-    [Fact]
-    public void Tool_toggles_accept_the_new_id_and_still_reject_a_typo()
+    [Theory]
+    [InlineData("ask_user")]
+    [InlineData("fetch")]
+    [InlineData("memory")]
+    public void Tool_toggles_accept_the_new_id(string id)
     {
         using var sp = BuildProductionHost();
         var validator = sp.GetRequiredService<IValidator<ToolToggles>>();
 
-        validator.Validate(new ToolToggles(new Dictionary<string, bool> { ["ask_user"] = true }))
+        validator.Validate(new ToolToggles(new Dictionary<string, bool> { [id] = true }))
             .IsValid.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Tool_toggles_still_reject_a_typo()
+    {
+        using var sp = BuildProductionHost();
+        var validator = sp.GetRequiredService<IValidator<ToolToggles>>();
 
         validator.Validate(new ToolToggles(new Dictionary<string, bool> { ["ask_userr"] = true }))
             .IsValid.Should().BeFalse();

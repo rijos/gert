@@ -227,6 +227,51 @@
       }
     },
     {
+      "$comment": "Web-fetch fixture: web_fetch pulls one canned page (the `fetch` section below) through the IWebFetcher port; the FakeWebFetcher replays the body the card/result shows.",
+      "match": "contains",
+      "when": "fetch the sqlite-vec page",
+      "tool_call": {
+        "name": "web_fetch",
+        "arguments": "{\"url\":\"https://example.test/sqlite-vec\"}"
+      },
+      "finish": "tool_calls",
+      "after_tool": {
+        "deltas": ["The page says ", "sqlite-vec runs anywhere SQLite does [1]."],
+        "finish": "stop",
+        "usage": { "completion_tokens": 9 }
+      }
+    },
+    {
+      "$comment": "ADVERSARIAL web-fetch fixture (security F5): the model names the link-local metadata URL outright. The fake (and the real fetcher) refuse it — the blocked TOOL ERROR is card-visible and the turn continues; the deltas avoid the forbidden strings the E2E asserts on.",
+      "match": "contains",
+      "when": "fetch the metadata service",
+      "tool_call": {
+        "name": "web_fetch",
+        "arguments": "{\"url\":\"http://169.254.169.254/latest/meta-data/\"}"
+      },
+      "finish": "tool_calls",
+      "after_tool": {
+        "deltas": ["That address is private ", "and was refused by policy."],
+        "finish": "stop",
+        "usage": { "completion_tokens": 8 }
+      }
+    },
+    {
+      "$comment": "Save-memory fixture: save_memory writes a kind='memory' rag.db entry via the REAL MemoryService (FakeEmbeddings makes it deterministic) — afterwards the knowledge panel lists it and search_documents can hit it.",
+      "match": "contains",
+      "when": "remember that I prefer tabs",
+      "tool_call": {
+        "name": "save_memory",
+        "arguments": "{\"title\":\"Editor preference\",\"content\":\"User prefers tabs over spaces.\"}"
+      },
+      "finish": "tool_calls",
+      "after_tool": {
+        "deltas": ["Saved — ", "I will remember that."],
+        "finish": "stop",
+        "usage": { "completion_tokens": 5 }
+      }
+    },
+    {
       "$comment": "Clock tool-call fixture: get_datetime — the card shows the host's TimeProvider reading (the E2E asserts shape, not instant); the closing deltas stay fixture-fixed.",
       "match": "contains",
       "when": "what time is it",
@@ -281,6 +326,16 @@
           "content": "Cloud instance metadata endpoint — must never be fetched."
         }
       ]
+    }
+  },
+
+  "fetch": {
+    "https://example.test/sqlite-vec": {
+      "$comment": "Canned web_fetch outcomes keyed by URL, for the FakeWebFetcher (the real fetcher rightly blocks loopback mocks): { content } replays a body, { blocked: true } replays the SSRF refusal (security F5).",
+      "content": "sqlite-vec is a small, fast vector search extension for SQLite. It runs anywhere SQLite does — a single loadable extension, no extra service."
+    },
+    "http://169.254.169.254/latest/meta-data/": {
+      "blocked": true
     }
   }
 }

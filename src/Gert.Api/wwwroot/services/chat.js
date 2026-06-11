@@ -213,6 +213,8 @@ export const labelFor = (kind) =>
     edit_artifact: "Editing a file",
     read_artifact: "Reading a file",
     ask_user: "Asking you a question",
+    fetch: "Fetching a web page",
+    memory: "Saving a memory",
   })[kind] || kind;
 
 // answer(questionId, text) — deliver the user's answer to the in-flight

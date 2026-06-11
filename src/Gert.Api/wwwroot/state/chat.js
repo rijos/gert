@@ -29,8 +29,11 @@ export const tools = reactive({
   make_artifact: true,
   edit_artifact: true,
   read_artifact: true,
-  // ask_user — on by default (low blast radius; the JWT entitlement is the real gate).
+  // ask_user / fetch / memory — on by default (low blast radius; the JWT
+  // entitlement is the real gate).
   ask_user: true,
+  fetch: true,
+  memory: true,
 });
 
 // The make/edit/read artifact tools are one feature ("Canvas"); the menu shows a

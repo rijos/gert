@@ -153,7 +153,7 @@ capability comes from the token or not at all. (The claim is a **scope string**;
 JSON-array form `["rag","search"]` is no longer parsed — its tokens match no registered id
 and yield nothing.)
 
-> **Pocket ID setup.** Define `gert_tools` as a custom claim and attach it to users or to a group (e.g. a `gert-tools` group granting `rag search todo clock make_artifact edit_artifact read_artifact ask_user`, and a separate `gert-sandbox` group adding `sandbox`). Make sure it is emitted into the **access token** the API validates. If your Pocket ID build only places custom claims in the ID token / userinfo, have the API read it from the userinfo endpoint once per session — the rest of the logic is unchanged.
+> **Pocket ID setup.** Define `gert_tools` as a custom claim and attach it to users or to a group (e.g. a `gert-tools` group granting `rag search todo clock make_artifact edit_artifact read_artifact ask_user fetch memory`, and a separate `gert-sandbox` group adding `sandbox`). Make sure it is emitted into the **access token** the API validates. If your Pocket ID build only places custom claims in the ID token / userinfo, have the API read it from the userinfo endpoint once per session — the rest of the logic is unchanged.
 
 ### Tool registry
 
@@ -172,6 +172,8 @@ to be in or out of. The Notes column records why a grant is more or less sensiti
 | Canvas edit — `edit_artifact` | `edit_artifact` | exact-substring replace on an existing artifact |
 | Canvas read — `read_artifact` | `read_artifact` | read-only; returns numbered lines |
 | Ask the user — `ask_user` | `ask_user` | blocks the turn awaiting the user's answer (own timeout budget); no external world ([chat-and-tools](chat-and-tools.md#ask-the-user-ask_user)) |
+| Web fetch — `web_fetch` | `fetch` | outbound egress to a **model-named URL**; SSRF-guarded — the same hardened fetcher as web search's page pulls ([chat-and-tools](chat-and-tools.md#web-fetch-web_fetch)) |
+| Save memory — `save_memory` | `memory` | writes a new memory entry into this project's `rag.db` + object store; immediately retrievable by `search_documents` ([chat-and-tools](chat-and-tools.md#save-memory-save_memory)) |
 
 The SPA exposes the canvas trio (`make_artifact` / `edit_artifact` / `read_artifact`) as
 **one "Canvas" switch**, so a token granting the canvas should grant all three. An id in the

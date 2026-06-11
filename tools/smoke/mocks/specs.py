@@ -187,6 +187,25 @@ def _tokenize_words(text: str) -> list[str]:
     return chunks or [text]
 
 
+# --- web_fetch resolution (the `fetch` fixtures section) -----------------------
+def resolve_fetch(url: str) -> dict[str, Any] | None:
+    """Resolve a canned ``web_fetch`` outcome by URL (anti-drift twin of the C#
+    ``FakeWebFetcher``): ``{"content": "..."}`` for a success,
+    ``{"blocked": True}`` for the SSRF refusal (security F5), ``None`` when the
+    URL has no fixture.
+    """
+    fx = fixtures()
+    fetch: dict[str, Any] = fx.get("fetch", {})
+    key = _normalize(url)
+
+    if key in fetch:
+        return dict(fetch[key])
+    for candidate, value in fetch.items():
+        if candidate.lower() == key.lower():
+            return dict(value)
+    return None
+
+
 # --- A.4 search resolution ----------------------------------------------------
 def resolve_search(query: str) -> dict[str, Any]:
     """Resolve a SearXNG result set by query (A.4), substring-matched.
