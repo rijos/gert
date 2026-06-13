@@ -1,0 +1,111 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master, "feat/**"]
+  pull_request:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  docs:
+    name: Docs - link check (gate)
+    # The design docs cross-link densely by section anchor, and code comments
+    # cite them - a rename or moved heading silently strands readers. This
+    # gate fails the build if any relative link/anchor in tracked markdown
+    # stops resolving. Stdlib Python only; by far the cheapest job here.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check markdown links + anchors
+        run: make check-links
+
+  dotnet:
+    name: .NET - build + test (gate)
+    runs-on: ubuntu-latest
+    # Backstop: the suite finishes in ~1 min, so a 15-min ceiling turns a runaway
+    # hang into a fast, visible failure instead of burning the runner's 6h budget.
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+      # Go through `make test` so CI runs EXACTLY what devs run: warnings-as-errors,
+      # the reference-direction arch test, real-SQLite (vendored vec0.so), and the full
+      # suite MINUS the timing-coupled Category=Race set (paced-turn integration tests
+      # that are on-demand only - see `make test-race`). `make test` also passes
+      # --blame-hang-timeout, so a stalled test fails fast with a Sequence_*.xml naming it.
+      - name: Test
+        run: make test
+      - name: Upload hang dumps on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dotnet-hang-dumps
+          path: "**/TestResults/**"
+          if-no-files-found: ignore
+
+  python:
+    name: Python - ruff + mypy + conformance (gate)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - name: Sync harness env
+        working-directory: tools/smoke
+        run: uv sync
+      # ruff (lint + format check) + mypy --strict, then the non-browser embedding
+      # conformance (Python embed == .NET FakeEmbeddings golden, bit-for-bit).
+      - name: Lint + type-check
+        run: make lint
+      - name: Embedding conformance
+        run: make smoke-unit
+
+  api-auth:
+    name: API auth smoke (gate)
+    # Boots the python mocks + the FakeE2E host (NO browsers) and proves every
+    # /api endpoint rejects missing/invalid bearer tokens - the full bad-token
+    # taxonomy in tools/smoke/tests/test_auth_smoke.py. The e2e job's component
+    # suite runs the same tests, but this gate is much cheaper (no Playwright
+    # install) and keeps the auth signal alive even when browser setup breaks.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+      - uses: astral-sh/setup-uv@v5
+      - name: Boot mocks + FakeE2E host, run the auth smoke
+        run: make smoke-auth
+
+  e2e:
+    name: Browser E2E smoke (gate)
+    # Gating: boots the python mocks + the FakeE2E host and drives the real SPA across
+    # chromium+firefox x admin/user/limited (the matrix), then runs the FULL pytest
+    # suite in tools/smoke/tests/*.py against the same host (--pytest) - component
+    # mounts AND the integration tests, including the security-relevant RBAC/SSRF/IDOR
+    # assertions. Heavier than the other jobs (installs browsers) but a required
+    # check - the smoke is what catches SPA/CSP/seam bugs.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+      - uses: astral-sh/setup-uv@v5
+      - name: Sync harness + install browsers
+        working-directory: tools/smoke
+        run: |
+          uv sync
+          uv run playwright install --with-deps chromium firefox
+      - name: Boot mocks + FakeE2E host, run the matrix + pytest suite
+        run: PYTHONPATH=. tools/smoke/.venv/bin/python -m tools.smoke.run --browser all --role all --pytest
+      - name: Upload traces/screenshots on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-artifacts
+          path: tools/smoke/artifacts/

@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Gert</title>
+    <!-- SVG favicon from the brand mark; img-src 'self' covers it. -->
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+
+    <!-- Fonts are self-hosted only (CSP forbids external CDNs - style-src 'self').
+         The tokens.css font stack falls back to system fonts; vendor woff2 under
+         /fonts + @font-face for the Fraunces/Hanken/JetBrains look. TODO: vendor fonts. -->
+
+    <!-- Global styles only. tokens MUST load first so variables exist before any
+         rule references them. Each component injects its own CSS into <head> at
+         runtime via the component() factory (lib/component.js); what remains global
+         is tokens, the reset, the .app grid + responsive @media (layout.css), and
+         the shared string-applied utilities (.btn/.ghost/.trash/.field, primitives.css).
+         These <link>s load before any injected component style, so layout's responsive
+         rules keep the same cascade position they had over the old area partials. -->
+    <link rel="stylesheet" href="/styles/tokens.css" />
+    <link rel="stylesheet" href="/styles/base.css" />
+    <link rel="stylesheet" href="/styles/layout.css" />
+    <link rel="stylesheet" href="/styles/primitives.css" />
+
+    <!-- import map: bare specifiers resolve to the vendored libs. van.js and
+         van-x.js are vendored (downloaded), not authored here. -->
+    <script type="importmap">
+      {
+        "imports": {
+          "van": "/lib/van.js",
+          "vanjs-core": "/lib/van.js",
+          "van-x": "/lib/van-x.js"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <!-- "Gert" keeps the SPA-fallback test green before the module mounts. -->
+    <noscript>Gert requires JavaScript.</noscript>
+    <div id="app">Gert</div>
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

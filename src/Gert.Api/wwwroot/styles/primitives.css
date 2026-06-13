@@ -1,0 +1,60 @@
+/* primitives.css - shared utility classes applied by bare class-string across many
+   components, so they belong to no single component and can't co-locate (a component
+   using `class:"btn"` may render before its owning component ever does - co-locating
+   would flash unstyled). These are app-wide primitives, like tokens. Everything that
+   IS owned by one component lives in that component's css block instead. */
+
+/* ghost icon-button - used by top-bar, theme-toggle, brand, user-chip, modal close */
+.ghost{background:none; border:none; color:var(--ink-3); cursor:pointer; padding:6px; border-radius:var(--r-xs); display:grid; place-items:center; transition:var(--t-fast);}
+.ghost:hover{background:var(--surface-2); color:var(--ink);}
+.ghost svg{width:16px; height:16px;}
+
+/* primary / secondary button - used by Button plus composer, model-picker, top-bar,
+   project-picker, canvas-bar, admin page (as a bare class).
+   Resting fill is --coral-deep, not --coral: paired with the themed --on-accent
+   it clears WCAG AA in both themes (white-on-coral was 3.8 manila / 2.8 ember). */
+.btn{font-family:var(--sans); font-weight:600; font-size:var(--fs-md); padding:8px 14px; border-radius:var(--r-sm); border:1px solid var(--coral-deep); background:var(--coral-deep); color:var(--on-accent); cursor:pointer; transition:var(--t-fast);}
+.btn:hover{background:var(--coral); border-color:var(--coral);}
+.btn.secondary{background:var(--surface); color:var(--ink); border-color:var(--line);}
+.btn.secondary:hover{border-color:var(--coral); color:var(--coral-deep); background:var(--coral-soft);}
+
+/* hover-reveal trash button - shared by conversation rows and document rows.
+   The contextual reveal (.convo:hover .trash, .doc:hover .trash) lives with each owner. */
+.trash{opacity:0; background:none; border:none; cursor:pointer; color:var(--ink-3); padding:4px; border-radius:var(--r-xs); transition:var(--t-fast); flex:none;}
+.trash:hover{color:var(--brick); background:var(--fail-bg);}
+.trash svg{width:14px; height:14px;}
+/* a keyboard-focused trash must be visible even without the row hover */
+.trash:focus-visible{opacity:1;}
+
+/* page + form scaffolding - shared by the admin page and project-picker's .field */
+.page{flex:1; overflow-y:auto; padding:34px 0;}
+.page-inner{max-width:680px; margin:0 auto; padding:0 30px;}
+.page h1{font-family:var(--display); font-size:var(--fs-xl); font-weight:600; margin-bottom:4px;}
+.page .sub{color:var(--ink-2); margin-bottom:24px;}
+/* quiet route-escape link above a page h1 (admin) */
+.backlink{display:inline-flex; align-items:center; gap:6px; font-family:var(--mono); font-size:var(--fs-xs); color:var(--ink-3); text-decoration:none; margin-bottom:18px; border-radius:var(--r-xs); transition:var(--t-fast);}
+.backlink:hover{color:var(--coral-deep);}
+.field{display:flex; flex-direction:column; gap:6px; margin-bottom:18px;}
+.field label{font-weight:600; font-size:var(--fs-md);}
+.field input,.field select,.field textarea{font-family:var(--sans); font-size:var(--fs-md); color:var(--ink); background:var(--surface); border:1px solid var(--line); border-radius:var(--r-sm); padding:9px 12px;}
+/* border tint on focus is a bonus; the global :focus-visible ring (base.css)
+   owns keyboard visibility - no outline suppression here */
+.field input:focus,.field select:focus,.field textarea:focus{border-color:var(--coral);}
+/* settings: the generation-dial block under "Custom generation defaults" */
+.field .gen-row{display:flex; align-items:center; gap:10px;}
+.field .gen-row label{flex:1;}
+.field .sub{font-size:var(--fs-sm); color:var(--ink-3); font-weight:400;}
+.gen-dials{display:flex; flex-direction:column; gap:12px; margin-top:10px; padding:13px 14px; background:var(--surface-2); border:1px solid var(--line); border-radius:var(--r-sm);}
+/* admin model-prompt inspector (pages/admin/users.js section PromptSection) */
+.prompt-h{font-family:var(--display); font-size:var(--fs-lg); font-weight:600; margin:34px 0 4px;}
+.prompt-sub{font-family:var(--mono); font-size:var(--fs-2xs); letter-spacing:.08em; text-transform:uppercase; color:var(--ink-3); margin:18px 0 8px;}
+.prompt-block{font-family:var(--mono); font-size:var(--fs-sm); line-height:1.55; color:var(--ink); background:var(--surface-2); border:1px solid var(--line); border-radius:var(--r-sm); padding:12px 14px; white-space:pre-wrap; overflow-wrap:anywhere; margin:0 0 12px;}
+.tool-spec{margin-bottom:18px;}
+.tool-head{display:flex; align-items:baseline; gap:10px; margin-bottom:3px;}
+.tool-name{font-weight:700; font-size:var(--fs-md);}
+.tool-id{font-family:var(--mono); font-size:var(--fs-xs); color:var(--ink-3);}
+.tool-desc{color:var(--ink-2); font-size:var(--fs-md); margin-bottom:8px;}
+.utable{width:100%; border-collapse:collapse; font-size:var(--fs-md);}
+.utable th{text-align:left; font-family:var(--mono); font-size:var(--fs-2xs); letter-spacing:.08em; text-transform:uppercase; color:var(--ink-3); padding:8px 10px; border-bottom:1.5px solid var(--line);}
+.utable td{padding:9px 10px; border-bottom:1px solid var(--line);}
+.utable tr:hover td{background:var(--surface-2);}

@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>Gert.Web.Minify</RootNamespace>
+    <!-- Pure-.NET, no-npm minifier (ui-components.md section 6). Walks the published
+         wwwroot and minifies each .js/.css in place; never bundles or renames. -->
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="NUglify" Version="$(NUglifyVersion)" />
+  </ItemGroup>
+
+</Project>

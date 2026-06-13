@@ -1,0 +1,381 @@
+{
+  "$comment": "Single source of truth for both fake layers (testing.md Appendix A.5). The .NET fakes link this as an embedded resource; the Python mocks read the same file. Schema: A.3 (completions) / A.4 (search). Do not duplicate this data.",
+
+  "fallback": "echo",
+
+  "completions": [
+    {
+      "$comment": "Plain answer keyed to the mockup, exact match.",
+      "match": "exact",
+      "when": "should I use Qdrant or sqlite-vec?",
+      "deltas": ["Short version: ", "use ", "sqlite-vec ", "for a homelab at this scale."],
+      "finish": "stop",
+      "usage": { "completion_tokens": 14 }
+    },
+    {
+      "$comment": "Contains-match variant for the same topic.",
+      "match": "contains",
+      "when": "qdrant vs sqlite-vec",
+      "deltas": ["For ~20 users ", "sqlite-vec ", "is the simpler, ", "good-enough choice."],
+      "finish": "stop",
+      "usage": { "completion_tokens": 11 }
+    },
+    {
+      "$comment": "Doc-search tool-call fixture: first call emits the tool call; the follow-up call (messages now carry the tool result) replays the same `when` and plays after_tool.deltas.",
+      "match": "contains",
+      "when": "search my docs about qdrant",
+      "tool_call": {
+        "name": "search_documents",
+        "arguments": "{\"query\":\"qdrant\",\"k\":5}"
+      },
+      "finish": "tool_calls",
+      "after_tool": {
+        "deltas": ["Based on your docs, ", "sqlite-vec wins [1]."],
+        "finish": "stop",
+        "usage": { "completion_tokens": 9 }
+      }
+    },
+    {
+      "$comment": "Web-search tool-call fixture, exercises the search tool loop.",
+      "match": "contains",
+      "when": "search the web for sqlite-vec benchmarks",
+      "tool_call": {
+        "name": "web_search",
+        "arguments": "{\"query\":\"sqlite-vec benchmarks\",\"k\":5}"
+      },
+      "finish": "tool_calls",
+      "after_tool": {
+        "deltas": ["The benchmarks ", "show sqlite-vec ", "is competitive [1]."],
+        "finish": "stop",
+        "usage": { "completion_tokens": 10 }
+      }
+    },
+    {
+      "$comment": "SSRF-adversarial driver (A.4 / security F5): web_search against the 'internal metadata' result set, whose second result is a link-local metadata URL - the adapter's fetch step must refuse it so it never surfaces in the thread. The deltas deliberately avoid the forbidden strings the E2E asserts on.",
+      "match": "contains",
+      "when": "search the web for internal metadata",
+      "tool_call": {
+        "name": "web_search",
+        "arguments": "{\"query\":\"internal metadata\",\"k\":5}"
+      },
+      "finish": "tool_calls",
+      "after_tool": {
+        "deltas": ["Only the public result ", "was fetched; the private address was refused."],
+        "finish": "stop",
+        "usage": { "completion_tokens": 11 }
+      }
+    },
+    {
+      "$comment": "Sandbox tool-call fixture, exercises run_python through the tool loop.",
+      "match": "contains",
+      "when": "run python to add two and two",
+      "tool_call": {
+        "name": "run_python",
+        "arguments": "{\"code\":\"print(2 + 2)\"}"
+      },
+      "finish": "tool_calls",
+      "after_tool": {
+        "deltas": ["The result is ", "4."],
+        "finish": "stop",
+        "usage": { "completion_tokens": 4 }
+      }
+    },
+    {
+      "$comment": "A short greeting for chrome/typewriter rendering tests.",
+      "match": "exact",
+      "when": "hello",
+      "deltas": ["Hi! ", "How can I help ", "with your homelab today?"],
+      "finish": "stop",
+      "usage": { "completion_tokens": 8 }
+    },
+    {
+      "$comment": "Reasoning fixture: thinking deltas stream BEFORE the answer (the collapsed Thinking block). Suppressed when the request sends chat_template_kwargs.enable_thinking=false - the toggle's E2E proof.",
+      "match": "contains",
+      "when": "think about the best vector store",
+      "reasoning_deltas": ["The user runs a homelab. ", "Scale is ~20 users, so ", "operational simplicity dominates recall."],
+      "deltas": ["After weighing it: ", "sqlite-vec - ", "one file, no extra service."],
+      "finish": "stop",
+      "usage": { "completion_tokens": 12 }
+    },
+    {
+      "$comment": "SLOW fixture for the detached-turn resume test: delay_ms paces the python mock between deltas (~3s total) so the browser can reload mid-stream and resubscribe. The .NET FakeChatModel ignores delay_ms (unit tests stay instant).",
+      "match": "contains",
+      "when": "count slowly",
+      "deltas": ["one ", "two ", "three ", "four ", "five ", "six - done counting."],
+      "delay_ms": 500,
+      "finish": "stop",
+      "usage": { "completion_tokens": 7 }
+    },
+    {
+      "$comment": "Artifact fixture: the model calls make_artifact, which persists the file and TurnRunner emits the artifact event. Replaces the old named-fence extraction (a tool arg can't be truncated by the file's own fences).",
+      "match": "contains",
+      "when": "make me a demo html page",
+      "tool_call": {
+        "name": "make_artifact",
+        "arguments": "{\"name\":\"demo.html\",\"format\":\"html\",\"content\":\"<h1>Demo</h1>\\n<p>Hello from Gert.</p>\"}"
+      },
+      "finish": "tool_calls",
+      "after_tool": {
+        "deltas": ["I opened ", "demo.html in the canvas."],
+        "finish": "stop",
+        "usage": { "completion_tokens": 14 }
+      }
+    },
+    {
+      "$comment": "Interactive HTML artifact (F3 served-origin fidelity): the content carries an INLINE SCRIPT that mutates the DOM. Served from the separate artifact origin with its own script-src 'unsafe-inline', it runs - the smoke test asserts the mutated text appears.",
+      "match": "contains",
+      "when": "make me an interactive html page",
+      "tool_call": {
+        "name": "make_artifact",
+        "arguments": "{\"name\":\"interactive.html\",\"format\":\"html\",\"content\":\"<h1 id=\\\"out\\\">static</h1>\\n<script>document.getElementById('out').textContent='SCRIPT-RAN';</script>\"}"
+      },
+      "finish": "tool_calls",
+      "after_tool": {
+        "deltas": ["I opened ", "interactive.html in the canvas."],
+        "finish": "stop",
+        "usage": { "completion_tokens": 16 }
+      }
+    },
+    {
+      "$comment": "Clickable HTML artifact (F3 both halves): a button whose inline onclick mutates the DOM (safe JS works), plus escape probes (parent/top DOM, storage, cookies, fetch egress) that must all report blocked.",
+      "match": "contains",
+      "when": "make me a clickable html page",
+      "tool_call": {
+        "name": "make_artifact",
+        "arguments": "{\"name\": \"clickable.html\", \"format\": \"html\", \"content\": \"<button id=\\\"btn\\\" onclick=\\\"document.getElementById('out').textContent='clicked'\\\">Click me</button>\\n<div id=\\\"out\\\">idle</div><div id=\\\"esc\\\">probing</div><div id=\\\"net\\\">net-pending</div>\\n<script>\\nvar r=[];\\ntry{void window.parent.document;r.push('parent-dom:OPEN')}catch(e){r.push('parent-dom:blocked')}\\ntry{void window.top.document;r.push('top-dom:OPEN')}catch(e){r.push('top-dom:blocked')}\\ntry{void window.localStorage;r.push('storage:OPEN')}catch(e){r.push('storage:blocked')}\\ntry{void document.cookie;r.push('cookie:OPEN')}catch(e){r.push('cookie:blocked')}\\ndocument.getElementById('esc').textContent=r.join(' ');\\nfetch('https://example.invalid/beacon').then(function(){document.getElementById('net').textContent='net:OPEN'}).catch(function(){document.getElementById('net').textContent='net:blocked'});\\n</script>\"}"
+      },
+      "finish": "tool_calls",
+      "after_tool": {
+        "deltas": [
+          "I opened ",
+          "clickable.html in the canvas."
+        ],
+        "finish": "stop",
+        "usage": {
+          "completion_tokens": 16
+        }
+      }
+    },
+    {
+      "$comment": "Sub-agent fixture: the model delegates a task via run_sub_agent. The NESTED completion request (the sub-agent's fresh conversation) matches no fixture, so the echo fallback answers it - proving the nested loop end-to-end with no extra mock plumbing.",
+      "match": "contains",
+      "when": "delegate the research",
+      "tool_call": {
+        "name": "run_sub_agent",
+        "arguments": "{\"task\": \"summarize the gert release notes\"}"
+      },
+      "finish": "tool_calls",
+      "after_tool": {
+        "deltas": [
+          "The sub-agent ",
+          "finished the research."
+        ],
+        "finish": "stop",
+        "usage": {
+          "completion_tokens": 12
+        }
+      }
+    },
+    {
+      "$comment": "Python artifact fixture (the py kind) via make_artifact.",
+      "match": "contains",
+      "when": "write a python fibonacci script",
+      "tool_call": {
+        "name": "make_artifact",
+        "arguments": "{\"name\":\"fib.py\",\"format\":\"python\",\"content\":\"def fib(n):\\n    a, b = 0, 1\\n    for _ in range(n):\\n        a, b = b, a + b\\n    return a\"}"
+      },
+      "finish": "tool_calls",
+      "after_tool": {
+        "deltas": ["Saved ", "fib.py to the canvas."],
+        "finish": "stop",
+        "usage": { "completion_tokens": 24 }
+      }
+    },
+    {
+      "$comment": "Markdown artifact fixture (the md kind) via make_artifact - the content carries its OWN code fence to prove nested ``` survive (the bug the tool path fixes).",
+      "match": "contains",
+      "when": "draft a markdown decision doc",
+      "tool_call": {
+        "name": "make_artifact",
+        "arguments": "{\"name\":\"decision.md\",\"format\":\"markdown\",\"content\":\"# Vector store decision\\n\\nWe pick **sqlite-vec** for the homelab.\\n\\n```python\\nimport sqlite_vec\\n```\"}"
+      },
+      "finish": "tool_calls",
+      "after_tool": {
+        "deltas": ["Drafted ", "decision.md in the canvas."],
+        "finish": "stop",
+        "usage": { "completion_tokens": 22 }
+      }
+    },
+    {
+      "$comment": "Memory-retrieval fixture: search_documents over the memory entry the E2E seeds via POST /api/projects/{pid}/memory (title 'Favorite database') - proves memory rides the hybrid query and surfaces its DECODED title in the hit + citation.",
+      "match": "contains",
+      "when": "search my docs about favorite database",
+      "tool_call": {
+        "name": "search_documents",
+        "arguments": "{\"query\":\"favorite database\",\"k\":5}"
+      },
+      "finish": "tool_calls",
+      "after_tool": {
+        "deltas": ["Your notes say ", "sqlite-vec is your favorite [1]."],
+        "finish": "stop",
+        "usage": { "completion_tokens": 8 }
+      }
+    },
+    {
+      "$comment": "Todo tool-call fixture: set_todos replaces the model-managed checklist the todo card renders (one done, one active, one pending).",
+      "match": "contains",
+      "when": "plan the homelab upgrade",
+      "tool_call": {
+        "name": "set_todos",
+        "arguments": "{\"todos\":[{\"text\":\"Order the new SSD\",\"status\":\"done\"},{\"text\":\"Migrate rag.db to the new disk\",\"status\":\"active\"},{\"text\":\"Re-embed the document corpus\",\"status\":\"pending\"}]}"
+      },
+      "finish": "tool_calls",
+      "after_tool": {
+        "deltas": ["Plan is up - ", "working through it now."],
+        "finish": "stop",
+        "usage": { "completion_tokens": 6 }
+      }
+    },
+    {
+      "$comment": "All-done todo fixture: every step comes back done, so the single todo card auto-collapses (the header count + progress bar stay visible; the user can re-open it).",
+      "match": "contains",
+      "when": "finish the homelab upgrade",
+      "tool_call": {
+        "name": "set_todos",
+        "arguments": "{\"todos\":[{\"text\":\"Order the new SSD\",\"status\":\"done\"},{\"text\":\"Migrate rag.db to the new disk\",\"status\":\"done\"}]}"
+      },
+      "finish": "tool_calls",
+      "after_tool": {
+        "deltas": ["All done - ", "the upgrade is complete."],
+        "finish": "stop",
+        "usage": { "completion_tokens": 6 }
+      }
+    },
+    {
+      "$comment": "Interactive ask_user fixture: the model asks ONE closed question; the page test clicks an option (or the API test answers via POST .../answer). after_tool.deltas are static - the fake cannot echo the chosen answer (A.3 limitation).",
+      "match": "contains",
+      "when": "ask me which color",
+      "tool_call": {
+        "name": "ask_user",
+        "arguments": "{\"question\":\"Which color?\",\"options\":[\"red\",\"blue\"]}"
+      },
+      "finish": "tool_calls",
+      "after_tool": {
+        "deltas": ["Noted - ", "proceeding with your choice."],
+        "finish": "stop",
+        "usage": { "completion_tokens": 6 }
+      }
+    },
+    {
+      "$comment": "Web-fetch fixture: web_fetch pulls one canned page (the `fetch` section below) through the IWebFetcher port; the FakeWebFetcher replays the body the card/result shows.",
+      "match": "contains",
+      "when": "fetch the sqlite-vec page",
+      "tool_call": {
+        "name": "web_fetch",
+        "arguments": "{\"url\":\"https://example.test/sqlite-vec\"}"
+      },
+      "finish": "tool_calls",
+      "after_tool": {
+        "deltas": ["The page says ", "sqlite-vec runs anywhere SQLite does [1]."],
+        "finish": "stop",
+        "usage": { "completion_tokens": 9 }
+      }
+    },
+    {
+      "$comment": "ADVERSARIAL web-fetch fixture (security F5): the model names the link-local metadata URL outright. The fake (and the real fetcher) refuse it - the blocked TOOL ERROR is card-visible and the turn continues; the deltas avoid the forbidden strings the E2E asserts on.",
+      "match": "contains",
+      "when": "fetch the metadata service",
+      "tool_call": {
+        "name": "web_fetch",
+        "arguments": "{\"url\":\"http://169.254.169.254/latest/meta-data/\"}"
+      },
+      "finish": "tool_calls",
+      "after_tool": {
+        "deltas": ["That address is private ", "and was refused by policy."],
+        "finish": "stop",
+        "usage": { "completion_tokens": 8 }
+      }
+    },
+    {
+      "$comment": "Save-memory fixture: save_memory writes a kind='memory' rag.db entry via the REAL MemoryService (FakeEmbeddings makes it deterministic) - afterwards the knowledge panel lists it and search_documents can hit it.",
+      "match": "contains",
+      "when": "remember that I prefer tabs",
+      "tool_call": {
+        "name": "save_memory",
+        "arguments": "{\"title\":\"Editor preference\",\"content\":\"User prefers tabs over spaces.\"}"
+      },
+      "finish": "tool_calls",
+      "after_tool": {
+        "deltas": ["Saved - ", "I will remember that."],
+        "finish": "stop",
+        "usage": { "completion_tokens": 5 }
+      }
+    },
+    {
+      "$comment": "Clock tool-call fixture: get_datetime - the card shows the host's TimeProvider reading (the E2E asserts shape, not instant); the closing deltas stay fixture-fixed.",
+      "match": "contains",
+      "when": "what time is it",
+      "tool_call": {
+        "name": "get_datetime",
+        "arguments": "{}"
+      },
+      "finish": "tool_calls",
+      "after_tool": {
+        "deltas": ["The current date and time ", "is on the card above."],
+        "finish": "stop",
+        "usage": { "completion_tokens": 7 }
+      }
+    }
+  ],
+
+  "search": {
+    "qdrant vs sqlite-vec": {
+      "results": [
+        {
+          "title": "Qdrant vs sqlite-vec",
+          "url": "https://example.test/bench",
+          "content": "A benchmark comparing Qdrant and sqlite-vec for small-scale RAG."
+        },
+        {
+          "title": "Choosing a vector store",
+          "url": "https://example.test/choosing",
+          "content": "For ~20 users, sqlite-vec keeps the stack to a single file."
+        }
+      ]
+    },
+    "sqlite-vec benchmarks": {
+      "results": [
+        {
+          "title": "sqlite-vec benchmarks",
+          "url": "https://example.test/sqlite-vec-bench",
+          "content": "Throughput and recall numbers for sqlite-vec on commodity hardware."
+        }
+      ]
+    },
+    "internal metadata": {
+      "$comment": "ADVERSARIAL (A.4 / security F5): the second result url is a link-local metadata address. The real adapter's summarize/fetch step MUST refuse it, proving the SSRF guard end-to-end. This is THE SSRF-adversarial entry.",
+      "results": [
+        {
+          "title": "Public result",
+          "url": "https://example.test/public",
+          "content": "A benign public page."
+        },
+        {
+          "title": "internal",
+          "url": "http://169.254.169.254/latest/meta-data/",
+          "content": "Cloud instance metadata endpoint - must never be fetched."
+        }
+      ]
+    }
+  },
+
+  "fetch": {
+    "https://example.test/sqlite-vec": {
+      "$comment": "Canned web_fetch outcomes keyed by URL, for the FakeWebFetcher (the real fetcher rightly blocks loopback mocks): { content } replays a body, { blocked: true } replays the SSRF refusal (security F5).",
+      "content": "sqlite-vec is a small, fast vector search extension for SQLite. It runs anywhere SQLite does - a single loadable extension, no extra service."
+    },
+    "http://169.254.169.254/latest/meta-data/": {
+      "blocked": true
+    }
+  }
+}

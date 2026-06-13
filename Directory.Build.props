@@ -1,0 +1,69 @@
+<Project>
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <!-- Nullable diagnostics are errors even if TreatWarningsAsErrors is ever relaxed (#4, full coverage). -->
+    <WarningsAsErrors>$(WarningsAsErrors);nullable</WarningsAsErrors>
+    <!-- Some SDK installs ship the shared-framework targeting packs without the
+         package-prune data, which otherwise hard-fails the build with NETSDK1226
+         (e.g. Microsoft.AspNetCore.App on .NETCoreApp 10.0). This only suppresses
+         that error when the data is absent and skips the (optional) restore-graph
+         pruning; where the data IS present (CI's setup-dotnet), pruning runs
+         normally, so this is a safe no-op there. -->
+    <AllowMissingPrunePackageData>true</AllowMissingPrunePackageData>
+  </PropertyGroup>
+
+  <!-- Centralized library package versions (valid net10.0). -->
+  <PropertyGroup>
+    <MicrosoftDataSqliteVersion>9.0.0</MicrosoftDataSqliteVersion>
+    <DapperVersion>2.1.66</DapperVersion>
+    <MicrosoftExtensionsOptionsVersion>10.0.9</MicrosoftExtensionsOptionsVersion>
+    <!-- AddGertServices DI extension + validator resolution. Abstractions only (no host coupling). -->
+    <MicrosoftExtensionsDIAbstractionsVersion>10.0.9</MicrosoftExtensionsDIAbstractionsVersion>
+    <!-- Fail-closed FluentValidation provider + per-DTO validators. -->
+    <FluentValidationVersion>11.11.0</FluentValidationVersion>
+    <FluentValidationDIVersion>11.11.0</FluentValidationDIVersion>
+    <!-- Auth (JWT bearer). -->
+    <JwtBearerVersion>10.0.0</JwtBearerVersion>
+    <!-- Gert.External adapters (OpenAI-compatible upstream/SearXNG over
+         IHttpClientFactory + Polly, options binding, logging). -->
+    <MicrosoftExtensionsHttpVersion>10.0.9</MicrosoftExtensionsHttpVersion>
+    <!-- Configuration.Abstractions for adapter options binding (Sqlite + External). -->
+    <MicrosoftExtensionsConfigVersion>10.0.9</MicrosoftExtensionsConfigVersion>
+    <!-- Family floor 10.0.3+ forced by OpenAI -> System.ClientModel 1.10.0 (NU1605
+         otherwise); the whole Microsoft.Extensions.* set rides 10.0.x together. -->
+    <MicrosoftExtensionsLoggingVersion>10.0.9</MicrosoftExtensionsLoggingVersion>
+    <!-- Polly v8 resilience pipelines (timeout + retry) layered on the typed clients. -->
+    <MicrosoftExtensionsHttpResilienceVersion>10.7.0</MicrosoftExtensionsHttpResilienceVersion>
+    <!-- Official OpenAI .NET SDK: typed wire models + clients for the OpenAI-compatible
+         upstream (vLLM / Claude compat). 2.6.0+ is required for JsonPatch (vendor
+         extension fields like chat_template_kwargs / reasoning_content). -->
+    <OpenAIVersion>2.11.0</OpenAIVersion>
+    <!-- F7 isolated PDF/DOCX parsers (run only inside the subprocess helper). -->
+    <PdfPigVersion>0.1.9</PdfPigVersion>
+    <OpenXmlVersion>3.1.0</OpenXmlVersion>
+    <!-- Patched System.IO.Packaging overriding OpenXml's vulnerable transitive 8.0.0 (NU1903). -->
+    <SystemIoPackagingVersion>9.0.0</SystemIoPackagingVersion>
+    <!-- Release pipeline: NUglify minify-in-place on publish (no npm) +
+         Serilog NDJSON logging. -->
+    <NUglifyVersion>1.21.17</NUglifyVersion>
+    <SerilogVersion>4.2.0</SerilogVersion>
+    <SerilogExtensionsHostingVersion>9.0.0</SerilogExtensionsHostingVersion>
+    <SerilogExtensionsLoggingVersion>9.0.0</SerilogExtensionsLoggingVersion>
+    <SerilogSinksConsoleVersion>6.0.0</SerilogSinksConsoleVersion>
+  </PropertyGroup>
+
+  <!-- One-type-per-file enforcement (#11). Only SA1402/SA1649 are on (see .editorconfig);
+       all other StyleCop rules are silenced. analyzers-only, not a runtime dependency. -->
+  <ItemGroup>
+    <PackageReference Include="StyleCop.Analyzers" Version="1.2.0-beta.556">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+
+</Project>

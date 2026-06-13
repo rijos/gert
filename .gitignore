@@ -1,0 +1,29 @@
+# Build output
+bin/
+obj/
+
+# Dev-only secrets (JWT signing keys etc.) - never commit
+.dev/
+
+# User-specific / IDE
+*.user
+.vs/
+.claude/
+
+# Local config overrides (may contain secrets)
+appsettings.*.local.json
+
+# Test output
+TestResults/
+
+# Python
+.venv/
+__pycache__/
+
+# Coverage / build artifacts - E2E traces/screenshots. Scope to the smoke output
+# dir: an unanchored `artifacts/` also swallows source dirs (e.g. the canvas
+# viewer modules under components/canvas/artifacts/), which then 404 in CI.
+/tools/smoke/artifacts/
+
+# Python editable-install metadata
+*.egg-info/

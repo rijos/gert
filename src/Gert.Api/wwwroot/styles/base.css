@@ -1,0 +1,66 @@
+/* base.css - reset, body + paper grain, focus ring, scrollbars, keyframes,
+   reduced-motion guard. */
+*{box-sizing:border-box; margin:0; padding:0;}
+html,body{height:100%;}
+body{
+  font-family:var(--sans); color:var(--ink); background:var(--bg);
+  font-size:var(--fs-md); line-height:var(--lh-ui); -webkit-font-smoothing:antialiased;
+  background-image:
+    radial-gradient(circle at 12% 8%, color-mix(in srgb, var(--coral) 4%, transparent), transparent 38%),
+    radial-gradient(circle at 90% 92%, color-mix(in srgb, var(--amber) 5%, transparent), transparent 42%);
+  overflow:hidden;
+}
+/* grain: the subtle dot texture (--grain-img, tokens.css) is painted by the
+   app panes themselves (.sidebar/.main/.panel in their own css) so it sits
+   UNDER content by construction -- opaque surfaces (code blocks, cards, the
+   composer) mask it. Never paint it as a fixed overlay above content: that
+   dots message text and code. */
+
+/* one coral focus ring for every interactive element, both themes (the coral
+   pair clears 3:1 non-text contrast on either paper). Components that paint
+   their own focus treatment (the composer's :focus-within ring) opt out with
+   outline:none on the inner control. */
+:focus-visible{outline:2px solid var(--coral); outline-offset:2px;}
+
+/* fenced-code token tints (lib/highlight.js). Code blocks always sit on
+   --code-bg, which is dark in both themes, so these are fixed warm values. */
+.tok-kw{color:var(--tok-kw);}
+.tok-str{color:var(--tok-str);}
+.tok-num{color:var(--tok-num);}
+.tok-com{color:var(--tok-com); font-style:italic;}
+.tok-key{color:var(--tok-key);}
+.tok-dec{color:var(--tok-dec);}
+
+/* themed scrollbars - one treatment for every scroll container (convo list,
+   chat stream, doc list, code/artifact panes). Full-size (browser-default
+   width) so the grab target is comfortable; the translucent thumb floats over
+   any panel background, and the transparent border + padding-box clip slims it
+   slightly until hover. Firefox doesn't do ::-webkit-scrollbar, so the
+   @supports gate hands it the standard default-width equivalent - gated so
+   Chromium (which now also parses scrollbar-color) keeps the richer styling
+   below. */
+::-webkit-scrollbar{width:16px; height:16px;}
+::-webkit-scrollbar-track{background:transparent;}
+::-webkit-scrollbar-corner{background:transparent;}
+::-webkit-scrollbar-thumb{background:var(--scroll-thumb); border-radius:10px; border:3px solid transparent; background-clip:padding-box; min-height:40px;}
+::-webkit-scrollbar-thumb:hover{background:var(--scroll-thumb-hover); border-width:2px; background-clip:padding-box;}
+@supports not selector(::-webkit-scrollbar){
+  *{scrollbar-width:auto; scrollbar-color:var(--scroll-thumb) transparent;}
+}
+
+@keyframes rise{from{opacity:0; transform:translateY(10px);} to{opacity:1; transform:none;}}
+@keyframes blink{to{visibility:hidden;}}
+@keyframes pulse{50%{opacity:.35;}}
+
+/* vestibular safety: collapse every transition/animation (the --t-* vocabulary
+   and the keyframes above) to imperceptible durations. Global by nature, so it
+   lives here beside the keyframes - components never write @media (style guide
+   section 3); layout.css owns responsive, base.css owns motion + document chrome. */
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{
+    animation-duration:.01ms !important;
+    animation-iteration-count:1 !important;
+    transition-duration:.01ms !important;
+  }
+  .caret{animation:none;}   /* keep the caret visible, just not blinking */
+}

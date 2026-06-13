@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\Gert.Database\Gert.Database.csproj" />
+    <ProjectReference Include="..\Gert.Service\Gert.Service.csproj" />
+    <ProjectReference Include="..\Gert.Model\Gert.Model.csproj" />
+    <!-- AddGertSqliteStorage registers the whole storage/database seam in one call
+         (dotnet-style-guide.md section 4), including the local object/user stores. -->
+    <ProjectReference Include="..\Gert.Storage\Gert.Storage.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Versions centralized in the repo-root Directory.Build.props. -->
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="$(MicrosoftDataSqliteVersion)" />
+    <PackageReference Include="Dapper" Version="$(DapperVersion)" />
+    <PackageReference Include="Microsoft.Extensions.Options" Version="$(MicrosoftExtensionsOptionsVersion)" />
+    <!-- AddOptions<T>().Bind(section) for AddGertSqliteStorage (dotnet-style-guide.md section 4). -->
+    <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="$(MicrosoftExtensionsOptionsVersion)" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" Version="$(MicrosoftExtensionsConfigVersion)" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="$(MicrosoftExtensionsLoggingVersion)" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- SQL migrations are embedded resources; SqliteMigrationRunner reads them
+         as Gert.Database.Sqlite.Migrations.{family}.{NNN_name}.sql -->
+    <EmbeddedResource Include="Migrations\**\*.sql" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Vendored native sqlite-vec extension. Copied to the output as vec0.so so
+         every consumer (incl. the test bin, transitively) finds it beside the
+         assembly; OpenRagAsync loads it on each rag.db connection. -->
+    <None Include="native\linux-x64\vec0.so">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>vec0.so</Link>
+    </None>
+  </ItemGroup>
+
+</Project>

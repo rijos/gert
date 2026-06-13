@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <!-- WebApplicationFactory<Program> needs the ASP.NET Core shared framework. -->
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Gert.Service\Gert.Service.csproj" />
+    <ProjectReference Include="..\..\src\Gert.Model\Gert.Model.csproj" />
+    <ProjectReference Include="..\..\src\Gert.Database.Sqlite\Gert.Database.Sqlite.csproj" />
+    <ProjectReference Include="..\..\src\Gert.Api\Gert.Api.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Pinned versions (valid net10.0). -->
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" Version="$(AspNetTestingVersion)" />
+    <PackageReference Include="Microsoft.IdentityModel.JsonWebTokens" Version="$(IdentityModelVersion)" />
+    <PackageReference Include="Microsoft.IdentityModel.Tokens" Version="$(IdentityModelVersion)" />
+  </ItemGroup>
+
+</Project>

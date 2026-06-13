@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Architecture - Gert Docs</title>
+  <meta name="description" content="Gert's components, design principles, and solution layout.">
+  <link rel="icon" href="../favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Nunito:wght@400;600;700;800&family=Fraunces:opsz,wght@9..144,600..700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../styles.css">
+  <script src="../theme.js"></script>
+</head>
+<body>
+
+<nav class="topnav">
+  <a class="brand" href="../"><img src="../favicon.svg" alt="">Gert</a>
+  <div class="topnav-links">
+    <button class="sidebar-toggle" aria-label="Toggle navigation">Menu</button>
+    <a href="./">Docs</a>
+    <a href="https://github.com/rijos/gert" class="gh-label">GitHub</a>
+    <button class="theme-toggle" title="Toggle theme" aria-label="Toggle theme">
+      <svg class="moon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+      <svg class="sun" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M4.9 4.9l1.4 1.4m11.4 11.4 1.4 1.4M2 12h2m16 0h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+    </button>
+  </div>
+</nav>
+
+<aside class="docs-sidebar">
+  <div class="group-label">Getting Started</div>
+  <a href="./">Overview</a>
+  <a href="quick-start.html">Quick Start</a>
+  <a href="configuration.html">Configuration</a>
+  <div class="group-label">Concepts</div>
+  <a href="architecture.html" class="active">Architecture</a>
+  <a href="storage.html">Storage &amp; Isolation</a>
+  <a href="chat-and-tools.html">Chat, RAG &amp; Tools</a>
+  <a href="security.html">Security Model</a>
+  <div class="group-label">Reference</div>
+  <a href="api.html">REST API</a>
+</aside>
+
+<main class="docs-content">
+  <div class="content-inner">
+    <h1>Architecture</h1>
+    <p class="intro">Five moving parts, one origin, zero shared state.</p>
+
+    <pre><code>┌────────────────┐        ┌─────────────────┐
+│  VanJS SPA     │  PKCE  │   Pocket ID     │
+│  (browser)     │◄──────►│   (OIDC IdP)    │
+└──────┬─────────┘        └────────┬────────┘
+       │  GET / (SPA bundle)       │ JWKS (public keys)
+       │  + Bearer &lt;access JWT&gt;    │
+       ▼                           ▼
+┌──────────────────────────────────────────────────────────────────────┐
+│                  Gert.Api - ASP.NET Core Web API                     │
+│  Static files (SPA) - JWT bearer -> UserContext - Controllers        │
+│  Chat orchestrator - Ingestion worker - Tool adapters               │
+└───┬───────────────┬───────────────┬───────────────┬─────────────────┘
+    │               │               │               │
+    ▼               ▼               ▼               ▼
+┌────────┐     ┌──────────┐    ┌──────────┐    ┌──────────────────────┐
+│  vLLM  │     │ SearXNG  │    │  gVisor  │    │ /data/users/{key}/   │
+│ models │     │  search  │    │  sandbox │    │  chat.db + rag.db    │
+└────────┘     └──────────┘    └──────────┘    └──────────────────────┘</code></pre>
+
+    <div class="table-wrap"><table>
+      <tr><th>Component</th><th>Role</th></tr>
+      <tr><td><strong>VanJS SPA</strong></td><td>The UI, served as static files by Gert.Api itself. Holds the access token in memory, calls <code>/api/*</code> on the same origin - no CORS needed.</td></tr>
+      <tr><td><strong>Pocket ID</strong></td><td>OIDC provider. Authenticates users with <strong>passkeys</strong>, issues JWTs, owns the user list. The API only ever fetches its JWKS.</td></tr>
+      <tr><td><strong>Gert.Api</strong></td><td>Stateless REST API + static host. Validates JWTs, derives the user folder, orchestrates chat and ingestion.</td></tr>
+      <tr><td><strong>vLLM</strong></td><td>Chat + embedding models behind an OpenAI-compatible API. Server-side only.</td></tr>
+      <tr><td><strong>SearXNG</strong></td><td>Self-hosted web search. Server-side only.</td></tr>
+      <tr><td><strong>gVisor</strong></td><td>Ephemeral sandbox for the <code>run_python</code> tool. Server-side only.</td></tr>
+    </table></div>
+
+    <h2>Design principles</h2>
+    <ol>
+      <li><strong>No central application database.</strong> No <code>users</code> table. Identity lives in the IdP; per-user data lives on disk. The API is a stateless translator between JWTs and folders.</li>
+      <li><strong>Isolation is a filesystem property, not a query filter.</strong> A connection only ever opens <em>this</em> user's files - there is no <code>WHERE user_id = ?</code> to forget. The same property nests one level down for projects.</li>
+      <li><strong>The user key is derived only from the token.</strong> <code>sha256(iss + sub)</code> from the validated JWT, never from a route, query, or body - IDOR is structurally impossible.</li>
+      <li><strong>Lazy provisioning.</strong> Folders and schemas are created on first authenticated request. A valid token is sufficient to exist.</li>
+      <li><strong>Deletion is <code>rm -rf</code>.</strong> Nothing references a user outside their folder.</li>
+      <li><strong>Validation is a fail-closed input boundary.</strong> Every user-supplied DTO passes a registered validator before any service acts on it; an input type with no validator is a bug, not an exemption.</li>
+    </ol>
+
+    <h2>Solution layout</h2>
+    <p>The compiler enforces inward dependencies - <code>Gert.Service</code> references only
+    <code>Gert.Model</code>, so the host (API) and the tests drive the same business
+    logic:</p>
+    <pre><code>src/
+├── Gert.Model/             <span class="c"># POCOs only - no dependencies</span>
+├── Gert.Service/           <span class="c"># host-agnostic business logic</span>
+│   ├── Chat/               <span class="c"># turn planner + runner (the tool loop)</span>
+│   ├── Ingestion/          <span class="c"># extract -> chunk -> embed -> write</span>
+│   ├── Tools/              <span class="c"># tool registry (RAG, search, sandbox...)</span>
+│   └── Validation/         <span class="c"># fail-closed input boundary</span>
+├── Gert.Storage/           <span class="c"># object store (local FS today)</span>
+├── Gert.Database/          <span class="c"># DB provider seams</span>
+├── Gert.Database.Sqlite/   <span class="c"># sqlite-vec + FTS5 implementation</span>
+├── Gert.Authentication/    <span class="c"># JWT claims -> IUserContext</span>
+├── Gert.External/          <span class="c"># vLLM, SearXNG, gVisor, extraction adapters</span>
+└── Gert.Api/               <span class="c"># REST host + the SPA (wwwroot/)</span></code></pre>
+
+    <h2>Tech stack</h2>
+    <ul>
+      <li><strong>.NET 10 / ASP.NET Core</strong> - warnings as errors, nullable strict.</li>
+      <li><strong>SQLite</strong> via <code>Microsoft.Data.Sqlite</code> + Dapper, with <code>sqlite-vec</code> (vector KNN) and <code>FTS5</code> (BM25) per project database.</li>
+      <li><strong>VanJS</strong> SPA - native ES modules, vendored libs, no npm, no build step; minified in place on publish.</li>
+      <li><strong>Polly</strong> resilience on all upstream HTTP; <strong>Serilog</strong> NDJSON logs (no tokens, no content).</li>
+      <li><strong>Channels + BackgroundService</strong> for the detached turn and ingestion workers.</li>
+    </ul>
+
+    <a class="next-link" href="storage.html">Next: Storage &amp; Isolation -></a>
+  </div>
+</main>
+
+</body>
+</html>

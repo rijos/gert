@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\Gert.Model\Gert.Model.csproj" />
+    <!-- Persistence contracts (IChatRepository, IDatabaseProvider, ...) live in
+         Gert.Database; the service layer consumes them, the Gert.Database.*
+         adapters implement them. -->
+    <ProjectReference Include="..\Gert.Database\Gert.Database.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Abstractions only: lets AddGertServices register the services + resolve
+         IValidator<T> from the container, without coupling the service layer to a host. -->
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions"
+                      Version="$(MicrosoftExtensionsDIAbstractionsVersion)" />
+    <!-- IOptions<T> + AddOptions for the turn pipeline's TurnOptions. Options only -
+         configuration BINDING stays in the host (it knows the config system). -->
+    <PackageReference Include="Microsoft.Extensions.Options"
+                      Version="$(MicrosoftExtensionsOptionsVersion)" />
+    <!-- ILogger<T> for the turn pipeline's operational logging (round counts, the
+         tool-budget brake). Abstractions only - each host wires the provider. -->
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions"
+                      Version="$(MicrosoftExtensionsLoggingVersion)" />
+    <!-- The fail-closed validation provider + per-DTO validators (principle #6, security F6). -->
+    <PackageReference Include="FluentValidation"
+                      Version="$(FluentValidationVersion)" />
+    <PackageReference Include="FluentValidation.DependencyInjectionExtensions"
+                      Version="$(FluentValidationDIVersion)" />
+    <!-- U14B: the shared NDJSON ITextFormatter lives here so the host (Gert.Api)
+         emits the operations.md log schema. Serilog (core only - no sinks/hosting)
+         is a logging library, not a host coupling, so the host-agnostic service
+         layer stays clean. -->
+    <PackageReference Include="Serilog" Version="$(SerilogVersion)" />
+  </ItemGroup>
+
+</Project>

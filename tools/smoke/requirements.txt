@@ -1,0 +1,11 @@
+# Gert E2E smoke harness deps (testing.md section 9). Install via:
+#   uv pip install -r requirements.txt
+playwright>=1.44
+pytest>=8.0
+pytest-playwright>=0.5
+# JWT minting (RS256 via the dev keypair) - tokens.py
+pyjwt>=2.8
+cryptography>=42.0
+# Tiny ASGI stack for the streaming mock upstreams (vllm.py / searxng.py)
+starlette>=0.37
+uvicorn>=0.30

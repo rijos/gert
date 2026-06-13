@@ -1,0 +1,66 @@
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 4
+
+[*.{cs,csx}]
+indent_size = 4
+# C# defaults; analyzers use built-in defaults
+dotnet_sort_system_directives_first = true
+
+# Analyzer policy: StyleCop rule categories are ON (warnings -> errors via
+# TreatWarningsAsErrors); the blanket 'none' below only silences the other
+# analyzer providers. Rules that conflict with house style are opted out
+# individually, each with its reason. Compiler/nullable (CS*) warnings are
+# unaffected (they stay errors via TreatWarningsAsErrors + WarningsAsErrors).
+dotnet_analyzer_diagnostic.severity = none
+dotnet_analyzer_diagnostic.category-StyleCop.CSharp.SpacingRules.severity = warning
+dotnet_analyzer_diagnostic.category-StyleCop.CSharp.ReadabilityRules.severity = warning
+dotnet_analyzer_diagnostic.category-StyleCop.CSharp.OrderingRules.severity = warning
+dotnet_analyzer_diagnostic.category-StyleCop.CSharp.NamingRules.severity = warning
+dotnet_analyzer_diagnostic.category-StyleCop.CSharp.MaintainabilityRules.severity = warning
+dotnet_analyzer_diagnostic.category-StyleCop.CSharp.LayoutRules.severity = warning
+dotnet_analyzer_diagnostic.category-StyleCop.CSharp.DocumentationRules.severity = warning
+
+dotnet_diagnostic.SA0001.severity = none    # XML-doc analysis off (project-level; not wanted)
+dotnet_diagnostic.SA1402.severity = error   # one top-level type per file
+dotnet_diagnostic.SA1649.severity = error   # file name must match the type
+
+# House-style opt-outs - each conflicts with a deliberate convention
+# (dotnet-style-guide.md), not an oversight:
+dotnet_diagnostic.SA1101.severity = none    # no 'this.' prefix - house style omits it
+dotnet_diagnostic.SA1200.severity = none    # usings go OUTSIDE the namespace here
+dotnet_diagnostic.SA1633.severity = none    # no per-file license headers
+dotnet_diagnostic.SA1309.severity = none    # fields ARE _camelCase here
+dotnet_diagnostic.SA1512.severity = none    # dense comment style: comments may have
+dotnet_diagnostic.SA1515.severity = none    #   trailing/leading code on purpose
+dotnet_diagnostic.SA1516.severity = none    # tight member grouping is deliberate
+dotnet_diagnostic.SA1201.severity = none    # members are ordered narratively
+dotnet_diagnostic.SA1202.severity = none    #   (reading order), not by kind/access -
+dotnet_diagnostic.SA1203.severity = none    #   see the style guide's file-layout
+dotnet_diagnostic.SA1204.severity = none    #   section
+dotnet_diagnostic.SA1600.severity = none    # public-member docs are reviewed, not analyzer-counted
+dotnet_diagnostic.SA1601.severity = none    # (partial elements likewise)
+dotnet_diagnostic.SA1602.severity = none    # (enum members likewise)
+dotnet_diagnostic.SA1117.severity = none    # argument lists wrap for readability
+dotnet_diagnostic.SA1118.severity = none    #   (grouped, not one-per-line), e.g.
+                                            #   multi-line SQL/log/concat arguments
+dotnet_diagnostic.SA1312.severity = none    # '_' is the intentional discard name in lambdas
+csharp_new_line_before_open_brace = all
+csharp_new_line_before_else = true
+csharp_new_line_before_catch = true
+csharp_new_line_before_finally = true
+
+[*.{csproj,props,targets,xml}]
+indent_size = 2
+
+[*.{json,yml,yaml}]
+indent_size = 2
+
+[*.{html,css,js}]
+indent_size = 2

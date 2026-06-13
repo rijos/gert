@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- THE storage backend layer: the IObjectStore local-filesystem backend and the
+       backend-agnostic IUserStore implementation that routes every config file
+       (meta.json, settings.json, projects/{pid}/meta.json) through IObjectStore.
+       A future S3/Azure-Blob backend is a sibling Gert.Storage.* project + one DI
+       swap; nothing in here may reference a database driver - destructive local
+       deletes release engine file handles via the IDatabaseHandleReleaser port. -->
+
+  <ItemGroup>
+    <ProjectReference Include="..\Gert.Service\Gert.Service.csproj" />
+    <ProjectReference Include="..\Gert.Model\Gert.Model.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Versions centralized in the repo-root Directory.Build.props. -->
+    <PackageReference Include="Microsoft.Extensions.Options" Version="$(MicrosoftExtensionsOptionsVersion)" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="$(MicrosoftExtensionsLoggingVersion)" />
+  </ItemGroup>
+
+</Project>

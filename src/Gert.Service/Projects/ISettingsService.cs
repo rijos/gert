@@ -1,0 +1,19 @@
+using Gert.Model.Dtos;
+using Gert.Model.Projects;
+
+namespace Gert.Service.Projects;
+
+/// <summary>
+/// Reads/writes the user's <c>settings.json</c> preferences (rest-api.md
+/// section settings; configuration.md section 3). User-level, not project-scoped.
+/// </summary>
+public interface ISettingsService
+{
+    /// <summary>Get the user's current preferences.</summary>
+    Task<UserSettings> GetAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>Apply a partial update and return the merged result.</summary>
+    Task<UserSettings> UpdateAsync(
+        UpdateSettingsRequest request,
+        CancellationToken cancellationToken = default);
+}

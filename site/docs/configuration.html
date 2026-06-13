@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Configuration - Gert Docs</title>
+  <meta name="description" content="Every server-level configuration knob in Gert: model upstream, model catalog, auth, storage, search, sandbox, and extraction.">
+  <link rel="icon" href="../favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Nunito:wght@400;600;700;800&family=Fraunces:opsz,wght@9..144,600..700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../styles.css">
+  <script src="../theme.js"></script>
+</head>
+<body>
+
+<nav class="topnav">
+  <a class="brand" href="../"><img src="../favicon.svg" alt="">Gert</a>
+  <div class="topnav-links">
+    <button class="sidebar-toggle" aria-label="Toggle navigation">Menu</button>
+    <a href="./">Docs</a>
+    <a href="https://github.com/rijos/gert" class="gh-label">GitHub</a>
+    <button class="theme-toggle" title="Toggle theme" aria-label="Toggle theme">
+      <svg class="moon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+      <svg class="sun" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M4.9 4.9l1.4 1.4m11.4 11.4 1.4 1.4M2 12h2m16 0h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+    </button>
+  </div>
+</nav>
+
+<aside class="docs-sidebar">
+  <div class="group-label">Getting Started</div>
+  <a href="./">Overview</a>
+  <a href="quick-start.html">Quick Start</a>
+  <a href="configuration.html" class="active">Configuration</a>
+  <div class="group-label">Concepts</div>
+  <a href="architecture.html">Architecture</a>
+  <a href="storage.html">Storage &amp; Isolation</a>
+  <a href="chat-and-tools.html">Chat, RAG &amp; Tools</a>
+  <a href="security.html">Security Model</a>
+  <div class="group-label">Reference</div>
+  <a href="api.html">REST API</a>
+</aside>
+
+<main class="docs-content">
+  <div class="content-inner">
+    <h1>Configuration</h1>
+    <p class="intro">Every server-level knob, where it binds from, and what it defaults to.
+    Standard ASP.NET Core layering applies - last one wins:</p>
+    <pre><code>appsettings.json -> appsettings.{Environment}.json -> environment variables -> command line</code></pre>
+    <ul>
+      <li><strong>Environment variables</strong> - replace <code>:</code> with <code>__</code>: <code>Gert__OpenAI__BaseUrl=http://vllm:8000</code>. Array entries by index: <code>Gert__Models__0__Id=qwen36</code>.</li>
+      <li><strong>Command line</strong> - <code>dotnet run --project src/Gert.Api -- --Gert:OpenAI:BaseUrl=...</code> (highest precedence).</li>
+      <li><strong>Secrets never go in <code>appsettings.json</code></strong> - the vLLM bearer key arrives via env vars or <code>dotnet user-secrets</code>.</li>
+    </ul>
+
+    <h2>Gert:OpenAI - the model upstream</h2>
+    <p>One OpenAI-compatible upstream serves <strong>both chat and embeddings</strong>.</p>
+    <div class="table-wrap"><table>
+      <tr><th>Key</th><th>Default</th><th>Notes</th></tr>
+      <tr><td><code>BaseUrl</code></td><td><code>http://localhost:8000</code></td><td>Server base URL, <strong>without</strong> <code>/v1</code>.</td></tr>
+      <tr><td><code>ApiKey</code></td><td><em>(unset)</em></td><td><strong>Secret</strong> - env / user-secrets only. Sent as <code>Authorization: Bearer</code>.</td></tr>
+      <tr><td><code>ChatModelId</code></td><td><code>default</code></td><td>Sent as <code>model</code> on <code>/v1/chat/completions</code>. Must exist on the server (<code>GET /v1/models</code>).</td></tr>
+      <tr><td><code>EmbeddingModelId</code></td><td><code>bge-m3</code></td><td>Sent as <code>model</code> on <code>/v1/embeddings</code>. Document upload fails without it.</td></tr>
+      <tr><td><code>EmbeddingDimensions</code></td><td><code>1024</code></td><td>Must match the embedding model. Effectively immutable once data exists - it bakes into every <code>rag.db</code>.</td></tr>
+      <tr><td><code>RequestTimeoutSeconds</code></td><td><code>120</code></td><td>Per-attempt timeout; Polly retries wrap it.</td></tr>
+      <tr><td><code>RetryCount</code></td><td><code>2</code></td><td>Retries on transient upstream failure.</td></tr>
+    </table></div>
+    <blockquote><p><strong>vLLM prefix caching.</strong> Gert's requests are prefix-cache
+    friendly: a static system prompt per project, history replayed verbatim, deterministic
+    tool specs, no per-request unique fields. Make sure your vLLM has automatic prefix
+    caching enabled (it's on by default in the V1 engine) and watch
+    <code>vllm:prefix_cache_hit_rate</code>.</p></blockquote>
+
+    <h2>Gert:Models - the model catalog</h2>
+    <p>What <code>GET /api/models</code> publishes to the picker, in configured order. When
+    absent, the catalog falls back to a single entry built from
+    <code>Gert:OpenAI:ChatModelId</code>.</p>
+    <div class="table-wrap"><table>
+      <tr><th>Key</th><th>Required</th><th>Notes</th></tr>
+      <tr><td><code>Id</code></td><td>yes</td><td>Sent upstream as <code>model</code>.</td></tr>
+      <tr><td><code>Name</code></td><td>yes</td><td>Display name in the picker.</td></tr>
+      <tr><td><code>Default</code></td><td>no</td><td>The server-level default. Flag exactly one.</td></tr>
+      <tr><td><code>Capabilities</code></td><td>no</td><td><code>"tools"</code> is <strong>load-bearing</strong> - it gates tool calling. Unset means permissive; an explicit list without <code>"tools"</code> disables tools for that model. <code>"vision"</code> gates image input.</td></tr>
+      <tr><td><code>Context</code></td><td>no</td><td>Context window in tokens (the "128K ctx" badge). vLLM reports it as <code>max_model_len</code>.</td></tr>
+      <tr><td><code>Fast</code></td><td>no</td><td>Display-only "- fast" marker.</td></tr>
+      <tr><td><code>Endpoint</code></td><td>no</td><td>Display-only endpoint hint.</td></tr>
+    </table></div>
+    <p>Users pick from this catalog; they can never add endpoints or model ids of their own.</p>
+
+    <h2>Auth + Storage - identity and the data root</h2>
+    <div class="table-wrap"><table>
+      <tr><th>Key</th><th>Notes</th></tr>
+      <tr><td><code>Auth:Authority</code></td><td>The OIDC issuer. JWTs are validated against its JWKS, RS256 only.</td></tr>
+      <tr><td><code>Auth:Audience</code></td><td>Expected <code>aud</code> claim, e.g. <code>gert-api</code>.</td></tr>
+      <tr><td><code>Storage:DataRoot</code></td><td>Filesystem root holding the <code>users/</code> tree. Back up this directory and you've backed up Gert.</td></tr>
+      <tr><td><code>Storage:ExpectedIssuer</code></td><td>Fail-closed <code>iss</code> assertion checked <strong>before</strong> any user folder is created. Normally equal to <code>Auth:Authority</code>.</td></tr>
+    </table></div>
+    <p>Both <code>Storage</code> values are <strong>required</strong> - the host refuses to start without them.</p>
+
+    <h2>Gert:Search - SearXNG web search</h2>
+    <p>The fetch step (downloading result pages) is the SSRF-exposed part and is
+    <strong>off by default</strong>.</p>
+    <div class="table-wrap"><table>
+      <tr><th>Key</th><th>Default</th><th>Notes</th></tr>
+      <tr><td><code>BaseUrl</code></td><td><code>http://localhost:8080</code></td><td>The SearXNG instance (must allow <code>format=json</code>).</td></tr>
+      <tr><td><code>FetchPages</code></td><td><code>false</code></td><td>Fetch + summarize result pages (SSRF-guarded).</td></tr>
+      <tr><td><code>MaxFetch</code></td><td><code>3</code></td><td>Pages fetched per search when enabled.</td></tr>
+      <tr><td><code>MaxFetchBytes</code></td><td><code>2097152</code></td><td>Body-size cap per fetched page.</td></tr>
+      <tr><td><code>FetchTimeoutSeconds</code></td><td><code>10</code></td><td>Wall-clock cap per page fetch.</td></tr>
+      <tr><td><code>MaxRedirects</code></td><td><code>3</code></td><td>Each hop re-vetted by the SSRF guard.</td></tr>
+      <tr><td><code>SearchTimeoutSeconds</code></td><td><code>15</code></td><td>Timeout on the search API call itself.</td></tr>
+    </table></div>
+
+    <h2>Gert:Sandbox - the gVisor Python sandbox</h2>
+    <p>The defaults <em>are</em> the security posture: egress off, read-only rootfs, hard
+    caps. Raise them knowingly.</p>
+    <div class="table-wrap"><table>
+      <tr><th>Key</th><th>Default</th><th>Notes</th></tr>
+      <tr><td><code>RunscPath</code></td><td><code>runsc</code></td><td>Path to the gVisor binary.</td></tr>
+      <tr><td><code>Image</code></td><td><code>gert-sandbox-python</code></td><td>OCI bundle with a Python runtime.</td></tr>
+      <tr><td><code>EgressEnabled</code></td><td><code>false</code></td><td>Outbound network for sandboxed code - the exfiltration brake. Leave off unless you must.</td></tr>
+      <tr><td><code>WallClockSeconds</code></td><td><code>10</code></td><td>Kill timeout per run.</td></tr>
+      <tr><td><code>CpuSeconds</code></td><td><code>5</code></td><td>CPU-time limit.</td></tr>
+      <tr><td><code>MemoryMiB</code></td><td><code>256</code></td><td>Memory limit.</td></tr>
+      <tr><td><code>PidLimit</code></td><td><code>64</code></td><td>Max processes/threads.</td></tr>
+      <tr><td><code>TmpSizeMiB</code></td><td><code>32</code></td><td>Writable <code>/tmp</code>; rootfs stays read-only.</td></tr>
+      <tr><td><code>MaxOutputBytes</code></td><td><code>65536</code></td><td>Captured stdout/stderr cap.</td></tr>
+    </table></div>
+
+    <h2>Gert:Extractor - isolated document extraction</h2>
+    <p>The PDF/DOCX text extractor runs as an unprivileged, rlimit-capped helper process.</p>
+    <div class="table-wrap"><table>
+      <tr><th>Key</th><th>Default</th><th>Notes</th></tr>
+      <tr><td><code>HelperPath</code></td><td><code>gert-extract</code></td><td>The helper executable.</td></tr>
+      <tr><td><code>AddressSpaceMiB</code></td><td><code>512</code></td><td><code>RLIMIT_AS</code> cap.</td></tr>
+      <tr><td><code>CpuSeconds</code></td><td><code>20</code></td><td><code>RLIMIT_CPU</code> cap.</td></tr>
+      <tr><td><code>ProcessLimit</code></td><td><code>16</code></td><td><code>RLIMIT_NPROC</code> cap.</td></tr>
+      <tr><td><code>WallClockSeconds</code></td><td><code>30</code></td><td>Kill timeout backstopping <code>RLIMIT_CPU</code>.</td></tr>
+    </table></div>
+
+    <h2>Gert:Turn - the detached turn pipeline</h2>
+    <p>A <strong>round</strong> is one upstream completion request that comes back with
+    tool calls - executing them and re-prompting starts the next round, so every round
+    costs a full vLLM completion.</p>
+    <p>The guards are layered: bound every part, brake the loop, make every trip visible
+    on its tool card.</p>
+    <div class="table-wrap"><table>
+      <tr><th>Key</th><th>Default</th><th>Notes</th></tr>
+      <tr><td><code>MaxTurnDuration</code></td><td><code>00:05:00</code></td><td>Hard wall-clock cap on one turn (model rounds + tools) - the real budget. Doubles as the orphan horizon for abandoned streaming rows.</td></tr>
+      <tr><td><code>MaxToolRounds</code></td><td><code>64</code></td><td><strong>Runaway brake, not a work budget</strong> - sized an order of magnitude above legitimate turns. Past it the runner refuses further calls with budget-exhausted errors (visible on the cards) and winds the turn down.</td></tr>
+      <tr><td><code>MaxTokensPerRound</code></td><td><code>16384</code></td><td>Per-round completion bound: both the default <code>max_tokens</code> (when neither conversation nor per-model user settings ask) and the ceiling (requests clamp down). Reasoning tokens count against it on thinking models. <code>0</code> disables.</td></tr>
+      <tr><td><code>ToolCallTimeout</code></td><td><code>00:01:00</code></td><td>Generic wall-clock backstop on one tool execution, behind each tool's own tighter limits. A trip fails that call with a visible card error; the turn continues. <code>0</code> disables.</td></tr>
+      <tr><td><code>DeltaFlushInterval</code></td><td><code>150ms</code></td><td>Delta coalescing window - buffered chunks emit as one event per window.</td></tr>
+      <tr><td><code>DeltaFlushMaxChars</code></td><td><code>512</code></td><td>Size backstop for the coalescing window.</td></tr>
+    </table></div>
+    <p>The per-round <code>max_tokens</code> is also user-facing: the model picker's
+    cogwheel sets per-model defaults and conversation params override them - the server
+    value is the cascade's last fallback <em>and</em> its ceiling.</p>
+
+    <h2>Dev &amp; test modes</h2>
+    <p>Not for production - listed so a deployment never enables them by accident.</p>
+    <div class="table-wrap"><table>
+      <tr><th>Switch</th><th>What it does</th></tr>
+      <tr><td><code>Gert:Dev:JwksPath</code></td><td>Trust a local dev JWKS (offline token mint). Refused in Production.</td></tr>
+      <tr><td><code>Gert:Web:TestHarness</code></td><td>Serves the component-test harness pages. Off unless explicitly <code>true</code>.</td></tr>
+      <tr><td><code>make serve-mock</code></td><td>Everything mocked (auth, vLLM, SearXNG) + a dev proxy that signs you in.</td></tr>
+      <tr><td><code>make serve-mock-vllm VLLM_URL=...</code></td><td>Same mocked world, but chat hits a <strong>real</strong> vLLM; capabilities probed automatically.</td></tr>
+    </table></div>
+
+    <a class="next-link" href="architecture.html">Next: Architecture -></a>
+  </div>
+</main>
+
+</body>
+</html>

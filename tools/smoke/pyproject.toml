@@ -1,0 +1,58 @@
+[project]
+name = "gert-smoke"
+version = "0.1.0"
+description = "Gert E2E smoke harness: mock upstreams, JWT minting, Playwright scenarios."
+requires-python = ">=3.13"
+dependencies = [
+    "playwright>=1.44",
+    "pyjwt>=2.8",
+    "cryptography>=42.0",
+    "starlette>=0.37",
+    "uvicorn>=0.30",
+    "httpx>=0.27",
+    "pytest>=8.0",
+    "pytest-playwright>=0.5",
+]
+
+[tool.pytest.ini_options]
+# Tests import `tools.smoke.*`; run pytest from the repo root so that resolves.
+testpaths = ["tests"]
+markers = [
+    # Deterministic component/harness mount tests (no LLM/backend round-trip).
+    # The CI gate (`run.py --pytest`) runs the FULL suite - component AND the
+    # integration tests (chat/knowledge/rbac/llm-tools): the security-relevant
+    # RBAC/SSRF/IDOR assertions must gate. The marker remains for selecting the
+    # fast deterministic subset locally (`-m component`).
+    "component: deterministic component/harness mount tests (fast local subset)",
+]
+
+[tool.ruff]
+# 88 cols (black/ruff default). The harness declares its own standard so the
+# inline page.evaluate() JS strings aren't fought over a 79-col limit.
+line-length = 88
+target-version = "py313"
+
+[tool.ruff.lint]
+# A real rule set: pyflakes, pycodestyle, isort, pyupgrade, bugbear, comprehensions,
+# simplify, pep8-naming, ruff-specific. E501 ignored (intentional long page.evaluate JS).
+select = ["E", "F", "I", "UP", "B", "C4", "SIM", "N", "RUF"]
+ignore = ["E501"]
+
+[dependency-groups]
+dev = ["ruff>=0.6", "mypy>=1.11"]
+monty = [
+    "pydantic-monty>=0.0.18",
+]
+
+[tool.mypy]
+python_version = "3.13"
+strict = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+# Playwright/uvicorn ship types; starlette is typed. Be strict on our own code.
+files = ["tokens.py", "run.py", "pages.py", "mocks", "tests"]
+
+[[tool.mypy.overrides]]
+# pytest-playwright fixtures arrive untyped at call sites; don't fail on their imports.
+module = ["pytest_playwright.*"]
+ignore_missing_imports = true
