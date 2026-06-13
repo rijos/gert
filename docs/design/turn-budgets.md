@@ -196,8 +196,11 @@ Phased, smallest-honest-step first:
 - **Default for `MaxTurnTokens`?** Needs measurement against real qwen3.6 todo-flow turns
   (the 2026-06-07 sessions are a starting corpus).
 - ~~**UI surface on budget trip**~~ - settled by Open WebUI's precedent and implemented:
-  refused calls, timeouts, and tool defects all carry their error text on the tool card
-  (`ToolResultEvent.Error` live, `ThreadToolCall.Error` on reload).
+  budget-refused calls, timeouts, and tool defects all carry their error text on the tool
+  card (`ToolResultEvent.Error` live, `ThreadToolCall.Error` on reload). This is only for
+  tools the user *is* entitled to that then fail at runtime; an *entitlement* drop is the
+  silent exception - it surfaces no card at all (see
+  [auth - the claim is the ceiling](auth.md#enforcement---the-claim-is-the-ceiling)).
 - **Steering x thinking models** - injected tail messages interact with a thinking
   provider's reasoning replay (`chat_template_kwargs.preserve_thinking` in `Gert:Providers`
   - [installation section providers](../installation/configuration.md#4-gertproviders---the-chat-provider-catalog));

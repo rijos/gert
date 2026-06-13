@@ -260,10 +260,14 @@ public sealed class TurnRunnerTests
     }
 
     [Fact]
-    public async Task Entitlement_snapshot_blocks_execution_even_when_the_spec_reached_the_model()
+    public async Task Entitlement_snapshot_blocks_execution_silently_even_when_the_spec_reached_the_model()
     {
         // The sandbox spec is (improperly) offered, but the plan-time snapshot
         // does not include it - the off-thread second-line defence must refuse.
+        // The refusal is invisible to the user: the boundary does not leak into
+        // the conversation (auth.md - "the drop stays silent toward the model and
+        // the user"). So NO card and NO tool row surface; only a synthetic refusal
+        // is fed upstream, which the model reads and answers around.
         var sandbox = new PythonSandboxTool(new StubPythonSandbox());
 
         await NewRunner(new FakeChatModel(), [sandbox])
@@ -272,10 +276,15 @@ public sealed class TurnRunnerTests
                 offered: [sandbox],
                 allowed: new HashSet<string>(["rag"], StringComparer.Ordinal)));
 
-        var toolResult = Events.OfType<ToolResultEvent>().Single();
-        toolResult.Status.Should().Be(ToolCallStatus.Error);
+        // Not a flicker of activity for the refused call - no running announce, no
+        // result card, no persisted row (so a thread reload stays clean too).
+        Events.OfType<ToolCallEvent>().Should().BeEmpty();
+        Events.OfType<ToolResultEvent>().Should().BeEmpty();
+        _toolRows.Should().BeEmpty();
 
-        _toolRows.Single().Status.Should().Be(ToolCallStatus.Error);
+        // But the model still got its result-per-call (the synthetic refusal) and
+        // finalised the turn, answering around the dropped tool.
+        Events.OfType<MessageEndEvent>().Should().ContainSingle();
     }
 
     [Fact]

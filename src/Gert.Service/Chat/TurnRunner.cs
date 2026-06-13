@@ -303,7 +303,9 @@ public sealed class TurnRunner : ITurnRunner
                     // (e.g. "Creating a file") instead of staring at the pulse while a
                     // whole-file argument streams. The full call + its parsed request
                     // arrive at end-of-round below (same id -> the card updates in place).
-                    if (chunk.ToolCallStart is { } toolStart)
+                    // An unentitled call never announces: its card stays off-screen
+                    // (the refusal is fed to the model below, not shown to the user).
+                    if (chunk.ToolCallStart is { } toolStart && IsEntitledCall(job, toolStart.Name))
                     {
                         await FlushPendingReasoningAsync().ConfigureAwait(false);
                         await FlushPendingAsync().ConfigureAwait(false);
@@ -409,13 +411,22 @@ public sealed class TurnRunner : ITurnRunner
                     // OCE lands in RunAsync's cancel finalize like any other.
                     token.ThrowIfCancellationRequested();
 
-                    await EmitAsync(repo, topic, new ToolCallEvent
+                    // The plan-time ceiling decides visibility: an unentitled call
+                    // (a tool the model was never offered but emitted anyway) still
+                    // gets a synthetic refusal in the upstream history, but shows no
+                    // card and writes no tool row - invisible live and on reload.
+                    var entitled = IsEntitledCall(job, call.Name);
+
+                    if (entitled)
                     {
-                        Id = call.Id,
-                        Kind = ResolveKind(call.Name),
-                        Status = ToolCallStatus.Running,
-                        Request = ParseArgs(call.ArgumentsJson),
-                    }, token).ConfigureAwait(false);
+                        await EmitAsync(repo, topic, new ToolCallEvent
+                        {
+                            Id = call.Id,
+                            Kind = ResolveKind(call.Name),
+                            Status = ToolCallStatus.Running,
+                            Request = ParseArgs(call.ArgumentsJson),
+                        }, token).ConfigureAwait(false);
+                    }
 
                     // The per-turn search budget refuses like the round budget:
                     // a synthetic failure the model reads, never a torn turn.
@@ -429,49 +440,56 @@ public sealed class TurnRunner : ITurnRunner
                                 $"web search budget exhausted ({_options.MaxSearchCallsPerTurn} per turn) - no further searches will run this turn; answer with what you already found")
                             : await ExecuteToolAsync(job, call, repo, topic, deadline, token).ConfigureAwait(false);
 
-                    await EmitAsync(repo, topic, new ToolResultEvent
+                    // The result card, the durable tool row, its citations, and any
+                    // canvas artifacts are all the entitled call's visible/persistent
+                    // footprint - skipped wholesale for an unentitled call (a refusal
+                    // never produces hits/artifacts anyway, and must leave no trace).
+                    if (entitled)
                     {
-                        Id = call.Id,
-                        Kind = outcome.Kind,
-                        Status = outcome.Status,
-                        LatencyMs = outcome.LatencyMs,
-                        Hits = outcome.Hits,
-                        Stdout = outcome.Stdout,
-                        Todos = outcome.Todos,
-                        Error = outcome.Error,
-                    }, token).ConfigureAwait(false);
-
-                    // Tool rows persist LIVE (the tree read model grows as the turn
-                    // runs), and citations keep their provenance: which call made them.
-                    var toolCallRow = new ToolCall
-                    {
-                        Id = Guid.NewGuid().ToString("D"),
-                        MessageId = job.AssistantMessageId,
-                        Kind = outcome.Kind,
-                        Status = outcome.Status,
-                        RequestJson = call.ArgumentsJson,
-                        ResponseJson = outcome.ResponseJson,
-                        LatencyMs = outcome.LatencyMs,
-                        CreatedAt = _clock.GetUtcNow(),
-                    };
-                    await repo.InsertToolCallAsync(toolCallRow, token).ConfigureAwait(false);
-
-                    collectedCitations.AddRange(outcome.Citations.Select(c => c with { ToolCallId = toolCallRow.Id }));
-
-                    // Canvas artifacts the call created/updated (make/edit tools): the
-                    // tool already persisted them; emit one ArtifactEvent each so the
-                    // live canvas opens/updates. An existing id updates the tab in place.
-                    if (outcome.Artifacts is { Count: > 0 } artifacts)
-                    {
-                        foreach (var artifact in artifacts)
+                        await EmitAsync(repo, topic, new ToolResultEvent
                         {
-                            await EmitAsync(repo, topic, new ArtifactEvent
+                            Id = call.Id,
+                            Kind = outcome.Kind,
+                            Status = outcome.Status,
+                            LatencyMs = outcome.LatencyMs,
+                            Hits = outcome.Hits,
+                            Stdout = outcome.Stdout,
+                            Todos = outcome.Todos,
+                            Error = outcome.Error,
+                        }, token).ConfigureAwait(false);
+
+                        // Tool rows persist LIVE (the tree read model grows as the turn
+                        // runs), and citations keep their provenance: which call made them.
+                        var toolCallRow = new ToolCall
+                        {
+                            Id = Guid.NewGuid().ToString("D"),
+                            MessageId = job.AssistantMessageId,
+                            Kind = outcome.Kind,
+                            Status = outcome.Status,
+                            RequestJson = call.ArgumentsJson,
+                            ResponseJson = outcome.ResponseJson,
+                            LatencyMs = outcome.LatencyMs,
+                            CreatedAt = _clock.GetUtcNow(),
+                        };
+                        await repo.InsertToolCallAsync(toolCallRow, token).ConfigureAwait(false);
+
+                        collectedCitations.AddRange(outcome.Citations.Select(c => c with { ToolCallId = toolCallRow.Id }));
+
+                        // Canvas artifacts the call created/updated (make/edit tools): the
+                        // tool already persisted them; emit one ArtifactEvent each so the
+                        // live canvas opens/updates. An existing id updates the tab in place.
+                        if (outcome.Artifacts is { Count: > 0 } artifacts)
+                        {
+                            foreach (var artifact in artifacts)
                             {
-                                Id = artifact.Id,
-                                Kind = artifact.Kind,
-                                Name = artifact.Name,
-                                Content = artifact.Content,
-                            }, token).ConfigureAwait(false);
+                                await EmitAsync(repo, topic, new ArtifactEvent
+                                {
+                                    Id = artifact.Id,
+                                    Kind = artifact.Kind,
+                                    Name = artifact.Name,
+                                    Content = artifact.Content,
+                                }, token).ConfigureAwait(false);
+                            }
                         }
                     }
 
@@ -779,6 +797,18 @@ public sealed class TurnRunner : ITurnRunner
 
     private ITool? ResolveTool(string functionName) =>
         _tools.FirstOrDefault(t => string.Equals(t.Name, functionName, StringComparison.Ordinal));
+
+    /// <summary>
+    /// Whether a model-named tool call is one the turn is entitled to run - the
+    /// plan-time <c>gert_tools</c> snapshot is the ceiling. An unentitled call
+    /// still gets its synthetic refusal fed back to the model (the wire format
+    /// needs a result per call), but it must surface NO user-facing card and
+    /// persist NO tool row: a tool the user was never granted (the model
+    /// hallucinated it, or a poisoned history smuggled it in) is invisible, live
+    /// and on reload alike (auth.md - the claim is the ceiling).
+    /// </summary>
+    private bool IsEntitledCall(TurnJob job, string functionName) =>
+        ResolveTool(functionName) is { } tool && job.AllowedToolIds.Contains(tool.Id);
 
     private string ResolveKind(string functionName) =>
         ResolveTool(functionName)?.Id ?? functionName;

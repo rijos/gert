@@ -283,15 +283,19 @@ def test_todo_card_survives_reload(page: Page, base_url: str) -> None:
 def test_todo_tool_is_refused_without_the_entitlement(
     user_page: Page, base_url: str
 ) -> None:
-    # `user` carries gert_tools "rag search ask_user fetch memory" - set_todos is refused at execution
-    # time (the claim is the ceiling), the card errors, the turn still completes.
+    # `user` carries gert_tools "rag search ask_user fetch memory sub_agent" - it has
+    # no `todo` entitlement, so set_todos is dropped by the ceiling. The drop stays
+    # silent toward the user (auth.md - the boundary does not leak into the
+    # conversation): NO tool card surfaces, yet the turn still completes because the
+    # model reads the synthetic refusal and answers around the dropped tool.
     app = _open(user_page, base_url)
     app.composer.send("plan the homelab upgrade")
 
-    app.thread.open_activity()
-    expect(app.thread.errored_tool_cards.first).to_be_visible(timeout=15000)
-    expect(app.thread.todo_rows).to_have_count(0)
+    # The turn finishes (proving the refusal reached the model) with no visible
+    # trace of the refused call - no errored card, no checklist.
     expect(app.thread.last_bot_body).to_contain_text("Plan is up", timeout=15000)
+    expect(app.thread.tool_cards).to_have_count(0)
+    expect(app.thread.todo_rows).to_have_count(0)
 
 
 # ---- sandbox (run_python) ----------------------------------------------------

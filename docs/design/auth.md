@@ -201,4 +201,16 @@ warning naming the dropped count and the token's grant count, so a missing/misco
 `gert_tools` claim is one log line instead of a debugging session. The drop itself stays
 silent toward the model and the user (the boundary doesn't leak into the conversation).
 
+**Silent drop vs. visible refusal - the split is by *cause*, not by outcome.** Two
+"the tool didn't run" cases look alike but are handled oppositely, and conflating them is an
+easy bug. (1) An *entitlement* drop is invisible end to end: the tool is never advertised,
+and even if a call for it still reaches execution - a non-compliant model, or a poisoned
+history replaying an old call - the orchestrator drops it with **no user-facing trace** (no
+tool card, no persisted tool row, live or on reload), feeding only a synthetic refusal back
+to the model so the turn still completes. (2) A *runtime* failure of a tool the user **is**
+entitled to - a [budget trip, timeout, or tool defect](turn-budgets.md) - **does** surface an
+errored card carrying its error text. The discriminator is *why* the call didn't run, not
+*that* it didn't: an authorization-boundary drop must not leak into the conversation, while a
+runtime failure of an authorized call is reported.
+
 > **Optional `GET /api/capabilities`.** Returns e.g. `{ "tools": ["rag","search"], "isAdmin": false }` so the SPA can disable toggles the user can't use. This is **cosmetic** - the orchestrator filter above is the real boundary; the UI hint just avoids showing a control that would be silently dropped.

@@ -7,8 +7,7 @@
 <p align="center">
   <strong>Your AI chat. Your hardware. Your data.</strong><br>
   A privacy-first, self-hosted LLM chat server with hybrid RAG, sandboxed code execution,
-  and web search - built on a radical idea: <strong>no central database</strong>.
-  Every user is a folder on disk.
+  and web search.
 </p>
 
 <p align="center">
@@ -62,11 +61,11 @@ Point `src/Gert.Api/appsettings.json` at your model server and IdP:
 {
   "Gert": {
     "OpenAI": {
-      "BaseUrl": "http://192.168.1.50:8000",   // NO trailing /v1
+      "BaseUrl": "http://openaicompatible:8000",   // NO trailing /v1
       "ChatModelId": "qwen36",
       "EmbeddingModelId": "bge-m3"
     },
-    "Search": { "BaseUrl": "http://localhost:8080" }
+    "Search": { "BaseUrl": "http://localhost:8080" } // SearXNG compatible instance
   },
   "Auth": { "Authority": "https://id.example.com", "Audience": "gert-api" },
   "Storage": { "DataRoot": "/data", "ExpectedIssuer": "https://id.example.com" }

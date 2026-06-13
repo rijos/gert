@@ -358,12 +358,14 @@ def _scenario_artifact(app: AppPage, role: str) -> None:
         expect(tab).to_be_visible(timeout=15000)
         expect(tab).to_contain_text("demo.html")
         expect(app.canvas.html_iframe).to_be_visible(timeout=15000)
-    else:
-        # `user` carries gert_tools "rag search ask_user fetch memory": make_artifact is refused at
-        # execution time, the card errors, and the turn still finishes.
-        app.thread.open_activity()
-        expect(app.thread.errored_tool_cards.first).to_be_visible(timeout=15000)
     expect(app.thread.last_bot_body).to_contain_text("in the canvas", timeout=15000)
+    if role != "admin":
+        # `user` lacks the make_artifact entitlement: the call is dropped by the
+        # ceiling and stays silent toward the user (auth.md - the boundary does not
+        # leak into the conversation). The turn still finishes, but nothing
+        # surfaces: no canvas tab, no tool card.
+        expect(app.canvas.tab("html")).to_have_count(0)
+        expect(app.thread.tool_cards).to_have_count(0)
 
 
 def _scenario_memory(app: AppPage, role: str) -> None:
@@ -401,9 +403,9 @@ def _scenario_todos(app: AppPage, role: str) -> None:
     from playwright.sync_api import expect
 
     app.composer.send("plan the homelab upgrade")
-    app.thread.open_activity()
-    expect(app.thread.tool_cards.first).to_be_visible(timeout=15000)
     if role == "admin":
+        app.thread.open_activity()
+        expect(app.thread.tool_cards.first).to_be_visible(timeout=15000)
         # The todo card auto-opens; three rows with their statuses.
         expect(app.thread.todo_rows).to_have_count(3, timeout=15000)
         expect(app.thread.todo_rows.first).to_contain_text("Order the new SSD")
@@ -415,11 +417,13 @@ def _scenario_todos(app: AppPage, role: str) -> None:
         expect(app.thread.root.locator(".tcard .pbar")).to_have_attribute(
             "aria-valuenow", "1"
         )
-    else:
-        # `user` carries gert_tools "rag search ask_user fetch memory": set_todos is refused at
-        # execution time, the card errors, and the turn still finishes.
-        expect(app.thread.errored_tool_cards.first).to_be_visible(timeout=15000)
     expect(app.thread.last_bot_body).to_contain_text("Plan is up", timeout=15000)
+    if role != "admin":
+        # `user` lacks the todo entitlement: set_todos is dropped by the ceiling and
+        # stays silent toward the user (auth.md). The turn finishes, but no card and
+        # no checklist surface.
+        expect(app.thread.tool_cards).to_have_count(0)
+        expect(app.thread.todo_rows).to_have_count(0)
 
 
 def _scenario_clock(app: AppPage, role: str) -> None:
@@ -429,17 +433,19 @@ def _scenario_clock(app: AppPage, role: str) -> None:
     from playwright.sync_api import expect
 
     app.composer.send("what time is it")
-    app.thread.open_activity()
-    card = app.thread.tool_cards.first
-    expect(card).to_be_visible(timeout=15000)
     if role == "admin":
+        app.thread.open_activity()
+        card = app.thread.tool_cards.first
+        expect(card).to_be_visible(timeout=15000)
         app.thread.expand_tool_card(card)
         expect(app.thread.tool_stdout.first).to_contain_text(
             re.compile(r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} \(UTC"), timeout=15000
         )
-    else:
-        expect(app.thread.errored_tool_cards.first).to_be_visible(timeout=15000)
     expect(app.thread.last_bot_body).to_contain_text("on the card above", timeout=15000)
+    if role != "admin":
+        # `user` lacks the clock entitlement: get_datetime is dropped by the ceiling
+        # and stays silent toward the user (auth.md) - the turn finishes, no card.
+        expect(app.thread.tool_cards).to_have_count(0)
 
 
 SCENARIOS = {
