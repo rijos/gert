@@ -25,6 +25,9 @@ export const Modal = component({
     .modal-scrim{position:fixed; inset:0; background:var(--scrim); backdrop-filter:blur(2px); z-index:70; display:grid; place-items:center;}
     .modal{background:var(--surface); border:1px solid var(--line); border-radius:var(--r); box-shadow:var(--shadow-modal); padding:var(--sp-5); width:min(440px,calc(100vw - 32px)); animation:rise var(--t-slow) var(--ease) backwards; position:relative;}
     .modal h2{font-family:var(--display); font-size:var(--fs-lg); font-weight:600; margin-bottom:6px;}
+    /* a URL/destination shown for confirmation: break long tokens so it stays
+       inside the dialog, and scroll once even the wrapped form is too tall */
+    .modal .modal-url{font-family:var(--mono); font-size:var(--fs-sm); line-height:1.55; color:var(--ink); background:var(--surface-2); border:1px solid var(--line); border-radius:var(--r-sm); padding:9px 11px; overflow-wrap:anywhere; max-height:40vh; overflow-y:auto;}
     .modal .modal-close{position:absolute; top:12px; right:12px;}
     /* the footer reads as a region - same hairline language as .t-docs-wrap */
     .modal .modal-acts{display:flex; gap:8px; justify-content:flex-end; margin-top:18px; padding-top:14px; border-top:1px solid var(--line);}

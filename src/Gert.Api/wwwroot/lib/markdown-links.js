@@ -24,9 +24,15 @@ export const attachLinkConfirm = (host) => {
     const href = a.getAttribute("href");
     if (!href || !isExternal(href)) return; // "#", in-doc anchors, relative: silent
     e.preventDefault();
+    // The destination as inert text (textContent, never parsed). A long or
+    // hostile URL wraps inside the .modal-url box and, in the extreme, scrolls -
+    // so it can never push the dialog out of bounds.
+    const url = document.createElement("div");
+    url.className = "modal-url";
+    url.textContent = href;
     Modal({
       title: t("Open external link?"),
-      body: href,
+      body: url,
       confirmLabel: t("Open"),
       onConfirm: () => window.open(href, "_blank", "noopener,noreferrer"),
     });
