@@ -54,10 +54,12 @@ const ATTR_ALLOW = {
   h4: new Set(["id"]), h5: new Set(["id"]), h6: new Set(["id"]),
 };
 // MathML presentation attributes smath may set (inert; no href/src sink).
+// mathcolor carries a charset-validated colour from \color/\textcolor - a
+// presentation attribute, never an inline style (see lib/smath.js applyColor).
 const MML_ATTR = new Set([
   "display", "mathvariant", "stretchy", "fence", "accent", "displaystyle",
   "width", "linethickness", "largeop", "movablelimits", "lspace", "rspace",
-  "columnalign", "class",
+  "columnalign", "class", "mathcolor",
 ]);
 
 const SAFE_IMG = /^(#|data:image\/(?:png|jpe?g|gif|webp|avif|bmp|x-icon);base64,)/i;

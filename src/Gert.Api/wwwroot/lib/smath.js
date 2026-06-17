@@ -401,6 +401,13 @@ function cmdAtom(P, name) {
     return mi(s, { mathvariant: 'normal' });
   }
   if (VARIANTS[name]) return applyVariant(parseArg(P), VARIANTS[name]);
+  // --- colour: \textcolor{c}{x} / \color{c}{x}. MathML `mathcolor` is a
+  //     presentation ATTRIBUTE (not an inline style="", which our style-src CSP
+  //     would strip — the very reason KaTeX is out), so the colour survives. The
+  //     value is charset-validated in applyColor before it reaches the attribute.
+  if (name === 'color' || name === 'textcolor') { const c = rawText(P); return applyColor(parseArg(P), c); }
+  // --- chemistry (mhchem): \ce{…}/\pu{…} lower onto the SAME MathML leaf set.
+  if (name === 'ce' || name === 'pu') return parseChem(rawText(P));
   // --- spacing
   if (SPACES[name] != null) return txt('mspace', '', { width: SPACES[name] });
   // --- delimiters: \left … \right
@@ -476,6 +483,160 @@ function applyVariant(node, variant) {
     return d;
   };
   return visit(node);
+}
+
+// Wrap a node so its descendants inherit a colour, via the inert MathML
+// `mathcolor` attribute. The value is validated to a #hex or a plain colour name
+// (no punctuation, bounded length) — anything else renders UNCOLOURED rather than
+// letting a model-authored string reach the attribute.
+const COLOR_OK = /^(#[0-9a-fA-F]{3,8}|[a-zA-Z]{1,24})$/;
+function applyColor(node, color) {
+  const c = String(color ?? '').trim();
+  return COLOR_OK.test(c) ? el('mrow', [node], { mathcolor: c }) : node;
+}
+
+/* ===== mhchem (\ce / \pu): a small chemistry sub-language ======================
+ * Same stance as the math path: a linear left-to-right scan lowers the formula
+ * onto the SAME closed MathML leaf set (mi/mn/mo/msub/msup/msubsup/mover/
+ * munderover/mrow), so it inherits every safety property — no element or
+ * attribute outside the math allow-list, no inline style, bounded by the shared
+ * MAX_NODES/MAX_DEPTH caps (the whole input is already under MAX_TEX). This is a
+ * PRACTICAL subset: element subscripts, parenthesised groups, leading
+ * stoichiometric coefficients, charges (^ and trailing +/-), the
+ * ->/<-/<=>/<-> arrows with optional [over]/[under] labels, +, states, hydrate
+ * dots and $…$ math escapes. Isotope prescripts and bond ornaments degrade to
+ * plain glyphs — never to a new element. */
+const CHEM_ARROWS = [
+  ['<=>>', '⇌'], ['<<=>', '⇌'], ['<=>', '⇌'], ['<->', '↔'], ['->', '→'], ['<-', '←'],
+];
+function matchArrow(s, i) {
+  for (const [tok, ch] of CHEM_ARROWS) if (s.startsWith(tok, i)) return { len: tok.length, ch };
+  return null;
+}
+
+function parseChem(src) {
+  const s = String(src ?? '');
+  const n = s.length;
+  let i = 0;
+  let nodes = 0;
+  const state = { over: false };
+  const bumpc = () => { if (++nodes > MAX_NODES) state.over = true; };
+
+  // Attach a sub/sup to the most recent atom, combining into <msubsup> as needed.
+  const attach = (out, kind, sc) => {
+    if (!out.length) out.push(mrow([]));
+    const b = out[out.length - 1];
+    if (kind === 'sub') {
+      out[out.length - 1] = b.tag === 'msup'
+        ? el('msubsup', [b.children[0], sc, b.children[1]])
+        : el('msub', [b, sc]);
+    } else {
+      out[out.length - 1] = b.tag === 'msub'
+        ? el('msubsup', [b.children[0], b.children[1], sc])
+        : el('msup', [b, sc]);
+    }
+    bumpc();
+  };
+
+  // A script body: a {group}, or a run of digits with an optional trailing sign.
+  const readScript = (depth) => {
+    if (s[i] === '{') { i++; const inner = seq('}', depth + 1); if (s[i] === '}') i++; return row(inner); }
+    let j = i;
+    while (j < n && s[j] >= '0' && s[j] <= '9') j++;
+    let sign = null;
+    if (s[j] === '+' || s[j] === '-') { sign = s[j]; j++; }
+    const digits = s.slice(i, sign ? j - 1 : j);
+    i = j;
+    const parts = [];
+    if (digits) parts.push(mn(digits));
+    if (sign) parts.push(mo(sign === '-' ? '−' : '+'));
+    return parts.length ? row(parts) : mrow([]);
+  };
+
+  // A backslash command inside chemistry: known symbols only; else inert literal.
+  const cmd = (name) => {
+    if (GREEK[name]) return mi(GREEK[name]);
+    if (IDENTS[name]) return mi(IDENTS[name]);
+    if (OPS[name]) return mo(OPS[name]);
+    if (name === 'cdot') return mo('⋅');
+    if (SPACES[name] != null) return txt('mspace', '', { width: SPACES[name] });
+    return mtext('\\' + name);
+  };
+
+  // $…$ inside \ce escapes to the math grammar (and inherits its bounds).
+  const mathEscape = () => {
+    let j = i;
+    while (j < n && s[j] !== '$') j++;
+    const inner = s.slice(i, j);
+    i = j < n ? j + 1 : j;
+    return row(parseRun(parser(lex(inner)), false));
+  };
+
+  // An arrow glyph with optional [over] and [over][under] labels.
+  const arrowNode = (ch, depth) => {
+    const a = mo(ch, { stretchy: 'true' });
+    let over = null, under = null;
+    if (s[i] === '[') { i++; over = row(seq(']', depth + 1)); if (s[i] === ']') i++; }
+    if (s[i] === '[') { i++; under = row(seq(']', depth + 1)); if (s[i] === ']') i++; }
+    if (over && under) return el('munderover', [a, under, over]);
+    if (over) return el('mover', [a, over]);
+    return a;
+  };
+
+  // Parse a run until a stop char (or end). `space` tracks whether a separator
+  // preceded the cursor, which decides coefficient-vs-subscript and charge-vs-plus.
+  function seq(stop, depth) {
+    const out = [];
+    if (depth > MAX_DEPTH) return out;
+    let space = true;
+    while (i < n && !state.over) {
+      const c = s[i];
+      if (stop && stop.indexOf(c) !== -1) break;
+      if (c === ' ' || c === '\t' || c === '\n' || c === '\r') { i++; space = true; continue; }
+      const ar = matchArrow(s, i);
+      if (ar) { i += ar.len; out.push(arrowNode(ar.ch, depth)); space = false; bumpc(); continue; }
+      if (/[A-Za-z]/.test(c)) {                                  // element/state letters -> upright
+        let j = i; while (j < n && /[A-Za-z]/.test(s[j])) j++;
+        out.push(mi(s.slice(i, j), { mathvariant: 'normal' })); i = j; space = false; bumpc(); continue;
+      }
+      if (c >= '0' && c <= '9') {                                // count: subscript after an atom, else coefficient
+        let j = i; while (j < n && ((s[j] >= '0' && s[j] <= '9') || s[j] === '.')) j++;
+        const num = s.slice(i, j); i = j;
+        if (!space && out.length) attach(out, 'sub', mn(num));
+        else { out.push(mn(num)); bumpc(); }
+        space = false; continue;
+      }
+      if (c === '^' || c === '_') { i++; attach(out, c === '^' ? 'sup' : 'sub', readScript(depth)); space = false; continue; }
+      if (c === '+' || c === '-') {                              // charge (after an atom) vs operator/bond
+        const after = s[i + 1] || '';
+        if (!space && out.length && !/[A-Za-z([]/.test(after)) { i++; attach(out, 'sup', mo(c === '-' ? '−' : '+')); space = false; continue; }
+        i++; out.push(mo(c === '-' ? '−' : '+')); space = c === '+'; bumpc(); continue;
+      }
+      if (c === '=') { i++; out.push(mo('=')); space = false; bumpc(); continue; }   // double bond
+      if (c === '#') { i++; out.push(mo('≡')); space = false; bumpc(); continue; }   // triple bond
+      if (c === '*') { i++; out.push(mo('⋅')); space = true; bumpc(); continue; }    // addition-compound dot
+      if (c === '/') { i++; out.push(mo('/')); space = false; bumpc(); continue; }
+      if (c === '(' || c === '[') {                              // delimiter group -> one subscriptable unit
+        const close = c === '(' ? ')' : ']'; i++;
+        const inner = seq(close, depth + 1); if (s[i] === close) i++;
+        out.push(el('mrow', [mo(c, { stretchy: 'false' }), ...inner, mo(close, { stretchy: 'false' })]));
+        space = false; bumpc(); continue;
+      }
+      if (c === '{') { i++; const inner = seq('}', depth + 1); if (s[i] === '}') i++; out.push(row(inner)); space = false; bumpc(); continue; }
+      if (c === ')' || c === ']' || c === '}') { i++; continue; }   // stray close -> drop
+      if (c === '\\') {
+        let j = i + 1; while (j < n && /[a-zA-Z]/.test(s[j])) j++;
+        const name = j > i + 1 ? s.slice(i + 1, j) : s[i + 1] || '';
+        i = j > i + 1 ? j : i + 2;
+        out.push(cmd(name)); space = false; bumpc(); continue;
+      }
+      if (c === '$') { i++; out.push(mathEscape()); space = false; continue; }
+      out.push(mo(c)); i++; space = false; bumpc();                // anything else -> inert glyph
+    }
+    return out;
+  }
+
+  return row(seq(null, 0));
 }
 
 // Wrap a node in stretchy fences -> mrow( mo(open), node, mo(close) ).

@@ -149,10 +149,12 @@ source, so adversarial input can't recurse or balloon the node count) that is **
 unknown control word degrades to a visible `<mtext>` rather than failing or emitting anything live.
 The browser renders the resulting `<math>` **natively** (MathML Core: Firefox, Chromium 109+, WebKit).
 The **only** attributes the converter ever sets are inert MathML presentation hints
-(`mathvariant`/`stretchy`/`fence`/`accent`/`displaystyle`/`movablelimits`/`width`) - there is **no
-`href`/`src`/`style` sink**, so a model formula cannot navigate, fetch, or script, and it emits **no
-inline `style`** (so nothing relies on `'unsafe-inline'` and `style-src 'self'` holds). No third-party
-code touches model output. Verified in the markdown gallery (`test_markdown_gallery_all_self_checks_pass`
+(`mathvariant`/`stretchy`/`fence`/`accent`/`displaystyle`/`movablelimits`/`width`/`mathcolor`) - there is
+**no `href`/`src`/`style` sink**, so a model formula cannot navigate, fetch, or script, and it emits **no
+inline `style`** (so nothing relies on `'unsafe-inline'` and `style-src 'self'` holds). `\color`/`\textcolor`
+set `mathcolor` - a presentation *attribute*, charset-validated to a `#hex`/colour-name before it lands,
+never a `style` - and `\ce`/`\pu` (an mhchem subset) lower chemistry onto the **same** closed allow-list,
+so neither escapes it. No third-party code touches model output. Verified in the markdown gallery (`test_markdown_gallery_all_self_checks_pass`
 in `tools/smoke/tests/test_components.py`), which renders a battery of inputs through the real
 `lib/markdown.js` + `lib/smath.js` in a browser and self-checks the F4 stance, anchors, and native math.
 

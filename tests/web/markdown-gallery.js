@@ -40,6 +40,7 @@ const FEATURES = [
   ["inline + display math (smath -> MathML)", "Euler's identity $e^{i\\pi} + 1 = 0$, and a display sum:\n\n$$\\sum_{k=1}^{n} k = \\frac{n(n+1)}{2}$$"],
   ["math vs currency", "It costs $5 today, $10 tomorrow (not math), but $a^2 + b^2 = c^2$ is."],
   ["LaTeX \\(..\\) / \\[..\\] delimiters", "Inline \\(e^{i\\pi} + 1 = 0\\), and a display block:\n\n\\[ \\int_0^\\infty e^{-x^2}\\,dx = \\frac{\\sqrt{\\pi}}{2} \\]"],
+  ["chemistry (\\ce) + colour (\\color)", "Combustion $\\ce{2H2 + O2 -> 2H2O}$, an ion $\\ce{SO4^2-}$, a complex $\\ce{[Fe(CN)6]^3-}$, and colour $\\textcolor{red}{x} + \\color{blue}{y}$.\n\n$$\\ce{CaCO3 ->[\\Delta] CaO + CO2 ^}$$"],
 ];
 
 // Each: [label, source, fn(host) -> {ok, detail}]. Functional (non-security)
@@ -78,6 +79,15 @@ const FUNCTIONAL = [
     pass(h.querySelector(".md-math-block math") != null, "\\[..\\] -> block <math>")],
   ["mid-line \\[..\\] stays a literal escape", "see \\[not math\\] here", (h) =>
     pass(h.querySelector("math") == null && h.textContent.includes("[not math]"), "inline \\[ is a bracket escape, not display math")],
+  ["\\ce builds a subscript (mhchem)", "$\\ce{H2O}$", (h) =>
+    pass(h.querySelector(".md-math msub") != null && h.textContent.includes("H"), "H2O -> H<msub>2</msub>O")],
+  ["\\ce maps -> to an arrow glyph", "$\\ce{2H2 + O2 -> 2H2O}$", (h) =>
+    pass(h.querySelector(".md-math math") != null && h.textContent.includes("→"), "-> rendered as the → arrow")],
+  ["\\color sets CSP-safe mathcolor", "$\\textcolor{red}{x}$", (h) => {
+    const m = h.querySelector(".md-math [mathcolor]");
+    return pass(m?.getAttribute("mathcolor") === "red" && h.querySelectorAll(".md-math [style]").length === 0,
+      "mathcolor=red attribute, never an inline style");
+  }],
   // --- Goal B: the 4 documented edge cases, pinned to the stricter single form.
   // classifyLine() runs ONE LINE_KINDS test per kind and feeds BOTH dispatch and
   // the paragraph-interrupt, so each of these resolves to a single CommonMark-
@@ -148,6 +158,10 @@ const SECURITY = [
     return pass(sink.length === 0 && h.querySelectorAll(".md-math a, .md-math img").length === 0,
       "MathML allow-list drops href/src/onerror; no <a>/<img> forged from TeX");
   }],
+  ["\\color value is charset-validated", "$\\textcolor{red;background:url(javascript:alert(1))}{x}$", (h) =>
+    pass(h.querySelectorAll(".md-math [mathcolor], .md-math [style]").length === 0, "punctuated colour dropped -> no mathcolor/style attr")],
+  ["raw HTML inside \\ce is inert", "$\\ce{<script>alert(1)</script>}$", (h) =>
+    pass(h.querySelectorAll("script").length === 0 && h.querySelector(".md-math math") != null, "\\ce content -> inert MathML, no live <script>")],
   ["cross-origin image neutralized", "![pixel](https://picsum.photos/seed/a/40/40)", (h) =>
     pass(h.querySelector("img").getAttribute("src") === "#", "foreign-origin img -> # (no doomed fetch)")],
   ["protocol-relative image neutralized", "![x](//evil.example/p.png)", (h) =>

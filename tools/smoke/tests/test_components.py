@@ -275,11 +275,11 @@ def test_markdown_gallery_all_self_checks_pass(page: Page, base_url: str) -> Non
     )
 
     # counts guard against a check silently disappearing from the battery
-    # (securityCount/functionalCount bumped by the Goal B classifier cards: 1 new
-    # math sink-attr security card + 4 new edge-case functional cards.)
-    assert result["featureCount"] == 27
-    assert result["securityCount"] == 18
-    assert result["functionalCount"] == 18
+    # (\ce/\color renderer support added: 1 feature card, 2 security cards - a
+    # charset-validated colour + inert \ce HTML - and 3 functional cards.)
+    assert result["featureCount"] == 28
+    assert result["securityCount"] == 20
+    assert result["functionalCount"] == 21
 
     # sanitizeUrl chokepoint (exported, used by callers elsewhere)
     s = result["sanitize"]

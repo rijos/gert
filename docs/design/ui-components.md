@@ -331,8 +331,11 @@ construction (full rationale in [security](security.md#3-findings--remediations)
   `<math>` natively (MathML Core: Firefox, Chromium 109+/Jan 2023, WebKit). There is no `trust`/`throwOnError` to set
   because there is no third-party engine: unknown control words degrade to a visible `<mtext>`, and the **only**
   attributes set are inert MathML presentation hints (`mathvariant`, `stretchy`, `fence`, `accent`, `displaystyle`,
-  `movablelimits`, `width`) - **no `href`/`src`/`style` sink**, so math cannot navigate, fetch, or script, and emits
-  no inline `style` (CSP-safe under `style-src 'self'`, nothing to mirror or strip). The converter recognises math
+  `movablelimits`, `width`, `mathcolor`) - **no `href`/`src`/`style` sink**, so math cannot navigate, fetch, or
+  script, and emits no inline `style` (CSP-safe under `style-src 'self'`, nothing to mirror or strip). Colour
+  (`\color`/`\textcolor`) rides the `mathcolor` *attribute* (charset-validated, never a `style`), and chemistry
+  (`\ce`/`\pu`, an mhchem subset: subscripts, charges, `->`/`<=>` arrows, states) lowers onto the **same** leaves -
+  both inside the closed allow-list, not exceptions to it. The converter recognises math
   only on a **closed** delimiter pair and length-caps the inline scan, so streaming stays literal-until-complete.
   `\[...\]` is **block-level only** (a line that opens with `\[`), so a mid-line `\[escaped\]` stays a literal bracket
   escape, not math ([security F4](security.md#3-findings--remediations)). Because no vendored third-party file touches
