@@ -1,7 +1,8 @@
 using System.Buffers.Binary;
 using System.Security.Cryptography;
 using System.Text;
-using Gert.Service.External;
+using Gert.Chat;
+using Gert.Model;
 
 namespace Gert.Testing.Fakes;
 

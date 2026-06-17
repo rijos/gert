@@ -8,9 +8,10 @@ This is the *conventions* half of the front-end docs; the *map* half - where fil
 the four layers, the dev/release pipeline - is [ui-components.md](ui-components.md).
 
 Dependencies: [VanJS](https://vanjs.org) and [VanX](https://vanjs.org/x) (reactive
-objects/arrays), **vendored** in `lib/van.js` / `lib/van-x.js` and imported by the bare
-specifiers `van` / `van-x` through the import map in `index.html` (no npm -
-[ui-components section 6](ui-components.md#6-devrelease-pipeline-no-npm)).
+objects/arrays), **vendored** in `lib/van.js` / `lib/van-x.js` and imported by their
+absolute same-origin paths (`/lib/van.js` / `/lib/van-x.js`) - there is no import map and
+no bare specifiers, so the CSP stays a plain `script-src 'self'` with nothing to keep in
+sync (no npm - [ui-components section 6](ui-components.md#6-devrelease-pipeline-no-npm)).
 
 ---
 
@@ -88,7 +89,8 @@ export const ConvoItem = component({
   (`ConvoItem`), so call sites read like JSX: `ConvoItem(convo)`. Imperative *openers*
   - functions that mount transient UI rather than return a node - are camelCase verbs:
   `openSettings()`, `openModelSettings(model)`, `toast(msg)` (see section 10).
-- **Named exports only** - no `default`. Keeps imports greppable and the import map flat.
+- **Named exports only** - no `default`. Keeps imports greppable and the absolute-path
+  import lines uniform.
 - The **root element gets one root class, unique app-wide**, declared in the component's
   `css` string; **all of the component's CSS is namespaced under it.** A short form is
   the norm (`tool-card` -> `.tcard`, `dropdown` -> `.dd`, `convo-item` -> `.convo`); the
@@ -368,10 +370,9 @@ export const rename = async (id, title) => {
 The pieces:
 
 - **`services/http.js` is the only fetch.** It exposes `get / post / patch / put /
-  del / upload` (JSON in/out, snake_case wire shape), plus the streaming transports:
+  del / upload` (JSON in/out, snake_case wire shape), plus the live transport:
   `sse(path)` - an async generator parsing the EventSource wire format off a fetch
-  body so the Bearer header rides along - and `ws(path)` - the token as the second
-  `Sec-WebSocket-Protocol` entry, never in the URL ([security F2](security.md#f2---token-storage)).
+  body so the Bearer header rides along, never in the URL ([security F2](security.md#f2---token-storage)).
 - **Failures throw `ApiError { status, message, body }`** - shaped once in `http.js`'s
   `handle()`, so callers can branch on `e.status` (`services/chat.js` turns a 409 into
   "the previous response is still finishing").
@@ -476,22 +477,20 @@ The rules that bite:
 
 ---
 
-## 9. Streaming - one cursor, three transports
+## 9. Streaming - one cursor, two transports
 
 `services/chat.js` is the canonical async service: read it before writing anything
 stream-shaped. The contract ([rest-api -> Receiving a turn](rest-api.md#receiving-a-turn)):
 POST the message (**202 + detached turn** - the server keeps generating even if every
 client disconnects), then consume the conversation's TurnEvent stream over the best
-transport available - **WebSocket, then SSE, then range polling** - all sharing one
-`seq` cursor so a fallback resumes without gaps or duplicates.
+transport available - **SSE, then range polling** - both sharing one `seq` cursor so a
+fallback resumes without gaps or duplicates.
 
 ```js
 // services/chat.js - the ladder. Each consumer returns true = turn finished,
-// false = transport unavailable, fall through. One cursor spans all three.
+// false = transport unavailable, fall through. One cursor spans both.
 const consume = async (pid, cid, after, assistant, signal) => {
   const cursor = { seq: after };
-  if (signal?.aborted) return;
-  if (await consumeWs(pid, cid, cursor, assistant, signal)) return;
   if (signal?.aborted) return;
   if (await consumeSse(pid, cid, cursor, assistant, signal)) return;
   if (signal?.aborted) return;
@@ -570,18 +569,31 @@ its finding.
 - **No HTML-string sinks, ever.** No `innerHTML` / `outerHTML` /
   `insertAdjacentHTML` / `DOMParser` / `document.write` anywhere in the SPA - the tree
   is grep-clean today; keep it that way. Rich text renders **only** through
-  `lib/markdown.js` (+ `lib/highlight.js` for code), which build real DOM nodes from
-  `textContent` ([F4](security.md#f4---markdown-sanitization)). The single
-  markup-bearing sink permitted is a sandboxed `iframe.srcdoc` (next rule).
+  `lib/markdown.js` - a thin facade over the `lib/render/` engine (`lines.js` block parse,
+  `inline.js` inline scan, `dom.js` the structural renderer, `url.js` the URL/slug
+  helpers) - whose structural renderer emits markdown HTML through **one guarded
+  `createEl(ns, tag, attrs)` chokepoint over a closed per-`(ns, tag)` allow-list** (a
+  fail-closed throw on anything else) and **calls** the `MdMath`/`MdCode` VanJS leaves for
+  the math/code sub-languages. Those leaves wrap `lib/smath.js` (TeX -> native MathML) and
+  `lib/highlight.js` (code tokens) and build real DOM nodes from `textContent` with
+  `createElement`/`createElementNS` - **never `van.tags`** (no allow-list) and never an
+  HTML string ([F4](security.md#f4---markdown-sanitization)). The single markup-bearing
+  sink permitted is a sandboxed `iframe.srcdoc` (next rule). External-link confirmation
+  lives *outside* the pure renderer: `lib/markdown-links.js`'s `attachLinkConfirm(host)`
+  is one delegated click listener per rendered body that opens Gert's `Modal` before any
+  external link leaves the app (wired in `message.js` and `markdown-artifact.js`) - the
+  renderer stays a pure text-to-DOM function.
 - **Untrusted markup runs only in a sandboxed iframe - never with
   `allow-same-origin`.** HTML/SVG artifacts go through the separate-origin ticket
   path or `lib/artifact-sandbox.js`'s `srcdoc` + per-document CSP
   ([F3](security.md#f3---svghtml-artifact-rendering)). `sandbox="allow-scripts"` at
   most; adding `allow-same-origin` would hand the artifact the app origin and the
   token. SVG counts as HTML here - it carries `<script>`/`onload`.
-- **Every data-derived `href` goes through `sanitizeUrl()`** in `lib/markdown.js` -
-  the single chokepoint that rejects `javascript:`/`data:`/`vbscript:` and de-smuggles
-  control characters. Don't re-derive `^https?:` checks inline.
+- **Every data-derived `href` goes through `sanitizeUrl()`** - single-sourced in
+  `lib/render/url.js` (and re-exported by `lib/markdown.js`): the one chokepoint that
+  rejects `javascript:`/`data:`/`vbscript:` and de-smuggles control characters / `&colon;`.
+  `isExternal` (for the link-confirm / `rel`/`target` decision) lives there too; don't
+  re-derive `^https?:` checks inline (`markdown-links.js` imports it, doesn't copy it).
 - **`blob:` URLs follow create -> use -> revoke.** The model is
   `artifact.js#downloadArtifact`: mint, click, `URL.revokeObjectURL` immediately. A
   blob URL left alive pins its bytes and is an openable same-origin document - never
@@ -590,8 +602,7 @@ its finding.
 - **The token lives in memory only.** A module variable in `services/auth.js`, read
   by `services/http.js` and nobody else - no component or state module imports
   `getToken` ([F2](security.md#f2---token-storage)). It never touches `localStorage` /
-  `sessionStorage` / cookies / URLs / logs; WS auth rides the subprotocol, SSE rides a
-  fetch header. `localStorage` is for non-secret prefs only, keys namespaced `gert.*`.
+  `sessionStorage` / cookies / URLs / logs; SSE auth rides a fetch header. `localStorage` is for non-secret prefs only, keys namespaced `gert.*`.
 - **Styling stays CSP-clean by construction.** Component CSS through `adoptStyles`
   (Constructable Stylesheets are exempt from `style-src`), inline values through the
   `style:` prop (CSSOM). No inline `<style>`, `<script>`, or event-handler attributes
@@ -707,7 +718,7 @@ The one-line version: components in `components/<area>/kebab-case.js`, stores in
   `addX` returns the reactive node; row shapes documented in a top comment.
 - Errors = `attempt(fn, "Couldn't ...")` for user actions, bare `.catch` for background;
   nothing user-initiated fails silently; await when the next step depends on success.
-- Streaming = WS -> SSE -> poll over one `seq` cursor; abort = detach = terminal;
+- Streaming = SSE -> poll over one `seq` cursor; abort = detach = terminal;
   ownership checks in `finally`; components only ever bind to state.
 - Overlays = imperative `Modal` (returns `close`) / `toast` / `openX`; snapshot
   primitives re-rendered by the caller's binding; z-ladder 30/50/60/70/80.

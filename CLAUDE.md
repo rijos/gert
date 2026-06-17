@@ -15,9 +15,29 @@ code comments cite docs by section, so keep both ends accurate.
 ## Repo map
 
 - `src/` - inward-only references (enforced by an architecture test):
-  host (`Gert.Api`) -> adapters (`Gert.Authentication`, `Gert.Database.Sqlite`,
-  `Gert.External`, `Gert.Storage`) -> `Gert.Service` (all business logic, host-agnostic) ->
-  `Gert.Model` (POCOs, no deps).
+  host (`Gert.Api`) -> adapters -> capability CONTRACTS -> `Gert.Service` (all business
+  logic, host-agnostic) -> `Gert.Model` (POCOs, no deps). A capability splits into a
+  **contracts** assembly (the ports + any generic, impl-agnostic wiring; depends only on
+  `Gert.Model`, so the service layer may reference it) and one or more **per-impl leaf**
+  adapters: `Gert.Chat` (chat/embeddings ports + the generic provider catalog/factory) with
+  impl `Gert.Chat.OpenAI`; `Gert.Storage` (`IObjectStore` port + `StorageOptions`)
+  with impl `Gert.Storage.Local`; `Gert.Database` (`user.db`/`chat.db` ports, keyed by
+  `Gert:Database:Type`) with impl `Gert.Database.Sqlite`; `Gert.Rag` (the vector/RAG index
+  port `IRagStore`/`IRagIndexProvider`, keyed by `Gert:Rag:Type` - decoupled from the SQL
+  engine) with impl `Gert.Rag.Sqlite` (sqlite-vec + FTS5). The
+  remaining adapters: `Gert.Tools` (web search + sandbox backends **and** the built-in `ITool`
+  implementations under `Builtin/`; the `IWebSearch`/`IWebFetcher`/`IPythonSandbox` ports stay
+  in `Gert.Service.External`), `Gert.Ingestion` (the md/txt + isolated pdf/docx text
+  extractors), `Gert.Authentication`. `Gert.Service` keeps the tool *contracts*
+  (`ITool`/`ToolRegistry`) + the turn orchestration, not the tool impls.
+- **Capability-plugin pattern**: a config-selected capability (chat, the database engine, the
+  RAG engine, web search, the sandbox) is a self-registering plugin keyed by its `Type` token
+  (`Gert.Model.Plugins.ICapabilityPlugin`). Each impl exposes an `AddGert<Capability><Impl>`
+  registrar (e.g. `AddGertChatOpenAI` / `AddGertDatabaseSqlite` / `AddGertRagSqlite`) that registers its
+  builder keyed by `Type`; the generic factory dispatches by config with no central `switch`.
+  `Gert.Api/Program.cs` is the composition root that registers the plugins it wants available.
+  The contracts-vs-impl split is enforced by `PluginArchitectureTests` (plugins live only in
+  the impl leaf; contracts never reference the impl).
 - `src/Gert.Api/wwwroot/` - the SPA source: no npm, no build step, native ES modules.
 - `tests/` - xUnit suites + shared fakes (`Gert.Testing`); real temp SQLite for repository tests.
 - `tools/smoke/` - Python + Playwright E2E and mock upstreams (uv-managed).
@@ -32,7 +52,6 @@ code comments cite docs by section, so keep both ends accurate.
 - `make smoke-auth` - boot Python mocks + the FakeE2E host, run the API auth smoke (no browsers).
 - `make serve-mock [ROLE=admin|user|limited]` - run the real app against mock upstreams and
   open it in your own browser (mints a dev JWT; no Pocket ID needed).
-- `make serve-mock-vllm VLLM_URL=http://host:8000/v1` - same, but chat hits a real vLLM.
 
 ## Rules that bite
 

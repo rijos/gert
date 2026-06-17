@@ -2,7 +2,7 @@
 // (configuration section 8). Sits above the conversation list. A skinned ui/dropdown
 // (searchable) with a "+ New project" footer that opens the create modal;
 // each row carries hover rename/delete affordances (the API's PATCH/DELETE).
-import van from "van";
+import van from "/lib/van.js";
 import { component } from "../../lib/component.js";
 import { Dropdown } from "../ui/dropdown.js";
 import { Modal } from "../ui/modal.js";

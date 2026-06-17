@@ -2,8 +2,8 @@
 // stream, and the streaming flag. Keyed collections use van-x reactive so a
 // streamed token or a single tool-card update re-renders just that node.
 // No DOM, no fetch - services/* mutate this.
-import van from "van";
-import { reactive } from "van-x";
+import van from "/lib/van.js";
+import { reactive } from "/lib/van-x.js";
 
 // projects + active project
 export const projects = reactive([]); // [{ id, name }]
@@ -48,9 +48,9 @@ export const toggleCanvas = () => {
   CANVAS_TOOL_IDS.forEach((id) => (tools[id] = on));
 };
 
-// Thinking is no longer a per-conversation toggle - it's a property of the
-// selected chat provider (pick a thinking-vs-instruct provider in the picker).
-// The model's reasoning still streams + renders (see `reasoning` on messages).
+// Thinking is a property of the selected chat provider, not a per-conversation
+// toggle (pick a thinking-vs-instruct provider in the picker). The model's
+// reasoning streams + renders regardless (see `reasoning` on messages).
 
 // context usage of the conversation's last completed turn (prompt+completion
 // tokens of the final model round) - feeds the composer's ring.

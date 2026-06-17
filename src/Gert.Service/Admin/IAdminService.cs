@@ -18,7 +18,7 @@ public interface IAdminService
     Task<UserSummary?> GetUserAsync(string key, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// <c>rm -rf /data/users/{key}</c> - removes all of that user's data. Does
+    /// Erase all of that user's data across its stores (databases + blobs). Does
     /// not touch the IdP account.
     /// </summary>
     Task<bool> DeleteUserAsync(string key, CancellationToken cancellationToken = default);

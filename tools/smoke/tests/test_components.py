@@ -2,9 +2,9 @@
 
 A VanJS component is a function returning a real DOM node whose reactivity needs a
 real DOM, so we mount the ACTUAL, unmocked module in the browser and assert. The
-Fake host serves ``tests/web/harness.html`` at ``/tests/harness.html`` (import map
-+ a ``__mount`` helper) on the same origin so ``/components/...`` and ``/state/...``
-imports resolve.
+Fake host serves ``tests/web/harness.html`` at ``/tests/harness.html`` (a
+``__mount`` helper) on the same origin so ``/components/...`` and ``/state/...``
+imports resolve (absolute same-origin paths, no import map).
 
 Browser test: needs ``playwright install``. Caveats from section 8: reuse one context
 (see conftest), and VanJS batches DOM updates on a microtask - ``await`` a tick
@@ -49,8 +49,8 @@ def test_composer_renders_send_and_attach(page: Page, base_url: str) -> None:
     )
     expect(page.locator(".composer textarea")).to_be_visible()
     expect(page.locator(".composer button.send")).to_be_visible()
-    # Attach + Tools (the per-conversation thinking toggle is gone - thinking is a
-    # provider preset selected in the model picker now).
+    # Attach + Tools only - thinking is a provider preset in the model picker,
+    # not a per-conversation composer toggle.
     expect(page.locator(".composer button.cbtn")).to_have_count(2)
 
 
@@ -59,7 +59,7 @@ def test_tool_card_expands(page: Page, base_url: str) -> None:
     page.evaluate(
         """async () => {
             const { ToolCard } = await import('/components/main/tool-card.js');
-            const { reactive } = await import('van-x');
+            const { reactive } = await import('/lib/van-x.js');
             // a van-x reactive tool entry, exactly the shape state/chat.js pushes,
             // so card.open toggling drives a real re-render.
             const card = reactive({
@@ -95,7 +95,7 @@ def test_tool_card_renders_todo_checklist(page: Page, base_url: str) -> None:
     page.evaluate(
         """async () => {
             const { ToolCard } = await import('/components/main/tool-card.js');
-            const { reactive } = await import('van-x');
+            const { reactive } = await import('/lib/van-x.js');
             const card = reactive({
                 kind: 'todo', status: 'done', label: 'Updating the todo list',
                 tag: 'todo', query: '', hits: [], stdout: '', open: true,
@@ -129,7 +129,7 @@ def test_todo_card_progress_tracks_status_changes(page: Page, base_url: str) -> 
     page.evaluate(
         """async () => {
             const { ToolCard } = await import('/components/main/tool-card.js');
-            const { reactive } = await import('van-x');
+            const { reactive } = await import('/lib/van-x.js');
             const card = reactive({
                 kind: 'todo', status: 'done', label: 'Updating the todo list',
                 tag: 'todo', query: '', hits: [], stdout: '', open: true,
@@ -182,7 +182,7 @@ def test_tool_card_renders_stdout(page: Page, base_url: str) -> None:
     page.evaluate(
         """async () => {
             const { ToolCard } = await import('/components/main/tool-card.js');
-            const { reactive } = await import('van-x');
+            const { reactive } = await import('/lib/van-x.js');
             const card = reactive({
                 kind: 'clock', status: 'done', label: 'Checking the date & time',
                 tag: 'clock', query: '', hits: [], todos: [], open: true,
@@ -244,7 +244,7 @@ def test_tool_card_error_state(page: Page, base_url: str) -> None:
     page.evaluate(
         """async () => {
             const { ToolCard } = await import('/components/main/tool-card.js');
-            const { reactive } = await import('van-x');
+            const { reactive } = await import('/lib/van-x.js');
             const card = reactive({
                 kind: 'todo', status: 'error', label: 'Updating the todo list',
                 tag: 'todo', query: '', hits: [], stdout: '', todos: [], open: false,
@@ -253,3 +253,40 @@ def test_tool_card_error_state(page: Page, base_url: str) -> None:
         }"""
     )
     expect(page.locator(".tcard")).to_have_class(re.compile(r"\berr\b"))
+
+
+def test_markdown_gallery_all_self_checks_pass(page: Page, base_url: str) -> None:
+    # The markdown gallery renders a battery of CommonMark/GFM/math inputs through
+    # the REAL lib/markdown.js (+ lib/smath.js -> native MathML) and self-checks
+    # the F4 security stance, heading anchors, syntax highlight, and math in a real
+    # browser - the coverage the headless unit tests can't give (native <math>
+    # layout, the no-import-map CSP boot). It exposes a machine-readable verdict.
+    page.goto(f"{base_url}/tests/markdown-gallery.html")
+    page.wait_for_function("() => window.__galleryReady === true")
+    result = page.evaluate("() => window.__galleryResult")
+
+    # surface WHICH card failed (not just a bare False) for a fast diagnosis
+    fails = page.evaluate(
+        "() => [...document.querySelectorAll('.verdict.fail')].map(n => n.textContent)"
+    )
+    assert result["securityAllPass"] is True, f"security self-checks failed: {fails}"
+    assert result["functionalAllPass"] is True, (
+        f"functional self-checks failed: {fails}"
+    )
+
+    # counts guard against a check silently disappearing from the battery
+    # (securityCount/functionalCount bumped by the Goal B classifier cards: 1 new
+    # math sink-attr security card + 4 new edge-case functional cards.)
+    assert result["featureCount"] == 27
+    assert result["securityCount"] == 18
+    assert result["functionalCount"] == 18
+
+    # sanitizeUrl chokepoint (exported, used by callers elsewhere)
+    s = result["sanitize"]
+    assert s["js"] == "#"
+    assert s["jsSpaced"] == "#"
+    assert s["jsTab"] == "#"
+    assert s["httpOk"] == "http://ok/path"
+    assert s["rel"] == "/relative"
+    assert s["anchor"] == "#a"
+    assert s["protoRel"] == "//host"

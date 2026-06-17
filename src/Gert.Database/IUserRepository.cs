@@ -10,11 +10,11 @@ namespace Gert.Database;
 /// another user's rows.
 ///
 /// <para>
-/// Holds the durable, transactional replacements for the former JSON sidecars: the
-/// username (for the admin scan), the user's <see cref="UserSettings"/>, and the
-/// project registry (<see cref="ProjectMeta"/> rows). Per-project conversation and
-/// RAG data live in their own <c>chat.db</c>/<c>rag.db</c>, reached through
-/// <see cref="IChatDatabaseProvider"/>/<see cref="IRagDatabaseProvider"/>.
+/// Holds the user's durable, transactional state: the username (for the admin scan),
+/// the user's <see cref="UserSettings"/>, and the project registry
+/// (<see cref="ProjectMeta"/> rows). Per-project conversation data
+/// lives in its own <c>chat.db</c> (<see cref="IChatDatabaseProvider"/>); the RAG index
+/// is a separate capability (<c>Gert.Rag.IRagIndexProvider</c>).
 /// </para>
 /// </summary>
 public interface IUserRepository : IAsyncDisposable

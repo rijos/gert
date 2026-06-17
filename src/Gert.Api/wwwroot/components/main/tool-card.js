@@ -1,7 +1,7 @@
 // components/main/tool-card.js - one tool-call card inside a message's
 // activity block: expandable, done state, doc-hits, query, stdout, todo
 // checklist. Binds to one reactive tool entry on a message.
-import van from "van";
+import van from "/lib/van.js";
 import { component } from "../../lib/component.js";
 import { Icon } from "../../icons/icons.js";
 import { ProgressBar } from "../ui/progress-bar.js";

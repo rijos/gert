@@ -64,7 +64,7 @@
       <li><strong>Five built-in tools</strong> - document search, web search (SearXNG), sandboxed Python (gVisor), a model-managed todo list, and a clock - gated per user by a JWT entitlement.</li>
       <li><strong>Artifacts canvas</strong> - named code fences become persistent canvas tabs with live HTML preview.</li>
       <li><strong>Projects &amp; memory</strong> - isolated workspaces, each with its own chats, documents, and memory notes.</li>
-      <li><strong>Detached turns</strong> - generation runs on a background worker and survives client disconnects; resume over WebSocket, SSE, or polling from an exact event cursor.</li>
+      <li><strong>Detached turns</strong> - generation runs on a background worker and survives client disconnects; resume over SSE or polling from an exact event cursor.</li>
       <li><strong>Passkey login</strong> - OIDC Authorization Code + PKCE against Pocket ID; RS256-pinned JWT validation. See <a href="security.html">Security Model</a>.</li>
       <li><strong>Hardened by structure</strong> - IDOR is structurally impossible, uploads parse in an unprivileged subprocess, the web fetcher is SSRF-guarded, and the SPA ships with a strict CSP and zero npm dependencies.</li>
     </ul>

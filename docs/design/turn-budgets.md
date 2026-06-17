@@ -119,7 +119,7 @@ by precedent.
 | **Detached turns** ([chat-and-tools](chat-and-tools.md#detached-turns)) - generation survives disconnects by design | No human is guaranteed to be attached; a server-side bound must exist. `MaxTurnDuration` is that bound today. |
 | **Shared, multi-user GPU** | One user's runaway turn starves others - budgets are also a fairness control ([security F10](security.md#3-findings--remediations)). |
 | **Turns are serialized per conversation** (the seq single-writer invariant; the 409) | Any steering design must keep ONE writer: the *running turn* must consume injected messages; a second concurrent turn is not an option. |
-| **Prefix-cache friendliness** ([configuration](../installation/configuration.md#3-gertopenai---the-embeddings-upstream--shared-chat-resilience)) | Budget/steering injections must append at the prompt *tail* (the `TodoTool.CrossTurnReminder` precedent) - never mutate the system prompt or history mid-turn. |
+| **Prefix-cache friendliness** ([configuration](../installation/configuration.md#3-gertembeddings---the-embeddings-upstream)) | Budget/steering injections must append at the prompt *tail* (the `TodoTool.CrossTurnReminder` precedent) - never mutate the system prompt or history mid-turn. |
 | **Persist-then-publish event log** | Steering messages need seq allocation and durable rows like any other event; the UI replays them on reload. |
 
 ## 4. The candidate mechanisms
@@ -195,13 +195,7 @@ Phased, smallest-honest-step first:
   for the user-facing budget; wall-clock already proxies total occupancy.
 - **Default for `MaxTurnTokens`?** Needs measurement against real qwen3.6 todo-flow turns
   (the 2026-06-07 sessions are a starting corpus).
-- ~~**UI surface on budget trip**~~ - settled by Open WebUI's precedent and implemented:
-  budget-refused calls, timeouts, and tool defects all carry their error text on the tool
-  card (`ToolResultEvent.Error` live, `ThreadToolCall.Error` on reload). This is only for
-  tools the user *is* entitled to that then fail at runtime; an *entitlement* drop is the
-  silent exception - it surfaces no card at all (see
-  [auth - the claim is the ceiling](auth.md#enforcement---the-claim-is-the-ceiling)).
 - **Steering x thinking models** - injected tail messages interact with a thinking
-  provider's reasoning replay (`chat_template_kwargs.preserve_thinking` in `Gert:Providers`
-  - [installation section providers](../installation/configuration.md#4-gertproviders---the-chat-provider-catalog));
+  provider's reasoning replay (`chat_template_kwargs.preserve_thinking` in `Gert:Chat:Providers`
+  - [installation section providers](../installation/configuration.md#4-gertchatproviders---the-chat-provider-catalog));
   verify against vLLM 0.22 before committing to 4c's placement.

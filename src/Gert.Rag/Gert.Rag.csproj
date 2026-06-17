@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- RAG capability CONTRACTS + generic wiring shared by every RAG engine
+       (Gert.Rag.Sqlite today, e.g. Gert.Rag.Qdrant tomorrow): the index port
+       (IRagIndexProvider / IRagStore), its row DTOs (RetrievedChunk, ChunkInsert),
+       and the engine-selection plugin seam (RagOptions + IRagEngineBuilder +
+       RagEngineFactory + the generic AddGertRag registrar). RAG is its own capability,
+       decoupled from the SQL database engine - a vector index is not naturally a SQL
+       concern. Concrete engines live in a per-impl leaf assembly. Consumed by
+       Gert.Service (never the reverse); nothing in here references a concrete driver. -->
+
+  <ItemGroup>
+    <ProjectReference Include="..\Gert.Model\Gert.Model.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The generic AddGertRag registrar + the keyed-plugin engine factory: DI
+         abstractions (keyed services + IServiceCollection) and configuration binding only.
+         No concrete driver - that belongs to the engine plugins. -->
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions"
+                      Version="$(MicrosoftExtensionsDIAbstractionsVersion)" />
+    <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions"
+                      Version="$(MicrosoftExtensionsOptionsVersion)" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions"
+                      Version="$(MicrosoftExtensionsConfigVersion)" />
+  </ItemGroup>
+
+</Project>

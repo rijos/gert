@@ -5,6 +5,7 @@ using Gert.Model.Dtos;
 using Gert.Service.Conversations;
 using Gert.Service.Tests.Validation;
 using Gert.Service.Validation;
+using Gert.Testing.Fakes;
 using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
 using Xunit;

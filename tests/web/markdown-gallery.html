@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Gert markdown renderer gallery</title>
+
+    <!--
+      Visual + automatable gallery for lib/markdown.js (testing.md section 8).
+      The Fake host serves this at /tests/markdown-gallery.html (the dev-only
+      mapping of tests/web/ -> /tests/, gated by Gert:Web:TestHarness), so the
+      real, unmocked renderer imports on the SAME ORIGIN: /lib/markdown.js and
+      /lib/highlight.js. Open it to eyeball the CommonMark/GFM battery, or drive
+      it from Playwright (page.goto + page.evaluate) like test_components.py.
+
+      The bootstrap is an EXTERNAL module (NOT inline): the host CSP is
+      `script-src 'self'`, so an inline <script> would be blocked. See
+      markdown-gallery.js.
+    -->
+
+    <!-- the real styles, so the rendered nodes carry their app look -->
+    <link rel="stylesheet" href="/styles/tokens.css" />
+    <link rel="stylesheet" href="/styles/base.css" />
+
+    <!-- External CSS (not inline): app CSP is `style-src 'self'`. -->
+    <link rel="stylesheet" href="/tests/markdown-gallery.css" />
+  </head>
+  <body>
+    <div id="gallery-root"></div>
+    <!-- External module (NOT inline): CSP is `script-src 'self'` + import-map hash. -->
+    <script type="module" src="/tests/markdown-gallery.js"></script>
+  </body>
+</html>

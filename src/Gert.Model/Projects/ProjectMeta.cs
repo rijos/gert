@@ -1,10 +1,10 @@
 namespace Gert.Model.Projects;
 
 /// <summary>
-/// On-disk project configuration - the <c>projects/{pid}/meta.json</c> shape
-/// <c>{ id, name, description, instructions, model_id?, tools?, params?,
-/// reply_language?, created_at, updated_at }</c> (configuration.md section 2.4).
-/// Config lives in the filesystem, not the databases.
+/// A project's configuration: a registry row in <c>user.db</c>
+/// <c>{ id, name, description, instructions, defaults (model_id?, tools?,
+/// reply_language?), created_at, updated_at }</c> (configuration.md section 2.4).
+/// The project's <i>data</i> is its folder; its <i>config</i> is this row.
 /// </summary>
 public sealed record ProjectMeta
 {

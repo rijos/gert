@@ -1,12 +1,13 @@
 using System.Text;
 using FluentAssertions;
-using Gert.Database;
+using Gert.Chat;
 using Gert.Model;
 using Gert.Model.Rag;
+using Gert.Rag;
 using Gert.Service.Documents;
 using Gert.Service.External;
-using Gert.Service.Storage;
 using Gert.Service.Validation;
+using Gert.Storage;
 using NSubstitute;
 using Xunit;
 
@@ -34,7 +35,7 @@ public sealed class MemoryServiceTests
     [Fact]
     public async Task List_orders_pinned_first_then_newest()
     {
-        var repo = Substitute.For<IRagRepository>();
+        var repo = Substitute.For<IRagStore>();
         repo.ListDocumentsAsync(DocumentKind.Memory, Arg.Any<CancellationToken>())
             .Returns(new[]
             {
@@ -44,7 +45,7 @@ public sealed class MemoryServiceTests
                 Doc("new-pinned", pinned: true, daysAgo: 2),
             });
 
-        var provider = Substitute.For<IRagDatabaseProvider>();
+        var provider = Substitute.For<IRagIndexProvider>();
         provider.OpenAsync(
                 Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(repo);

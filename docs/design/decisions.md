@@ -18,23 +18,25 @@ Split (recommended) or merged `gert.db`. See [Per-user storage -> Why two databa
 
 - **Decision:** **Two databases - `chat.db` + `rag.db`, one pair per project.** Lets "forget my documents" wipe a project's RAG without touching its chat history, and keeps vector-index rebuilds/`VACUUM` off the chat write path. The extra wiring is negligible at ~20 users. (The pair lives *inside* each project folder - see [decision section 7](#7-project-model--isolation).)
 
-## 3. Folder key
+## 3. User key
 
-`sha256(iss + sub)` (recommended) vs. raw `sub` vs. email. See [Per-user storage -> Resolving paths](storage-and-data.md#resolving-paths).
+`sha256(iss + sub)` (recommended) vs. raw `sub` vs. email. The one stable, store-agnostic
+identity every backend scopes by - no filesystem, object store, or database knows "this user"
+natively. See [Per-user storage -> Resolving paths](storage-and-data.md#resolving-paths).
 
-- **Decision:** **`sha256(iss + "\n" + sub)` lowercase hex**, with a fail-closed provisioning gate; what's on disk is descriptive, never a gate. *(The descriptive record has since moved from a `meta.json` sidecar into `user.db` - [section 9](#9-userdb---structured-user-state-is-a-database-not-json-sidecars); the anchoring rationale below is unchanged.)*
-  - **Anchor on `sub`, not email or username.** `sub` is Pocket ID's stable, opaque UUID - *never renamed, never recycled*. Email is **mutable** (a rename orphans the folder) and **recycled** (a reassigned address would inherit the prior owner's data - the exact reuse attack we want to avoid); username is renamed. `sub` is also no less trusted: every claim in a signature-validated JWT is equally trusted, `sub` is just the most stable.
-  - **Namespace by issuer.** `sub` is only unique *within* an issuer, so the key hashes `iss + "\n" + sub`. With one IdP today this is moot; it makes a second IdP collision-proof for free.
-  - **Hashing** gives a fixed-length, path-safe, traversal-proof folder name for any value the IdP emits; the opaque name is covered by the stored username (`user.db`) and `GET /api/admin/users` for key->user mapping.
+- **Decision:** **`sha256(iss + "\n" + sub)` lowercase hex**, with a fail-closed provisioning gate; what the store holds is descriptive (the username in `user.db`, [section 9](#9-userdb---structured-user-state-is-a-database-not-json-sidecars)), never a gate.
+  - **Anchor on `sub`, not email or username.** `sub` is Pocket ID's stable, opaque UUID - *never renamed, never recycled*. Email is **mutable** (a rename orphans the user's data) and **recycled** (a reassigned address would inherit the prior owner's data - the exact reuse attack we want to avoid); username is renamed. `sub` is also no less trusted: every claim in a signature-validated JWT is equally trusted, `sub` is just the most stable.
+  - **Namespace by issuer.** `sub` is only unique *within* an issuer, so the key hashes `iss + "\n" + sub`. With one IdP this is moot; it makes a second IdP collision-proof for free.
+  - **Hashing** gives a fixed-length, traversal-proof name that is safe as a path *or* an object key for any value the IdP emits (a directory, an object-key prefix, a namespace); the opaque name is covered by the stored username (`user.db`) and `GET /api/admin/users` for key->user mapping.
   - **Collision is not the threat** - `sha256` makes cross-user collision infeasible regardless of input; the real risk is *identifier reuse*, addressed by anchoring on `sub` (above).
-  - **Validate before touching disk** ([principle #6](principles.md)): provisioning asserts `iss` == configured authority, `aud` matches, and `sub` is present + within a bounded charset/length **before** any path-derive or `mkdir`. No well-formed identity -> no folder.
-  - **Trust the validated JWT past the gate** ([security F12](security.md#3-findings--remediations)): the folder key derives from the token and nothing else, so no per-request disk-side re-check exists. The username stored in `user.db` is purely descriptive - key->user mapping for `GET /api/admin/users`, refreshed from the token when it changes - and each database's `PRAGMA user_version` anchors migrations ([section 9](#9-userdb---structured-user-state-is-a-database-not-json-sidecars)).
+  - **Validate before touching any store** ([principle #6](principles.md)): provisioning asserts `iss` == configured authority, `aud` matches, and `sub` is present + within a bounded charset/length **before** any key is derived or any store is opened. No well-formed identity -> no stored state.
+  - **Trust the validated JWT past the gate** ([security F12](security.md#3-findings--remediations)): the user key derives from the token and nothing else, so no per-request store-side re-check exists. The username stored in `user.db` is purely descriptive - key->user mapping for `GET /api/admin/users`, refreshed from the token when it changes - and each database's `PRAGMA user_version` anchors migrations ([section 9](#9-userdb---structured-user-state-is-a-database-not-json-sidecars)).
 
 ## 4. Token lifetime / revocation
 
-Strategy for immediate off-boarding. See [Operations -> User lifecycle](operations.md#user-lifecycle---remove-a-user--remove-a-folder).
+Strategy for immediate off-boarding. See [Operations -> User lifecycle](operations.md#user-lifecycle---remove-a-user).
 
-- **Decision:** **Accept Pocket ID's ~1-hour access token as the revocation window; no denylist.** Pocket ID does not support a short, independently-configurable access-token lifetime ([issue #792](https://github.com/pocket-id/pocket-id/issues/792), closed *not planned*), so the 10-15 min approach from the Authentik-era draft isn't available. Refresh tokens (with rotation) still drive the SPA's silent renewal. Off-boarding = deactivate in Pocket ID, effective within ~1h. **We deliberately do *not* add a `sub`-denylist:** it is shared, mutable, per-instance auth state that would break running **multiple GERT instances** (a denied `sub` on instance A wouldn't be known to instance B without a shared store), defeating horizontal scaling. GERT stays **stateless** - every instance validates a token purely from the JWT + Pocket ID's JWKS, nothing shared. If sub-hour revocation ever becomes a hard requirement, the right answer is a shorter token lifetime at the IdP (or a shared-store check introduced explicitly), not in-process state.
+- **Decision:** **Accept Pocket ID's ~1-hour access token as the revocation window; no denylist.** Pocket ID does not support a short, independently-configurable access-token lifetime ([issue #792](https://github.com/pocket-id/pocket-id/issues/792), closed *not planned*), so a short fixed lifetime (e.g. 10-15 min) isn't available. Refresh tokens (with rotation) still drive the SPA's silent renewal. Off-boarding = deactivate in Pocket ID, effective within ~1h. **We deliberately do *not* add a `sub`-denylist:** it is shared, mutable, per-instance auth state that would break running **multiple GERT instances** (a denied `sub` on instance A wouldn't be known to instance B without a shared store), defeating horizontal scaling. GERT stays **stateless** - every instance validates a token purely from the JWT + Pocket ID's JWKS, nothing shared. If sub-hour revocation ever becomes a hard requirement, the right answer is a shorter token lifetime at the IdP (or a shared-store check introduced explicitly), not in-process state.
 
 ## 5. OCR
 
@@ -52,27 +54,25 @@ SSE (`.../documents/events`) vs. simple polling. See [REST API -> Documents](res
 
 How a user's data is organised: one flat store, or scoped workspaces? See [Configuration -> projects](configuration.md#2-projects).
 
-- **Decision:** **Per-project isolation, "default" not "global".** Each project is its own folder with its own `chat.db` + `rag.db` + memory, fully isolated - no cross-project search, no shared/global corpus. The initial, always-present project is **`default`** (the landing project); creating a project just makes another isolated folder. This nests [principle #2](principles.md) (filesystem isolation) and [principle #5](principles.md) (deletion is `rm -rf`) one level down. *Rejected:* a "global + local" blended scope - it reintroduced cross-corpus query fusion and a `use_global` flag for little gain over simply switching projects.
+- **Decision:** **Per-project isolation, "default" not "global".** Each project is its own folder with its own `chat.db` + `rag.db` + memory, fully isolated - no cross-project search, no shared/global corpus. The initial, always-present project is **`default`** (the landing project); creating a project just makes another isolated folder. This nests [principle #2](principles.md) (filesystem isolation) and [principle #5](principles.md) (deletion drops a store's data, not a row) one level down. *Rejected:* a "global + local" blended scope - it reintroduced cross-corpus query fusion and a `use_global` flag for little gain over simply switching projects.
 
 
 
 ## 8. Storage backend seam - everything non-database through IObjectStore
 
-Where do config sidecars (`meta.json`, `settings.json`, `projects/{pid}/meta.json`) live: direct file I/O, or the object-store seam? (Supersedes the earlier "config files are direct file I/O in the adapter" stance.)
+Where do the non-database bytes under a user's tree (uploads, memory bodies) live: direct file I/O in the adapter, or one storage-backend seam?
 
-- **Decision:** **`IObjectStore` is the single storage-backend seam - every byte under a user's tree that is not a database file flows through it**: uploads (`files/...`), memory bodies (`memory/...`), and the JSON config sidecars alike. A config file is just a small object; treating it specially bought nothing once S3/Azure-Blob backends were on the table.
-- **Amended by [section 9](#9-userdb---structured-user-state-is-a-database-not-json-sidecars):** the JSON config sidecars no longer exist - structured user state moved into `user.db`. `IObjectStore` remains the seam for the *genuine* blobs (uploads, memory bodies) and the coarse scope lifecycle (`DeleteScopeAsync` = the `rm -rf`; the admin footprint listing); everything else below still stands.
+- **Decision:** **`IObjectStore` is the single storage-backend seam - every byte under a user's tree that is not a database file flows through it**: uploads (`files/...`) and memory bodies (`memory/...`). One seam means an S3/Azure-Blob backend is a drop-in swap. (Structured user state is **not** blob territory - it lives in `user.db`, [section 9](#9-userdb---structured-user-state-is-a-database-not-json-sidecars).)
   - **Scopes:** an `ObjectScope` is the user root or one project root; keys are scope-relative and traversal-guarded. The scope carries only the opaque `sha256(iss+sub)` key (derivation = `StorageKeys`, core policy in `Gert.Service`).
-  - **Atomic PUT is a port contract** - a reader never observes a partial object. Cloud backends give it natively; `LocalObjectStore` stages to a temp sibling + renames. This retires the truncated-`meta.json` failure class at the storage layer.
-  - **Lifecycle = scope ops:** delete user/project = `DeleteScopeAsync` (the `rm -rf` of principle #5); "emptied, never removed" = `DeletePrefixAsync("")`; the admin scan = `ListUserKeysAsync` + `ListEntriesAsync` (maps 1:1 to S3 listing).
-  - **Databases are NOT objects.** `chat.db`/`rag.db` need real local file handles (WAL/mmap) and stay with `IDatabaseProvider`; local whole-tree deletes release pooled handles via the `IDatabaseHandleReleaser` port. *Consequence:* a remote object backend paired with SQLite is a split deployment (objects remote, dbs local) - delete/export compose both stores; the full remote-storage payoff arrives together with a server database (`Gert.Database.Postgres`).
-  - **Backends:** `Gert.Storage.LocalObjectStore` today; S3/Azure Blob = a sibling `Gert.Storage.*` project + one DI swap. `ObjectStoreUserStore` (the `IUserStore` impl) is written purely against the port and never changes with the backend.
+  - **Atomic PUT is a port contract** - a reader never observes a partial object. Cloud backends give it natively; `LocalObjectStore` stages to a temp sibling + renames.
+  - **Lifecycle is independent stores, orchestrated by the service.** Deleting a user/project is not one store's job: the **service** drops the database halves (the providers' `DeleteUserAsync` / `DeleteProjectAsync` - the structured-database and RAG engines each removing their own files/rows) and then the artifact half (`DeleteScopeAsync`), in that order so a local whole-tree wipe never races an open db handle. "Emptied, never removed" = the providers' project delete + `DeletePrefixAsync("")`; the admin scan = `ListUserKeysAsync` + `ListEntriesAsync` (maps 1:1 to S3 listing). `IObjectStore` knows nothing about databases - it owns only the artifact bytes.
+  - **Databases are NOT objects.** `chat.db`/`rag.db` need real local file handles (WAL/mmap) and stay with the database providers, which own destroying their own data: a file-backed engine drops its pooled handles + unlinks its db files, a server-backed engine deletes the user/project rows; the storage layer never references `Gert.Database`. *Consequence:* a remote object backend paired with SQLite is a split deployment (objects remote, dbs local) - delete/export compose both stores; the full remote-storage payoff arrives together with a server database (`Gert.Database.Postgres`).
+  - **Backends:** `Gert.Storage.LocalObjectStore` today; S3/Azure Blob = a sibling `Gert.Storage.*` project + one DI swap - it is written purely against `IObjectStore` and never changes when the backend does.
 
 ## 9. user.db - structured user state is a database, not JSON sidecars
 
-Where do the username (admin scan), user settings, and per-project config live: JSON sidecar
-files (`meta.json`, `settings.json`, `projects/{pid}/meta.json`) on the object store, or a
-database? (Amends the sidecar half of [section 8](#8-storage-backend-seam---everything-non-database-through-iobjectstore).)
+Where do the username (admin scan), user settings, and per-project config live: small JSON
+files on the object store, or a database?
 
 - **Decision:** **A third per-user database - `user.db` at the user root** - holds all
   structured user state: a single-row `user_meta` (username, refreshed from the token when it
@@ -82,17 +82,19 @@ database? (Amends the sidecar half of [section 8](#8-storage-backend-seam---ever
   [storage-and-data section user.db](storage-and-data.md#userdb).
   - **Why:** transactional and torn-write-proof by construction - the atomic-PUT/healing dance
     a JSON sidecar needs ([section 8](#8-storage-backend-seam---everything-non-database-through-iobjectstore),
-    [section 3](#3-folder-key)) simply disappears; reads/writes are queryable and migratable
+    [section 3](#3-user-key)) simply disappears; reads/writes are queryable and migratable
     (`PRAGMA user_version`, `Migrations/user/*.sql`); and provisioning collapses to "open the
     database" - first open creates and migrates it, the provisioner seeds the `default`
     project row, and the steady-state request path stays read-only.
   - **Consequences:** `IObjectStore` is demoted to genuine blobs (uploads, memory bodies) plus
-    scope lifecycle and the admin footprint listing; `IUserStore` no longer carries config.
-    The provider seam splits per database - `IUserDatabaseProvider` / `IChatDatabaseProvider` /
-    `IRagDatabaseProvider` - and the admin scan opens each folder's `user.db` for the username.
+    the artifact half of the lifecycle and the admin footprint listing. The provider seam
+    splits per database - `IUserDatabaseProvider` / `IChatDatabaseProvider` (and the RAG index
+    is its own capability, `Gert.Rag.IRagIndexProvider`) - and each owns destroying its own data
+    (`DeleteUserAsync` / `DeleteProjectAsync`); the service orchestrates the db + blob deletes. The admin scan opens
+    each folder's `user.db` for the username.
   - **Unchanged:** everything stays inside the user's folder, so principle #1 (the API owns
-    nothing persistent of its own) and principle #5 (deletion is `rm -rf`) hold exactly as
-    before; the project *data* boundary is still the project folder
+    nothing persistent of its own) and principle #5 (deletion drops a store's data wholesale)
+    hold exactly as before; the project *data* boundary is still the project folder
     ([configuration section 2](configuration.md#2-projects)).
   - *Rejected:* keeping sidecars on `IObjectStore` (atomic-rename semantics papered over torn
     writes but left config unqueryable and the healing path alive); merging this state into a
@@ -129,9 +131,8 @@ server-side default set, or nothing?
 How are queued `TurnJob`s executed: one global serial consumer, or per-conversation keyed
 parallelism? See [chat-and-tools section detached turns](chat-and-tools.md#detached-turns).
 
-- **Decision (settled - [strengthening-plan S8](strengthening-plan.md#s8---keyed-turn-parallelism-with-an-atomic-409-gate-one-combined-change),
-  shipped as one combined change):** **an engine-enforced per-conversation gate plus bounded
-  keyed parallelism.**
+- **Decision (settled - shipped as one combined change):** **an engine-enforced per-conversation
+  gate plus bounded keyed parallelism.**
   - **(a) The atomic gate.** A partial unique index
     `ux_messages_streaming ON messages(conversation_id) WHERE status='streaming'` makes the
     streaming-placeholder insert itself the gate: the planner persists the user row + the
@@ -171,3 +172,39 @@ parallelism? See [chat-and-tools section detached turns](chat-and-tools.md#detac
     detached work); parallelising without the gate (a duplicate streaming turn corrupts seq
     ordering and history - fail-closed loses), or shipping the gate without the lanes (closes
     a race nobody can hit and changes nothing user-visible).
+
+## 12. Deletion crash-consistency - a journal + idempotent forward recovery
+
+Erasing a user spans three independent stores - the structured-database engine
+(`user.db`/`chat.db`), the RAG engine (`rag.db`), and the object store (file/memory blobs) -
+which may even sit on separate roots ([configuration -> data root](../installation/configuration.md#8-auth--storage--gertdatabase--gertrag---identity-the-data-root-and-the-engines)).
+A crash between steps would leave a partial state, worst case **blobs (PII) left on disk after a
+"delete my account" the operator believed finished**. See
+[Operations -> User lifecycle](operations.md#user-lifecycle---remove-a-user).
+
+- **Decision:** **A write-ahead deletion journal + idempotent forward recovery (a saga, not a
+  transaction).** True ACID across a filesystem and a blob store isn't reachable, and a
+  distributed-transaction coordinator is far too much machinery for ~20 users. Instead the erase
+  is one guarded path (`IUserDataEraser`): **mark** the user owed in the `IDeletionJournal`
+  *before* touching any store, drop each store's data (database halves before blobs, every step
+  idempotent), then **clear** the mark *last* - only once every store is confirmed gone. A crash
+  anywhere leaves the mark set; replaying the idempotent erase converges to fully-deleted. Delete
+  has no meaningful undo, so recovery only ever rolls **forward**.
+  - **Where the mark lives:** one empty marker per owed key under
+    `{Storage:DataRoot}/.pending-deletions/{key}` (`LocalDeletionJournal`) - a **sibling of
+    `users/`**, so the user-tree wipe never takes it and it never shows up in the admin scan. It
+    holds only opaque, transient folder keys (no user data), so it is operational recovery state,
+    not a central user registry - [principle #1](principles.md) still holds.
+  - **Who replays it:** the `DeletionRecoveryService` hosted task on **startup** (covers a process
+    crash/restart) and the request-edge **provisioner gate** (covers a returning user whose
+    self-service delete was interrupted - it finishes the erase *before* re-provisioning, so a
+    fresh empty account never inherits stale residue). Both just re-run the eraser.
+  - **One erase path:** self-service account delete (`AccountService`), admin delete
+    (`AdminService`), and recovery all call the same `IUserDataEraser.EraseAsync(key)`, so the
+    guard and the db-before-blob ordering live in exactly one place.
+  - *Rejected:* a **trash-rename + reaper** (near-atomic *logical* delete locally, but `rename`
+    isn't atomic across roots and degrades to copy+delete on a remote object store - it breaks
+    exactly where the per-engine-root / remote-storage design is headed); **retry-only with no
+    journal** (relies on a human re-issuing the delete and silently orphans an abandoned partial).
+    Project deletion has the same shape and can adopt the same journal when needed; account
+    deletion carries the PII-residue stakes, so it goes first.

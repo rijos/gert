@@ -1,18 +1,17 @@
-using Gert.Service.Storage;
 using Microsoft.Data.Sqlite;
-using Microsoft.Extensions.Options;
 
 namespace Gert.Database.Sqlite;
 
 /// <summary>
-/// Opens and self-provisions SQLite connections for every Gert database
-/// (storage-and-data.md section connection management / lazy provisioning). Shared by the
-/// chat/rag/user providers so the open mechanics live in exactly one place: create
-/// the db file's parent directory, open with WAL + a 5s busy timeout + foreign keys
-/// ON, optionally load the native <b>sqlite-vec</b> extension (rag only), then apply
-/// the family's migrations <i>on the very connection being returned</i> - so the
-/// repository's own connection is the one that was migrated, with no extra opens and
-/// no memoised "already provisioned" state to keep coherent.
+/// Opens and self-provisions the SQLite databases this engine owns - <c>user.db</c> and
+/// per-project <c>chat.db</c> (storage-and-data.md section connection management / lazy
+/// provisioning). Shared by the user/chat providers so the open mechanics live in exactly one
+/// place: create the db file's parent directory, open with WAL + a 5s busy timeout + foreign
+/// keys ON, then apply the family's migrations <i>on the very connection being returned</i> - so
+/// the repository's own connection is the one that was migrated, with no extra opens and no
+/// memoised "already provisioned" state to keep coherent. (The RAG index is a separate
+/// capability with its own connection factory in <c>Gert.Rag.Sqlite</c> - this engine knows
+/// nothing about sqlite-vec.)
 ///
 /// <para>
 /// Creating the db file's parent directory is the one filesystem coupling, and it is
@@ -22,34 +21,14 @@ namespace Gert.Database.Sqlite;
 /// </summary>
 public sealed class SqliteConnectionFactory
 {
-    private readonly SqliteVecOptions _vecOptions;
-
-    /// <summary>Create the factory; <see cref="SqliteVecOptions"/> locates the <c>vec0</c> extension for rag opens.</summary>
-    public SqliteConnectionFactory(IOptions<SqliteVecOptions> vecOptions)
-    {
-        ArgumentNullException.ThrowIfNull(vecOptions);
-        _vecOptions = vecOptions.Value;
-    }
-
     /// <summary>
     /// Open <paramref name="dbPath"/> (creating it + its directory if absent) and
     /// apply the <paramref name="family"/> migrations. The caller owns + disposes
     /// the returned connection.
     /// </summary>
-    public Task<SqliteConnection> OpenAsync(string dbPath, string family, CancellationToken cancellationToken) =>
-        OpenCoreAsync(dbPath, family, loadVec: false, cancellationToken);
-
-    /// <summary>
-    /// As <see cref="OpenAsync"/>, but loads the <b>sqlite-vec</b> extension before
-    /// migrating - required for the <c>rag</c> family's <c>vec0</c> / FTS5 tables.
-    /// </summary>
-    public Task<SqliteConnection> OpenWithVecAsync(string dbPath, string family, CancellationToken cancellationToken) =>
-        OpenCoreAsync(dbPath, family, loadVec: true, cancellationToken);
-
-    private async Task<SqliteConnection> OpenCoreAsync(
+    public async Task<SqliteConnection> OpenAsync(
         string dbPath,
         string family,
-        bool loadVec,
         CancellationToken cancellationToken)
     {
         // mkdir the parent (idempotent) so ReadWriteCreate can materialise the file.
@@ -59,14 +38,7 @@ public sealed class SqliteConnectionFactory
             Directory.CreateDirectory(directory);
         }
 
-        var connectionString = new SqliteConnectionStringBuilder
-        {
-            DataSource = dbPath,
-            Mode = SqliteOpenMode.ReadWriteCreate,
-            Cache = SqliteCacheMode.Private,
-        }.ToString();
-
-        var connection = new SqliteConnection(connectionString);
+        var connection = new SqliteConnection(ConnectionString(dbPath));
         try
         {
             await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
@@ -76,12 +48,6 @@ public sealed class SqliteConnectionFactory
                 pragma.CommandText =
                     "PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000; PRAGMA foreign_keys=ON;";
                 await pragma.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
-            }
-
-            if (loadVec)
-            {
-                connection.EnableExtensions(true);
-                connection.LoadExtension(ResolveVecExtensionPath());
             }
 
             await SqliteMigrationRunner.ApplyAsync(connection, family, cancellationToken).ConfigureAwait(false);
@@ -96,12 +62,59 @@ public sealed class SqliteConnectionFactory
     }
 
     /// <summary>
-    /// The configured <see cref="SqliteVecOptions.VecExtensionPath"/>, or
-    /// <c>vec0.so</c> beside the running assembly (the csproj copies the vendored
-    /// extension into every consumer's output).
+    /// Drop the pooled connection handles <b>for these files only</b>, then unlink the given
+    /// database files (and their <c>-wal</c>/<c>-shm</c> sidecars) - the file-backed engine's
+    /// half of a delete. Open-per-use returns connections to Microsoft.Data.Sqlite's internal
+    /// pool, so a pooled handle would keep a deleted file alive and resurface stale rows after
+    /// re-provisioning; clearing each file's own pool first makes the unlink final. We clear
+    /// per file - never <c>ClearAllPools()</c> - so deleting one user/project never disturbs
+    /// another user's open connections (isolation, principle #2). The engine owns its own
+    /// files; the storage layer never reaches into it. Returns <see langword="true"/> if any
+    /// database file existed (idempotent).
     /// </summary>
-    private string ResolveVecExtensionPath() =>
-        string.IsNullOrWhiteSpace(_vecOptions.VecExtensionPath)
-            ? Path.Combine(AppContext.BaseDirectory, "vec0.so")
-            : _vecOptions.VecExtensionPath;
+    public bool DeleteDatabaseFiles(IEnumerable<string> dbPaths)
+    {
+        ArgumentNullException.ThrowIfNull(dbPaths);
+
+        var removed = false;
+        foreach (var dbPath in dbPaths)
+        {
+            // Close just this file's pooled handles (keyed by its connection string),
+            // leaving every other database's pool untouched.
+            ClearPoolFor(dbPath);
+
+            if (File.Exists(dbPath))
+            {
+                File.Delete(dbPath);
+                removed = true;
+            }
+
+            // WAL mode leaves -wal/-shm beside the db; take them with it.
+            foreach (var sidecar in new[] { dbPath + "-wal", dbPath + "-shm" })
+            {
+                if (File.Exists(sidecar))
+                {
+                    File.Delete(sidecar);
+                }
+            }
+        }
+
+        return removed;
+    }
+
+    /// <summary>The open/delete connection string for <paramref name="dbPath"/> - one definition so the pool key matches.</summary>
+    private static string ConnectionString(string dbPath) =>
+        new SqliteConnectionStringBuilder
+        {
+            DataSource = dbPath,
+            Mode = SqliteOpenMode.ReadWriteCreate,
+            Cache = SqliteCacheMode.Private,
+        }.ToString();
+
+    /// <summary>Clear only the connection pool for <paramref name="dbPath"/> (matched by its connection string).</summary>
+    private static void ClearPoolFor(string dbPath)
+    {
+        using var connection = new SqliteConnection(ConnectionString(dbPath));
+        SqliteConnection.ClearPool(connection);
+    }
 }

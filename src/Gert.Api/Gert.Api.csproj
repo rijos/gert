@@ -8,8 +8,14 @@
     <ProjectReference Include="..\Gert.Service\Gert.Service.csproj" />
     <ProjectReference Include="..\Gert.Authentication\Gert.Authentication.csproj" />
     <ProjectReference Include="..\Gert.Database.Sqlite\Gert.Database.Sqlite.csproj" />
+    <ProjectReference Include="..\Gert.Rag\Gert.Rag.csproj" />
+    <ProjectReference Include="..\Gert.Rag.Sqlite\Gert.Rag.Sqlite.csproj" />
     <ProjectReference Include="..\Gert.Storage\Gert.Storage.csproj" />
-    <ProjectReference Include="..\Gert.External\Gert.External.csproj" />
+    <ProjectReference Include="..\Gert.Storage.Local\Gert.Storage.Local.csproj" />
+    <ProjectReference Include="..\Gert.Chat\Gert.Chat.csproj" />
+    <ProjectReference Include="..\Gert.Chat.OpenAI\Gert.Chat.OpenAI.csproj" />
+    <ProjectReference Include="..\Gert.Tools\Gert.Tools.csproj" />
+    <ProjectReference Include="..\Gert.Ingestion\Gert.Ingestion.csproj" />
   </ItemGroup>
 
   <!-- Serilog NDJSON logging (operations.md section Logging format). Versions pinned

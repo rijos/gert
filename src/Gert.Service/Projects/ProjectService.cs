@@ -2,8 +2,10 @@ using Gert.Database;
 using Gert.Model;
 using Gert.Model.Dtos;
 using Gert.Model.Projects;
-using Gert.Service.Storage;
+using Gert.Model.Rag;
+using Gert.Rag;
 using Gert.Service.Validation;
+using Gert.Storage;
 
 namespace Gert.Service.Projects;
 
@@ -12,14 +14,15 @@ namespace Gert.Service.Projects;
 /// The project registry (id, name, description, instructions, defaults) lives in
 /// <c>user.db</c> via <see cref="IUserDatabaseProvider"/>; per-project conversation
 /// and document counts come from each project's <c>chat.db</c>/<c>rag.db</c>
-/// (<see cref="IChatDatabaseProvider"/>/<see cref="IRagDatabaseProvider"/>), which
-/// self-provision on open. Blob/database directory lifecycle (delete/empty) is the
-/// <see cref="IUserStore"/>'s. Identity comes only from <see cref="IUserContext"/>.
+/// (<see cref="IChatDatabaseProvider"/>/<see cref="IRagIndexProvider"/>), which
+/// self-provision on open. Delete/empty orchestrates the database half (the chat/rag
+/// providers' <c>DeleteProjectAsync</c>) and the artifact half
+/// (<see cref="IObjectStore"/>). Identity comes only from <see cref="IUserContext"/>.
 ///
 /// <para>
 /// Create mints a fresh UUID pid and registers it; the project's databases
-/// materialise lazily on first open. Delete removes the registry row and
-/// <c>rm -rf</c>s the project scope; the <c>default</c> project is emptied and kept
+/// materialise lazily on first open. Delete drops the project's databases + blobs and
+/// removes the registry row; the <c>default</c> project is emptied and kept
 /// (configuration.md section 5).
 /// </para>
 /// </summary>
@@ -30,8 +33,8 @@ public sealed class ProjectService : IProjectService
 
     private readonly IUserDatabaseProvider _userDatabases;
     private readonly IChatDatabaseProvider _chatDatabases;
-    private readonly IRagDatabaseProvider _ragDatabases;
-    private readonly IUserStore _store;
+    private readonly IRagIndexProvider _ragDatabases;
+    private readonly IObjectStore _objects;
     private readonly IValidationProvider _validation;
     private readonly IUserContext _user;
     private readonly TimeProvider _time;
@@ -39,8 +42,8 @@ public sealed class ProjectService : IProjectService
     public ProjectService(
         IUserDatabaseProvider userDatabases,
         IChatDatabaseProvider chatDatabases,
-        IRagDatabaseProvider ragDatabases,
-        IUserStore store,
+        IRagIndexProvider ragDatabases,
+        IObjectStore objects,
         IValidationProvider validation,
         IUserContext user,
         TimeProvider time)
@@ -48,7 +51,7 @@ public sealed class ProjectService : IProjectService
         _userDatabases = userDatabases ?? throw new ArgumentNullException(nameof(userDatabases));
         _chatDatabases = chatDatabases ?? throw new ArgumentNullException(nameof(chatDatabases));
         _ragDatabases = ragDatabases ?? throw new ArgumentNullException(nameof(ragDatabases));
-        _store = store ?? throw new ArgumentNullException(nameof(store));
+        _objects = objects ?? throw new ArgumentNullException(nameof(objects));
         _validation = validation ?? throw new ArgumentNullException(nameof(validation));
         _user = user ?? throw new ArgumentNullException(nameof(user));
         _time = time ?? throw new ArgumentNullException(nameof(time));
@@ -191,16 +194,24 @@ public sealed class ProjectService : IProjectService
             return false;
         }
 
-        // The default project is emptied + kept, never removed (config section 5); its
-        // databases re-materialise on the next open.
+        var scope = ObjectScope.Project(_user.Iss, _user.Sub, pid);
+
+        // Drop the database half first (principle #5): the chat/rag providers release the
+        // engine's pooled handles + remove chat.db/rag.db, so the blob delete that follows
+        // never races an open file. Both re-materialise lazily on the next open.
+        await _chatDatabases.DeleteProjectAsync(_user.Iss, _user.Sub, pid, cancellationToken).ConfigureAwait(false);
+        await _ragDatabases.DeleteProjectAsync(_user.Iss, _user.Sub, pid, cancellationToken).ConfigureAwait(false);
+
+        // The default project is emptied + kept, never removed (config section 5): clear
+        // its blobs but keep the scope root and the registry row.
         if (string.Equals(pid, DefaultProjectId, StringComparison.Ordinal))
         {
-            await _store.EmptyProjectAsync(_user.Iss, _user.Sub, pid, cancellationToken).ConfigureAwait(false);
+            await _objects.DeletePrefixAsync(scope, string.Empty, cancellationToken).ConfigureAwait(false);
             return true;
         }
 
-        // rm -rf the project scope (blobs + chat.db/rag.db), then drop the registry row.
-        await _store.DeleteProjectAsync(_user.Iss, _user.Sub, pid, cancellationToken).ConfigureAwait(false);
+        // A non-default project: remove the blob scope, then drop the registry row.
+        await _objects.DeleteScopeAsync(scope, cancellationToken).ConfigureAwait(false);
         return await repo.DeleteProjectAsync(pid, cancellationToken).ConfigureAwait(false);
     }
 

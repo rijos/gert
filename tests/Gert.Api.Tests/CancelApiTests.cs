@@ -1,7 +1,5 @@
 using System.Net;
 using System.Net.Http.Headers;
-using System.Net.WebSockets;
-using System.Text;
 using FluentAssertions;
 using Gert.Service.Chat;
 using Gert.Testing;
@@ -12,8 +10,8 @@ namespace Gert.Api.Tests;
 
 /// <summary>
 /// Stop generation (rest-api.md section stop generation): the HTTP cancel endpoint's
-/// auth + idempotency contract, that it actually signals a registered turn, the
-/// tenant scoping of the key, and the WS <c>{"type":"cancel"}</c> path.
+/// auth + idempotency contract, that it actually signals a registered turn, and the
+/// tenant scoping of the key.
 /// </summary>
 public sealed class CancelApiTests : IClassFixture<GertApiFactory>
 {
@@ -85,35 +83,5 @@ public sealed class CancelApiTests : IClassFixture<GertApiFactory>
 
         response.StatusCode.Should().Be(HttpStatusCode.NoContent);
         foreign.IsUserCancelled.Should().BeFalse();
-    }
-
-    [Fact]
-    public async Task Ws_cancel_message_signals_the_turn_of_the_sockets_conversation()
-    {
-        using var registration = Registry.Register(KeyFor(_sub, "conv-ws"), CancellationToken.None);
-
-        var wsClient = _factory.Server.CreateWebSocketClient();
-        wsClient.ConfigureRequest = request =>
-            request.Headers["Sec-WebSocket-Protocol"] = $"bearer, {MintToken()}";
-
-        var socket = await wsClient.ConnectAsync(
-            new Uri(_factory.Server.BaseAddress, "/api/projects/default/conversations/conv-ws/ws"),
-            TestContext.Current.CancellationToken);
-
-        await socket.SendAsync(
-            Encoding.UTF8.GetBytes("""{"type":"cancel"}"""),
-            WebSocketMessageType.Text, true, TestContext.Current.CancellationToken);
-
-        // The handler runs on the receive loop; poll briefly for the signal.
-        var deadline = DateTime.UtcNow.AddSeconds(5);
-        while (!registration.IsUserCancelled && DateTime.UtcNow < deadline)
-        {
-            await Task.Delay(10, TestContext.Current.CancellationToken);
-        }
-
-        registration.IsUserCancelled.Should().BeTrue();
-        socket.State.Should().Be(WebSocketState.Open, "cancel must not tear the socket down");
-
-        await socket.CloseAsync(WebSocketCloseStatus.NormalClosure, null, TestContext.Current.CancellationToken);
     }
 }

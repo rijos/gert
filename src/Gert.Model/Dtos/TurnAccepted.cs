@@ -3,7 +3,7 @@ namespace Gert.Model.Dtos;
 /// <summary>
 /// The <c>202 Accepted</c> body of <c>POST .../messages</c> (rest-api.md
 /// section sending a message): the ids the planner persisted and the cursor to
-/// subscribe from. The client opens WS/SSE with <c>after = seq</c> - every
+/// subscribe from. The client opens the SSE stream with <c>after = seq</c> - every
 /// event of the accepted turn has a later seq.
 /// </summary>
 public sealed record TurnAccepted

@@ -78,17 +78,16 @@ public sealed class SecurityHeadersMiddleware
             ? "'self'"
             : $"'self' {artifactOrigin}";
 
-        // The SPA's inline <script type="importmap"> is the one inline script we permit,
-        // via its SHA-256 (CSP forbids inline scripts otherwise; import maps must be
-        // inline). Hash is over the import-map content in wwwroot/index.html - if that
-        // map changes, the browser smoke (run.py) fails with the new hash to paste here.
-        const string importMapHash = "'sha256-d8FnAFWZ9i5GYFYw2xxXYXoauNd1SUXse/uvQ+2Defc='";
-
+        // The SPA ships NO inline scripts: every module import is an absolute
+        // same-origin path (no bare specifiers, so no inline <script type="importmap">),
+        // and the entry/bootstrap tags are external <script src>. So `script-src 'self'`
+        // alone covers it - no per-build SHA-256 to keep in sync, nothing the publish
+        // minifier can invalidate.
         return string.Join(
             "; ",
             [
             "default-src 'self'",
-            $"script-src 'self' {importMapHash}",
+            "script-src 'self'",
             "style-src 'self'",
             "img-src 'self' data:",
             $"connect-src {connect}",

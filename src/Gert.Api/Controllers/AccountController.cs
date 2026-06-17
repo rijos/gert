@@ -54,7 +54,7 @@ public sealed class AccountController : ControllerBase
         return await StreamArchiveAsync(archive, cancellationToken).ConfigureAwait(false);
     }
 
-    /// <summary><c>rm -rf users/{key}</c> - erase all of the caller's data (not the IdP account).</summary>
+    /// <summary>Erase all of the caller's data across its stores (databases + blobs); does not remove the IdP account.</summary>
     [HttpDelete("account")]
     public async Task<IActionResult> DeleteAccount(CancellationToken cancellationToken)
     {

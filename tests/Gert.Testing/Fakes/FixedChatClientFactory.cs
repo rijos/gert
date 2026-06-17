@@ -1,4 +1,5 @@
-using Gert.Service.External;
+using Gert.Chat;
+using Gert.Model;
 
 namespace Gert.Testing.Fakes;
 

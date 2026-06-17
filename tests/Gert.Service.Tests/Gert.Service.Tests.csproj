@@ -14,6 +14,9 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Gert.Service\Gert.Service.csproj" />
+    <!-- The TurnPlanner / TurnRunner orchestration tests drive the real built-in
+         tools (now in the Gert.Tools adapter) through the turn pipeline. -->
+    <ProjectReference Include="..\..\src\Gert.Tools\Gert.Tools.csproj" />
     <ProjectReference Include="..\Gert.Testing\Gert.Testing.csproj" />
   </ItemGroup>
 

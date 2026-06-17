@@ -89,7 +89,7 @@ when all items are done it says to wrap up.
 `generation_config.json` carries only the thinking-mode set (temperature 1.0,
 top_p 0.95, top_k 20) - that is what vLLM applies to omitted fields. Neither
 mode trusts those defaults: each is a separately **configured provider**
-([installation section providers](../installation/configuration.md#4-gertproviders---the-chat-provider-catalog)),
+([installation section providers](../installation/configuration.md#4-gertchatproviders---the-chat-provider-catalog)),
 and the user **picks** thinking-vs-instruct by selecting that provider - there
 is no per-request mode toggle. The provider's `Parameters` carry the sampling
 verbatim onto the wire (typed OpenAI fields + the `Extra` map for `top_k` and
@@ -165,8 +165,8 @@ opaque JSON, so none of that class of bug exists. Three functions:
 
 Each call persists as a normal `tool_calls` row; created/updated artifacts ride back
 on the tool result and the runner emits the `artifact` event - the canvas tab
-opens/updates **live, mid-turn** (no longer only at `message_end`), and a reload
-gets the same artifacts back through the thread GET.
+opens/updates **live, mid-turn**, and a reload gets the same artifacts back through the
+thread GET.
 
 **How the model learns the convention.** The built-in `SystemPrompts.Canvas`
 fragment rides first in every turn's system prompt (before project pinned
@@ -192,7 +192,7 @@ entitlements into a `TurnJob`) and enqueues; a `TurnWorker`
 runner's emit protocol is *persist, then publish*: allocate a per-conversation
 monotonic `seq` (`conversations.next_seq`), append the event to the durable
 `turn_events` log, then publish to the in-process `ConversationBus`. Clients
-attach over WS / SSE / range-polling (rest-api.md section receiving a turn) through
+attach over SSE / range-polling (rest-api.md section receiving a turn) through
 one splice (`ConversationStreamer`): subscribe first, replay `seq > cursor`
 from the log, then drain live deduping by the seq watermark - no gaps, no
 duplicates, and **generation survives the client disconnecting** (a reload
@@ -213,7 +213,7 @@ Plan phase (request scope):
 2. Resolve offered tools + snapshot the entitlement claim; capture history
    (complete rows only), system prompt, and the selected provider id into the
    TurnJob. Sampling is not resolved here - it rides the provider, applied by the
-   adapter from `Gert:Providers`.
+   adapter from `Gert:Chat:Providers`.
 3. Enqueue; respond 202 { ids, seq } - the subscribe cursor.
 ```
 
@@ -325,7 +325,7 @@ Upload returns immediately; the heavy work runs in a background worker fed by an
 
 ```
 POST /api/projects/{pid}/documents
-  └─ save file to /data/users/{key}/projects/{pid}/files/{doc-id}.{ext}
+  └─ save file to /data/users/{key}/projects/{pid}/files/{doc-id}   (server key, no extension)
   └─ INSERT documents(status='processing')   into this project's rag.db
   └─ enqueue IngestJob{ sub, pid, doc_id, path }
   └─ 202 -> { id, status:"processing" }
@@ -394,7 +394,7 @@ mirroring web search.
 > **Same SSRF guard, same knobs.** The tool only calls the `IWebFetcher` port;
 > the adapter wraps the **same hardened fetcher** as web search's page pulls
 > ([security F5](security.md#3-findings--remediations) - the box above), and it
-> deliberately shares the `Gert:Search` size/time/redirect caps rather than
+> deliberately shares the `Gert:Tools:Search` size/time/redirect caps rather than
 > growing a parallel set. A **policy block or HTTP failure is a tool error the
 > model reads** (card-visible, exactly like a sandbox error) - never a turn
 > fault: the model fetched an attacker-influenceable URL, so the refusal must
@@ -422,7 +422,7 @@ Two deliberate restrictions:
   model can shorten and retry.
 
 ### Sandbox - security-critical
-`run_python` runs untrusted, model-written code - the strongest blast radius in the system ([security F5](security.md#3-findings--remediations)). Two backends sit behind one `IPythonSandbox` port, chosen by the operator (`Gert:Sandbox:Backend`):
+`run_python` runs untrusted, model-written code - the strongest blast radius in the system ([security F5](security.md#3-findings--remediations)). Two backends sit behind one `IPythonSandbox` port, chosen by the operator (`Gert:Tools:Sandbox:Type`):
 
 - **monty** *(default)* - [Pydantic Monty](https://github.com/pydantic/monty), a minimal Python interpreter written in Rust with **no syscalls**: the language itself has no filesystem, network, or env access, so untrusted code can only reach the world through host callbacks (plain `run_python` grants none - that arrives with code-mode). It runs in a **sidecar process** Gert reaches server-side over HTTP ([tools/monty](../../tools/monty/README.md)) - unprivileged, no `/data`, egress off: monty's capability sandbox nested in an OS sandbox. Microsecond startup, no container, no infra. A Python *subset* (no classes/`match`, small stdlib) - fine for "calculations and quick data transforms"; an unsupported construct returns an error the model reads.
 - **gVisor (`runsc`)** - an **ephemeral container** running real CPython, for workloads needing the full language/stdlib: no inbound network, **outbound off by default** (an allow-list is opt-in only, never the default), read-only rootfs, a small writable `/tmp`, container destroyed after the call. Needs gVisor on the host.
@@ -480,7 +480,7 @@ path always wins over the turn-budget error finalize. A **timeout is a
 successful tool result** (`{"answered":false,"reason":"timeout"}`, card line
 "The user did not respond."), never a turn fault: on a detached (client-gone)
 turn the question simply expires and the turn continues - the detached-turn
-guarantee is preserved. A user **cancel** (`POST .../cancel` / WS) cancels the
+guarantee is preserved. A user **cancel** (`POST .../cancel`) cancels the
 wait and finalizes the turn `cancelled` like any other; the pending question is
 always released.
 

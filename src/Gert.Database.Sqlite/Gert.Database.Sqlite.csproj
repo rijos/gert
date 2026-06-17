@@ -22,18 +22,9 @@
 
   <ItemGroup>
     <!-- SQL migrations are embedded resources; SqliteMigrationRunner reads them
-         as Gert.Database.Sqlite.Migrations.{family}.{NNN_name}.sql -->
+         as Gert.Database.Sqlite.Migrations.{family}.{NNN_name}.sql (user + chat;
+         the rag family + the vendored sqlite-vec extension live in Gert.Rag.Sqlite). -->
     <EmbeddedResource Include="Migrations\**\*.sql" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <!-- Vendored native sqlite-vec extension. Copied to the output as vec0.so so
-         every consumer (incl. the test bin, transitively) finds it beside the
-         assembly; OpenRagAsync loads it on each rag.db connection. -->
-    <None Include="native\linux-x64\vec0.so">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-      <Link>vec0.so</Link>
-    </None>
   </ItemGroup>
 
 </Project>

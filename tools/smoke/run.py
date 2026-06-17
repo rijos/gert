@@ -4,7 +4,7 @@ In order:
 
 1. **Boot the mock upstreams** (vLLM + SearXNG) on localhost, then **boot the
    host** with ``dotnet run --launch-profile FakeE2E`` (whose config points the
-   real ``Gert.External`` clients at the mock URLs). Or attach to an already-
+   real Gert.Chat/Tools clients at the mock URLs). Or attach to an already-
    running pair with ``--base-url``. Wait for ``/healthz``.
 2. **Mint tokens** in-process via :mod:`tools.smoke.tokens` (no HTTP round-trip).
 3. **Inject + drive** - for each ``(browser, role)`` in the matrix, seed the token
@@ -18,10 +18,8 @@ launcher injects ``window.GERT_DEV_TOKEN`` via a Playwright **init script** (run
 before any app module), and a dev-only branch in ``ensureSession`` consumes it.
 This is gated by the presence of the injected global, which production never sets.
 
-Flags: ``--browser``, ``--role``, ``--headed``, ``--keep-open``, ``--base-url``,
-``--vllm-url``/``--vllm-model`` (point chat at a REAL vLLM), ``--searxng-url``
-(point web search at a REAL SearXNG); whatever isn't pointed at a real upstream
-stays mocked - see ``make serve-mock-vllm``.
+Flags: ``--browser``, ``--role``, ``--headed``, ``--keep-open``, ``--base-url``
+(attach to an already-running host+mocks instead of booting a fresh pair).
 
 This launcher needs browsers installed (``uv run playwright install chromium
 firefox``) - only the CI/staging web job has them. The non-browser parts (token
@@ -32,7 +30,6 @@ the README.
 from __future__ import annotations
 
 import argparse
-import json
 import os
 import shutil
 import subprocess
@@ -42,7 +39,6 @@ import time
 import urllib.error
 import urllib.request
 from pathlib import Path
-from typing import NamedTuple
 
 import uvicorn
 from playwright.sync_api import ConsoleMessage, Error
@@ -94,17 +90,11 @@ class _ServerThread:
         self.server.should_exit = True
 
 
-def _boot_mocks(
-    *,
-    include_vllm: bool = True,
-    include_searxng: bool = True,
-    include_monty: bool = True,
-) -> list[_ServerThread]:
-    servers: list[_ServerThread] = []
-    if include_vllm:
-        servers.append(_ServerThread(vllm_app, VLLM_PORT))
-    if include_searxng:
-        servers.append(_ServerThread(searxng_app, SEARXNG_PORT))
+def _boot_mocks(*, include_monty: bool = True) -> list[_ServerThread]:
+    servers: list[_ServerThread] = [
+        _ServerThread(vllm_app, VLLM_PORT),
+        _ServerThread(searxng_app, SEARXNG_PORT),
+    ]
     if include_monty:
         servers.append(_ServerThread(monty_app, MONTY_PORT))
     for s in servers:
@@ -130,10 +120,7 @@ def _boot_real_monty() -> subprocess.Popen[bytes]:
 
 
 # --- the host ----------------------------------------------------------------
-def _boot_host(extra_config: list[str] | None = None) -> subprocess.Popen[bytes]:
-    # Trailing `-- --Key=value` args reach the host's command-line configuration
-    # provider, which wins over the FakeE2E launch-profile env vars - that is how
-    # --vllm-url redirects the real adapters without touching launchSettings.json.
+def _boot_host() -> subprocess.Popen[bytes]:
     return subprocess.Popen(
         [
             "dotnet",
@@ -142,156 +129,9 @@ def _boot_host(extra_config: list[str] | None = None) -> subprocess.Popen[bytes]
             str(REPO_ROOT / "src" / "Gert.Api"),
             "--launch-profile",
             "FakeE2E",
-            *(["--", *extra_config] if extra_config else []),
         ],
         cwd=str(REPO_ROOT),
     )
-
-
-# --- real-vLLM mode (--vllm-url) ----------------------------------------------
-def _normalize_vllm_url(url: str) -> str:
-    """The adapters request absolute ``/v1/...`` paths against ``Gert:OpenAI:BaseUrl``,
-    so a pasted OpenAI-style base like ``http://host:8000/v1`` must lose the suffix."""
-    url = url.rstrip("/")
-    return url.removesuffix("/v1")
-
-
-class _VllmModel(NamedTuple):
-    id: str
-    context: int | None
-    capabilities: list[str]
-
-
-# Minimal tool spec for the tools probe - mirrors OpenAIChatRequestBuilder (a
-# `tools` array, tool_choice left at the server default).
-_PROBE_TOOL = {
-    "type": "function",
-    "function": {
-        "name": "probe",
-        "description": "capability probe",
-        "parameters": {"type": "object"},
-    },
-}
-# 1x1 transparent PNG - the smallest valid image_url payload for the vision probe.
-_PROBE_IMAGE = (
-    "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJ"
-    "AAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
-)
-
-
-def _vllm_chat_probe(base_url: str, body: dict[str, object]) -> bool:
-    """POST a tiny ``/v1/chat/completions`` and report whether the server accepts
-    it (an unsupported feature 400s; acceptance proves the capability)."""
-    req = urllib.request.Request(
-        f"{base_url}/v1/chat/completions",
-        data=json.dumps(body).encode(),
-        headers={"Content-Type": "application/json"},
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=30):
-            return True
-    except urllib.error.HTTPError:
-        return False
-
-
-def _detect_vllm_models(base_url: str, only: str | None) -> list[_VllmModel]:
-    """The models the real vLLM serves, enriched: context window straight from
-    ``/v1/models``' ``max_model_len``, and tools/vision detected by max_tokens=1
-    probe completions (there is no capability field on ``/v1/models``)."""
-    with urllib.request.urlopen(f"{base_url}/v1/models", timeout=10) as resp:
-        payload = json.loads(resp.read())
-    entries = payload.get("data") or []
-    if only is not None:
-        entries = [e for e in entries if e["id"] == only] or [{"id": only}]
-    if not entries:
-        raise RuntimeError(f"{base_url}/v1/models returned no models")
-
-    models: list[_VllmModel] = []
-    for entry in entries:
-        model_id: str = entry["id"]
-        caps: list[str] = []
-        if _vllm_chat_probe(
-            base_url,
-            {
-                "model": model_id,
-                "messages": [{"role": "user", "content": "ping"}],
-                "max_tokens": 1,
-                "tools": [_PROBE_TOOL],
-            },
-        ):
-            caps.append("tools")
-        if _vllm_chat_probe(
-            base_url,
-            {
-                "model": model_id,
-                "messages": [
-                    {
-                        "role": "user",
-                        "content": [
-                            {"type": "text", "text": "ping"},
-                            {"type": "image_url", "image_url": {"url": _PROBE_IMAGE}},
-                        ],
-                    }
-                ],
-                "max_tokens": 1,
-            },
-        ):
-            caps.append("vision")
-        # No detected caps must still DECLARE capabilities: a null list means
-        # "assumed tool-capable" to ModelInfo.SupportsTools (permissive default).
-        models.append(
-            _VllmModel(model_id, entry.get("max_model_len"), caps or ["text only"])
-        )
-    return models
-
-
-# The qwen36 thinking vs instruct sampling presets (matching the appsettings
-# examples): a typed OpenAI-spec part + an off-spec Extra part (top_k + the
-# enable_thinking template kwarg). serve-mock-vllm emits BOTH per detected model so
-# the picker offers a thinking and an instruct provider for each.
-_PROVIDER_PRESETS: dict[str, dict[str, dict[str, str]]] = {
-    "thinking": {
-        "typed": {"Temperature": "0.6", "TopP": "0.95"},
-        "extra": {"top_k": "20", "chat_template_kwargs.enable_thinking": "true"},
-    },
-    "instruct": {
-        "typed": {"Temperature": "0.7", "TopP": "0.8", "PresencePenalty": "1.5"},
-        "extra": {"top_k": "20", "chat_template_kwargs.enable_thinking": "false"},
-    },
-}
-
-
-def _vllm_overrides(base_url: str, models: list[_VllmModel]) -> list[str]:
-    """Host config overrides pointing chat at the real vLLM: keep Gert:OpenAI:BaseUrl
-    for embeddings, and emit a Gert:Providers entry PAIR (a thinking preset + an
-    instruct preset) per served model - each with the model's real context + probed
-    capabilities - so the picker offers both instead of FakeE2E's 'Echo Server'."""
-    overrides = [f"--Gert:OpenAI:BaseUrl={base_url}"]
-    first = True
-    for m in models:
-        for mode, preset in _PROVIDER_PRESETS.items():
-            slug = f"{m.id}-{mode}"
-            base = f"--Gert:Providers:{slug}"
-            overrides += [
-                f"{base}:Name={m.id} - {mode}",
-                f"{base}:Type=openai",
-                f"{base}:Default={'true' if first else 'false'}",
-                f"{base}:Parameters:BaseUrl={base_url}",
-                f"{base}:Parameters:Model={m.id}",
-            ]
-            if m.context is not None:
-                overrides.append(f"{base}:Context={m.context}")
-            overrides += [
-                f"{base}:Capabilities:{j}={cap}" for j, cap in enumerate(m.capabilities)
-            ]
-            overrides += [
-                f"{base}:Parameters:{k}={v}" for k, v in preset["typed"].items()
-            ]
-            overrides += [
-                f"{base}:Parameters:Extra:{k}={v}" for k, v in preset["extra"].items()
-            ]
-            first = False
-    return overrides
 
 
 def _wait_healthz(base_url: str, timeout: float = 90.0) -> bool:
@@ -656,27 +496,6 @@ def main(argv: list[str] | None = None) -> int:
         help="Attach to an already-running host+mocks instead of booting them.",
     )
     parser.add_argument(
-        "--vllm-url",
-        default=None,
-        help="Point chat at a REAL vLLM (e.g. http://vllm-host:8000/v1) instead "
-        "of the python mock; auth + SearXNG stay mocked. A trailing /v1 is stripped. "
-        "Embeddings share the same upstream, so knowledge-upload needs the real "
-        "server to also host Gert:OpenAI:EmbeddingModelId.",
-    )
-    parser.add_argument(
-        "--vllm-model",
-        default=None,
-        help="Restrict the catalog to one model id on the real vLLM. Default: every "
-        "model <vllm-url>/v1/models reports, each with detected context + "
-        "tools/vision capabilities.",
-    )
-    parser.add_argument(
-        "--searxng-url",
-        default=None,
-        help="Point web search at a REAL SearXNG (e.g. https://searx.zaggy.nl) "
-        "instead of the python mock. The instance must allow format=json.",
-    )
-    parser.add_argument(
         "--monty-real",
         action="store_true",
         help="Run run_python on the REAL monty interpreter (the tools/monty sidecar, "
@@ -698,43 +517,10 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         if args.base_url is None:
-            real_vllm = args.vllm_url is not None
-            real_searxng = args.searxng_url is not None
             real_monty = args.monty_real
-            extra_config: list[str] = []
-            if real_vllm:
-                vllm_url = _normalize_vllm_url(args.vllm_url)
-                vllm_models = _detect_vllm_models(vllm_url, args.vllm_model)
-                extra_config += _vllm_overrides(vllm_url, vllm_models)
-                # Real-vLLM runs are for eyeballing chat, so turn the host up to
-                # Debug: Gert's own logs + the HttpClient wire traffic to vLLM
-                # (ASP.NET Core stays at appsettings Warning). Command-line config
-                # wins over the FakeE2E profile, like the --vllm-url overrides above.
-                extra_config.append("--Logging:LogLevel:Default=Debug")
-                print(f"Chat -> REAL vLLM at {vllm_url} (host logs: Debug):")
-                for m in vllm_models:
-                    ctx = f"{m.context} ctx" if m.context is not None else "ctx unknown"
-                    print(f"  {m.id}: {ctx}, {'/'.join(m.capabilities)}")
-            if real_searxng:
-                searxng_url = args.searxng_url.rstrip("/")
-                extra_config.append(f"--Gert:Search:BaseUrl={searxng_url}")
-                print(f"Search -> REAL SearXNG at {searxng_url}")
-            mocked = [
-                name
-                for name, mock_it in [
-                    ("vLLM", not real_vllm),
-                    ("SearXNG", not real_searxng),
-                    ("monty", not real_monty),
-                ]
-                if mock_it
-            ]
-            if mocked:
-                print(f"Booting mock upstreams ({' + '.join(mocked)})...")
-            mocks = _boot_mocks(
-                include_vllm=not real_vllm,
-                include_searxng=not real_searxng,
-                include_monty=not real_monty,
-            )
+            mocked = ["vLLM", "SearXNG", *(["monty"] if not real_monty else [])]
+            print(f"Booting mock upstreams ({' + '.join(mocked)})...")
+            mocks = _boot_mocks(include_monty=not real_monty)
             if real_monty:
                 print(f"Sandbox -> REAL monty sidecar (tools/monty) on :{MONTY_PORT}")
                 monty_proc = _boot_real_monty()
@@ -745,7 +531,7 @@ def main(argv: list[str] | None = None) -> int:
             # own, so its data is left alone.)
             shutil.rmtree(DATA_ROOT, ignore_errors=True)
             print("Booting FakeE2E host (dotnet run)...")
-            host_proc = _boot_host(extra_config)
+            host_proc = _boot_host()
 
         print(f"Waiting for {base_url}/healthz ...")
         if not _wait_healthz(base_url):

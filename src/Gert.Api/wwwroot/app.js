@@ -1,6 +1,6 @@
 // app.js - bootstrap: restore theme -> ensure session (PKCE / silent refresh)
 // -> mount AppShell -> wire the router -> load initial data.
-import van from "van";
+import van from "/lib/van.js";
 import { mountRouter } from "./lib/router.js";
 import { AppShell, mainHost } from "./components/app-shell.js";
 import { ChatPage } from "./pages/chat.js";

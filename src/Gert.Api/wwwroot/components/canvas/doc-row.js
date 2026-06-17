@@ -1,7 +1,7 @@
 // components/canvas/doc-row.js - file icon + meta + status pill + trash.
 // Binds to one reactive document; the filename node uses unicode-bidi:isolate
 // (CSS) for anti-spoofing - it is a van text node, XSS-safe by construction.
-import van from "van";
+import van from "/lib/van.js";
 import { component } from "../../lib/component.js";
 import { Icon } from "../../icons/icons.js";
 import { Pill } from "../ui/pill.js";

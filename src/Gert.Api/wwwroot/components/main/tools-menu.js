@@ -5,7 +5,7 @@
 // rows toggle in place (the menu stays open).
 // Tool rows go inert when the selected model can't call tools (the server
 // drops them anyway - IModelCatalog gates the turn planner; this mirrors it).
-import van from "van";
+import van from "/lib/van.js";
 import { component } from "../../lib/component.js";
 import { Icon } from "../../icons/icons.js";
 import { Menu } from "../ui/menu.js";

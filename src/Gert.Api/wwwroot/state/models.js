@@ -1,6 +1,6 @@
 // state/models.js - available models + current selection. No DOM, no fetch.
-import van from "van";
-import { reactive } from "van-x";
+import van from "/lib/van.js";
+import { reactive } from "/lib/van-x.js";
 
 export const models = reactive([]); // [{ id, name, default, capabilities, context, fast }]
 export const selectedId = van.state(null);

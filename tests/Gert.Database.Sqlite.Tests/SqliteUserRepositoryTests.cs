@@ -1,6 +1,7 @@
 using FluentAssertions;
 using Gert.Model;
 using Gert.Model.Projects;
+using Gert.Model.UI;
 using Gert.Testing;
 using Xunit;
 

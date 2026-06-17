@@ -1,13 +1,13 @@
 using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
+using Gert.Chat;
 using Gert.Database;
 using Gert.Model;
 using Gert.Model.Chat;
 using Gert.Model.Events;
 using Gert.Model.Json;
 using Gert.Service.Chat.Bus;
-using Gert.Service.External;
 using Gert.Service.Tools;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -244,7 +244,7 @@ public sealed class TurnRunner : ITurnRunner
         }
 
         // Resolve the client for this conversation's provider once - its connection
-        // + sampling come from Gert:Providers; the provider is fixed for the turn.
+        // + sampling come from Gert:Chat:Providers; the provider is fixed for the turn.
         var model = _clients.ForProvider(job.ModelId);
 
         try
@@ -257,7 +257,7 @@ public sealed class TurnRunner : ITurnRunner
                     Messages = messages,
                     Tools = toolSpecs,
                     // The per-round completion cap is the only sampling field the
-                    // request carries; the rest rides the provider (Gert:Providers).
+                    // request carries; the rest rides the provider (Gert:Chat:Providers).
                     MaxTokens = MaxTokensThisRound(),
                 };
 

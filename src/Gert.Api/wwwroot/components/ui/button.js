@@ -1,7 +1,7 @@
 // components/ui/button.js - primary/secondary action button.
 // `.btn` is a shared utility in primitives.css (applied by bare class-string across
 // the app), so this component owns no css of its own.
-import van from "van";
+import van from "/lib/van.js";
 import { component } from "../../lib/component.js";
 
 const { button } = van.tags;

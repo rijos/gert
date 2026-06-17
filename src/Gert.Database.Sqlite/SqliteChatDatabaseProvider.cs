@@ -1,6 +1,4 @@
 using Gert.Database;
-using Gert.Service.Storage;
-using Microsoft.Extensions.Options;
 
 namespace Gert.Database.Sqlite;
 
@@ -17,11 +15,10 @@ public sealed class SqliteChatDatabaseProvider : IChatDatabaseProvider
     private readonly SqliteDatabasePaths _paths;
     private readonly SqliteConnectionFactory _factory;
 
-    /// <summary>Create the provider over the bound <see cref="StorageOptions"/> and shared connection factory.</summary>
-    public SqliteChatDatabaseProvider(IOptions<StorageOptions> options, SqliteConnectionFactory factory)
+    /// <summary>Create the provider over the engine's resolved <see cref="SqliteDatabasePaths"/> and shared connection factory.</summary>
+    public SqliteChatDatabaseProvider(SqliteDatabasePaths paths, SqliteConnectionFactory factory)
     {
-        ArgumentNullException.ThrowIfNull(options);
-        _paths = new SqliteDatabasePaths(options);
+        _paths = paths ?? throw new ArgumentNullException(nameof(paths));
         _factory = factory ?? throw new ArgumentNullException(nameof(factory));
     }
 
@@ -36,5 +33,20 @@ public sealed class SqliteChatDatabaseProvider : IChatDatabaseProvider
             .OpenAsync(_paths.ChatDb(iss, sub, pid), "chat", cancellationToken)
             .ConfigureAwait(false);
         return new SqliteChatRepository(connection);
+    }
+
+    /// <inheritdoc />
+    public Task<bool> DeleteProjectAsync(
+        string iss,
+        string sub,
+        string pid,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        // ChatDb resolves through ProjectRoot, which shape-validates the pid and asserts
+        // the path stays under the user root (F12) before any unlink.
+        var removed = _factory.DeleteDatabaseFiles([_paths.ChatDb(iss, sub, pid)]);
+        return Task.FromResult(removed);
     }
 }

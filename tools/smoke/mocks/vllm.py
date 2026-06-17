@@ -1,6 +1,6 @@
 """vllm.py - OpenAI-compatible vLLM mock (testing.md section 4.2 / A.3).
 
-A Starlette ASGI app the *real* ``Gert.External`` vLLM adapter points at in the
+A Starlette ASGI app the *real* ``Gert.Chat`` vLLM adapter points at in the
 FakeE2E profile. Two endpoints:
 
 * ``POST /v1/chat/completions`` - streaming SSE in the OpenAI wire format

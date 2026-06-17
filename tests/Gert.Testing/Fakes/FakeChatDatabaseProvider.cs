@@ -13,4 +13,9 @@ public sealed class FakeChatDatabaseProvider(IChatRepository repo) : IChatDataba
     public Task<IChatRepository> OpenAsync(
         string iss, string sub, string pid, CancellationToken cancellationToken = default) =>
         Task.FromResult(repo);
+
+    /// <summary>No-op: the in-memory repository has no file to drop (tests don't delete projects).</summary>
+    public Task<bool> DeleteProjectAsync(
+        string iss, string sub, string pid, CancellationToken cancellationToken = default) =>
+        Task.FromResult(false);
 }

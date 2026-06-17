@@ -2,7 +2,7 @@
 // The access token itself lives ONLY in services/auth.js (in-memory module
 // variable, never localStorage - security F2). This store holds the
 // non-secret, displayable identity claims.
-import van from "van";
+import van from "/lib/van.js";
 
 export const user = van.state(null); // { username, email, avatar, authLine }
 export const isAdmin = van.state(false);

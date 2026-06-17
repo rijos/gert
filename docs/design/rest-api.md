@@ -10,8 +10,8 @@ Most data is **project-scoped**, so conversations, messages, documents, and arti
 GET /api/models
 ```
 Returns the configured **chat providers** for the picker - one entry per
-`Gert:Providers` slug, in configured order ([configuration section 4](configuration.md#4-llm-providers--models),
-[installation section providers](../installation/configuration.md#4-gertproviders---the-chat-provider-catalog)).
+`Gert:Chat:Providers` slug, in configured order ([configuration section 4](configuration.md#4-llm-providers--models),
+[installation section providers](../installation/configuration.md#4-gertchatproviders---the-chat-provider-catalog)).
 Each `id` is the provider slug (the conversation stores it as `model_id`); the
 connection + sampling stay host-side. The same physical model often appears under
 several slugs (a thinking preset and an instruct preset).
@@ -42,7 +42,7 @@ several slugs (a thinking preset and an instruct preset).
 | `POST` | `/api/projects` | `{ name, description?, instructions?, defaults? }` -> a new isolated project folder. |
 | `GET` | `/api/projects/{pid}` | Project config + counts (conversations, documents, memory). |
 | `PATCH` | `/api/projects/{pid}` | `{ name?, description?, instructions?, defaults? }` (rename / edit instructions / defaults). |
-| `DELETE` | `/api/projects/{pid}` | **`rm -rf projects/{pid}`** - its chats *and* documents. `default` is emptied, not removed ([configuration section 5](configuration.md#5-data-lifecycle-user-facing)). |
+| `DELETE` | `/api/projects/{pid}` | **Drops the whole project** - its chats *and* documents (chat.db + rag.db + blobs together). `default` is emptied, not removed ([configuration section 5](configuration.md#5-data-lifecycle-user-facing)). |
 
 `defaults` = `{ model_id?, tools?, reply_language? }` - the project-level entries in the [configuration cascade](configuration.md#1-the-configuration-cascade). (`model_id` is a provider slug; sampling is not a default - it rides the provider.)
 
@@ -96,14 +96,13 @@ the SPA disables the composer while streaming).
 ## Receiving a turn
 
 Every event of a conversation carries a per-conversation monotonic **`seq`** -
-one cursor for pagination, catch-up, and resume. Three delivery views over the
+one cursor for pagination, catch-up, and resume. Two delivery views over the
 same durable `turn_events` log; pick by capability, fall back freely (the seq
 watermark makes switching transports gap- and duplicate-free):
 
 ```
 GET /api/projects/{pid}/conversations/{id}/events?after={seq}&limit={n}   range / poll
 GET /api/projects/{pid}/conversations/{id}/stream?after={seq}            SSE (live)
-GET /api/projects/{pid}/conversations/{id}/ws                            WebSocket (live)
 ```
 
 * **Range** returns `{ "events": [{ "seq": n, "event": { ... } }], "next_cursor": n, "has_more": b }`
@@ -112,16 +111,6 @@ GET /api/projects/{pid}/conversations/{id}/ws                            WebSock
 * **SSE stream** frames are `id: <seq>\nevent: <type>\ndata: <chatEvent json>\n\n`;
   replays `seq > after` from the log, then tails live. This is the
   dev-proxy-compatible path.
-* **WS** authenticates via the bearer **subprotocol**
-  (`new WebSocket(url, ["bearer", token])` - a browser WS cannot send an
-  Authorization header and the token never goes in the URL; the server lifts it
-  into the normal JwtBearer pipeline). Client messages are JSON with `type`:
-  `{"type":"subscribe","after":42}` (replay-then-live),
-  `{"type":"range","after":0,"limit":200}`, and `{"type":"cancel"}` (stop the
-  in-flight turn - same effect as `POST .../cancel`); server frames carry `kind`:
-  `{"kind":"event","seq":n,"event":{...}}` / `{"kind":"range", ...}` /
-  `{"kind":"error","message":"..."}`. Unknown/malformed client messages are
-  ignored.
 
 The `event` payload is the ChatEvent union (the `$type` field matches the SSE
 `event:` name). This is what drives the mockup's tool cards -> streamed text ->
@@ -151,16 +140,16 @@ conversation reproduces the same cards, citations, and artifacts - and a reload
 *mid-turn* resubscribes from the streaming assistant row's `seq` and loses
 nothing (thread messages carry `status` + `seq` for exactly this).
 
-> **Why both SSE and WS:** SSE survives plain-HTTP proxies (the dev proxy does
-> not upgrade WebSockets) and needs no auth workaround; WS adds the
-> client->server channel (range backfill + mid-generation cancel). Both are thin
-> subscribers over the same log + bus splice - the SPA tries WS, falls back to
-> SSE, then to range polling.
+> **Why SSE + polling:** SSE survives plain-HTTP proxies (the dev proxy does not
+> need any upgrade handshake) and needs no auth workaround - a thin subscriber
+> over the log + bus splice. The client->server channel (cancel) is a plain
+> `POST`, so no bidirectional socket is required. The SPA tails over SSE and
+> falls back to range polling; both share the seq cursor for a gap-free splice.
 
 ### Stop generation
 
-`POST /api/projects/{pid}/conversations/{id}/cancel` (or the WS
-`{"type":"cancel"}` message) stops the in-flight turn **server-side**: the
+`POST /api/projects/{pid}/conversations/{id}/cancel` stops the in-flight turn
+**server-side**: the
 runner's token cancels, the upstream vLLM stream is torn down, the assistant
 row finalises as `status="cancelled"` with whatever streamed, and a terminal
 `cancelled` event lands on the normal delivery transports - the still-attached
@@ -236,7 +225,7 @@ Self-service data lifecycle ([configuration section 5](configuration.md#5-data-l
 | `POST` | `/api/projects/{pid}/forget-documents` | Wipe a project's `rag.db` (+ `files/`), keep its chats. |
 | `GET` | `/api/projects/{pid}/export` | Download one project: conversations (JSON/Markdown) + original files. |
 | `GET` | `/api/account/export` | Download everything - all projects. |
-| `DELETE` | `/api/account` | **`rm -rf users/{key}`** - erases all of this user's data. Does **not** remove the Pocket ID account ([operations -> user lifecycle](operations.md#user-lifecycle---remove-a-user--remove-a-folder)). |
+| `DELETE` | `/api/account` | **Erases all of this user's data** across its stores (databases + blobs). Does **not** remove the Pocket ID account ([operations -> user lifecycle](operations.md#user-lifecycle---remove-a-user)). |
 
 ## Admin (requires `Admin` policy)
 
@@ -244,10 +233,10 @@ Self-service data lifecycle ([configuration section 5](configuration.md#5-data-l
 |--------|------|-------|
 | `GET` | `/api/admin/users` | Lists user folders, reading each one's `user.db` for the username (plus a footprint listing): username, key, size, doc count, last-active. The closest thing to a "user list" the API has. |
 | `GET` | `/api/admin/users/{key}` | One user's folder summary. `{key}` validated as below. |
-| `DELETE` | `/api/admin/users/{key}` | **`rm -rf /data/users/{key}`.** Removes all of that user's data (see [Operations -> User lifecycle](operations.md#user-lifecycle---remove-a-user--remove-a-folder)). |
+| `DELETE` | `/api/admin/users/{key}` | **Erases all of that user's data** across its stores (see [Operations -> User lifecycle](operations.md#user-lifecycle---remove-a-user)). |
 | `GET` | `/api/admin/system-prompt` | What the model is sent, verbatim: the built-in system prompt plus every registered tool spec (`{ system_prompt, tools: [{ id, name, description, parameters_schema }] }`). Pure configuration - per-project pinned instructions are user data and excluded (admin grants no cross-user data read). Rendered on the admin page's "Model prompt" section. |
 
-> **`{key}` is the most dangerous path parameter in the API** - it feeds a `rm -rf`. Unlike `pid`
+> **`{key}` is the most dangerous path parameter in the API** - it feeds a destructive whole-account delete. Unlike `pid`
 > (whose IDOR-safety is covered in [configuration section 2.5](configuration.md#25-path-resolution--why-a-request-supplied-project-id-is-still-idor-safe)),
 > `{key}` is **not** scoped under a token-derived folder, so it gets its own guard: it **must match
 > `^[0-9a-f]{64}$`** (a sha256 hex) before any path-join, and the resolved absolute path is asserted

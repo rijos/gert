@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using Gert.Api.Security;
 using Gert.Model;
+using Gert.Model.Chat;
 using Gert.Service.Documents;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;

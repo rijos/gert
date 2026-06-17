@@ -302,7 +302,7 @@ public sealed class ApiBreadthTests : IClassFixture<GertApiFactory>
         var docId = await ReadIdAsync(uploaded);
 
         var ready = await PollUntilTerminalAsync(client, "default", docId);
-        ready.Status.Should().Be(Gert.Model.DocumentStatus.Ready);
+        ready.Status.Should().Be(Gert.Model.Rag.DocumentStatus.Ready);
         ready.ChunkCount.Should().BeGreaterThan(0, "the embedded chunks are retrievable");
     }
 
@@ -355,7 +355,7 @@ public sealed class ApiBreadthTests : IClassFixture<GertApiFactory>
             if (response.StatusCode == HttpStatusCode.OK)
             {
                 var document = await response.Content.ReadFromJsonAsync<DocumentResponse>(Json);
-                if (document!.Status != Gert.Model.DocumentStatus.Processing)
+                if (document!.Status != Gert.Model.Rag.DocumentStatus.Processing)
                 {
                     return document;
                 }

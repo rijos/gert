@@ -1,9 +1,10 @@
-using Gert.Database;
 using Gert.Model;
 using Gert.Model.Rag;
+using Gert.Rag;
 using Gert.Service.Ingestion;
 using Gert.Service.Storage;
 using Gert.Service.Validation;
+using Gert.Storage;
 
 namespace Gert.Service.Documents;
 
@@ -15,17 +16,19 @@ namespace Gert.Service.Documents;
 ///
 /// <para>
 /// Upload (chat-and-tools.md section ingestion) stores the bytes through
-/// <see cref="IObjectStore"/> under a server-generated <c>{doc-id}.{ext}</c> key -
-/// the upload filename is never a storage path - inserts a <c>processing</c> row
-/// with the <b>base64-encoded original filename</b> as display metadata, then
-/// enqueues an <see cref="IngestJob"/>. The blob is read/written/deleted only
-/// through the object store (decision: files via IObjectStore; filename is base64
-/// metadata, render-sanitized by the SPA, not a path).
+/// <see cref="IObjectStore"/> under a fully server-generated <c>files/{doc-id}</c> key -
+/// the doc-id is a server UUID, so <b>nothing the caller supplies ever reaches a storage
+/// path or carries an extension</b>. It inserts a <c>processing</c> row with the
+/// <b>base64-encoded original filename</b> (extension and all) as display metadata, then
+/// enqueues an <see cref="IngestJob"/>. The blob is read/written/deleted only through the
+/// object store; the filename lives only in the database (render-sanitized by the SPA),
+/// and the file type drives extraction off the in-memory <see cref="IngestJob.Extension"/>,
+/// never the stored key.
 /// </para>
 /// </summary>
 public sealed class DocumentService : IDocumentService
 {
-    private readonly IRagDatabaseProvider _databases;
+    private readonly IRagIndexProvider _databases;
     private readonly IObjectStore _objects;
     private readonly IIngestionQueue _queue;
     private readonly IValidationProvider _validation;
@@ -33,7 +36,7 @@ public sealed class DocumentService : IDocumentService
     private readonly TimeProvider _time;
 
     public DocumentService(
-        IRagDatabaseProvider databases,
+        IRagIndexProvider databases,
         IObjectStore objects,
         IIngestionQueue queue,
         IValidationProvider validation,
@@ -86,12 +89,14 @@ public sealed class DocumentService : IDocumentService
         }
 
         var documentId = Guid.NewGuid().ToString("D");
+        // The extension is derived only to (a) route extraction and (b) preserve the
+        // original name in the DB - it is NEVER part of the storage key.
         var extension = ValidationRules.ExtensionOf(upload.Filename);
-        var key = ObjectKey(documentId, extension);
+        var key = ObjectKey(documentId);
         var scope = ScopeFor(pid);
 
         // 2. Store the bytes via the object store (decision: files via IObjectStore
-        //    only) under the server-generated {doc-id}.{ext} key. The counting wrapper
+        //    only) under the fully server-generated files/{doc-id} key. The counting wrapper
         //    records the true written size AND enforces the size cap mid-stream:
         //    both shipped hosts pass a server-measured SizeBytes (already gated by
         //    the validator above), so the streaming cap is defence-in-depth for
@@ -168,11 +173,11 @@ public sealed class DocumentService : IDocumentService
             return false;
         }
 
-        // Remove the rag rows (repo cascades chunks/vec/fts) AND the blob.
+        // Remove the rag rows (repo cascades chunks/vec/fts) AND the blob. The key is
+        // server-derived from the doc-id alone, so deletion needs no stored filename.
         var removed = await repo.DeleteDocumentAsync(documentId, cancellationToken).ConfigureAwait(false);
 
-        var extension = ValidationRules.ExtensionOf(StoredFilenames.Decode(document.Filename));
-        await _objects.DeleteAsync(ScopeFor(pid), ObjectKey(documentId, extension), cancellationToken)
+        await _objects.DeleteAsync(ScopeFor(pid), ObjectKey(documentId), cancellationToken)
             .ConfigureAwait(false);
 
         return removed;
@@ -199,12 +204,15 @@ public sealed class DocumentService : IDocumentService
 
     // ---- helpers -----------------------------------------------------------
 
-    private Task<IRagRepository> OpenAsync(string pid, CancellationToken cancellationToken) =>
+    private Task<IRagStore> OpenAsync(string pid, CancellationToken cancellationToken) =>
         _databases.OpenAsync(_user.Iss, _user.Sub, pid, cancellationToken);
 
     private ObjectScope ScopeFor(string pid) => ObjectScope.Project(_user.Iss, _user.Sub, pid);
 
-    /// <summary>The server-generated blob key under <c>files/</c>: <c>files/{doc-id}.{ext}</c>.</summary>
-    private static string ObjectKey(string documentId, string extension) =>
-        extension.Length == 0 ? $"files/{documentId}" : $"files/{documentId}.{extension}";
+    /// <summary>
+    /// The fully server-generated blob key under <c>files/</c>: <c>files/{doc-id}</c>. The
+    /// doc-id is a server UUID and carries no extension, so the caller's filename never
+    /// reaches a storage path (it lives only in <c>documents.filename</c>).
+    /// </summary>
+    private static string ObjectKey(string documentId) => $"files/{documentId}";
 }

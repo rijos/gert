@@ -3,14 +3,15 @@ namespace Gert.Service.Ingestion;
 /// <summary>
 /// The default <see cref="ITextExtractor"/> the pipeline depends on: it routes a
 /// blob to the first registered extractor that <see cref="ITextExtractor.CanExtract"/>s
-/// its type. Today only <see cref="PlainTextExtractor"/> (md/txt) is wired; an
-/// unhandled type (security F7)
+/// its type. The leaves live in the Gert.Ingestion adapter (md/txt + the isolated
+/// pdf/docx extractor, security F7); an unhandled type
 /// returns <see cref="ExtractionResult.Failed"/> so the pipeline marks the document
 /// <c>failed</c> ("extractor not available") rather than throwing.
 ///
 /// <para>
-/// Gert.External swaps in the hardened pdf/docx extractor by registering it as another
-/// <see cref="ITextExtractor"/> - no change here or in the pipeline.
+/// Gert.Ingestion registers each leaf as a keyed <see cref="ITextExtractor"/> - this
+/// composite enumerates them, so adding or swapping a leaf is a single DI change with
+/// no change here or in the pipeline.
 /// </para>
 /// </summary>
 public sealed class CompositeTextExtractor : ITextExtractor

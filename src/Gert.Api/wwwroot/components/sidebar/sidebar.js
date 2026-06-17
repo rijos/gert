@@ -2,7 +2,7 @@
 // The pane-header (Brand) and the new-chat button are trivial single-use leaves,
 // so they live here rather than in their own files. Responsive drawer behaviour
 // comes from the .app state classes (app-shell.js) / layout.css.
-import van from "van";
+import van from "/lib/van.js";
 import { component } from "../../lib/component.js";
 import { BrandMark, Icon } from "../../icons/icons.js";
 import { ProjectPicker } from "./project-picker.js";

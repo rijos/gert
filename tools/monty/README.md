@@ -5,7 +5,7 @@ minimal Python interpreter written in Rust, with **no syscalls** (no filesystem,
 or env access exist in the language) - as Gert's `run_python` sandbox backend.
 
 It speaks the contract the .NET `MontySandbox` adapter
-([src/Gert.External/Sandbox/MontySandbox.cs](../../src/Gert.External/Sandbox/MontySandbox.cs))
+([src/Gert.Tools/Sandbox/Monty/MontySandbox.cs](../../src/Gert.Tools/Sandbox/Monty/MontySandbox.cs))
 calls:
 
 ```
@@ -32,8 +32,8 @@ uv run python app.py            # listens on 127.0.0.1:8077
 Then point Gert at it (these are already the defaults in `appsettings.json`):
 
 ```
-Gert:Sandbox:Backend       = monty
-Gert:Sandbox:Monty:BaseUrl = http://127.0.0.1:8077
+Gert:Tools:Sandbox:Type        = Monty
+Gert:Tools:Sandbox:Parameters:BaseUrl = http://127.0.0.1:8077
 ```
 
 `GERT_MONTY_HOST` / `GERT_MONTY_PORT` override the bind address.

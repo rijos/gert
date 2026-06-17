@@ -1,7 +1,7 @@
 // components/ui/slider.js - labeled range slider (.slider) with a live mono
 // value readout, e.g. the generation-param dials in settings. The track fills
 // coral up to the thumb via the --fill custom property (no JS layout).
-import van from "van";
+import van from "/lib/van.js";
 import { component } from "../../lib/component.js";
 
 const { div, input, span } = van.tags;

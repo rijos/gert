@@ -9,9 +9,10 @@
 //
 // The streaming caret, inline citation chips, and footnote list are trivial
 // single-use leaves of a message, so they live here rather than in their own files.
-import van from "van";
+import van from "/lib/van.js";
 import { component } from "../../lib/component.js";
 import { renderMarkdown } from "../../lib/markdown.js";
+import { attachLinkConfirm } from "../../lib/markdown-links.js";
 import { Icon } from "../../icons/icons.js";
 import { ToolCard } from "./tool-card.js";
 import * as chat from "../../state/chat.js";
@@ -218,7 +219,7 @@ const Actions = (m) => () => {
   );
 };
 
-// --- sources card (the collapsible footnote redesign) ------------------------
+// --- sources card ------------------------------------------------------------
 // Only http(s) locators become links - same URL stance as the markdown
 // renderer; anything else (document pages) renders as a plain row.
 const domainOf = (locator) => {
@@ -550,6 +551,8 @@ export const Message = component({
         body.append(renderMarkdown(m.text));
         injectCitations(body, m.citations);
         decorateCodeBlocks(body, m.streaming);
+        // confirm before any external link leaves the app (Gert Modal, delegated)
+        attachLinkConfirm(body);
         // Live turn: the busy pulse shows whenever the model is working -
         // thinking, running tools, or waiting between rounds - and the caret
         // takes over only while answer text is actively streaming.

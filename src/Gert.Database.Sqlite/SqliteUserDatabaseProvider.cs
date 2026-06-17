@@ -1,6 +1,4 @@
 using Gert.Database;
-using Gert.Service.Storage;
-using Microsoft.Extensions.Options;
 
 namespace Gert.Database.Sqlite;
 
@@ -20,17 +18,16 @@ public sealed class SqliteUserDatabaseProvider : IUserDatabaseProvider
     private readonly TimeProvider _time;
 
     /// <summary>
-    /// Create the provider over the bound <see cref="StorageOptions"/> and shared
-    /// connection factory. The clock is injected (dotnet-style-guide.md section 5) and
+    /// Create the provider over the engine's resolved <see cref="SqliteDatabasePaths"/> and
+    /// shared connection factory. The clock is injected (dotnet-style-guide.md section 5) and
     /// handed to each repository so tests can pin row timestamps.
     /// </summary>
     public SqliteUserDatabaseProvider(
-        IOptions<StorageOptions> options,
+        SqliteDatabasePaths paths,
         SqliteConnectionFactory factory,
         TimeProvider time)
     {
-        ArgumentNullException.ThrowIfNull(options);
-        _paths = new SqliteDatabasePaths(options);
+        _paths = paths ?? throw new ArgumentNullException(nameof(paths));
         _factory = factory ?? throw new ArgumentNullException(nameof(factory));
         _time = time ?? throw new ArgumentNullException(nameof(time));
     }
@@ -57,5 +54,32 @@ public sealed class SqliteUserDatabaseProvider : IUserDatabaseProvider
             .OpenAsync(_paths.UserDbByKey(key), Family, cancellationToken)
             .ConfigureAwait(false);
         return new SqliteUserRepository(connection, _time);
+    }
+
+    /// <inheritdoc />
+    public Task<bool> DeleteUserAsync(
+        string iss,
+        string sub,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        // This engine's whole-account files: user.db + every project's chat.db. The RAG
+        // index (rag.db) is a separate engine and removes its own files; the service
+        // orchestrates both.
+        var removed = _factory.DeleteDatabaseFiles(_paths.UserDatabaseFiles(iss, sub));
+        return Task.FromResult(removed);
+    }
+
+    /// <inheritdoc />
+    public Task<bool> DeleteUserByKeyAsync(
+        string key,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        // UserDatabaseFilesByKey shape-validates the key (security F6) before any path is formed.
+        var removed = _factory.DeleteDatabaseFiles(_paths.UserDatabaseFilesByKey(key));
+        return Task.FromResult(removed);
     }
 }

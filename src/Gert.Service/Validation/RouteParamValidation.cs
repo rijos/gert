@@ -4,7 +4,7 @@ namespace Gert.Service.Validation;
 /// Reusable validators for request-supplied <b>route parameters</b> that are not
 /// DTO bodies - the admin folder <c>{key}</c> (security F6) and the project
 /// <c>{pid}</c> (configuration.md section 2.5). These feed directly into a filesystem
-/// path, so they are validated <b>before</b> any path-join/<c>rm -rf</c>. Exposed
+/// path, so they are validated <b>before</b> any path-join / destructive delete. Exposed
 /// as a static seam the API controllers call, sharing one rule with the body
 /// validators; they return the same <see cref="ValidationResult"/> shape the
 /// body validators do, so a failure renders an identical 400.

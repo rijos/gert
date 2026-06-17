@@ -1,5 +1,5 @@
 // components/ui/seg-toggle.js - segmented toggle (.seg) e.g. Rendered/Source.
-import van from "van";
+import van from "/lib/van.js";
 import { component } from "../../lib/component.js";
 
 const { div, button } = van.tags;

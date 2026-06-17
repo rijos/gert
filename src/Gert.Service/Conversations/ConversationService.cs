@@ -105,7 +105,7 @@ public sealed class ConversationService : IConversationService
             Title = string.IsNullOrWhiteSpace(request.Title) ? "New conversation" : request.Title,
             // TODO: resolve the model/tools cascade (conversation -> project
             // defaults -> user settings -> server). Sampling is no
-            // longer a cascade level - it rides the selected provider (Gert:Providers).
+            // longer a cascade level - it rides the selected provider (Gert:Chat:Providers).
             ModelId = string.IsNullOrWhiteSpace(request.ModelId) ? ChatProviderInfo.DefaultId : request.ModelId,
             Tools = request.Tools ?? new ToolToggles(),
             CreatedAt = now,

@@ -1,0 +1,624 @@
+/*!
+ * smath.js — a security-first TeX → native MathML converter.
+ *
+ * Sibling to smd2/markdown.js: the SAME stance, applied to math. We do NOT ship
+ * a third-party TeX engine (KaTeX is CSP-incompatible — it emits inline style=""
+ * that `style-src 'self'` strips; Temml is a 477KB parser that runs over model
+ * output). Instead we own a small converter and let the BROWSER render the math:
+ * native MathML is now in every engine (Firefox forever, Chromium 109+/Jan 2023,
+ * WebKit), so a closed set of <math> presentation elements renders with no
+ * library at runtime and no inline styles.
+ *
+ * Why this is safe to reason about:
+ *  1. LINEAR lexer. A single left-to-right scan turns the source into a flat
+ *     token list — O(n), no backtracking regex, so no ReDoS.
+ *  2. BOUNDED recursive descent. Group/script/argument nesting recurses, but the
+ *     depth is hard-capped (MAX_DEPTH) and the total emitted node count is capped
+ *     (MAX_NODES); past either cap we degrade to literal text. A bounded
+ *     configuration space means `{{{{…`×100000 or `\frac\frac…` can neither
+ *     recurse to a crash nor allocate without bound.
+ *  3. TOTAL over a CLOSED element set (MML_ELEMENTS). Every produced node is a
+ *     known MathML presentation element built with createElementNS — never
+ *     innerHTML. Unknown control words degrade to a visible <mtext>, they never
+ *     mint an element or attribute outside the allow-list. The ONLY attributes we
+ *     ever set are inert MathML presentation hints (mathvariant, stretchy, fence,
+ *     accent, displaystyle, width, …); there is no href/src sink in math, so a
+ *     formula cannot navigate, fetch, or script.
+ *  4. NO third-party code touches the input. The converter has zero imports.
+ *
+ * The parser half (buildMathAst → a plain descriptor tree) is dependency- and
+ * DOM-free, so it is unit-testable headless; toDom/renderMath turn that tree into
+ * real MathML nodes in the browser.
+ */
+
+const MML = 'http://www.w3.org/1998/Math/MathML';
+
+// Render-length cap: a real formula (even a big matrix) fits well under this; the
+// ceiling bounds adversarial TeX before the lexer ever runs.
+export const MAX_TEX = 8192;
+const MAX_DEPTH = 32;     // group/script nesting cap (bounded container stack)
+const MAX_NODES = 6000;   // total emitted descriptor cap (bounded allocation)
+
+// The closed allow-list of MathML elements this converter can ever emit. toDom
+// throws on anything outside it (fail closed), so the producible DOM is fixed.
+const MML_ELEMENTS = new Set([
+  'math', 'mrow', 'mi', 'mn', 'mo', 'mtext', 'mspace',
+  'msup', 'msub', 'msubsup', 'mover', 'munder', 'munderover',
+  'mfrac', 'msqrt', 'mroot', 'mtable', 'mtr', 'mtd',
+]);
+
+/* ===== Descriptor-tree constructors ============================================= */
+const el = (tag, children, attrs) => ({ tag, children, attrs: attrs || null });
+const txt = (tag, text, attrs) => ({ tag, text, attrs: attrs || null });
+const mi = (t, a) => txt('mi', t, a);
+const mn = (t) => txt('mn', t);
+const mo = (t, a) => txt('mo', t, a);
+const mtext = (t) => txt('mtext', t);
+const mrow = (ch) => el('mrow', ch);
+// Implicit grouping: a single atom needs no <mrow>; many atoms get one.
+const row = (ch) => (ch.length === 1 ? ch[0] : el('mrow', ch));
+
+/* ===== Symbol tables (command -> a leaf descriptor) ============================= */
+// Greek. Lowercase render italic (variable convention); uppercase upright.
+const GREEK = {
+  alpha: 'α', beta: 'β', gamma: 'γ', delta: 'δ', epsilon: 'ϵ', varepsilon: 'ε',
+  zeta: 'ζ', eta: 'η', theta: 'θ', vartheta: 'ϑ', iota: 'ι', kappa: 'κ',
+  lambda: 'λ', mu: 'μ', nu: 'ν', xi: 'ξ', omicron: 'ο', pi: 'π', varpi: 'ϖ',
+  rho: 'ρ', varrho: 'ϱ', sigma: 'σ', varsigma: 'ς', tau: 'τ', upsilon: 'υ',
+  phi: 'ϕ', varphi: 'φ', chi: 'χ', psi: 'ψ', omega: 'ω',
+  Gamma: 'Γ', Delta: 'Δ', Theta: 'Θ', Lambda: 'Λ', Xi: 'Ξ', Pi: 'Π',
+  Sigma: 'Σ', Upsilon: 'Υ', Phi: 'Φ', Psi: 'Ψ', Omega: 'Ω',
+};
+
+// Binary operators / relations / punctuation / misc — all <mo>.
+const OPS = {
+  times: '×', div: '÷', cdot: '⋅', pm: '±', mp: '∓', ast: '∗', star: '⋆',
+  circ: '∘', bullet: '∙', oplus: '⊕', ominus: '⊖', otimes: '⊗', oslash: '⊘',
+  odot: '⊙', cup: '∪', cap: '∩', sqcup: '⊔', sqcap: '⊓', uplus: '⊎',
+  setminus: '∖', smallsetminus: '∖', wedge: '∧', land: '∧', vee: '∨', lor: '∨',
+  neg: '¬', lnot: '¬', dagger: '†', ddagger: '‡', amalg: '⨿', wr: '≀',
+  leq: '≤', le: '≤', geq: '≥', ge: '≥', neq: '≠', ne: '≠', equiv: '≡',
+  approx: '≈', cong: '≅', simeq: '≃', sim: '∼', propto: '∝', asymp: '≍',
+  doteq: '≐', ll: '≪', gg: '≫', prec: '≺', succ: '≻', preceq: '⪯', succeq: '⪰',
+  subset: '⊂', supset: '⊃', subseteq: '⊆', supseteq: '⊇', sqsubseteq: '⊑',
+  sqsupseteq: '⊒', in: '∈', notin: '∉', ni: '∋', owns: '∋',
+  forall: '∀', exists: '∃', nexists: '∄', mid: '∣', nmid: '∤', parallel: '∥',
+  perp: '⊥', vdash: '⊢', dashv: '⊣', models: '⊨', top: '⊤', bot: '⊥',
+  to: '→', rightarrow: '→', gets: '←', leftarrow: '←', leftrightarrow: '↔',
+  Rightarrow: '⇒', Leftarrow: '⇐', Leftrightarrow: '⇔', mapsto: '↦',
+  longrightarrow: '⟶', longleftarrow: '⟵', longleftrightarrow: '⟷',
+  Longrightarrow: '⟹', Longleftarrow: '⟸', hookrightarrow: '↪', hookleftarrow: '↩',
+  uparrow: '↑', downarrow: '↓', updownarrow: '↕', nearrow: '↗', searrow: '↘',
+  swarrow: '↙', nwarrow: '↖', implies: '⟹', impliedby: '⟸', iff: '⟺',
+  triangleq: '≜', triangleleft: '◁', triangleright: '▷', bowtie: '⋈',
+  ldots: '…', cdots: '⋯', vdots: '⋮', ddots: '⋱', dots: '…', dotsc: '…',
+  colon: ':',
+};
+
+// Symbols that read as identifiers / constants — <mi>.
+const IDENTS = {
+  infty: '∞', partial: '∂', nabla: '∇', emptyset: '∅', varnothing: '∅',
+  aleph: 'ℵ', beth: 'ℶ', hbar: 'ℏ', hslash: 'ℏ', ell: 'ℓ', wp: '℘',
+  Re: 'ℜ', Im: 'ℑ', mho: '℧', Finv: 'Ⅎ', Game: '⅁', imath: 'ı', jmath: 'ȷ',
+  angle: '∠', measuredangle: '∡', sphericalangle: '∢', triangle: '△',
+  square: '□', blacksquare: '■', lozenge: '◊', bigstar: '★', diamond: '⋄',
+  flat: '♭', natural: '♮', sharp: '♯', clubsuit: '♣', diamondsuit: '♦',
+  heartsuit: '♥', spadesuit: '♠', surd: '√', backslash: '\\', degree: '°',
+  checkmark: '✓', maltese: '✠', P: '¶', S: '§',
+};
+
+// Big operators. `limits:true` => sub/sup move under/over in display mode.
+const BIGOPS = {
+  sum: ['∑', true], prod: ['∏', true], coprod: ['∐', true],
+  int: ['∫', false], iint: ['∬', false], iiint: ['∭', false], oint: ['∮', false],
+  bigcup: ['⋃', true], bigcap: ['⋂', true], bigsqcup: ['⨆', true],
+  bigvee: ['⋁', true], bigwedge: ['⋀', true],
+  bigoplus: ['⨁', true], bigotimes: ['⨂', true], bigodot: ['⨀', true],
+  biguplus: ['⨄', true],
+};
+
+// Named operators rendered upright. `true` => limits move under/over in display.
+const FUNCS = {
+  sin: false, cos: false, tan: false, cot: false, sec: false, csc: false,
+  arcsin: false, arccos: false, arctan: false, sinh: false, cosh: false,
+  tanh: false, coth: false, log: false, ln: false, lg: false, exp: false,
+  deg: false, arg: false, dim: false, hom: false, ker: false,
+  lim: true, limsup: true, liminf: true, max: true, min: true, sup: true,
+  inf: true, det: true, gcd: true, Pr: true, mod: false, bmod: false,
+};
+
+// Stretchy fence delimiters used by \left … \right (and standalone).
+const DELIMS = {
+  '(': '(', ')': ')', '[': '[', ']': ']', '|': '|',
+  'lbrace': '{', '{': '{', 'rbrace': '}', '}': '}',
+  'langle': '⟨', 'rangle': '⟩', 'lfloor': '⌊', 'rfloor': '⌋',
+  'lceil': '⌈', 'rceil': '⌉', 'vert': '|', 'Vert': '‖', 'lvert': '|',
+  'rvert': '|', 'lVert': '‖', 'rVert': '‖', 'backslash': '\\', '/': '/',
+  'uparrow': '↑', 'downarrow': '↓', '.': '',
+};
+
+// Accent commands -> [accent char, stretchy?].
+const ACCENTS = {
+  hat: ['^', false], widehat: ['^', true], check: ['ˇ', false], breve: ['˘', false],
+  acute: ['´', false], grave: ['`', false], tilde: ['~', false], widetilde: ['~', true],
+  bar: ['¯', false], vec: ['→', false], dot: ['˙', false], ddot: ['¨', false],
+  dddot: ['⃛', false], mathring: ['˚', false], overline: ['‾', true],
+  overrightarrow: ['→', true], overleftarrow: ['←', true],
+};
+
+// \mathXX font commands -> the MathML mathvariant they set.
+const VARIANTS = {
+  mathbb: 'double-struck', mathbf: 'bold', boldsymbol: 'bold-italic',
+  mathcal: 'script', mathscr: 'script', mathfrak: 'fraktur',
+  mathsf: 'sans-serif', mathtt: 'monospace', mathrm: 'normal',
+  mathit: 'italic', mathnormal: 'italic', textrm: 'normal', textbf: 'bold',
+  textit: 'italic', texttt: 'monospace',
+};
+
+// Whitespace commands -> mspace width (em).
+const SPACES = {
+  ',': '0.167em', ':': '0.222em', ';': '0.278em', '!': '-0.167em',
+  ' ': '0.25em', quad: '1em', qquad: '2em', enspace: '0.5em',
+  thinspace: '0.167em', medspace: '0.222em', thickspace: '0.278em',
+  negthinspace: '-0.167em', '~': '0.25em',
+};
+
+/* ===== Lexer (single linear pass) =============================================== */
+// Token kinds: {k:'char',v} | {k:'cmd',v} | {k:'^'} | {k:'_'} | {k:'{'} | {k:'}'}
+//            | {k:'&'} | {k:'rowbreak'}
+function lex(src) {
+  const toks = [];
+  let i = 0;
+  const n = src.length;
+  while (i < n) {
+    const c = src[i];
+    if (c === '%') { while (i < n && src[i] !== '\n') i++; continue; }      // TeX comment
+    if (c === ' ' || c === '\t' || c === '\n' || c === '\r') {              // collapse a run to ONE
+      while (i < n && (src[i] === ' ' || src[i] === '\t' || src[i] === '\n' || src[i] === '\r')) i++;
+      toks.push({ k: 'space' });                                            // ignored in math, kept in \text
+      continue;
+    }
+    if (c === '^') { toks.push({ k: '^' }); i++; continue; }
+    if (c === '_') { toks.push({ k: '_' }); i++; continue; }
+    if (c === '{') { toks.push({ k: '{' }); i++; continue; }
+    if (c === '}') { toks.push({ k: '}' }); i++; continue; }
+    if (c === '&') { toks.push({ k: '&' }); i++; continue; }
+    if (c === '~') { toks.push({ k: 'cmd', v: '~' }); i++; continue; }
+    if (c === '\\') {
+      const d = src[i + 1];
+      if (d === undefined) { toks.push({ k: 'char', v: '\\' }); i++; continue; }
+      if (d === '\\') { toks.push({ k: 'rowbreak' }); i += 2; continue; }     // \\ row break
+      if (/[a-zA-Z]/.test(d)) {                                              // control word
+        let j = i + 1;
+        while (j < n && /[a-zA-Z]/.test(src[j])) j++;
+        let name = src.slice(i + 1, j);
+        if (src[j] === '*') { name += '*'; j++; }                            // \operatorname* etc.
+        toks.push({ k: 'cmd', v: name });
+        i = j;
+        while (i < n && (src[i] === ' ' || src[i] === '\t')) i++;            // gobble trailing space
+        continue;
+      }
+      toks.push({ k: 'cmd', v: d });                                         // control symbol \, \{ \$ …
+      i += 2; continue;
+    }
+    toks.push({ k: 'char', v: c });
+    i++;
+  }
+  return toks;
+}
+
+/* ===== Parser (bounded recursive descent) ======================================= */
+function parser(toks) {
+  return { toks, i: 0, depth: 0, count: 0, over: false };
+}
+const peek = (P) => P.toks[P.i];
+const bump = (P) => { if (++P.count > MAX_NODES) P.over = true; };
+const skipSpaces = (P) => { while (P.i < P.toks.length && P.toks[P.i].k === 'space') P.i++; };
+
+// Parse a run of atoms (each = nucleus + scripts) until a stopper. `cell` mode
+// (inside an environment) stops at & / \\ / \end; otherwise those are consumed
+// and ignored so the pass stays total. Always stops at } and EOF.
+function parseRun(P, cell) {
+  const atoms = [];
+  if (P.depth++ > MAX_DEPTH || P.over) { P.depth--; if (!P.over) atoms.push(mtext('…')); return atoms; }
+  while (P.i < P.toks.length && !P.over) {
+    const tk = peek(P);
+    if (tk.k === 'space') { P.i++; continue; }
+    if (tk.k === '}') break;
+    if (tk.k === 'cmd' && (tk.v === 'end' || tk.v === 'right')) break;      // \right ends a \left group
+    if (tk.k === '&' || tk.k === 'rowbreak') { if (cell) break; P.i++; continue; }
+    // infix fraction operators: everything before \over/\atop/\choose is the
+    // numerator, the rest of this run is the denominator.
+    if (tk.k === 'cmd' && (tk.v === 'over' || tk.v === 'atop' || tk.v === 'choose')) {
+      P.i++;
+      const num = row(atoms.splice(0, atoms.length));
+      const den = row(parseRun(P, cell));
+      atoms.push(tk.v === 'choose'
+        ? fenced('(', el('mfrac', [num, den], { linethickness: '0' }), ')')
+        : el('mfrac', [num, den], tk.v === 'atop' ? { linethickness: '0' } : null));
+      break;                                                 // the remainder was consumed by the recursive parseRun
+    }
+    let base = parseAtom(P);
+    if (base == null) continue;
+    base = attachScripts(P, base);
+    atoms.push(base);
+  }
+  P.depth--;
+  return atoms;
+}
+
+// One nucleus (no scripts). Returns a descriptor, or null if nothing consumable.
+// `single` (set when serving a brace-free argument) keeps a digit from greedily
+// swallowing following tokens, so \frac12 == \frac{1}{2} (TeX single-token arg).
+function parseAtom(P, single) {
+  skipSpaces(P);
+  const tk = peek(P);
+  if (tk == null) return null;
+  if (tk.k === '^' || tk.k === '_') return mrow([]);                 // empty base; scripts attach next
+  if (tk.k === '{') { P.i++; const inner = parseRun(P, false); if (peek(P) && peek(P).k === '}') P.i++; bump(P); return row(inner); }
+  if (tk.k === 'char') { P.i++; return charAtom(P, tk.v, single); }
+  if (tk.k === 'cmd') { P.i++; return cmdAtom(P, tk.v); }
+  P.i++; return null;
+}
+
+function charAtom(P, c, single) {
+  bump(P);
+  if (c >= '0' && c <= '9') {                                        // group a number into one <mn>
+    let s = c;
+    if (!single) while (peek(P) && peek(P).k === 'char' && /[0-9.]/.test(peek(P).v)) { s += peek(P).v; P.i++; }
+    return mn(s);
+  }
+  if (/[A-Za-z]/.test(c)) return mi(c);                              // one identifier per letter (TeX semantics)
+  if (c === '-') return mo('−');                                     // ASCII hyphen -> real minus
+  if (c === "'") return mo('′');
+  if (c === '(' || c === ')' || c === '[' || c === ']' || c === '|') return mo(c, { stretchy: 'false' });
+  if (c === '.' || c === ',' || c === ';' || c === '!' || c === '?') return mo(c);
+  return mo(c);
+}
+
+// Parse a single argument: a {group}, or the next single atom (TeX semantics).
+function parseArg(P) {
+  skipSpaces(P);
+  const tk = peek(P);
+  if (tk == null) return mrow([]);
+  if (tk.k === '{') { P.i++; const inner = parseRun(P, false); if (peek(P) && peek(P).k === '}') P.i++; bump(P); return row(inner); }
+  // Brace-free arg = ONE token. Depth-account this branch too: cmdAtom -> parseArg
+  // -> parseAtom -> cmdAtom is the recursion MAX_DEPTH must bound (\frac\frac… /
+  // \sqrt\sqrt… / \hat\hat… chains), and it never runs through parseRun.
+  if (P.over || P.depth >= MAX_DEPTH) return mtext('…');
+  P.depth++;
+  const a = parseAtom(P, true);
+  P.depth--;
+  return a == null ? mrow([]) : a;
+}
+
+// Collect atoms until a literal ']' char (used for the \sqrt index option).
+function parseBracketArg(P) {
+  skipSpaces(P);
+  if (!peek(P) || peek(P).k !== 'char' || peek(P).v !== '[') return null;
+  P.i++;
+  const atoms = [];
+  if (P.depth++ > MAX_DEPTH) { P.depth--; return mrow([]); }
+  while (P.i < P.toks.length && !P.over) {
+    const tk = peek(P);
+    if (tk.k === 'char' && tk.v === ']') { P.i++; break; }
+    if (tk.k === '}') break;
+    let b = parseAtom(P);
+    if (b == null) continue;
+    b = attachScripts(P, b);
+    atoms.push(b);
+  }
+  P.depth--;
+  return row(atoms);
+}
+
+// super/subscripts + primes following a nucleus.
+function attachScripts(P, base) {
+  let sub = null, sup = null;
+  while (P.i < P.toks.length && !P.over) {
+    skipSpaces(P);
+    const tk = peek(P);
+    if (tk == null) break;
+    if (tk.k === '^') { P.i++; sup = sup ? row([sup, parseArg(P)]) : parseArg(P); }
+    else if (tk.k === '_') { P.i++; sub = sub ? row([sub, parseArg(P)]) : parseArg(P); }
+    else if (tk.k === 'char' && tk.v === "'") {
+      let primes = '';
+      while (peek(P) && peek(P).k === 'char' && peek(P).v === "'") { primes += '′'; P.i++; }
+      sup = sup ? row([sup, mo(primes)]) : mo(primes);
+    } else break;
+  }
+  if (sub == null && sup == null) return base;
+  bump(P);
+  const limits = base && base.limits;                       // movablelimits big-op / function
+  if (limits) {
+    if (sub && sup) return el('munderover', [strip(base), sub, sup]);
+    if (sub) return el('munder', [strip(base), sub]);
+    return el('mover', [strip(base), sup]);
+  }
+  if (sub && sup) return el('msubsup', [base, sub, sup]);
+  if (sub) return el('msub', [base, sub]);
+  return el('msup', [base, sup]);
+}
+// Drop the transient `limits` marker before a node lands in the tree.
+const strip = (d) => { if (d && d.limits) { const { limits, ...rest } = d; return rest; } return d; };
+
+// \not<rel> -> the precomposed negated relation where Unicode has one.
+const NOT_MAP = {
+  '=': '≠', '<': '≮', '>': '≯', '∈': '∉', '∋': '∌', '≡': '≢', '∼': '≁', '≃': '≄',
+  '≅': '≇', '≈': '≉', '≤': '≰', '≥': '≱', '⊂': '⊄', '⊃': '⊅', '⊆': '⊈', '⊇': '⊉',
+};
+
+/* ===== Command dispatch ========================================================= */
+function cmdAtom(P, name) {
+  bump(P);
+  // --- arity-2: fractions
+  if (name === 'frac' || name === 'dfrac' || name === 'tfrac' || name === 'cfrac') {
+    const a = parseArg(P), b = parseArg(P);
+    const attrs = name === 'dfrac' ? { displaystyle: 'true' } : name === 'tfrac' ? { displaystyle: 'false' } : null;
+    return el('mfrac', [a, b], attrs);
+  }
+  if (name === 'binom' || name === 'dbinom' || name === 'tbinom') {
+    const a = parseArg(P), b = parseArg(P);
+    return fenced('(', el('mfrac', [a, b], { linethickness: '0' }), ')');
+  }
+  // --- roots
+  if (name === 'sqrt') {
+    const idx = parseBracketArg(P);
+    const arg = parseArg(P);
+    return idx ? el('mroot', [arg, idx]) : el('msqrt', [arg]);
+  }
+  // --- accents
+  if (ACCENTS[name]) {
+    const [ch, stretchy] = ACCENTS[name];
+    const arg = parseArg(P);
+    const acc = mo(ch, { stretchy: stretchy ? 'true' : 'false', accent: 'true' });
+    return el('mover', [arg, acc], { accent: 'true' });
+  }
+  // --- under/over braces
+  if (name === 'overbrace') return el('mover', [parseArg(P), mo('⏞', { stretchy: 'true' })], { accent: 'true' });
+  if (name === 'underbrace') return el('munder', [parseArg(P), mo('⏟', { stretchy: 'true' })], { accent: 'true' });
+  if (name === 'overset') { const top = parseArg(P), bot = parseArg(P); return el('mover', [bot, top]); }
+  if (name === 'underset') { const bot = parseArg(P), top = parseArg(P); return el('munder', [top, bot]); }
+  if (name === 'stackrel') { const top = parseArg(P), bot = parseArg(P); return el('mover', [bot, top]); }
+  if (name === 'underline') return el('munder', [parseArg(P), mo('_', { stretchy: 'true' })], { accent: 'true' });
+  // --- boxed/cancel: MathML Core has no <menclose>, so render the CONTENT and
+  // drop the decoration (far better than the literal "\boxed" the fallthrough gives).
+  if (name === 'boxed' || name === 'cancel' || name === 'bcancel' || name === 'xcancel') return parseArg(P);
+  // --- extensible arrows: a label set over a stretchy arrow.
+  if (name === 'xrightarrow' || name === 'xleftarrow' || name === 'xRightarrow' || name === 'xLeftarrow') {
+    parseBracketArg(P);                                       // ignore the optional [under] label
+    const arrow = /left/i.test(name) ? (name[1] === 'L' ? '⇐' : '←') : (name[1] === 'R' ? '⇒' : '→');
+    return el('mover', [mo(arrow, { stretchy: 'true' }), parseArg(P)]);
+  }
+  // --- \pmod{n} / \pod{n}
+  if (name === 'pmod') return el('mrow', [txt('mspace', '', { width: '0.444em' }), mo('('), mi('mod', { mathvariant: 'normal' }), txt('mspace', '', { width: '0.333em' }), parseArg(P), mo(')')]);
+  if (name === 'pod') return el('mrow', [txt('mspace', '', { width: '0.444em' }), mo('('), parseArg(P), mo(')')]);
+  // --- text / font variants
+  if (name === 'text' || name === 'textnormal' || name === 'mbox') return mtext(rawText(P));
+  if (name === 'operatorname' || name === 'operatorname*') {
+    const s = rawText(P);
+    if (name === 'operatorname*') { const node = mo(s, { movablelimits: 'true', lspace: '0', rspace: '0' }); node.limits = true; return node; }
+    return mi(s, { mathvariant: 'normal' });
+  }
+  if (VARIANTS[name]) return applyVariant(parseArg(P), VARIANTS[name]);
+  // --- spacing
+  if (SPACES[name] != null) return txt('mspace', '', { width: SPACES[name] });
+  // --- delimiters: \left … \right
+  if (name === 'left') return parseLeftRight(P);
+  if (name === 'right') return mrow([]);                   // unmatched \right -> nothing
+  if (name === 'bigl' || name === 'bigr' || name === 'Bigl' || name === 'Bigr' ||
+      name === 'biggl' || name === 'biggr' || name === 'Biggl' || name === 'Biggr' ||
+      name === 'big' || name === 'Big' || name === 'bigg' || name === 'Bigg') {
+    return delimAtom(P);                                   // sized delim: take the next delimiter token
+  }
+  // --- environments
+  if (name === 'begin') return parseEnv(P);
+  if (name === 'end') return mrow([]);
+  // --- escaped literals \{ \} \$ \% \# \& \_
+  if (name === '{' || name === '}') return mo(name, { stretchy: 'false' });
+  if (name === '$' || name === '%' || name === '#' || name === '&' || name === '_') return mo(name);
+  if (name === ' ') return txt('mspace', '', { width: '0.25em' });
+  if (name === ',' || name === ':' || name === ';' || name === '!') return txt('mspace', '', { width: SPACES[name] });
+  if (name === '|') return mo('‖', { stretchy: 'false' });
+  if (name === 'not') {
+    const a = parseArg(P);
+    const base = a && (a.tag === 'mo' || a.tag === 'mi') ? a.text : null;
+    if (base && NOT_MAP[base]) return mo(NOT_MAP[base]);     // precomposed negation (≠, ∉, ⊄, …)
+    if (base) return mo(base + '̸');                    // overlay AFTER the base grapheme, in ONE <mo>
+    return el('mrow', [a, mo('̸')]);
+  }
+  // --- symbol tables
+  if (GREEK[name]) return mi(GREEK[name]);
+  if (IDENTS[name]) return mi(IDENTS[name]);
+  if (OPS[name]) return mo(OPS[name]);
+  if (DELIMS[name] != null && DELIMS[name] !== '') return mo(DELIMS[name], { stretchy: 'false' });
+  if (BIGOPS[name]) { const [g, lim] = BIGOPS[name]; const node = mo(g, { largeop: 'true', movablelimits: lim ? 'true' : 'false' }); node.limits = lim; return node; }
+  if (FUNCS[name] != null) {
+    const base = name.replace(/\*$/, '');
+    // Limit-bearing names (lim/max/sup/…) are <mo movablelimits> so the browser
+    // puts scripts under/over in display and beside them inline — like big ops.
+    if (FUNCS[name]) { const node = mo(base, { movablelimits: 'true', lspace: '0', rspace: '0' }); node.limits = true; return node; }
+    return mi(base, { mathvariant: 'normal' });
+  }
+  // --- fail closed: unknown control word renders as visible, inert literal text
+  return mtext('\\' + name);
+}
+
+// Read a {group} as plain text (for \text / \operatorname) without math parsing.
+function rawText(P) {
+  if (!peek(P) || peek(P).k !== '{') {
+    const a = parseAtom(P);
+    return a && a.text != null ? a.text : '';
+  }
+  P.i++;
+  let s = '';
+  let d = 1;
+  while (P.i < P.toks.length) {
+    const tk = peek(P); P.i++;
+    if (tk.k === '{') { d++; s += '{'; continue; }
+    if (tk.k === '}') { if (--d === 0) break; s += '}'; continue; }
+    if (tk.k === 'char') s += tk.v;
+    else if (tk.k === 'space') s += ' ';
+    else if (tk.k === 'cmd') s += tk.v === ' ' ? ' ' : '\\' + tk.v;
+    else if (tk.k === '^') s += '^';
+    else if (tk.k === '_') s += '_';
+    else if (tk.k === '&') s += '&';
+  }
+  return s;
+}
+
+// Apply a mathvariant to every identifier/number leaf in a parsed argument.
+function applyVariant(node, variant) {
+  const visit = (d) => {
+    if (!d) return d;
+    if (d.tag === 'mi' || d.tag === 'mn') return txt(d.tag, d.text, { ...(d.attrs || {}), mathvariant: variant });
+    if (d.children) return { ...d, children: d.children.map(visit) };
+    return d;
+  };
+  return visit(node);
+}
+
+// Wrap a node in stretchy fences -> mrow( mo(open), node, mo(close) ).
+function fenced(open, inner, close) {
+  const kids = [];
+  if (open) kids.push(mo(open, { fence: 'true', stretchy: 'true' }));
+  kids.push(inner);
+  if (close) kids.push(mo(close, { fence: 'true', stretchy: 'true' }));
+  return el('mrow', kids);
+}
+
+// Read the delimiter token that follows \left / \right / \big… .
+function readDelim(P) {
+  skipSpaces(P);
+  const tk = peek(P);
+  if (!tk) return '';
+  if (tk.k === 'char') { P.i++; return DELIMS[tk.v] != null ? DELIMS[tk.v] : tk.v; }
+  if (tk.k === 'cmd') { P.i++; return DELIMS[tk.v] != null ? DELIMS[tk.v] : (tk.v === '.' ? '' : ''); }
+  return '';
+}
+function delimAtom(P) {
+  const ch = readDelim(P);
+  return ch ? mo(ch, { stretchy: 'false' }) : mrow([]);
+}
+
+// \left X … \right Y : parse the body, fence it with stretchy delimiters.
+function parseLeftRight(P) {
+  const open = readDelim(P);
+  const body = parseRun(P, false);
+  let close = '';
+  if (peek(P) && peek(P).k === 'cmd' && peek(P).v === 'right') { P.i++; close = readDelim(P); }
+  return fenced(open, row(body), close);
+}
+
+/* ===== Environments (matrices, cases, aligned) ================================== */
+const ENV_FENCE = {
+  pmatrix: ['(', ')'], bmatrix: ['[', ']'], Bmatrix: ['{', '}'],
+  vmatrix: ['|', '|'], Vmatrix: ['‖', '‖'], matrix: ['', ''],
+  smallmatrix: ['', ''], array: ['', ''], cases: ['{', ''],
+  aligned: ['', ''], align: ['', ''], 'align*': ['', ''],
+  gathered: ['', ''], gather: ['', ''], split: ['', ''],
+};
+function parseEnv(P) {
+  // name: \begin{ NAME }
+  let name = '';
+  if (peek(P) && peek(P).k === '{') {
+    P.i++;
+    while (P.i < P.toks.length && peek(P).k !== '}') {
+      const tk = peek(P); P.i++;
+      if (tk.k === 'char') name += tk.v;
+      else if (tk.k === 'cmd') name += tk.v;
+    }
+    if (peek(P) && peek(P).k === '}') P.i++;
+  }
+  if (name === 'array' && peek(P) && peek(P).k === '{') { rawText(P); } // skip column spec {ccc}
+
+  const rows = [];
+  let curRow = [];
+  let cell = [];
+  const pushCell = () => { curRow.push(row(cell)); cell = []; };
+  const pushRow = () => { pushCell(); rows.push(curRow); curRow = []; };
+
+  if (P.depth++ > MAX_DEPTH) { P.depth--; return mtext('…'); }
+  while (P.i < P.toks.length && !P.over) {
+    const tk = peek(P);
+    if (tk.k === 'space') { P.i++; continue; }                // skip so a trailing "\\ \end" doesn't leak the env name as a row
+    if (tk.k === 'cmd' && tk.v === 'end') {
+      P.i++;
+      if (peek(P) && peek(P).k === '{') rawText(P);          // consume {name}
+      break;
+    }
+    if (tk.k === '&') { P.i++; pushCell(); continue; }
+    if (tk.k === 'rowbreak') { P.i++; pushRow(); continue; }
+    if (tk.k === '}') break;
+    let b = parseAtom(P);
+    if (b == null) continue;
+    b = attachScripts(P, b);
+    cell.push(b);
+  }
+  P.depth--;
+  // flush the final row unless it is a lone trailing empty cell (from a closing \\)
+  if (cell.length || curRow.length) pushRow();
+  if (rows.length && rows[rows.length - 1].length === 1 && isEmpty(rows[rows.length - 1][0])) rows.pop();
+
+  const aligned = name === 'aligned' || name === 'align' || name === 'align*' || name === 'split';
+  const mtable = el('mtable', rows.map((r) =>
+    el('mtr', r.map((c, ci) => {
+      const a = {};
+      if (name === 'cases') a.columnalign = 'left';
+      else if (aligned) a.columnalign = ci % 2 === 0 ? 'right' : 'left';
+      return el('mtd', [c], Object.keys(a).length ? a : null);
+    }))
+  ));
+  const [open, close] = ENV_FENCE[name] || ['', ''];
+  return open || close ? fenced(open, mtable, close) : mtable;
+}
+const isEmpty = (d) => d && d.tag === 'mrow' && (!d.children || d.children.length === 0);
+
+/* ===== Public: build AST (pure, DOM-free) ======================================= */
+export function buildMathAst(tex, { display = false } = {}) {
+  const src = String(tex ?? '');
+  if (src.length > MAX_TEX) return { tag: 'math', attrs: { display: display ? 'block' : 'inline' }, children: [mtext(src)], over: true };
+  const P = parser(lex(src));
+  let kids = parseRun(P, false);
+  if (P.over) kids = [mtext(src)];                          // hit a bound -> degrade to literal source
+  return el('math', [row(kids)], { display: display ? 'block' : 'inline' });
+}
+
+/* ===== Serialize to a MathML string (pure; for tests / debugging) =============== */
+const escapeXml = (s) => s.replace(/[&<>]/g, (c) => (c === '&' ? '&amp;' : c === '<' ? '&lt;' : '&gt;'));
+export function toMathMLString(d) {
+  if (d.tag && !MML_ELEMENTS.has(d.tag)) throw new Error('smath: element outside allow-list: ' + d.tag);
+  const attrs = d.attrs ? Object.keys(d.attrs).filter((k) => k !== 'limits').map((k) => ` ${k}="${escapeXml(String(d.attrs[k]))}"`).join('') : '';
+  if (d.text != null) return `<${d.tag}${attrs}>${escapeXml(d.text)}</${d.tag}>`;
+  const inner = (d.children || []).map(toMathMLString).join('');
+  return `<${d.tag}${attrs}>${inner}</${d.tag}>`;
+}
+
+/* ===== Public: build DOM ======================================================== */
+function toDom(d, doc) {
+  if (!MML_ELEMENTS.has(d.tag)) throw new Error('smath: element outside allow-list: ' + d.tag);
+  const node = doc.createElementNS(MML, d.tag);
+  if (d.attrs) for (const k in d.attrs) if (k !== 'limits') node.setAttribute(k, String(d.attrs[k]));
+  if (d.text != null) node.appendChild(doc.createTextNode(d.text));
+  else if (d.children) for (const c of d.children) node.appendChild(toDom(c, doc));
+  return node;
+}
+
+// renderMath(tex, {display}) -> a <span> wrapping native <math> (matches the
+// .md-math / .md-math-display contract the markdown renderer + base.css expect).
+// Total + synchronous: never throws (any failure degrades to literal source text).
+export function renderMath(tex, { display = false, document: docArg } = {}) {
+  const doc = docArg || (typeof document !== 'undefined' ? document : null);
+  if (!doc) throw new Error('smath: no document available; pass options.document.');
+  const span = doc.createElement('span');
+  span.className = display ? 'md-math md-math-display' : 'md-math';
+  try {
+    span.appendChild(toDom(buildMathAst(tex, { display }), doc));
+  } catch {
+    span.textContent = String(tex ?? '');                  // stay total no matter what
+  }
+  return span;
+}
+
+export { MML_ELEMENTS };
+export default renderMath;

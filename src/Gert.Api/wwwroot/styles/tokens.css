@@ -69,10 +69,12 @@
   --green:         light-dark(#286e43,             #62c281);
   --green-soft:    light-dark(rgba(63,155,99,.13), rgba(98,194,129,.16));
   --chat-on:       light-dark(rgba(221,87,40,.10), rgba(255,107,61,.12));   /* active sidebar item */
-  /* code syntax: tags / attributes. Code panels are DARK in both themes (see
-     --code-bg), so both sides are picked against the dark ground (>=4.5). */
-  --code-tag:      light-dark(#ef7a4d,             var(--coral));
-  --code-attr:     light-dark(#62c281,             #62c281);
+  /* code syntax: tags / attributes (also feed --tok-kw / --tok-str). Code now
+     follows the theme (see --code-bg), so manila uses deepened ink-family hues
+     picked against the LIGHT paper ground and ember keeps the warm-on-dark pair;
+     both sides clear WCAG AA (>=4.5) on their own code-bg. */
+  --code-tag:      light-dark(#b8431c,             var(--coral));
+  --code-attr:     light-dark(#286e43,             #62c281);
   /* "deep" coral for small text/icons: darker on cream (WCAG AA), LIGHTER on dark */
   --coral-deep:    light-dark(#b8431c,             var(--coral-2));
 
@@ -84,14 +86,17 @@
   --proc-fg:       light-dark(#83611f,             #d8a44d);
   --fail-bg:       light-dark(#f0d8d1,             #3a201a);
   --fail-fg:       light-dark(#8a2917,             #df5b41);
-  /* code panels: dark warm "ink-block print" ground in BOTH themes (base.css
-     relies on this); every --tok-* below clears 4.5 on both code-bg values */
-  --code-bg:       light-dark(#2e2620,             #2a241b);
-  --code-fg:       light-dark(#ece2cd,             #e9dfcb);
-  --tok-num:       light-dark(#d9b86a,             #d9b86a);
-  --tok-com:       light-dark(#ab9c85,             #ab9c85);
-  --tok-key:       light-dark(#9fc1e0,             #9fc1e0);
-  --tok-dec:       light-dark(#c79bd6,             #c79bd6);
+  /* code panels follow the theme: a warm paper inset in manila, the warm
+     "ink-block print" dark ground in ember. The flat opaque panel masks the
+     page grain, so it reads as an inset even where bg luminance is close. Every
+     --tok-* below is tuned to clear WCAG AA (>=4.5) on its OWN code-bg - the
+     manila (light) side against #f3ecdd, the ember (dark) side against #2a241b. */
+  --code-bg:       light-dark(#f3ecdd,             #2a241b);
+  --code-fg:       light-dark(#3a2c20,             #e9dfcb);
+  --tok-num:       light-dark(#7d5e15,             #d9b86a);
+  --tok-com:       light-dark(#746450,             #ab9c85);
+  --tok-key:       light-dark(#2f6285,             #9fc1e0);
+  --tok-dec:       light-dark(#7c4d92,             #c79bd6);
   --scrim:         light-dark(rgba(36,26,16,.42),  rgba(0,0,0,.6));
   --scroll-thumb:       light-dark(rgba(58,44,32,.18), rgba(239,231,223,.16));
   --scroll-thumb-hover: light-dark(rgba(58,44,32,.34), rgba(239,231,223,.3));

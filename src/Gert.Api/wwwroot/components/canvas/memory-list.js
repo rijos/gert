@@ -3,8 +3,8 @@
 // newest (MemoryService.ListAsync); rows offer delete, the header an add
 // modal (title + note + pin). Pinned entries ride every system prompt, so
 // they wear the coral pin.
-import van from "van";
-import { reactive } from "van-x";
+import van from "/lib/van.js";
+import { reactive } from "/lib/van-x.js";
 import { component } from "../../lib/component.js";
 import { Icon } from "../../icons/icons.js";
 import { Modal } from "../ui/modal.js";

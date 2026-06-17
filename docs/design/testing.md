@@ -27,7 +27,7 @@ The design was built to be testable; the plan just cashes that in:
 | `Gert.Service` references **only** `Gert.Model` - no `HttpContext`, JWT, or SSE ([tech-stack](tech-stack.md)) | The entire tool loop, ingestion pipeline, and orchestration are unit-testable with plain objects - no web host needed. |
 | Streaming is `IAsyncEnumerable<ChatEvent>`; transport renders it ([tech-stack](tech-stack.md)) | We assert on the **event stream** directly in `Gert.Service.Tests`; SSE framing is tested once, separately, in `Gert.Api.Tests`. |
 | Repository interfaces are the **only** code that sees SQL | We test `Gert.Database.Sqlite` against a **real** temp SQLite (vec0 + FTS5) - the only place SQL correctness can be proven. |
-| Isolation is a **filesystem** property; the user key comes only from the token ([principles](principles.md)) | Isolation and IDOR become concrete assertions: mint two tokens, prove user B physically cannot reach user A's folder. |
+| Isolation is enforced by the **data layer** - a per-user store keyed from the token ([principles #2](principles.md)) | Isolation and IDOR become concrete assertions: mint two tokens, prove user B physically cannot reach user A's data. |
 
 ### Why the database stays real (the one asymmetry)
 Everything behind `IGertServices` and the repository interfaces *can* be swapped for an
@@ -38,8 +38,8 @@ in-memory double - that's the whole point of the seam, and it's exactly what we 
   ([tech-stack -> Engine portability](tech-stack.md#engine-portability)). An in-memory repo
   would *reimplement* ranking in C# - testing the fake's ranking, not the real `vec0` + FTS5 +
   RRF retrieval, which is the riskiest code in the system.
-- Isolation is a **filesystem** property ([principles #2](principles.md)), not a repository
-  property - an in-memory store has no per-user `rag.db` to prove it with.
+- Isolation is a **data-layer** property ([principles #2](principles.md)), not something a fake
+  repository can stand in for: an in-memory store has no per-user database to prove it with.
 
 So the rule is: **fake the outside world; keep persistence real but temporary** - real SQLite
 (vec0 + FTS5) in a throwaway `DataRoot` ([section 4.4](#44-per-user-temp-dataroot)). It's nearly as
@@ -92,14 +92,16 @@ tests/
       NaughtyStrings.cs         #   adversarial input corpus - fed across every string field (section 5)
 
   Gert.Service.Tests/           # whitebox - chat orchestrator/tool loop, conversations,
-                                #   documents, ingestion pipeline, tools, validation
+                                #   documents, ingestion pipeline, validation
   Gert.Database.Sqlite.Tests/   # repositories vs real temp SQLite (vec0 + FTS5); migrations; isolation
   Gert.Authentication.Tests/    # JWT claims -> IUserContext; sub->key (sha256); RS256 pin
-  Gert.External.Tests/          # adapter units - SSRF guard, sandbox invocation, extractor hardening, resilience
+  Gert.Chat.Tests/              # chat/embeddings adapter units - OpenAI client, provider catalog, Polly wiring
+  Gert.Tools.Tests/             # tool adapter units - built-in tools, SSRF guard, sandbox invocation, backend selection
+  Gert.Ingestion.Tests/         # extractor hardening units - XXE, zip-bomb, helper output
   Gert.Api.Tests/               # integration via GertApiFactory - controllers, SSE, auth, IDOR, admin, SPA fallback
   Gert.Web.Minify.Tests/        # the publish-time minifier stays ESM-safe (raw-fallback per file)
   web/
-    harness.html                # import map + __mount helper - Fake host serves it at /tests/ for component units
+    harness.html                # __mount helper - Fake host serves it at /tests/ for component units (absolute same-origin imports, no import map)
   shared/                       # ONE source of truth for both fake layers (Appendix A)
     fixtures.json               #   canned chat completions + web-search results
     embeddings_golden.json      #   text -> expected vector - the deterministic-embedding conformance check
@@ -109,7 +111,7 @@ tools/
     run.py                      #   boot mocks + host (FakeE2E) -> mint tokens -> Playwright matrix -> report
     tokens.py                   #   role->claims map; mint(role) RS256 via pyjwt; CLI for local dev
     proxy.py                    #   dev reverse-proxy: view the FakeE2E SPA in YOUR browser (make serve-mock)
-    mocks/                      #   mock upstreams for E2E - the real Gert.External adapters point here
+    mocks/                      #   mock upstreams for E2E - the real Gert.Chat/Tools/Ingestion adapters point here
       __main__.py               #     boots all mocks on localhost ports (one process); shared specs
       vllm.py                   #     OpenAI-compatible: /v1/chat/completions (streaming + tool calls), /v1/embeddings
       searxng.py                #     SearXNG JSON; can emit a private-IP result URL to test the SSRF guard
@@ -168,8 +170,8 @@ scripted behaviour, so a result proven in a unit test is the result the browser 
 
 | Tier | External world | Transport | How |
 |------|----------------|-----------|-----|
-| **.NET unit / integration** (`Gert.Service.Tests`, `Gert.Api.Tests`) | **in-process .NET fakes** (`AddGertFakes` swaps the `Gert.External` ports) | TestServer, no socket | `GertApiFactory : WebApplicationFactory<Program>` -> `HttpClient`. Fastest, fully deterministic. |
-| **Browser E2E** (the Python launcher) | **real `Gert.External` adapters -> Python mock upstreams** (HTTP, incl. the monty sandbox sidecar) | real Kestrel on localhost | `dotnet run --launch-profile FakeE2E`: the host wires its **real** vLLM/SearXNG/monty clients but points them at the mock URLs `tools/smoke/mocks` serves. |
+| **.NET unit / integration** (`Gert.Service.Tests`, `Gert.Api.Tests`) | **in-process .NET fakes** (`AddGertFakes` swaps the adapter ports) | TestServer, no socket | `GertApiFactory : WebApplicationFactory<Program>` -> `HttpClient`. Fastest, fully deterministic. |
+| **Browser E2E** (the Python launcher) | **real `Gert.Chat`/`Gert.Tools`/`Gert.Ingestion` adapters -> Python mock upstreams** (HTTP, incl. the monty sandbox sidecar) | real Kestrel on localhost | `dotnet run --launch-profile FakeE2E`: the host wires its **real** vLLM/SearXNG/monty clients but points them at the mock URLs `tools/smoke/mocks` serves. |
 
 **Why two.** The in-process fakes give speed + determinism for the bulk of the suite. The Python
 mocks give **wire-level fidelity** for the few browser runs: pointing the *real* adapters at a fake
@@ -274,7 +276,7 @@ library.
 Runs against a **real** temp SQLite with the extension loaded (vec0 + FTS5) - an in-memory or
 temp-file DB created per test by `TempDataRoot`.
 - **Migrations** apply cleanly from empty (`chat/001`, `rag/001`).
-- **`SqliteRagRepository`**: insert chunks, run KNN (`vec0 MATCH ... ORDER BY distance`) and FTS5
+- **`SqliteRagStore`** (`Gert.Rag.Sqlite`): insert chunks, run KNN (`vec0 MATCH ... ORDER BY distance`) and FTS5
   (`bm25`), and assert the **RRF hybrid fusion order** - deterministic thanks to `FakeEmbeddings`.
 - **`SqliteChatRepository`**: conversation/message round-trips, ordering, deletes.
 - **Isolation**: open user A's `rag.db`, write; open user B's provider, prove the query surface
@@ -282,7 +284,7 @@ temp-file DB created per test by `TempDataRoot`.
 
 ### `Gert.Authentication.Tests`
 JWT claims (`iss`, `sub`, `groups`, `gert_tools`) -> `IUserContext`; `sha256(iss + sub)` key
-derivation and the **anti-reuse** guarantees ([decisions section 3](decisions.md#3-folder-key),
+derivation and the **anti-reuse** guarantees ([decisions section 3](decisions.md#3-user-key),
 [security F12](security.md#3-findings--remediations)): the provisioning gate rejects a malformed/
 unexpected-issuer identity **before** any folder is created, and a username change in the IdP
 is reflected into `user.db` on the next touch (never a 500, never a gate - the stored row is
@@ -292,7 +294,7 @@ Plus the admin policy. (No denylist - revocation is stateless via token expiry, 
 ### Validation - the input-security boundary
 Validation is where untrusted user **content** first meets the system, so we test it as a
 **security control**, not a forms-niceties check. It complements - never replaces - the
-structural defences: isolation is the token->folder derivation ([principles](principles.md)),
+structural defences: isolation is the token->store derivation ([principles #2](principles.md)),
 SQL-safety is Dapper parameterization. Validation's job is to reject malformed or abusive
 *payloads* before they reach a service or the disk. Because validators sit behind
 `IValidationProvider` in the **service layer**, every caller is held to the **same**
@@ -319,7 +321,7 @@ Four things get tested:
    | Model id | steering to an unintended model | must be in the **known-model allowlist** |
    | Tool name / toggles | invoking an unknown tool | must be a **registered** tool name (entitlement itself is authz - `Gert.Authentication.Tests` + [section 6](#6-api-integration-tests---gertapitests)) |
    | Conversation / document id | tampered id (IDOR is structural; this is defence-in-depth) | well-formed id (e.g. GUID) **before** it reaches a repo |
-   | Admin user `{key}` | path traversal -> `rm -rf` of an arbitrary dir | must match `^[0-9a-f]{64}$`; resolved path asserted **under `/data/users/`** ([security F6](security.md#3-findings--remediations)) |
+   | Admin user `{key}` | path traversal -> deletion of an arbitrary dir | must match `^[0-9a-f]{64}$`; resolved path asserted **under `/data/users/`** ([security F6](security.md#3-findings--remediations)) |
    | Web-search fetch URL | SSRF to internal services / metadata IP | scheme allowlist; private/loopback/link-local blocked; re-checked after redirects - `SsrfGuardTests` + `SafeHttpFetcherTests` + `SafeHttpFetcherRedirectTests` ([security F5](security.md#3-findings--remediations)) |
    | Pagination / `k` | negative/absurd values | positive, bounded |
    | RAG query text | FTS5 query-syntax abuse | carried as **data, not operators** (also a query-construction concern) |
@@ -371,7 +373,7 @@ that only exist once you add HTTP:
 - **SSRF guard** ([security F5](security.md#3-findings--remediations)): the web-search fetcher,
   pointed at a private/loopback/`file:` URL (via the `FakeWebSearch` result set), refuses it - it
   never opens the connection. The live-socket halves of the control - the per-hop redirect
-  re-vet and the connect-time DNS pin - are pinned in `Gert.External.Tests/SafeHttpFetcherRedirectTests.cs`
+  re-vet and the connect-time DNS pin - are pinned in `Gert.Tools.Tests/SafeHttpFetcherRedirectTests.cs`
   via the fetcher's internal resolver/IP-check seam (loopback listeners; production wiring unchanged).
 - **Per-user rate limiting** ([security F10](security.md#3-findings--remediations)):
   `RateLimitingTests` re-enables the limiter (skipped under the Testing environment) and turns
@@ -406,8 +408,9 @@ no jsdom, no test-runner package. The browser is the DOM/JS engine; Python is th
 - **Component units** (`tools/smoke/tests/test_components.py`). A VanJS component is a function
   returning a real DOM node, and its reactivity needs a real DOM - so we mount the **actual,
   unmocked** module in a browser and assert. Python drives it via `page.evaluate()` against a
-  tiny `tests/harness.html` (import map + a `__mount` helper) served on the same origin so
-  `/components/...` and `/state/...` imports resolve:
+  tiny `tests/harness.html` (a `__mount` helper) served on the same origin so the modules'
+  absolute same-origin imports (`/components/...`, `/state/...`) resolve - no import map needed,
+  which is the same plain `script-src 'self'` boot the real SPA uses:
 
   ```python
   def test_convo_item_active(page, base_url):
@@ -430,8 +433,27 @@ no jsdom, no test-runner package. The browser is the DOM/JS engine; Python is th
   microtask, so `await` a tick before asserting.
 
 - **Full-app E2E** ([section 8](#8-the-python-dev-launcher)). Loading the whole SPA in a real browser
-  is the truest test of an ESM/import-map app - it catches a broken `import` or import map that
-  a component-isolated test would miss.
+  is the truest test of an all-absolute-import ESM app - it catches a broken `import` or a stray
+  bare specifier that a component-isolated test would miss, and proves the plain `script-src 'self'`
+  CSP boots with no import map and no inline `<script>`.
+
+- **Markdown/math renderer gallery** - the in-house renderer (`lib/markdown.js` + the `lib/render/`
+  engine, with `lib/smath.js`'s native MathML and `lib/highlight.js`'s tokens behind the `MdMath`/`MdCode`
+  leaves) is not just eyeballed: `tests/markdown-gallery.html` renders a battery of CommonMark/GFM/math
+  inputs and self-checks the F4 stance - no `innerHTML`, the closed per-`(ns, tag)` `createEl` allow-list,
+  the single `sanitizeUrl()` chokepoint, MathML carrying no `href`/`src`/`onerror` sink - plus heading
+  anchors and native `<math>` layout in a real browser, exposing a machine-readable verdict on
+  `window.__galleryResult`. The battery is bucketed into FEATURE (render-without-throw), FUNCTIONAL, and
+  SECURITY cards; the Python gate pins each bucket's count so a check can't silently vanish. The Goal B
+  classifier (the single `LINE_KINDS` pass) is pinned by **four new FUNCTIONAL edge-case cards** - bare
+  `######` is an empty ATX `<h6>`, a prefix-only `$$` opens a display-math block, a mid-line `\[` stays a
+  paragraph escape (not display math), and an over-indented table-shaped line is indented code, not a GFM
+  table - each resolving to the stricter/CommonMark-correct single form (an intended behavior change). A
+  **new SECURITY card** pins that the MathML allow-list drops a forged `\href{javascript:…}`/`\src` so no
+  sink attr or `<a>`/`<img>` is forged from TeX. That verdict is an actual CI gate -
+  `tools/smoke/tests/test_components.py::test_markdown_gallery_all_self_checks_pass` asserts every
+  self-check passes (and the bucket counts hold) - so a renderer regression fails the build, not a
+  screenshot review.
 
 The Fake host serves the harness: the Fake profile maps `tests/web/` at `/tests/` (dev-only),
 so the harness imports the real app modules on the same origin.
@@ -446,7 +468,7 @@ npm, no .NET SDK needed beyond running the host.
 **What it does, in order:**
 1. **Boot the mock upstreams** - start `tools/smoke/mocks` (vLLM + SearXNG) on localhost ports, then
    **boot the host** with `dotnet run --launch-profile FakeE2E`, whose config points the **real**
-   `Gert.External` clients at those mock URLs (sandbox = stub). Or attach to an already-running pair
+   `Gert.Chat`/`Gert.Tools` clients at those mock URLs (sandbox = stub). Or attach to an already-running pair
    with `--base-url`; wait for `/healthz`.
 2. **Mint tokens** - call `tokens.mint("admin")` / `tokens.mint("user")` in-process
    ([section 4.3](#43-jwt-minting---a-python-token-harness)). No HTTP round-trip; the same harness a dev
@@ -483,8 +505,7 @@ output parses with one reader.
 `cd tools/smoke && uv sync && uv run playwright install chromium firefox`.
 Run the suite with `uv run python -m tools.smoke.run`, mint a local token with
 `uv run python -m tools.smoke.tokens --role admin` - or use the Makefile wrappers
-(`make smoke-auth`, `make serve-mock`, `make serve-mock-vllm VLLM_URL=...` to point chat at a
-real vLLM while auth stays mocked).
+(`make smoke-auth`, `make serve-mock`).
 
 ---
 
@@ -500,7 +521,7 @@ real vLLM while auth stays mocked).
 | Web tests (component units + E2E) | **Playwright (Python)** | Browser as the DOM/JS engine; Chromium + Firefox; no npm, no Node. |
 | Python env | **uv** | Manages the venv + deps for `tools/smoke` (`uv venv`, `uv run`). |
 | JWT (tests) | **RS256 key generated on first run** (git-ignored) + JWKS | Exercises the real RS256/JWKS path; no key ever committed. |
-| External world (.NET tiers) | **in-process fakes** (`AddGertFakes`) | Swap the `Gert.External` ports; fast, deterministic, no sockets. |
+| External world (.NET tiers) | **in-process fakes** (`AddGertFakes`) | Swap the adapter ports; fast, deterministic, no sockets. |
 | External world (E2E) | **Python mock upstreams** (`tools/smoke/mocks`) | Real adapters -> mock vLLM/SearXNG/monty; exercises adapter HTTP + SSRF guard. |
 
 ---
@@ -623,7 +644,7 @@ messages now carry the tool result) - matches the *same* `when` and plays `after
 - **Fallback:** no match => `"fallback": "echo"` streams `Echo: <message>`, tokenised on word
   boundaries (spaces preserved) so the typewriter caret and SSE framing have real chunks to render.
 - **One asymmetry, same data:** the **Python mock emits OpenAI-compatible SSE** (`data: {chunk}\n\n`,
-  `delta.content` / `delta.tool_calls`, terminal `[DONE]`) because the *real* `Gert.External` adapter
+  `delta.content` / `delta.tool_calls`, terminal `[DONE]`) because the *real* `Gert.Chat` adapter
   parses that wire format ([section 4.2](#42-two-ways-to-fake-the-outside-world)); the **.NET fake yields the
   `IChatModelClient` port's types directly** (no socket). Both are driven by the identical fixture
   entry, so the resulting `ChatEvent` stream is the same.

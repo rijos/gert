@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Chat capability CONTRACTS + generic wiring: the ports the service layer drives
+       (IChatModelClient, IEmbeddingClient, IChatClientFactory, IChatProviderCatalog), the
+       implementation-agnostic provider catalog/factory, and the plugin seams
+       (IChatModelClientBuilder, IDefaultChatProvider). Concrete implementations live in a
+       per-impl leaf assembly, e.g. Gert.Chat.OpenAI (tech-stack.md section Architecture).
+       Depends only on Gert.Model + the DI/configuration abstractions, so the service layer can
+       reference it without seeing any adapter. -->
+  <ItemGroup>
+    <ProjectReference Include="..\Gert.Model\Gert.Model.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The generic AddGertChat registrar + the catalog binding: DI abstractions (keyed
+         services + IServiceCollection) and configuration binding only. No HTTP, no resilience,
+         no SDK - those belong to the implementation plugins. -->
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions"
+                      Version="$(MicrosoftExtensionsDIAbstractionsVersion)" />
+    <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions"
+                      Version="$(MicrosoftExtensionsOptionsVersion)" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions"
+                      Version="$(MicrosoftExtensionsConfigVersion)" />
+  </ItemGroup>
+
+</Project>

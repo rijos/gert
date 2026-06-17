@@ -1,5 +1,5 @@
 // components/ui/pill.js - status pill (ready / proc / fail).
-import van from "van";
+import van from "/lib/van.js";
 import { component } from "../../lib/component.js";
 
 const { span } = van.tags;

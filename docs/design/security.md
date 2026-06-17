@@ -6,7 +6,8 @@ This page consolidates it: the **trust boundaries**, an **asset -> threat -> con
 the **residual risks we knowingly accept**. It is the home for the cross-cutting controls that
 don't belong to a single feature - CSP, SSRF, parser hardening - and the place an auditor starts.
 
-> **One-line posture:** isolation is *structural* (token -> folder, no cross-user query exists), so
+> **One-line posture:** isolation is *structural* (the store is opened from the token, so no
+> application cross-user query exists), so
 > the residual attack surface is **content the box renders or fetches** - LLM/user HTML in the
 > browser, and URLs/files the server pulls in. Most controls below harden that surface.
 
@@ -30,9 +31,9 @@ Four boundaries matter:
 
 1. **Browser <-> Api** - everything from the browser is untrusted, including a *valid* token's
    request body. Bearer-in-header (not cookies) means no CSRF; single-origin means no CORS surface.
-2. **User <-> user / project <-> project** - enforced by the filesystem, not a filter
-   ([principle #2](principles.md)). Nothing below re-litigates this; it's the one boundary that
-   can't be "forgotten in a WHERE clause."
+2. **User <-> user / project <-> project** - enforced by the data layer (a per-user database
+   opened from the token), not an application filter ([principle #2](principles.md)). Nothing
+   below re-litigates this; it's the one boundary that can't be "forgotten in a WHERE clause."
 3. **Api <-> external content** - web pages, search results, and uploaded files are untrusted
    *content* the server parses, fetches, or feeds to the model. This is the SSRF / XXE / parser
    surface.
@@ -45,16 +46,16 @@ Four boundaries matter:
 
 | Asset | Threat | Control | Where |
 |-------|--------|---------|-------|
-| A user's data | IDOR - read/write another user | Key derived **only** from token `sub`; isolation is filesystem-structural | [principles #2/#3](principles.md), [auth](auth.md#authorization-matrix) |
+| A user's data | IDOR - read/write another user | Key derived **only** from token `sub`; isolation is database-structural (a per-user store opened by token, no application query filter) | [principles #2/#3](principles.md), [auth](auth.md#authorization-matrix) |
 | A user's data | Path traversal via `pid` | `pid` validated to UUID/`default`, joined only under the token folder | [configuration section 2.5](configuration.md#25-path-resolution--why-a-request-supplied-project-id-is-still-idor-safe) |
-| A user's data | **Identifier reuse** - a recreated/reassigned identity inherits a folder | Anchor on stable `sub` (not email); key = `sha256(iss+sub)`; validate-before-disk | [section 3 / F12](#3-findings--remediations), [decisions section 3](decisions.md#3-folder-key) |
-| **All users' data** | **Path traversal via admin `{key}`** | `{key}` must match `^[0-9a-f]{64}$`; resolved path asserted under `/data/users` before `rm -rf` | [section 3 / F6](#3-findings--remediations), [rest-api](rest-api.md#admin-requires-admin-policy) |
+| A user's data | **Identifier reuse** - a recreated/reassigned identity inherits a folder | Anchor on stable `sub` (not email); key = `sha256(iss+sub)`; validate-before-disk | [section 3 / F12](#3-findings--remediations), [decisions section 3](decisions.md#3-user-key) |
+| **All users' data** | **Path traversal via admin `{key}`** | `{key}` must match `^[0-9a-f]{64}$`; resolved path asserted under `/data/users` before any delete | [section 3 / F6](#3-findings--remediations), [rest-api](rest-api.md#admin-requires-admin-policy) |
 | Bearer token | Theft via XSS | CSP + sanitized rendering + sandboxed artifacts; token kept out of long-lived storage where possible | [section 3 / F1-F4](#3-findings--remediations) |
 | Tool capability | Privilege escalation via UI toggle | `gert_tools` JWT entitlement is the hard ceiling; intersect before advertising | [auth](auth.md#enforcement---the-claim-is-the-ceiling) |
 | Internal network | SSRF via web-search fetch | Block private/link-local/loopback + non-HTTP(S); no redirect into them; size/time cap | [section 3 / F5](#3-findings--remediations), [chat-and-tools](chat-and-tools.md#web-search-searxng) |
 | The host | RCE / escape via `run_python` | Behind `IPythonSandbox`: **monty** (Rust Python, no syscalls) in an unprivileged, no-`/data`, egress-off sidecar by default - or **gVisor** (ephemeral container); both with mem/wall caps | [chat-and-tools](chat-and-tools.md#sandbox---security-critical) |
 | Ingestion worker / host | XXE - zip-bomb - **memory-corruption in parsers** | Extraction in an **isolated unprivileged subprocess** (dropped privs, no net, `RLIMIT_*` + timeout); DTD/external-entities **off**; decompressed-size & entry caps | [section 3 / F7](#3-findings--remediations), [tech-stack](tech-stack.md) |
-| Upload storage | Path traversal / overwrite via filename | Store under server-generated `{doc-id}.{ext}`; reject separators/`..`; extension allowlist | [operations](operations.md#cross-cutting-concerns), [testing section 5](testing.md#validation---the-input-security-boundary) |
+| Upload storage | Path traversal / overwrite via filename | Store under a fully server-generated `files/{doc-id}` key (a UUID, **no extension**) - the caller's filename never reaches a storage path; it is base64 DB metadata only. Extension allowlist gates the file *type* | [operations](operations.md#cross-cutting-concerns), [testing section 5](testing.md#validation---the-input-security-boundary) |
 | Any service input | Malformed/abusive payload | Fail-closed `IValidationProvider` in the service layer (every caller); reflection meta-test | [principle #6](principles.md), [testing section 5](testing.md#validation---the-input-security-boundary) |
 | Session | Stolen/leaked token replay | HTTPS/HSTS; ~1h token lifetime (+ IdP deactivation); `RS256`-pinned validation. No denylist - stateless, multi-instance-safe | [section 3 / F9,F11](#3-findings--remediations), [decisions section 4](decisions.md#4-token-lifetime--revocation) |
 | Provider keys / secrets | Leak via committed config | Secrets from env / `dotnet user-secrets` / secret store - never committed | [section 3 / F8](#3-findings--remediations), [tech-stack](tech-stack.md) |
@@ -73,8 +74,12 @@ response:
 - `X-Content-Type-Options: nosniff` - `Referrer-Policy: no-referrer` - `X-Frame-Options: DENY`
   (belt-and-braces with `frame-ancestors`) - `Permissions-Policy` minimised.
 
-The no-bundle ESM design already needs **no `unsafe-inline`** for scripts (the import map and
-`<script type="module" src>` are external), so `script-src 'self'` holds. `connect-src` is the
+The no-bundle ESM design already needs **no `unsafe-inline`** for scripts: every import is an
+absolute same-origin path (e.g. `/lib/van.js`), so there are no bare specifiers and **no inline
+`<script type="importmap">`** - just external `<script type="module" src>`. `script-src 'self'`
+therefore needs **no `sha256` hash** (there is no inline script to whitelist), which is why
+`SecurityHeadersMiddleware.cs` carries no import-map-hash constant and the publish minifier (which
+only touches `.js`/`.css`) has nothing to invalidate. `connect-src` is the
 exfiltration brake - it must list the API origin and Pocket ID, nothing else. The HTML/SVG
 artifact iframe is `srcdoc` with its **own** restrictive CSP (see F3). -> [operations](operations.md#http-security-headers--csp).
 
@@ -95,10 +100,61 @@ steals the token. Both artifact iframes use `sandbox="allow-scripts"` **without 
 raw text, never an injected live node. -> [ui-components](ui-components.md#security-token-handling--rendering).
 
 ### F4 - Markdown sanitization
-Assistant messages and the Markdown artifact render model output. The renderer runs with **raw HTML
-disabled** (or output passed through a sanitizer allow-list), `javascript:`/`data:` URLs stripped,
-and external links forced to `rel="noopener noreferrer" target="_blank"`. VanJS text bindings escape
-by default, but any "render HTML" path is the exception that needs this. -> [ui-components](ui-components.md#security-token-handling--rendering).
+Assistant messages and the Markdown artifact render model output through `lib/markdown.js`, an
+**in-house renderer** (no third-party Markdown engine). `markdown.js` is a thin facade that wires
+`parse -> render -> assignHeadingIds` inside one `try/catch` (any fault degrades to literal source, so
+`renderMarkdown` is **total**) and re-exports the public surface; the engine lives under `lib/render/`.
+Parsing is bounded: `render/lines.js` classifies each line **once** (the declarative `LINE_KINDS` table,
+which feeds both the block dispatcher and the paragraph-interrupt) into a **bounded** block parse
+(`MAX_NEST` = 32; past the cap a would-be container is plain text), and `render/inline.js` runs an O(n)
+left-to-right inline scan bounded by `MAX_INLINE`/`MAX_DEST`/`MAX_TITLE` - so adversarial nesting can't
+blow the stack. Math and code are **opaque leaves** in the AST (raw latex/code, never re-parsed as markup).
+
+The structural renderer (`render/dom.js`) emits **every** markdown element through **one guarded
+`createEl(ns, tag, attrs)` chokepoint** over a **closed per-`(ns, tag)` allow-list**: each tag's permitted
+attribute set is pinned (`href` only on `<a>`, `src` only on `<img>`; td/th alignment is a CSSOM
+`el.style.textAlign` write, **not** an attribute), and any unknown `(ns, tag)` or attribute is a
+**fail-closed throw** (caught by the facade's literal-source fallback). The producible node set is the
+**closed `NODE_TYPES`** set (the renderer's `switch` has a `default: throw`). So the output is a fixed
+allow-list and `innerHTML` is **never** used; there is no "raw HTML" path to disable and no sanitizer to
+trust. URLs funnel through **one `sanitizeUrl()` source** (`render/url.js`, shared by the renderer and the
+external-link UI gate): `javascript:`/`data:`/`vbscript:`, plus control-char and `&colon;` smuggling -> `#`;
+external links are forced to `rel="noopener noreferrer" target="_blank"` (applied locally at the link node).
+**Image sources are restricted to inline `data:image/(png|jpe?g|gif|webp|avif|bmp|x-icon);base64`;
+EVERY url-shaped src - cross-origin, same-origin, *and* relative - collapses to `#`** *in the renderer*
+(`sanitizeImgUrl`), not relying on CSP `img-src` (F1) alone. Images are the one markdown construct that
+auto-fetches, and the model can't author a working app asset URL, so a prompt-injected
+`![](https://attacker/x)` (IP-beacon) or `![](/c/assets/x.png)` (same-origin probe / 401 noise) only ever
+fires a doomed request with zero legitimate use - the app never renders trusted markdown that points at its
+own images by URL. Inline `data:image` (a generated chart) is the only real image case and is kept; CSP
+`img-src` is the backstop, not the gate. The renderer returns a `DocumentFragment` of allow-listed nodes
+that the app appends directly, so model text never flows through an HTML-parsing sink.
+-> [ui-components](ui-components.md#security-token-handling--rendering).
+
+**Code and math leaves** are VanJS components (`md-code.js` / `md-math.js`) the structural renderer
+**calls** and inserts the returned DOM from; each builds nodes with `createElement`/`createElementNS`
+(**never** `van.tags` - it has no allow-list - and never `innerHTML`):
+- **`MdCode`** wraps `lib/highlight.js`: `<pre data-lang><code>…</code></pre>` where `<code>` holds **only**
+  inert `tok-*` spans + text (tinted from `textContent`; no attribute but `class`, no class outside `tok-*`).
+  `data-lang` stays guarded to `/^[\w+#.-]{1,16}$/` and only ever lands in `dataset`.
+- **`MdMath`** wraps `lib/smath.js`: it keeps smath's **closed `MML_ELEMENTS` allow-list** and its
+  **per-formula `try/catch`**, so bad TeX degrades to literal text **per formula**, never document-wide.
+
+**Math (`$...$` / `\(...\)` inline, `$$...$$` / `\[...\]` display)** keeps the same stance with **no
+third-party engine**: `lib/smath.js` is an in-house, zero-dependency TeX -> native MathML converter
+(not Temml, not KaTeX). A **linear lexer** (O(n), no ReDoS) feeds a **bounded recursive descent**
+(`MAX_DEPTH` = 32, `MAX_NODES` = 6000, `MAX_TEX` = 8192; past any bound it degrades to the literal
+source, so adversarial input can't recurse or balloon the node count) that is **total** over a
+**closed `MML_ELEMENTS` allow-list** built with `createElementNS` - `innerHTML` is never used, and an
+unknown control word degrades to a visible `<mtext>` rather than failing or emitting anything live.
+The browser renders the resulting `<math>` **natively** (MathML Core: Firefox, Chromium 109+, WebKit).
+The **only** attributes the converter ever sets are inert MathML presentation hints
+(`mathvariant`/`stretchy`/`fence`/`accent`/`displaystyle`/`movablelimits`/`width`) - there is **no
+`href`/`src`/`style` sink**, so a model formula cannot navigate, fetch, or script, and it emits **no
+inline `style`** (so nothing relies on `'unsafe-inline'` and `style-src 'self'` holds). No third-party
+code touches model output. Verified in the markdown gallery (`test_markdown_gallery_all_self_checks_pass`
+in `tools/smoke/tests/test_components.py`), which renders a battery of inputs through the real
+`lib/markdown.js` + `lib/smath.js` in a browser and self-checks the F4 stance, anchors, and native math.
 
 ### F5 - SSRF in web-search fetch
 `web_search` may fetch result pages server-side to summarize them. The fetched URL is attacker-
@@ -121,7 +177,7 @@ The same egress reasoning keeps the sandbox's outbound network closed - **absent
 under monty (no network exists in the language), **off by default** under gVisor
 ([chat-and-tools](chat-and-tools.md#sandbox---security-critical)). -> [chat-and-tools](chat-and-tools.md#web-search-searxng).
 
-Tested in `tests/Gert.External.Tests`: `SsrfGuardTests` (the pure URL/IP policy),
+Tested in `tests/Gert.Tools.Tests`: `SsrfGuardTests` (the pure URL/IP policy),
 `SafeHttpFetcherTests` (pre-socket vetting: scheme, malformed, private literal host), and
 `SafeHttpFetcherRedirectTests` (the live-socket controls - per-hop redirect re-vet and the
 connect-time DNS pin - against loopback listeners). The latter works through an **internal**
@@ -131,8 +187,8 @@ behaviour and is deliberately **not** a configuration knob, so the guard cannot 
 by an operator setting.
 
 ### F6 - Admin `{key}` path validation
-`DELETE /api/admin/users/{key}` and `GET .../{key}` feed `{key}` into a `/data/users/{key}` path that
-is `rm -rf`'d - the most destructive operation in the system. `{key}` must be validated to
+`DELETE /api/admin/users/{key}` and `GET .../{key}` feed `{key}` into a `/data/users/{key}` path used to
+delete that user's data - the most destructive operation in the system. `{key}` must be validated to
 `^[0-9a-f]{64}$` (a sha256 hex) **before** path-joining, and the resolved absolute path asserted to
 sit under `/data/users/` before any delete. This is the admin analog of the `pid` rule and is **not**
 covered by [configuration section 2.5](configuration.md#25-path-resolution--why-a-request-supplied-project-id-is-still-idor-safe). -> [rest-api](rest-api.md#admin-requires-admin-policy), tested in [testing section 5/section 6](testing.md#validation---the-input-security-boundary).
@@ -205,12 +261,16 @@ The user folder is the root of all isolation, so its derivation is itself a cont
   folder to a person (refreshed from the token when it changes in the IdP), and each database's
   `PRAGMA user_version` is its own migration anchor. Nothing on disk is ever used as an identity
   gate (a per-request equality check could only ever fire on a sha256 collision or local file
-  tampering - neither is a real threat once the IdP is trusted). -> [decisions section 3](decisions.md#3-folder-key),
+  tampering - neither is a real threat once the IdP is trusted). -> [decisions section 3](decisions.md#3-user-key),
   [storage-and-data](storage-and-data.md#lazy-provisioning--migrations), [auth](auth.md#the-user-context-resolved-per-request).
 
 ---
 
 ## 4. Residual risks we accept
+
+These are the gaps we *knowingly* accept at ~20 trusted users today;
+[defense-in-depth.md](defense-in-depth.md) is the forward wishlist for closing them (and shrinking
+the blast radius of a process compromise) as the deployment grows.
 
 - **Prompt injection is self-scoped.** A malicious document or web page can steer *this* user's
   model turn, but isolation means it can only touch the user's own data and own-entitlement tools -
@@ -222,6 +282,6 @@ The user folder is the root of all isolation, so its derivation is itself a cont
   ([decisions section 4](decisions.md#4-token-lifetime--revocation)); routine off-boarding is effective
   within ~1h. There is no denylist (it would break multi-instance); sub-hour revocation means a shorter IdP token lifetime.
 - **No load/perf or pixel-diff testing** - out of scope at ~20 users ([testing section 11](testing.md#11-non-goals)).
-- **Trusted-operator admin.** The admin surface is two endpoints (enumerate, `rm -rf`) gated by the
+- **Trusted-operator admin.** The admin surface is two endpoints (enumerate, delete a user) gated by the
   group claim; we trust the operator and rely on F6 to keep even a fat-fingered/forged `{key}` from
   escaping `/data/users`.

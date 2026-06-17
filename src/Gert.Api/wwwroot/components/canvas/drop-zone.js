@@ -1,6 +1,6 @@
 // components/canvas/drop-zone.js - click/drag upload target.
 // Calls services/documents.upload; never fetches directly.
-import van from "van";
+import van from "/lib/van.js";
 import { component } from "../../lib/component.js";
 import { Icon } from "../../icons/icons.js";
 import * as svc from "../../services/documents.js";

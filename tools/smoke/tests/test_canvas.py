@@ -73,7 +73,7 @@ def test_html_artifact_fallback_srcdoc_carries_restrictive_csp(
 def test_svg_artifact_csp_denies_scripts(page: Page, base_url: str) -> None:
     """The SVG viewer is script-free AND its per-document CSP says so."""
     page.goto(f"{base_url}/tests/harness.html")
-    srcdoc = page.evaluate(
+    page.evaluate(
         """async () => {
             const { Artifact } = await import('/components/canvas/artifact.js');
             const node = Artifact({
@@ -82,9 +82,11 @@ def test_svg_artifact_csp_denies_scripts(page: Page, base_url: str) -> None:
                 active: () => true,
             });
             window.__mount(node);
-            return node.querySelector("iframe").srcdoc;
         }"""
     )
+    frame = page.locator(".art-doc[data-type='svg'] iframe")
+    expect(frame).to_have_attribute("srcdoc", re.compile(r"script-src 'none'"))
+    srcdoc = frame.get_attribute("srcdoc") or ""
     assert "script-src 'none'" in srcdoc
     assert "default-src 'none'" in srcdoc
 

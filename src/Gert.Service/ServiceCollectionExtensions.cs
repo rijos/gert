@@ -21,9 +21,9 @@ namespace Gert.Service;
 /// Registers the granular services, the aggregate <see cref="IGertServices"/>
 /// hub, and the validation seam. The host/adapters supply the ports the services
 /// depend on - <see cref="IUserContext"/> (auth host), the database providers
-/// (<see cref="Database.IUserDatabaseProvider"/> / <see cref="Database.IChatDatabaseProvider"/>
-/// / <see cref="Database.IRagDatabaseProvider"/>), and
-/// <see cref="External.IChatModelClient"/> (Gert.External) - so this method does
+/// (<see cref="Database.IUserDatabaseProvider"/> / <see cref="Database.IChatDatabaseProvider"/>),
+/// the RAG index provider (<see cref="global::Gert.Rag.IRagIndexProvider"/>), and
+/// <see cref="External.IChatModelClient"/> (an adapter assembly) - so this method does
 /// not register them.
 /// </summary>
 public static class ServiceCollectionExtensions
@@ -85,6 +85,10 @@ public static class ServiceCollectionExtensions
         services.TryAddScoped<IMemoryService, MemoryService>();
         services.TryAddScoped<IProjectService, ProjectService>();
         services.TryAddScoped<ISettingsService, SettingsService>();
+        // The journal-guarded eraser: one crash-consistent erase path for self-service
+        // account delete, admin delete, and recovery. Singleton - its stores + journal are
+        // all singletons, so the startup recovery sweep can depend on it directly.
+        services.TryAddSingleton<IUserDataEraser, UserDataEraser>();
         services.TryAddScoped<IAccountService, AccountService>();
         services.TryAddScoped<IAdminService, AdminService>();
         services.TryAddScoped<ISystemPromptInspector, SystemPromptInspector>();
@@ -92,15 +96,16 @@ public static class ServiceCollectionExtensions
 
         // Ingestion - the extract -> chunk -> embed -> write pipeline and its
         // ports. Files are read/written ONLY via IObjectStore (host-registered) and
-        // text-extraction is behind ITextExtractor so Gert.External swaps the hardened pdf/docx
+        // text-extraction is behind ITextExtractor so Gert.Ingestion swaps the hardened pdf/docx
         // extractor in with one registration. The default queue runs ingestion inline;
         // The API host replaces it with a Channel-backed queue + BackgroundService (responds 202).
         AddIngestion(services);
 
-        // Tools -- each ITool is registered so the ToolRegistry is populated
-        // from IEnumerable<ITool>. They are scoped: RagTool depends on the
-        // per-request IUserContext, so a tool's lifetime must not outlive a request.
-        AddTools(services);
+        // The built-in tool IMPLEMENTATIONS now live in the Gert.Tools adapter
+        // (AddBuiltinTools, called by the host's AddGertTools). This layer keeps
+        // only the id-only ToolRegistry + BuiltInToolIds census (registered in
+        // AddValidation) - they name capability ids, not impls. The orchestrator
+        // still resolves the tool instances via IEnumerable<ITool>.
 
         // Aggregate hub.
         services.TryAddScoped<IGertServices, GertServices>();
@@ -111,8 +116,9 @@ public static class ServiceCollectionExtensions
     /// <summary>
     /// The canonical capability ids of the built-in tools -- the id-only
     /// <see cref="ToolRegistry"/> singleton is built from these, matching the
-    /// <see cref="ITool.Id"/> of each registered tool. Keep in sync with
-    /// <see cref="AddTools"/>.
+    /// <see cref="ITool.Id"/> of each registered tool. Keep in sync with the
+    /// <c>AddBuiltinTools</c> registrations in the Gert.Tools adapter; the
+    /// <c>ToolRegistrationTests</c> set-equality guard fails if they drift.
     /// </summary>
     private static readonly string[] BuiltInToolIds =
         ["rag", "search", "sandbox", "todo", "clock", "make_artifact", "edit_artifact", "read_artifact", "ask_user", "fetch", "memory", "sub_agent"];
@@ -121,46 +127,10 @@ public static class ServiceCollectionExtensions
     /// DI key for the per-type leaf <see cref="ITextExtractor"/>s the
     /// <see cref="CompositeTextExtractor"/> composes. Keying them keeps the composite
     /// (registered as the plain <see cref="ITextExtractor"/>) out of its own
-    /// enumeration. The pdf/docx extractor (Gert.External) registers under the same
+    /// enumeration. The pdf/docx extractor (Gert.Ingestion) registers under the same
     /// key, so it is <c>public</c> for that adapter to reference.
     /// </summary>
     public const string LeafExtractorKey = "leaf";
-
-    /// <summary>
-    /// Register the built-in tools as scoped <see cref="ITool"/>s so the
-    /// orchestrator resolves them via <c>IEnumerable&lt;ITool&gt;</c>. Scoped
-    /// because <see cref="Tools.RagTool"/> depends on the per-request
-    /// <see cref="IUserContext"/>. The external ports each tool needs
-    /// (<see cref="External.IEmbeddingClient"/>, <see cref="External.IWebSearch"/>,
-    /// <see cref="External.IPythonSandbox"/>) and the <see cref="Database.IRagDatabaseProvider"/>
-    /// are supplied by the host/adapters (Gert.External / a database adapter).
-    /// </summary>
-    private static void AddTools(IServiceCollection services)
-    {
-        services.AddScoped<ITool, RagTool>();
-        services.AddScoped<ITool, WebSearchTool>();
-        services.AddScoped<ITool, PythonSandboxTool>();
-        services.AddScoped<ITool, TodoTool>();
-        services.AddScoped<ITool, ClockTool>();
-        // The canvas artifact suite (make/edit/read) - model-driven file creation
-        // and in-place iteration; each is ctor-injected with IChatRepository.
-        services.AddScoped<ITool, MakeArtifactTool>();
-        services.AddScoped<ITool, EditArtifactTool>();
-        services.AddScoped<ITool, ReadArtifactTool>();
-        // ask_user blocks on the ITurnQuestions singleton; scoped like the rest
-        // (it reads the per-request/worker IUserContext for its TurnKey).
-        services.AddScoped<ITool, AskUserTool>();
-        // web_fetch only calls the IWebFetcher port - the SSRF hardening (F5)
-        // is the adapter's job, mirroring WebSearchTool.
-        services.AddScoped<ITool, WebFetchTool>();
-        // save_memory wraps the scoped IMemoryService (which owns user context,
-        // clock, and fail-closed validation).
-        services.AddScoped<ITool, SaveMemoryTool>();
-        // run_sub_agent delegates a task to a fresh nested model loop. It takes
-        // IServiceProvider (not IEnumerable<ITool> - that would recurse its own
-        // resolution) and re-resolves the delegable tools per execution.
-        services.AddScoped<ITool, SubAgentTool>();
-    }
 
     /// <summary>
     /// Wire the ingestion pipeline. Chunking is stateless (a singleton
@@ -174,11 +144,10 @@ public static class ServiceCollectionExtensions
     {
         services.TryAddSingleton(ChunkingOptions.Default);
 
-        // The per-type leaf extractors are registered under the "leaf" key so the
-        // composite can enumerate them without the composite (registered as the plain
-        // ITextExtractor below) re-entering its own resolution. Gert.External registers the
-        // pdf/docx extractor with the same key - one line, no pipeline change.
-        services.AddKeyedSingleton<ITextExtractor, PlainTextExtractor>(LeafExtractorKey);
+        // The per-type leaf extractors live in the Gert.Ingestion adapter (md/txt +
+        // the isolated pdf/docx extractor); AddGertIngestion registers them under the
+        // "leaf" key so the composite below can enumerate them without re-entering its
+        // own resolution. This layer wires only the composite + the pipeline.
 
         // The pipeline depends on the plain ITextExtractor -> the composite, which
         // routes to the keyed leaves.

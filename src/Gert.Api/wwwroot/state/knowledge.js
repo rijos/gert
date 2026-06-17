@@ -2,8 +2,8 @@
 // van-x so one doc's status pill re-renders alone. No DOM, no fetch.
 // (The "Use my docs" switch is chat.tools.rag - chat-and-tools.md: flipping
 // it off removes search_documents for that turn.)
-import van from "van";
-import { reactive } from "van-x";
+import van from "/lib/van.js";
+import { reactive } from "/lib/van-x.js";
 
 export const documents = reactive([]); // [{ id, name, size, chunk_count, status, error, progress }]
 

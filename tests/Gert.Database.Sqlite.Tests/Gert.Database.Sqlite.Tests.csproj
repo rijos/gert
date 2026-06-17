@@ -9,7 +9,15 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Gert.Database.Sqlite\Gert.Database.Sqlite.csproj" />
+    <!-- The RAG engine leaf: SqliteRagStore/Provider + connection factory + vec0,
+         exercised by SqliteRagRepositoryTests and wired into the lifecycle/ingestion
+         integration tests via ProviderFixture. -->
+    <ProjectReference Include="..\..\src\Gert.Rag.Sqlite\Gert.Rag.Sqlite.csproj" />
+    <!-- IngestionPipelineTests builds the composite extractor with the real
+         md/txt PlainTextExtractor (now in the Gert.Ingestion adapter). -->
+    <ProjectReference Include="..\..\src\Gert.Ingestion\Gert.Ingestion.csproj" />
     <ProjectReference Include="..\..\src\Gert.Storage\Gert.Storage.csproj" />
+    <ProjectReference Include="..\..\src\Gert.Storage.Local\Gert.Storage.Local.csproj" />
     <ProjectReference Include="..\Gert.Testing\Gert.Testing.csproj" />
   </ItemGroup>
 

@@ -1,11 +1,13 @@
 using Gert.Model.Dtos;
+using Gert.Model.Rag;
+using Gert.Model.UI;
 
 namespace Gert.Model.Projects;
 
 /// <summary>
-/// On-disk user preferences - the <c>settings.json</c> shape at the user root:
-/// theme, UI language, default reply language, default model, default tools,
-/// memory mode (configuration.md section 3; rest-api.md section settings).
+/// User preferences, persisted as the <c>settings_json</c> blob in <c>user.db</c>'s
+/// single settings row: theme, UI language, default reply language, default model,
+/// default tools, memory mode (configuration.md section 3; rest-api.md section settings).
 /// </summary>
 public sealed record UserSettings
 {

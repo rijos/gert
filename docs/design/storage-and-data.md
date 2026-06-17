@@ -21,44 +21,48 @@ below are **per project** - there is one pair of databases per project, not per 
             ├── default/           # lazily created; always present (the landing project)
             │   ├── chat.db        # conversations, messages, tool calls, citations, artifacts
             │   ├── rag.db         # sqlite-vec: documents, chunks, embeddings, FTS
-            │   ├── files/         # original uploaded files ({doc-id}.pdf, {doc-id}.md ...)
+            │   ├── files/         # original uploaded files (server key files/{doc-id}, no extension)
             │   └── memory/        # memory entries (markdown) -> embedded into this project's rag.db
             └── {project-id}/      # any further project - same shape, fully isolated
 ```
 
-> **No JSON sidecars.** Earlier drafts kept `meta.json` / `settings.json` / per-project
-> `meta.json` files; all three moved into **`user.db`** - durable, transactional, and
-> immune to the torn-write/healing dance a JSON file needs
-> ([decisions section 9](decisions.md#9-userdb---structured-user-state-is-a-database-not-json-sidecars)).
+> **No JSON sidecars.** Structured user state - settings and the project registry - lives in
+> **`user.db`**: durable, transactional, and immune to the torn-write/healing dance a JSON
+> file needs ([decisions section 9](decisions.md#9-userdb---structured-user-state-is-a-database-not-json-sidecars)).
 > A project's *config* is a row in `user.db`'s registry; a project's *data* is its folder.
 
 ### Resolving paths
 
 ```csharp
-public sealed class SqliteDatabasePaths(IOptions<StorageOptions> opt)
+// Each SQLite engine resolves under its OWN data root - its Gert:{Database,Rag}:Parameters:DataRoot
+// override, or the shared Storage:DataRoot when unset - so the structured databases, the RAG index,
+// and the object store can sit on separate volumes (the "users/" subtree is identical under each).
+public sealed class SqliteDatabasePaths(IOptions<StorageOptions> storage, IOptions<SqliteDatabaseParameters> p)
 {
+    private string DataRoot => string.IsNullOrWhiteSpace(p.Value.DataRoot) ? storage.Value.DataRoot : p.Value.DataRoot;
+
     // Anchor on the stable (iss, sub) pair - never renamed, never recycled (decisions.md section 3).
-    // sub is only unique within an issuer, so namespace by iss; the hash keeps the folder name
-    // filesystem-safe and traversal-proof for any value the IdP emits.
+    // The hash keeps the folder name filesystem-safe and traversal-proof for any value the IdP emits.
     private string Key(string iss, string sub) =>
         Convert.ToHexString(
             SHA256.HashData(Encoding.UTF8.GetBytes($"{iss}\n{sub}"))).ToLowerInvariant();
 
     // user-level - callers pass the validated (iss, sub) from the token (see Lazy provisioning)
-    public string Root(string iss, string sub)   => Path.Combine(opt.Value.DataRoot, "users", Key(iss, sub));
+    public string Root(string iss, string sub)   => Path.Combine(DataRoot, "users", Key(iss, sub));
     public string UserDb(string iss, string sub) => Path.Combine(Root(iss, sub), "user.db");
 
     // admin-side - {key} is shape-validated to ^[0-9a-f]{64}$ first (security F6)
-    public string RootByKey(string key)   => Path.Combine(opt.Value.DataRoot, "users", key);
+    public string RootByKey(string key)   => Path.Combine(DataRoot, "users", key);
     public string UserDbByKey(string key) => Path.Combine(RootByKey(key), "user.db");
 
     // project-level - pid is a UUID or the literal "default" (validated; see configuration.md section 2.5)
     public string ProjectRoot(string iss, string sub, string pid) => Path.Combine(Root(iss, sub), "projects", pid);
     public string ChatDb(string iss, string sub, string pid)      => Path.Combine(ProjectRoot(iss, sub, pid), "chat.db");
-    public string RagDb(string iss, string sub, string pid)       => Path.Combine(ProjectRoot(iss, sub, pid), "rag.db");
-    public string FilesDir(string iss, string sub, string pid)    => Path.Combine(ProjectRoot(iss, sub, pid), "files");
-    public string MemoryDir(string iss, string sub, string pid)   => Path.Combine(ProjectRoot(iss, sub, pid), "memory");
 }
+
+// The RAG engine's SqliteRagPaths resolves rag.db the same way under ITS root (Gert:Rag:Parameters:
+// DataRoot, else Storage:DataRoot):  {ragRoot}/users/{key}/projects/{pid}/rag.db. The uploaded
+// files/ and memory/ directories are the object store's, under Storage:DataRoot.
 ```
 
 > `(iss, sub)` come **only** from the validated token, never the request, and the fail-closed
@@ -67,7 +71,7 @@ public sealed class SqliteDatabasePaths(IOptions<StorageOptions> opt)
 > key instead of recomputing the hash; the per-`sub` signatures above just keep the derivation
 > explicit.)
 
-Hashing `iss + sub` gives a clean, fixed-length, path-safe folder name and avoids any traversal risk from exotic claim values; anchoring on `sub` (stable, never recycled) rather than email/username is what closes the **identifier-reuse** class of attack ([decisions section 3](decisions.md#3-folder-key)). `user.db`'s `user_meta` row records the username purely descriptively, so admins can still find an opaque hash folder by username ([section user.db](#userdb)). The **`pid`** comes from the request (unlike the user key), but it is validated to a UUID or the literal `default` and is only ever joined **under** `Root(iss, sub)` - so it can select among *this* user's projects but can never escape the user's folder, keeping cross-user IDOR structurally impossible ([configuration.md section 2.5](configuration.md#25-path-resolution--why-a-request-supplied-project-id-is-still-idor-safe)).
+Hashing `iss + sub` gives a clean, fixed-length, path-safe folder name and avoids any traversal risk from exotic claim values; anchoring on `sub` (stable, never recycled) rather than email/username is what closes the **identifier-reuse** class of attack ([decisions section 3](decisions.md#3-user-key)). `user.db`'s `user_meta` row records the username purely descriptively, so admins can still find an opaque hash folder by username ([section user.db](#userdb)). The **`pid`** comes from the request (unlike the user key), but it is validated to a UUID or the literal `default` and is only ever joined **under** `Root(iss, sub)` - so it can select among *this* user's projects but can never escape the user's folder, keeping cross-user IDOR structurally impossible ([configuration.md section 2.5](configuration.md#25-path-resolution--why-a-request-supplied-project-id-is-still-idor-safe)).
 
 ### Why two databases per project?
 
@@ -78,7 +82,7 @@ Hashing `iss + sub` gives a clean, fixed-length, path-safe folder name and avoid
 | Maintenance | rarely rebuilt | `VACUUM`/rebuild after large deletes |
 | Reset semantics | keep chats | "forget my documents" wipes RAG only |
 
-Splitting keeps a vector-index rebuild from locking chat history and lets a user clear a project's knowledge base without losing that project's conversations ([configuration -> data lifecycle](configuration.md#5-data-lifecycle-user-facing)). *Alternative:* a single `gert.db` with both schemas is simpler to back up; choose this if you never need to reset RAG independently. (The mockup's "stored in your own file" line is satisfied either way.)
+Splitting keeps a vector-index rebuild from locking chat history and lets a user clear a project's knowledge base without losing that project's conversations ([configuration -> data lifecycle](configuration.md#5-data-lifecycle-user-facing)). They are also separate **engines** (`Gert:Database` vs `Gert:Rag`), so each can be pointed at its own data root.
 
 ### Connection management & concurrency
 
@@ -110,7 +114,7 @@ separate provisioning ceremony:
    then **refreshes `user_meta.username` from the token only when it changed** (the steady-state
    path stays read-only - no per-request write/WAL churn; `(iss, sub)` never changes) and seeds
    the **`default` project row** in the registry so the user always has a landing project.
-2. **Open project DBs lazily** (`IChatDatabaseProvider` / `IRagDatabaseProvider`) - a project's
+2. **Open project DBs lazily** (`IChatDatabaseProvider` / `IRagIndexProvider`) - a project's
    `chat.db`/`rag.db` (and `files/`, `memory/`) materialise on first use, each applying its own
    `Migrations/{chat,rag}/*.sql` by `PRAGMA user_version`.
 
@@ -132,7 +136,8 @@ document simply cannot reference another project's rows. User settings and the p
 registry are rows in `user.db`, not files ([configuration](configuration.md)).
 
 > **The migrations are the authoritative DDL** -
-> `src/Gert.Database.Sqlite/Migrations/{user,chat,rag}/*.sql`, applied per database by
+> `src/Gert.Database.Sqlite/Migrations/{user,chat}/*.sql` plus the RAG engine's
+> `src/Gert.Rag.Sqlite/Migrations/rag/*.sql`, applied per database by
 > `PRAGMA user_version`. Shown here is the **effective** schema after all migrations
 > (`user.db`, `chat.db`, and `rag.db` are each at v1: one squashed `001_init.sql` per
 > family is the whole history).
@@ -183,7 +188,7 @@ CREATE INDEX ix_projects_created ON projects(created_at);
 CREATE TABLE conversations (
     id          TEXT PRIMARY KEY,           -- uuid
     title       TEXT NOT NULL,
-    model_id    TEXT NOT NULL,              -- the selected provider slug (Gert:Providers) - fixes connection + sampling
+    model_id    TEXT NOT NULL,              -- the selected provider slug (Gert:Chat:Providers) - fixes connection + sampling
     tools_json  TEXT NOT NULL DEFAULT '{}', -- {"rag":true,"search":true,"sandbox":false}
     created_at  TEXT NOT NULL,
     updated_at  TEXT NOT NULL,
@@ -254,7 +259,7 @@ CREATE TABLE artifacts (
 );
 
 -- The durable streaming replay log (chat-and-tools.md section detached turns): the runner
--- appends one row per published event; range/SSE/WS catch-up reads `seq > cursor`.
+-- appends one row per published event; range/SSE catch-up reads `seq > cursor`.
 -- Delta rows are coalesced (size/time thresholds + tool/message boundaries), so
 -- replay is loss-free without a row per token.
 CREATE TABLE turn_events (

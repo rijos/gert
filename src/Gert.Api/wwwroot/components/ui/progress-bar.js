@@ -5,7 +5,7 @@
 // Geometry (height/radius/margins) is the call site's: pass a modifier class and
 // scope overrides as `.pbar.your-class` (e.g. tool-card's .tprog, the context
 // popover's .cx-bar). `color` overrides the fill (inline style beats the sheet).
-import van from "van";
+import van from "/lib/van.js";
 import { component } from "../../lib/component.js";
 
 const { div, i } = van.tags;

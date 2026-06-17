@@ -12,6 +12,8 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Gert.Service\Gert.Service.csproj" />
     <ProjectReference Include="..\..\src\Gert.Model\Gert.Model.csproj" />
+    <!-- Fakes (FakeChatModel/FakeEmbeddings/FixedChatClientFactory) implement the chat ports. -->
+    <ProjectReference Include="..\..\src\Gert.Chat\Gert.Chat.csproj" />
     <ProjectReference Include="..\..\src\Gert.Database.Sqlite\Gert.Database.Sqlite.csproj" />
     <ProjectReference Include="..\..\src\Gert.Api\Gert.Api.csproj" />
   </ItemGroup>

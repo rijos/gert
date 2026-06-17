@@ -9,7 +9,7 @@
       Component-unit harness (testing.md section 8). The Fake host serves this at
       /tests/harness.html (dev-only mapping of tests/web/ -> /tests/), so the real
       app modules import on the SAME ORIGIN: /components/..., /state/...,
-      /services/..., and the bare specifiers below resolve through the import map.
+      /services/..., and module imports use absolute same-origin paths (no map).
 
       A test mounts a real, unmocked VanJS component via page.evaluate() and either
       returns a value to Python or asserts via Playwright locators. window.__mount
@@ -22,22 +22,11 @@
     <link rel="stylesheet" href="/styles/base.css" />
     <link rel="stylesheet" href="/styles/layout.css" />
     <link rel="stylesheet" href="/styles/components.css" />
-
-    <!-- the SAME import map as index.html, so bare specifiers resolve identically -->
-    <script type="importmap">
-      {
-        "imports": {
-          "van": "/lib/van.js",
-          "vanjs-core": "/lib/van.js",
-          "van-x": "/lib/van-x.js"
-        }
-      }
-    </script>
   </head>
   <body>
     <div id="harness-root"></div>
-    <!-- External module (NOT inline): the host CSP is `script-src 'self'` + the
-         import-map hash, so an inline bootstrap is blocked. See harness.js. -->
+    <!-- External module (NOT inline): the host CSP is `script-src 'self'`, so an
+         inline bootstrap would be blocked. See harness.js. -->
     <script type="module" src="/tests/harness.js"></script>
   </body>
 </html>

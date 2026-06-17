@@ -2,7 +2,7 @@
 // Imperative open like ui/modal.js (transient, not a route). Debounced query ->
 // GET with q/limit/offset; scrolling near the bottom loads the next page
 // (infinite scroll - a page shorter than PAGE means the end).
-import van from "van";
+import van from "/lib/van.js";
 import { component } from "../lib/component.js";
 import { Icon } from "../icons/icons.js";
 import { fmtRelative } from "../lib/format.js";

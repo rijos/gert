@@ -1,3 +1,5 @@
+using Gert.Model.Chat;
+
 namespace Gert.Model.Events;
 
 /// <summary>

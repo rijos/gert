@@ -1,8 +1,9 @@
 using FluentAssertions;
-using Gert.Database;
 using Gert.Database.Sqlite;
 using Gert.Model;
 using Gert.Model.Rag;
+using Gert.Rag;
+using Gert.Rag.Sqlite;
 using Gert.Testing;
 using Gert.Testing.Fakes;
 using Microsoft.Data.Sqlite;
@@ -26,7 +27,7 @@ public class SqliteRagRepositoryTests
     {
         await using var root = new TempDataRoot();
         var provider = ProviderFixture.ProviderFor(root);
-        var paths = ProviderFixture.PathsFor(root);
+        var paths = ProviderFixture.RagPathsFor(root);
 
         await provider.EnsureProvisionedAsync(Iss, Sub);
 
@@ -215,7 +216,7 @@ public class SqliteRagRepositoryTests
     {
         await using var root = new TempDataRoot();
         var provider = ProviderFixture.ProviderFor(root);
-        var paths = ProviderFixture.PathsFor(root);
+        var paths = ProviderFixture.RagPathsFor(root);
         await using var repo = await provider.OpenRagAsync(Iss, Sub, "default");
 
         var doc = NewDocument("kept.txt", DocumentKind.Document);
@@ -256,7 +257,7 @@ public class SqliteRagRepositoryTests
     {
         await using var root = new TempDataRoot();
         var provider = ProviderFixture.ProviderFor(root);
-        var paths = ProviderFixture.PathsFor(root);
+        var paths = ProviderFixture.RagPathsFor(root);
         await using var repo = await provider.OpenRagAsync(Iss, Sub, "default");
 
         var doc = NewDocument("gone.txt", DocumentKind.Document);
@@ -364,7 +365,7 @@ public class SqliteRagRepositoryTests
         Embedding = FakeEmbeddings.Embed(content),
     };
 
-    private static async Task<IReadOnlyList<string>> TablesAndColumnsAsync(SqliteDatabasePaths paths)
+    private static async Task<IReadOnlyList<string>> TablesAndColumnsAsync(SqliteRagPaths paths)
     {
         await using var connection = await OpenRagDirectAsync(paths.RagDb(Iss, Sub, "default"));
         await using var cmd = connection.CreateCommand();
@@ -379,7 +380,7 @@ public class SqliteRagRepositoryTests
         return names;
     }
 
-    private static async Task<(long Chunks, long Vec, long Fts)> CountsAsync(SqliteDatabasePaths paths)
+    private static async Task<(long Chunks, long Vec, long Fts)> CountsAsync(SqliteRagPaths paths)
     {
         await using var connection = await OpenRagDirectAsync(paths.RagDb(Iss, Sub, "default"));
         var chunks = await ScalarAsync(connection, "SELECT count(*) FROM chunks;");

@@ -1,6 +1,6 @@
 """searxng.py - SearXNG JSON search mock (testing.md section 4.2 / A.4 / security F5).
 
-A Starlette ASGI app the *real* ``Gert.External`` SearXNG adapter points at in the
+A Starlette ASGI app the *real* ``Gert.Tools`` SearXNG adapter points at in the
 FakeE2E profile. One endpoint:
 
 * ``GET /search?format=json&q=<query>`` - returns ``{"results": [...]}`` resolved

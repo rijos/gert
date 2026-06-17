@@ -1,8 +1,8 @@
+using Gert.Chat;
 using Gert.Database;
 using Gert.Model;
 using Gert.Model.Chat;
 using Gert.Model.Dtos;
-using Gert.Service.External;
 using Gert.Service.Tools;
 using Gert.Service.Validation;
 using Microsoft.Extensions.Logging;
@@ -243,7 +243,7 @@ public sealed class TurnPlanner : ITurnPlanner
 
         // 7. Hand the prepared turn off. Sampling + the thinking template kwargs are
         // not resolved here - they ride the selected provider (ModelId), applied by
-        // the adapter from Gert:Providers. The job carries only what the runner needs.
+        // the adapter from Gert:Chat:Providers. The job carries only what the runner needs.
         return new TurnJob
         {
             Iss = _user.Iss,

@@ -1,0 +1,5 @@
+# fuzzer scratch output (minimized repros are regenerated on demand)
+.fuzz-out/
+.selftest/
+# node only enters this folder for fuzzing; never vendor it
+node_modules/

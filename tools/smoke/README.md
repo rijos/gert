@@ -2,7 +2,7 @@
 
 Python + Playwright that clicks through the real SPA as admin / user / limited
 across Chromium and Firefox, plus the **mock upstreams** (vLLM + SearXNG) the real
-`Gert.External` adapters point at in the `FakeE2E` host profile. uv-managed - no
+`Gert.Chat`/`Gert.Tools`/`Gert.Ingestion` adapters point at in the `FakeE2E` host profile. uv-managed - no
 npm, no Node. See [`docs/design/testing.md`](../../docs/design/testing.md) section 3, section 4,
 section 8, section 9, section 11 and Appendix A.
 
@@ -71,15 +71,6 @@ browsers.
 `window.GERT_DEV_TOKEN` via a Playwright **init script** (runs before any app
 module), and a dev-only branch in `ensureSession` installs it as the in-memory
 bearer. Production never sets that global, so the branch is inert there.
-
-## WebSocket and the dev proxy
-
-The chat SPA prefers WS for live turn delivery, but `proxy.py` (the
-`make serve-mock` viewing path) is plain HTTP and does **not** upgrade
-WebSockets - through the proxy the SPA's transport chain falls back to the SSE
-stream endpoint automatically (then to range polling), so streaming still
-works. WS is exercised when the browser talks to the FakeE2E host directly
-(the Playwright matrix and `--serve`).
 
 ## Artifacts
 

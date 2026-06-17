@@ -3,7 +3,7 @@
 // Owns the shared artifact shell CSS (.art-head, .art-body, .source-view, the
 // data-mode render/source toggle). The header is a trivial single-use leaf, so
 // it lives here as ArtifactHead rather than its own file.
-import van from "van";
+import van from "/lib/van.js";
 import { component } from "../../lib/component.js";
 import { SegToggle } from "../ui/seg-toggle.js";
 import { Icon } from "../../icons/icons.js";
@@ -103,7 +103,7 @@ export const Artifact = component({
     .art-doc[data-mode="render"] .source{display:none;}
     .art-body{flex:1; min-height:0; overflow:auto; position:relative;}
     /* highlighted source view, shared by the markdown/html/svg viewers - code
-       surfaces sit on the dark --code-bg ground in both themes (tokens.css) */
+       surfaces follow the theme via --code-bg/--code-fg (tokens.css) */
     .source-view{min-height:100%; padding:18px 20px 40px; font-family:var(--mono); font-size:var(--fs-sm); line-height:1.7; background:var(--code-bg); color:var(--code-fg); white-space:pre-wrap; tab-size:2;}
   `,
   // active: () => boolean - whether this artifact's tab is selected.
@@ -113,15 +113,27 @@ export const Artifact = component({
     const Viewer = VIEWERS[artifact.kind] || CodeArtifact;
     const code = Viewer === CodeArtifact; // code kinds get the problem count
 
+    // Lazy mount: the viewer body fetches <img> sources and loads the artifact
+    // iframe, and `display:none` does NOT stop the browser doing either - so
+    // mounting every artifact's body up front fetches all of them (and their
+    // external images) on page load, before the user opens anything. `seen`
+    // latches true the first time this tab is activated and stays true, so the
+    // body is built on first open and kept mounted across later tab switches.
+    const seen = van.state(false);
+
     // -- content ---------------------------------
-    return section(
+    const el = section(
       {
         class: () => "art-doc" + (active() ? " active" : ""),
         "data-type": artifact.kind,
         "data-mode": () => mode.val,
       },
       ArtifactHead({ artifact, mode, code }),
-      Viewer({ artifact, mode }),
+      () => (seen.val ? Viewer({ artifact, mode }) : div({ class: "art-body" })),
     );
+    // flip the latch on first activation; scoped to `el` so it's cleaned up with
+    // the artifact. Reads only active(); setting seen=true again is a no-op.
+    van.derive(() => { if (active()) seen.val = true; }, undefined, el);
+    return el;
   },
 });

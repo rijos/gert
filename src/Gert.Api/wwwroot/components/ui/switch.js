@@ -1,5 +1,5 @@
 // components/ui/switch.js - on/off toggle (.switch). `on` is a function for reactivity.
-import van from "van";
+import van from "/lib/van.js";
 import { component } from "../../lib/component.js";
 
 const { div } = van.tags;

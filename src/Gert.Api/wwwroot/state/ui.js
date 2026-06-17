@@ -1,7 +1,7 @@
 // state/ui.js - scalar UI state: theme, nav/panel collapse, panel-wide,
 // mobile drawers, active artifact tab / KB view. van.state only. No DOM, no I/O.
 // (Theme persists to localStorage - the token never does; see services/auth.js.)
-import van from "van";
+import van from "/lib/van.js";
 
 const THEME_KEY = "gert.theme";
 const PANEL_W_KEY = "gert.panelw";

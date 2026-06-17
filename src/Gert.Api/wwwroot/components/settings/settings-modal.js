@@ -1,10 +1,10 @@
 // components/settings/settings-modal.js - user settings as a centered popup
 // (theme, send chord, default reply language, default model, memory mode,
 // build line). Opened from the user chip; reuses the shared Modal scaffold
-// (scrim + x + Cancel/Save actions), ui/dropdown and ui/seg-toggle. Sampling is
-// no longer a per-user dial - it rides the selected chat provider (the picker
-// lists provider presets), so there is no per-model settings modal here.
-import van from "van";
+// (scrim + x + Cancel/Save actions), ui/dropdown and ui/seg-toggle. Sampling
+// rides the selected chat provider (the picker lists provider presets), not a
+// per-user dial, so there is no per-model settings modal here.
+import van from "/lib/van.js";
 import { Modal } from "../ui/modal.js";
 import { Dropdown } from "../ui/dropdown.js";
 import { SegToggle } from "../ui/seg-toggle.js";

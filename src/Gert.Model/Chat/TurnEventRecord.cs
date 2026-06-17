@@ -3,7 +3,7 @@ namespace Gert.Model.Chat;
 /// <summary>
 /// One persisted streaming event - mirrors a <c>turn_events</c> row in a
 /// project's <c>chat.db</c> (storage-and-data.md section chat.db). The table is the
-/// durable replay log behind the range/SSE/WS catch-up: the turn runner appends
+/// durable replay log behind the range/SSE catch-up: the turn runner appends
 /// a row per published event; subscribers read <c>seq &gt; cursor</c> to resume
 /// without gaps. <see cref="PayloadJson"/> is the <see cref="Events.ChatEvent"/>
 /// serialized with the canonical wire contract

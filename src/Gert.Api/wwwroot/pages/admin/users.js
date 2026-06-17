@@ -3,7 +3,7 @@
 // to the model - GET /api/admin/system-prompt).
 // Reads via services/admin (server enforces the Admin policy). Non-admins get
 // a notice; the real boundary is server-side.
-import van from "van";
+import van from "/lib/van.js";
 import { Modal } from "../../components/ui/modal.js";
 import { toast } from "../../components/ui/toast.js";
 import { attempt } from "../../lib/action.js";

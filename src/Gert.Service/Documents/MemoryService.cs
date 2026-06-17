@@ -1,12 +1,12 @@
 using System.Text;
-using Gert.Database;
+using Gert.Chat;
 using Gert.Model;
 using Gert.Model.Dtos;
 using Gert.Model.Rag;
-using Gert.Service.External;
+using Gert.Rag;
 using Gert.Service.Ingestion;
-using Gert.Service.Storage;
 using Gert.Service.Validation;
+using Gert.Storage;
 
 namespace Gert.Service.Documents;
 
@@ -14,7 +14,7 @@ namespace Gert.Service.Documents;
 /// Manages a project's memory entries - markdown notes stored under
 /// <c>memory/{id}.md</c> via <see cref="IObjectStore"/> and embedded into the
 /// project's <c>rag.db</c> as a <c>kind='memory'</c> document so they ride the same
-/// <see cref="IRagRepository.HybridSearchAsync"/> as documents (chat-and-tools.md
+/// <see cref="IRagStore.HybridSearchAsync"/> as documents (chat-and-tools.md
 /// section "memory rides the same query"; configuration.md section 2.3). The body is written
 /// and removed only through the object store (decision: files via IObjectStore); the
 /// entry title is kept as base64 display metadata in <c>documents.filename</c>,
@@ -28,7 +28,7 @@ namespace Gert.Service.Documents;
 /// </summary>
 public sealed class MemoryService : IMemoryService
 {
-    private readonly IRagDatabaseProvider _databases;
+    private readonly IRagIndexProvider _databases;
     private readonly IObjectStore _objects;
     private readonly IEmbeddingClient _embeddings;
     private readonly IValidationProvider _validation;
@@ -39,7 +39,7 @@ public sealed class MemoryService : IMemoryService
     private const string MemoryMime = "text/markdown";
 
     public MemoryService(
-        IRagDatabaseProvider databases,
+        IRagIndexProvider databases,
         IObjectStore objects,
         IEmbeddingClient embeddings,
         IValidationProvider validation,
@@ -201,7 +201,7 @@ public sealed class MemoryService : IMemoryService
 
     // ---- helpers -----------------------------------------------------------
 
-    private Task<IRagRepository> OpenAsync(string pid, CancellationToken cancellationToken) =>
+    private Task<IRagStore> OpenAsync(string pid, CancellationToken cancellationToken) =>
         _databases.OpenAsync(_user.Iss, _user.Sub, pid, cancellationToken);
 
     private ObjectScope ScopeFor(string pid) => ObjectScope.Project(_user.Iss, _user.Sub, pid);

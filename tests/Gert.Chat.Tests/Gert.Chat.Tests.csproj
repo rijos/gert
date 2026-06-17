@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="$(TestSdkVersion)" />
+    <PackageReference Include="xunit.v3" Version="$(XunitV3Version)" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="$(XunitRunnerVersion)" />
+    <PackageReference Include="FluentAssertions" Version="$(FluentAssertionsVersion)" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Gert.Chat.OpenAI\Gert.Chat.OpenAI.csproj" />
+    <ProjectReference Include="..\..\src\Gert.Service\Gert.Service.csproj" />
+    <!-- The live integration test drives the real TodoTool (Gert.Tools adapter)
+         through the provider parser to prove the round-trip. -->
+    <ProjectReference Include="..\..\src\Gert.Tools\Gert.Tools.csproj" />
+    <ProjectReference Include="..\Gert.Testing\Gert.Testing.csproj" />
+  </ItemGroup>
+
+</Project>

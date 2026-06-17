@@ -12,8 +12,7 @@ namespace Gert.Api.Controllers;
 /// SSE live stream. Both are thin views over the same core -
 /// <see cref="IConversationReader"/> (DB truth) and
 /// <see cref="IConversationStreamer"/> (the gap/dup-free splice). Covered by the
-/// fallback authenticated-user policy; the WS sibling lives in
-/// <c>WebSockets/ChatWebSocketEndpoint</c> (it needs the upgrade handshake).
+/// fallback authenticated-user policy.
 /// </summary>
 [ApiController]
 [Route("api/projects/{pid}/conversations/{id}")]
@@ -37,7 +36,7 @@ public sealed class ConversationEventsController : ControllerBase
     /// One page of the conversation's event log: events with
     /// <c>seq &gt; after</c>, ascending, at most <c>limit</c>. Always served from
     /// the database - correct across instances and restarts, and the polling
-    /// fallback when neither WS nor SSE is available.
+    /// fallback when the SSE stream is unavailable.
     /// </summary>
     [HttpGet("events")]
     public async Task<ActionResult<ConversationRange>> Range(

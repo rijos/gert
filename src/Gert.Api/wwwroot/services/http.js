@@ -117,14 +117,3 @@ export async function* sse(path, { signal } = {}) {
     reader.cancel().catch(() => {});
   }
 }
-
-// Open the chat WebSocket. The in-memory token rides as the second
-// Sec-WebSocket-Protocol entry (F2 - a browser WebSocket cannot send an
-// Authorization header, and the token never goes in the URL); the server's
-// shim middleware authenticates it through the normal JwtBearer pipeline.
-export const ws = (path) => {
-  const scheme = location.protocol === "https:" ? "wss://" : "ws://";
-  const url = scheme + location.host + BASE + path;
-  const t = getToken();
-  return t ? new WebSocket(url, ["bearer", t]) : new WebSocket(url);
-};

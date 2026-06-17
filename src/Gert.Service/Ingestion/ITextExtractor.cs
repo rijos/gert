@@ -5,11 +5,11 @@ namespace Gert.Service.Ingestion;
 /// Turns the raw bytes of an upload into <see cref="ExtractedPage"/>s the pipeline
 /// can chunk + embed. The implementation is chosen by file type:
 /// <list type="bullet">
-///   <item>md/txt -> <see cref="PlainTextExtractor"/> (reads the stream as text).</item>
-///   <item>pdf/docx -> an isolated-subprocess extractor (security F7) that lands in
-///   <c>Gert.External</c>; hosts without it see those types return
-///   <see cref="ExtractionResult.Failed"/> and the doc is marked <c>failed</c>.</item>
+///   <item>md/txt -> a plain-text extractor (reads the stream as text).</item>
+///   <item>pdf/docx -> an isolated-subprocess extractor (security F7).</item>
 /// </list>
+/// Both leaves land in the <c>Gert.Ingestion</c> adapter; hosts without it see every
+/// type return <see cref="ExtractionResult.Failed"/> and the doc marked <c>failed</c>.
 /// Keeping extraction behind this port lets the adapter swap the hardened extractor in with
 /// a single DI change and no pipeline change.
 /// </summary>

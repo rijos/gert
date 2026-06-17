@@ -3,6 +3,7 @@ using Gert.Model.Dtos;
 using Gert.Model.Events;
 using Gert.Service.Chat;
 using Gert.Service.Chat.Bus;
+using Gert.Testing.Fakes;
 using NSubstitute;
 using Xunit;
 

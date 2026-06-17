@@ -4,9 +4,10 @@
 // Source mode: the raw tinted text without line numbers (clean to copy) -
 // both wrappers are always built; .art-doc[data-mode] picks one (artifact.js).
 // problems: [{ severity, message, code, line, col }].
-import van from "van";
+import van from "/lib/van.js";
 import { component } from "../../../lib/component.js";
-import { highlight, highlightLines } from "../../../lib/highlight.js";
+import { MdCode } from "./md-code.js";
+import { highlightLines } from "../../../lib/highlight.js";
 
 const { div, span } = van.tags;
 
@@ -39,6 +40,11 @@ export const CodeArtifact = component({
     .prob .pmsg{font-size:var(--fs-sm); color:var(--ink); flex:1;}
     .prob .pcode{font-family:var(--mono); font-size:var(--fs-2xs); color:var(--ink-3);}
     .prob .ploc{font-family:var(--mono); font-size:var(--fs-2xs); color:var(--ink-3); flex:none;}
+    /* MdCode wraps the tinted source in <pre><code>; strip its UA chrome so the
+       source view reads exactly as the bare-tokens div did (the .source-view in
+       artifact.js owns the mono font, --code-bg ground, padding and pre-wrap). */
+    .source-view pre{margin:0; padding:0; background:none; overflow:visible; white-space:inherit; font:inherit;}
+    .source-view pre code{font:inherit; background:none; color:inherit;}
   `,
   // problems: [{ severity, message, code, line, col }]
   view: ({ artifact } = {}) =>
@@ -105,13 +111,12 @@ export const CodeArtifact = component({
     ),
     div(
       { class: "source" },
-      // raw tinted source without the line-number gutter - highlight() emits
-      // DOM nodes from textContent, so this stays XSS-safe.
-      div({ class: "source-view" }, () => {
-        const host = div();
-        host.append(...highlight(String(artifact.content ?? ""), artifact.kind));
-        return host;
-      }),
+      // raw tinted source without the line-number gutter, via the MdCode leaf -
+      // it tints from textContent into inert tok-* spans, so this stays XSS-safe.
+      // kind doubles as the language hint, exactly as highlight() consumed it.
+      div({ class: "source-view" }, () =>
+        MdCode({ code: String(artifact.content ?? ""), lang: artifact.kind }),
+      ),
     ),
   ),
 });

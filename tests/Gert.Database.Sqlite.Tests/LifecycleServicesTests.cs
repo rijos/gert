@@ -1,14 +1,18 @@
 using System.Text;
 using FluentAssertions;
+using Gert.Database;
 using Gert.Model.Chat;
 using Gert.Model.Dtos;
+using Gert.Rag;
+using Gert.Rag.Sqlite;
 using Gert.Service;
 using Gert.Service.Account;
 using Gert.Service.Admin;
 using Gert.Service.Projects;
-using Gert.Service.Storage;
 using Gert.Storage;
+using Gert.Storage.Local;
 using Gert.Testing;
+using Microsoft.Extensions.Options;
 using Xunit;
 
 namespace Gert.Database.Sqlite.Tests;
@@ -16,10 +20,11 @@ namespace Gert.Database.Sqlite.Tests;
 /// <summary>
 /// Integration tests for the four lifecycle services (Projects/Settings/Account/
 /// Admin) wired over the real split SQLite adapters and a throwaway
-/// <see cref="TempDataRoot"/> - proving the orchestration of <see cref="IUserStore"/>
-/// + the user/chat/rag database providers + <see cref="IObjectStore"/>, including
-/// default-emptied-not-removed and a non-empty export archive. Each harness
-/// provisions the user up front, exactly as the host's request-edge provisioner does.
+/// <see cref="TempDataRoot"/> - proving the service-owned orchestration of the
+/// user/chat/rag database providers (the DB half of a delete) + <see cref="IObjectStore"/>
+/// (the artifact half), including default-emptied-not-removed and a non-empty export
+/// archive. Each harness provisions the user up front, exactly as the host's
+/// request-edge provisioner does.
 /// </summary>
 public class LifecycleServicesTests
 {
@@ -35,14 +40,17 @@ public class LifecycleServicesTests
         ProviderFixture.TestDatabases Provider,
         LocalObjectStore Objects,
         SqliteDatabasePaths Paths,
+        IDeletionJournal Journal,
+        IUserDataEraser Eraser,
         IUserContext User);
 
     private static async Task<Harness> BuildAsync(TempDataRoot root, string sub = Sub)
     {
         var dbs = ProviderFixture.ProviderFor(root);
         var paths = ProviderFixture.PathsFor(root);
-        var store = ProviderFixture.StoreFor(root);
         var objects = ProviderFixture.ObjectsFor(root);
+        var journal = ProviderFixture.JournalFor(root);
+        var eraser = new UserDataEraser(dbs.Users, dbs.Rag, objects, journal);
         var validation = new PassThroughValidationProvider();
         IUserContext user = new FixedUserContext { Sub = sub };
 
@@ -50,13 +58,15 @@ public class LifecycleServicesTests
         await dbs.EnsureProvisionedAsync(Iss, sub);
 
         return new Harness(
-            new ProjectService(dbs.Users, dbs.Chat, dbs.Rag, store, validation, user, TimeProvider.System),
+            new ProjectService(dbs.Users, dbs.Chat, dbs.Rag, objects, validation, user, TimeProvider.System),
             new SettingsService(dbs.Users, validation, user),
-            new AccountService(store, dbs.Users, dbs.Chat, objects, user),
-            new AdminService(store, dbs.Users),
+            new AccountService(dbs.Users, dbs.Chat, objects, user, eraser),
+            new AdminService(objects, dbs.Users, eraser),
             dbs,
             objects,
             paths,
+            journal,
+            eraser,
             user);
     }
 
@@ -283,5 +293,101 @@ public class LifecycleServicesTests
 
         (await h.Admin.GetUserAsync(carolKey))!.Username.Should().BeNull();
         (await h.Admin.DeleteUserAsync(carolKey)).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Admin_get_is_null_for_a_well_shaped_but_unknown_key()
+    {
+        await using var root = new TempDataRoot();
+        var h = await BuildAsync(root);
+
+        // A well-shaped key that addresses no folder is absent, not an error.
+        (await h.Admin.GetUserAsync(new string('a', 64))).Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Admin_delete_with_out_of_shape_key_is_false_and_touches_nothing()
+    {
+        await using var root = new TempDataRoot();
+        var h = await BuildAsync(root);
+
+        await h.Provider.EnsureProvisionedAsync(Iss, "alice");
+
+        // A traversal / multi-segment key fails the F6 shape guard -> no deletion.
+        (await h.Admin.DeleteUserAsync("../alice")).Should().BeFalse();
+        Directory.GetDirectories(root.UsersDir).Should().NotBeEmpty();
+    }
+
+    // ---- deletion crash-consistency (the journal + forward recovery) --------
+
+    [Fact]
+    public async Task Delete_account_clears_the_deletion_marker()
+    {
+        await using var root = new TempDataRoot();
+        var h = await BuildAsync(root);
+
+        await h.Account.DeleteAccountAsync();
+
+        var key = SqliteDatabasePaths.Key(Iss, Sub);
+        (await h.Journal.IsPendingAsync(key)).Should().BeFalse("a completed erase clears its journal mark");
+        (await h.Journal.ListPendingAsync()).Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task An_interrupted_deletion_is_completed_by_replaying_the_eraser()
+    {
+        await using var root = new TempDataRoot();
+        var h = await BuildAsync(root);
+        var key = SqliteDatabasePaths.Key(Iss, Sub);
+
+        // Simulate a crash mid-delete: the intent mark is owed and residue (a blob) remains.
+        await h.Journal.MarkPendingAsync(key);
+        var scope = ObjectScope.Project(Iss, Sub, SqliteDatabasePaths.DefaultProjectId);
+        await h.Objects.PutAsync(scope, "files/leftover", new MemoryStream(Encoding.UTF8.GetBytes("residue")));
+        (await h.Journal.IsPendingAsync(key)).Should().BeTrue();
+
+        // Recovery (the startup sweep / the provisioner gate) replays the idempotent erase.
+        await h.Eraser.EraseAsync(key);
+
+        (await h.Journal.IsPendingAsync(key)).Should().BeFalse("recovery clears the mark once everything is gone");
+        Directory.Exists(h.Paths.Root(Iss, Sub)).Should().BeFalse("the residue is erased to completion");
+    }
+
+    [Fact]
+    public async Task Delete_account_erases_rag_db_under_a_separate_rag_root()
+    {
+        // The DB + object store + journal share one root; the RAG engine gets its own.
+        await using var sharedRoot = new TempDataRoot();
+        await using var ragRoot = new TempDataRoot();
+
+        var sharedOpt = Options.Create(ProviderFixture.OptionsFor(sharedRoot));
+        var ragParams = Options.Create(new SqliteRagParameters { DataRoot = ragRoot.Path });
+
+        var dbPaths = new SqliteDatabasePaths(sharedOpt, Options.Create(new SqliteDatabaseParameters()));
+        var ragPaths = new SqliteRagPaths(sharedOpt, ragParams);
+        IUserDatabaseProvider users =
+            new SqliteUserDatabaseProvider(dbPaths, new SqliteConnectionFactory(), TimeProvider.System);
+        IRagIndexProvider rag = new SqliteRagIndexProvider(ragPaths, new SqliteRagConnectionFactory(ragParams));
+        var objects = ProviderFixture.ObjectsFor(sharedRoot);
+        var journal = ProviderFixture.JournalFor(sharedRoot);
+        var eraser = new UserDataEraser(users, rag, objects, journal);
+
+        // Provision the user + materialise a project's rag.db under the SEPARATE rag root.
+        await using (var repo = await users.OpenAsync(Iss, Sub))
+        {
+            await repo.SetUsernameAsync(Sub);
+        }
+
+        await (await rag.OpenAsync(Iss, Sub, SqliteDatabasePaths.DefaultProjectId)).DisposeAsync();
+        var ragDb = ragPaths.RagDb(Iss, Sub, SqliteDatabasePaths.DefaultProjectId);
+        File.Exists(ragDb).Should().BeTrue("rag.db materialises under its own root");
+        ragDb.Should().StartWith(ragRoot.Path).And.NotContain(sharedRoot.Path);
+
+        // Only the RAG-engine delete reaches a rag.db that is NOT in the object store's tree;
+        // dropping that orchestration call would leave this file behind.
+        (await eraser.EraseAsync(SqliteDatabasePaths.Key(Iss, Sub))).Should().BeTrue();
+
+        File.Exists(ragDb).Should().BeFalse("the RAG-engine delete reached the separate rag root");
+        (await journal.IsPendingAsync(SqliteDatabasePaths.Key(Iss, Sub))).Should().BeFalse();
     }
 }

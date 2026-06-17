@@ -3,7 +3,7 @@
 // Long conversations overflow the strip, so three affordances keep every file
 // reachable: the strip scrolls (mouse wheel mapped to horizontal), the active
 // tab auto-scrolls into view, and a pinned "all files" dropdown lists the lot.
-import van from "van";
+import van from "/lib/van.js";
 import { component } from "../../lib/component.js";
 import { Icon } from "../../icons/icons.js";
 import { Menu } from "../ui/menu.js";

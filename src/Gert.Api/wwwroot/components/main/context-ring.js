@@ -6,7 +6,7 @@
 // (window, used/free, last-reply tokens + speed) - same upward Menu shell as
 // the tools dropdown. The Menu is built ONCE (its outside-click closer is a
 // document listener); every row is a reactive binding.
-import van from "van";
+import van from "/lib/van.js";
 import { component } from "../../lib/component.js";
 import { Menu } from "../ui/menu.js";
 import { ProgressBar } from "../ui/progress-bar.js";

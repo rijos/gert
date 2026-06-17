@@ -13,6 +13,6 @@ public interface IAccountService
     /// <summary>Export a single project (conversations + original files).</summary>
     Task<ExportArchive> ExportProjectAsync(string pid, CancellationToken cancellationToken = default);
 
-    /// <summary><c>rm -rf users/{key}</c> - erase all of this user's data.</summary>
+    /// <summary>Erase all of this user's data across its stores (databases + blobs).</summary>
     Task DeleteAccountAsync(CancellationToken cancellationToken = default);
 }

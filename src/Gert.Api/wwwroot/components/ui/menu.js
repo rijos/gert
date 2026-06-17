@@ -2,7 +2,7 @@
 // Returns a wrapper whose `class` reflects `open`; clicking outside closes it.
 // Owns the base .menu / .menu-h styling; the open-state reveal lives with the
 // wrapping picker (.model-picker.open .menu, .project-picker.open .menu).
-import van from "van";
+import van from "/lib/van.js";
 import { component } from "../../lib/component.js";
 
 const { div } = van.tags;

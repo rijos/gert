@@ -31,7 +31,7 @@ The API only ever needs Pocket ID's **JWKS endpoint** to validate signatures - i
 | `aud` | `gert-api` | Validation (this API's client id). |
 | `exp` / `iat` / `nbf` | epoch seconds | Lifetime validation. |
 
-> **`sub` vs `preferred_username` for the folder name.** Use `sub`. Usernames can be renamed in the IdP, which would orphan a folder; `sub` is stable for the life of the account. The human-readable username is stored inside the folder (`user.db`'s `user_meta` row, refreshed from the token when it changes) so admin tooling can map name -> key. See [Operations -> User lifecycle](operations.md#user-lifecycle---remove-a-user--remove-a-folder).
+> **`sub` vs `preferred_username` for the folder name.** Use `sub`. Usernames can be renamed in the IdP, which would orphan a folder; `sub` is stable for the life of the account. The human-readable username is stored inside the folder (`user.db`'s `user_meta` row, refreshed from the token when it changes) so admin tooling can map name -> key. See [Operations -> User lifecycle](operations.md#user-lifecycle---remove-a-user).
 
 ## ASP.NET Core wiring
 
@@ -102,7 +102,7 @@ only after the fail-closed provisioning gate accepts it.
 > or creating a directory - no folder is ever created for an unvalidated token. The folder key is
 > `sha256(iss + sub)`, anchored on `sub` because it is the IdP's **stable, never-recycled** UUID -
 > email is mutable and *recycled* (a reassigned address would inherit the prior owner's data) and so
-> is rejected as the anchor ([decisions section 3](decisions.md#3-folder-key)). Past that gate the
+> is rejected as the anchor ([decisions section 3](decisions.md#3-user-key)). Past that gate the
 > validated JWT is trusted: the folder key derives from the token and nothing else; the username
 > row in each folder's `user.db` is descriptive (admin key->user mapping), never a per-request
 > check ([security F12](security.md#3-findings--remediations)).
@@ -127,7 +127,7 @@ Three independent things decide access:
 | `GET /api/admin/users` | no | no | yes |
 | `DELETE /api/admin/users/{key}` | no | no | yes |
 
-- **yes own** = served strictly from the caller's `sub`-folder. The user and admin columns are identical for data endpoints because **admin status grants no cross-user data read** - admin power is confined to the two `/api/admin/*` endpoints, which only read each folder's `user.db` username row (the footprint scan) and `rm -rf` a directory; they never open another user's `chat.db`/`rag.db`.
+- **yes own** = served strictly from the caller's `sub`-folder. The user and admin columns are identical for data endpoints because **admin status grants no cross-user data read** - admin power is confined to the two `/api/admin/*` endpoints, which only read each folder's `user.db` username row (the footprint scan) and delete a user's data; they never open another user's `chat.db`/`rag.db`.
 - **Anonymous** = missing / invalid / expired token -> `401` (only the `GET /healthz` / `GET /readyz` probes are open).
 - Enforced by the `FallbackPolicy` (authenticated-user) on everything, the `Admin` policy on `/api/admin/*`, and `sub`-folder resolution for data scope.
 - The messages endpoint carries the extra **tool-entitlement** dimension below.
@@ -157,9 +157,9 @@ id and yield nothing.)
 
 ### Tool registry
 
-Every id below must be **named in `gert_tools`** (or covered by `"*"`) to be usable - the
-"granted" / "denied" distinction of earlier drafts is gone, because there is no default set
-to be in or out of. The Notes column records why a grant is more or less sensitive:
+Every id below must be **named in `gert_tools`** (or covered by `"*"`) to be usable - there is
+no default set and so no "granted vs denied" split: a tool is usable iff the claim names it.
+The Notes column records why a grant is more or less sensitive:
 
 | Tool (model function) | Capability id | Notes |
 |---|---|---|

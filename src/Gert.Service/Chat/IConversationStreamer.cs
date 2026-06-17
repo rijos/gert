@@ -5,8 +5,9 @@ namespace Gert.Service.Chat;
 /// <summary>
 /// The replay-then-live splice (chat-and-tools.md section detached turns): one
 /// gap-free, dup-free <see cref="TurnEvent"/> stream from a cursor, regardless
-/// of whether events are already durable or still being produced. Every live
-/// transport (SSE, WS) consumes this - the splice logic exists exactly once.
+/// of whether events are already durable or still being produced. Both delivery
+/// paths (the SSE stream and range polling) consume this - the splice logic
+/// exists exactly once.
 /// </summary>
 public interface IConversationStreamer
 {

@@ -6,6 +6,14 @@
 
 // Each rule: [sticky regex, token class]. Order matters (strings/comments
 // before keywords so their contents aren't re-tokenized).
+//
+// BOUNDED SCANS (ReDoS defense): every multi-line lazy span is written
+// [\s\S]{0,4096}? - NEVER an unbounded [\s\S]*?. Without the cap a never-closing
+// opener (a wall of `/*a`, raw/triple strings) makes the outer position loop
+// O(n^2): each of O(n) failed openers lazily scans to EOF. The cap makes each
+// failed scan O(4096) -> the whole pass is linear. A real comment/string longer
+// than the cap simply stops tinting at the cap (text is never altered); 4096
+// mirrors inline.js's MATH_INLINE_MAX/MAX_DEST discipline.
 const RULES = {
   json: [
     [/"(?:[^"\\]|\\.)*"(?=\s*:)/y, "key"],
@@ -15,7 +23,7 @@ const RULES = {
   ],
   python: [
     [/#.*/y, "com"],
-    [/[rbfu]{0,2}(?:"""[\s\S]*?"""|'''[\s\S]*?''')/iy, "str"],
+    [/[rbfu]{0,2}(?:"""[\s\S]{0,4096}?"""|'''[\s\S]{0,4096}?''')/iy, "str"],
     [/[rbfu]{0,2}(?:"(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*')/iy, "str"],
     [/@\w[\w.]*/y, "dec"],
     [
@@ -26,7 +34,7 @@ const RULES = {
   ],
   javascript: [
     [/\/\/.*/y, "com"],
-    [/\/\*[\s\S]*?\*\//y, "com"],
+    [/\/\*[\s\S]{0,4096}?\*\//y, "com"],
     [/`(?:[^`\\]|\\.)*`/y, "str"],
     [/"(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'/y, "str"],
     [
@@ -37,7 +45,7 @@ const RULES = {
   ],
   csharp: [
     [/\/\/.*/y, "com"],
-    [/\/\*[\s\S]*?\*\//y, "com"],
+    [/\/\*[\s\S]{0,4096}?\*\//y, "com"],
     // verbatim / verbatim-interpolated first ("" escapes, may span lines),
     // then ordinary + interpolated (backslash escapes), then char.
     [/[@$]{2}"(?:[^"]|"")*"|@"(?:[^"]|"")*"/y, "str"],
@@ -51,11 +59,11 @@ const RULES = {
   ],
   cpp: [
     [/\/\/.*/y, "com"],
-    [/\/\*[\s\S]*?\*\//y, "com"],
+    [/\/\*[\s\S]{0,4096}?\*\//y, "com"],
     // sticky+m: ^ only matches when the cursor sits at a line start, so this
     // fires for real directives and never on a stray mid-line '#'.
     [/^[ \t]*#[ \t]*\w+/my, "dec"],
-    [/R"([^(\s]*)\(([\s\S]*?)\)\1"/y, "str"],
+    [/R"([^(\s]*)\(([\s\S]{0,4096}?)\)\1"/y, "str"],
     [/(?:u8|[uUL])?"(?:[^"\\\n]|\\.)*"/y, "str"],
     [/(?:u8|[uUL])?'(?:[^'\\\n]|\\.)*'/y, "str"],
     [
@@ -69,10 +77,10 @@ const RULES = {
   ],
   rust: [
     [/\/\/.*/y, "com"],
-    [/\/\*[\s\S]*?\*\//y, "com"],
+    [/\/\*[\s\S]{0,4096}?\*\//y, "com"],
     [/#!?\[[^\]\n]*\]/y, "dec"],
     [/[A-Za-z_]\w*!(?=\s*[({[])/y, "dec"],
-    [/b?r(#*)"[\s\S]*?"\1/y, "str"],
+    [/b?r(#*)"[\s\S]{0,4096}?"\1/y, "str"],
     [/b?"(?:[^"\\]|\\[\s\S])*"/y, "str"],
     // char literal needs its closing quote, so lifetimes ('a) stay plain.
     [/b?'(?:[^'\\\n]|\\.)'/y, "str"],
@@ -85,11 +93,41 @@ const RULES = {
       "num",
     ],
   ],
+  go: [
+    [/\/\/.*/y, "com"],
+    [/\/\*[\s\S]{0,4096}?\*\//y, "com"],
+    [/`[^`]*`/y, "str"], // raw string literal (backticks, may span lines)
+    [/"(?:[^"\\\n]|\\.)*"/y, "str"], // interpreted string
+    [/'(?:[^'\\\n]|\\.)'/y, "str"], // rune
+    [
+      /\b(?:break|case|chan|const|continue|default|defer|else|fallthrough|for|func|go|goto|if|import|interface|map|package|range|return|select|struct|switch|type|var|bool|byte|complex64|complex128|error|float32|float64|int|int8|int16|int32|int64|rune|string|uint|uint8|uint16|uint32|uint64|uintptr|any|comparable|true|false|iota|nil|append|cap|close|complex|copy|delete|imag|len|make|new|panic|print|println|real|recover)\b/y,
+      "kw",
+    ],
+    [
+      /\b(?:0[xX][\da-fA-F_]+|0[bB][01_]+|0[oO][0-7_]+|\d[\d_]*(?:\.[\d_]*)?(?:[eE][+-]?\d+)?i?)\b/y,
+      "num",
+    ],
+  ],
+  // POSIX/bash shell. No heredoc rule on purpose: a backreferenced, unbounded
+  // `<<EOF ... EOF` scan is exactly the kind of regex this file avoids - a body
+  // line is left plain instead. Comments only when '#' starts a word (so `$#`
+  // and `${x#y}` don't turn into comments mid-line).
+  bash: [
+    [/(?:^|(?<=\s))#.*/my, "com"],
+    [/"(?:[^"\\]|\\.)*"/y, "str"],
+    [/'[^']*'/y, "str"],
+    [/\$\{[^}]*\}|\$[A-Za-z_]\w*|\$[#@*?!$0-9-]/y, "dec"], // variable expansions
+    [
+      /\b(?:if|then|elif|else|fi|for|while|until|do|done|case|esac|in|function|select|time|coproc|return|break|continue|local|export|readonly|declare|typeset|unset|shift|eval|exec|trap|set|source|alias|cd|echo|printf|read|test)\b/y,
+      "kw",
+    ],
+    [/\b\d+\b/y, "num"],
+  ],
   // markup, for html/svg artifact source views. Attr values match only right
   // after '=' (lookbehind), so quoted prose in body text stays plain.
   xml: [
-    [/<!--[\s\S]*?-->/y, "com"],
-    [/<!\[CDATA\[[\s\S]*?\]\]>/y, "str"],
+    [/<!--[\s\S]{0,4096}?-->/y, "com"],
+    [/<!\[CDATA\[[\s\S]{0,4096}?\]\]>/y, "str"],
     [/<!DOCTYPE[^>]*>/iy, "dec"],
     [/<\/?[A-Za-z][\w.:-]*|\/?>/y, "kw"],
     [/[A-Za-z_][\w.:-]*(?==)/y, "key"],
@@ -123,6 +161,12 @@ const ALIASES = {
   h: "cpp",
   hpp: "cpp",
   rs: "rust",
+  golang: "go",
+  sh: "bash",
+  shell: "bash",
+  zsh: "bash",
+  console: "bash",
+  shellsession: "bash",
   html: "xml",
   htm: "xml",
   svg: "xml",

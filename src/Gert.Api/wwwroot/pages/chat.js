@@ -1,6 +1,6 @@
 // pages/chat.js - the default conversation screen (/, /c/:id).
 // Composes the main-region chrome; the sidebar + canvas live in AppShell.
-import van from "van";
+import van from "/lib/van.js";
 import { TopBar } from "../components/main/top-bar.js";
 import { MessageStream } from "../components/main/message-stream.js";
 import { Composer } from "../components/main/composer.js";

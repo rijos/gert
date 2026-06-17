@@ -2,8 +2,8 @@
 // send + hint. Pasted images queue as pending attachments (thumbnail strip)
 // and ride the next send for vision models. Calls services/chat.send; never
 // fetches directly.
-import van from "van";
-import { reactive } from "van-x";
+import van from "/lib/van.js";
+import { reactive } from "/lib/van-x.js";
 import { component } from "../../lib/component.js";
 import { Icon } from "../../icons/icons.js";
 import { ToolsMenu } from "./tools-menu.js";

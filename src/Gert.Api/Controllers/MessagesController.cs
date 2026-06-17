@@ -16,7 +16,7 @@ namespace Gert.Api.Controllers;
 /// <see cref="TurnInProgressException"/> -> 409, both via the exception
 /// handlers), the job is queued for the background worker, and the client
 /// receives <b>202</b> with the ids + the cursor to subscribe from - delivery
-/// happens on the WS/SSE/range endpoints, and generation survives the client
+/// happens on the SSE/range endpoints, and generation survives the client
 /// disconnecting. Also hosts the inverse, <c>POST .../cancel</c> (section stop
 /// generation). Covered by the fallback authenticated-user policy.
 /// </summary>

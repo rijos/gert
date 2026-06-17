@@ -44,8 +44,7 @@ public class MigrationTests
         }
         finally
         {
-            SqliteConnection.ClearAllPools();
-            File.Delete(dbPath);
+            ClearPoolAndDelete(dbPath);
         }
     }
 
@@ -64,9 +63,23 @@ public class MigrationTests
         }
         finally
         {
-            SqliteConnection.ClearAllPools();
-            File.Delete(dbPath);
+            ClearPoolAndDelete(dbPath);
         }
+    }
+
+    /// <summary>
+    /// Release just THIS db file's pooled handle, then delete it. Per-file (not
+    /// <c>ClearAllPools()</c>) so a parallel test class's open connections are never disposed
+    /// out from under it - the source of a cross-collection flake.
+    /// </summary>
+    private static void ClearPoolAndDelete(string dbPath)
+    {
+        using (var connection = new SqliteConnection($"Data Source={dbPath}"))
+        {
+            SqliteConnection.ClearPool(connection);
+        }
+
+        File.Delete(dbPath);
     }
 
     private static async Task<object?> ScalarAsync(SqliteConnection connection, string sql)

@@ -1,6 +1,6 @@
 // components/app-shell.js - the 3-column .app grid + layout state classes +
 // scrim. The middle region is a host the router swaps pages into.
-import van from "van";
+import van from "/lib/van.js";
 import { component } from "../lib/component.js";
 import { Sidebar } from "./sidebar/sidebar.js";
 import { CanvasPanel } from "./canvas/canvas-panel.js";

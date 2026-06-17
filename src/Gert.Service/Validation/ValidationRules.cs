@@ -194,7 +194,7 @@ public static class ValidationRules
     /// <summary>
     /// True if <paramref name="value"/> matches the admin folder-key shape
     /// <c>^[0-9a-f]{64}$</c> (a lowercase sha256 hex) - the F6 gate that must pass
-    /// <b>before</b> <c>{key}</c> is path-joined and rm -rf'd.
+    /// <b>before</b> <c>{key}</c> is path-joined and used to delete a user's data.
     /// </summary>
     public static bool IsWellFormedAdminKey(string? value)
     {
@@ -241,55 +241,6 @@ public static class ValidationRules
         }
 
         return true;
-    }
-
-    /// <summary>
-    /// True if <paramref name="filename"/> is a safe upload filename: present,
-    /// bounded, no path separators, no <c>..</c> traversal, no NUL, and a basename
-    /// only. The extension allowlist is checked separately by the upload validator.
-    /// </summary>
-    public static bool IsSafeFilename(string? filename)
-    {
-        if (string.IsNullOrWhiteSpace(filename) || filename.Length > 255)
-        {
-            return false;
-        }
-
-        if (filename.Contains('/', StringComparison.Ordinal)
-            || filename.Contains('\\', StringComparison.Ordinal)
-            || filename.Contains('\0', StringComparison.Ordinal))
-        {
-            return false;
-        }
-
-        if (filename.Contains("..", StringComparison.Ordinal))
-        {
-            return false;
-        }
-
-        // Percent-encoded separators / dots (%2e %2f %5c) - a decoder downstream could turn
-        // these back into traversal, so reject them in the raw filename (defense-in-depth).
-        if (filename.Contains("%2e", StringComparison.OrdinalIgnoreCase)
-            || filename.Contains("%2f", StringComparison.OrdinalIgnoreCase)
-            || filename.Contains("%5c", StringComparison.OrdinalIgnoreCase))
-        {
-            return false;
-        }
-
-        // A path-rooted or drive-qualified name is never a basename.
-        if (Path.IsPathRooted(filename) || filename.Contains(':', StringComparison.Ordinal))
-        {
-            return false;
-        }
-
-        if (ContainsForbiddenControlChar(filename) || ContainsBidiOverride(filename))
-        {
-            return false;
-        }
-
-        // The .NET runtime's own opinion of the basename must equal the input -
-        // anything else means a separator/segment the checks above missed.
-        return string.Equals(Path.GetFileName(filename), filename, StringComparison.Ordinal);
     }
 
     /// <summary>

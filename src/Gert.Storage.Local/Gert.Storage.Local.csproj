@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- The LOCAL-filesystem storage implementation (the per-impl leaf of the storage
+       capability): LocalObjectStore, the IObjectStore backend over the data-root.
+       Implements the Gert.Storage contracts and depends ONLY on them (+ Gert.Model) -
+       it owns artifact bytes and knows nothing about databases, so there is no longer
+       any reference to Gert.Database. Never referenced by the service layer - the host
+       wires it via AddGertStorageLocal. -->
+
+  <ItemGroup>
+    <ProjectReference Include="..\Gert.Storage\Gert.Storage.csproj" />
+    <ProjectReference Include="..\Gert.Model\Gert.Model.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- IOptions<StorageOptions> + the AddGertStorageLocal DI extension. -->
+    <PackageReference Include="Microsoft.Extensions.Options" Version="$(MicrosoftExtensionsOptionsVersion)" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions"
+                      Version="$(MicrosoftExtensionsDIAbstractionsVersion)" />
+    <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions"
+                      Version="$(MicrosoftExtensionsOptionsVersion)" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions"
+                      Version="$(MicrosoftExtensionsLoggingVersion)" />
+  </ItemGroup>
+
+</Project>

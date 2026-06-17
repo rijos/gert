@@ -1,23 +1,32 @@
 # Operations
 
-## User lifecycle - "remove a user = remove a folder"
+## User lifecycle - remove a user
 
-**Yes - with two caveats.**
+**Two caveats.**
 
-Deleting a user's *data* is exactly:
+Erasing a user's *data* drops each of their stores in turn:
 
-```bash
-rm -rf /data/users/{key}        # key = sha256(iss + sub)
-```
+- the **structured databases** (`user.db` + every project's `chat.db`) - the database engine unlinks its files / drops its rows;
+- the **RAG index** (every project's `rag.db`) - the RAG engine does the same;
+- the **artifact blobs** (uploads, memory bodies) - the object store removes its tree.
 
-This works cleanly because **nothing outside that folder references the user** - no rows in a shared DB, no foreign keys, no orphaned blobs. Chats, documents, embeddings, uploaded files, and artifacts all live under that one directory.
+This works cleanly because **nothing outside those stores references the user** - no rows in a shared DB, no foreign keys, no orphaned blobs. In the default single-root deployment all three live under one directory (`/data/users/{key}`, `key = sha256(iss + sub)`), so the net effect is removing that folder; point a database engine at its own `DataRoot` and the removal simply spans each root.
 
 Caveats:
 
 1. **Identity lives in Pocket ID.** Removing the folder deletes their data but not their *account*. To fully off-board, also delete/deactivate the user in Pocket ID; otherwise they can log back in and a fresh (empty) folder is lazily re-provisioned on their next request.
 2. **JWTs are stateless.** A user removed in the IdP keeps a *valid* access token until it expires. Pocket ID issues **~1-hour access tokens** with no shorter, independently-configurable lifetime ([issue #792](https://github.com/pocket-id/pocket-id/issues/792), closed *not planned*), so deactivating a user in Pocket ID takes effect within **~1 hour**. There is deliberately **no `sub`-denylist**: it would be shared, mutable, per-instance auth state that breaks running multiple GERT instances, so GERT stays stateless and validates every token purely from the JWT + JWKS. For sub-hour revocation, shorten the token lifetime at the IdP (see [decisions.md section 4](decisions.md#4-token-lifetime--revocation)).
 
-The admin endpoint `DELETE /api/admin/users/{key}` performs the `rm -rf` (and can optionally call Pocket ID's API to deactivate in the same step). `GET /api/admin/users` is just a directory scan that opens each folder's `user.db` for the username plus an object-store footprint listing - there is no central user table to keep in sync.
+The admin endpoint `DELETE /api/admin/users/{key}` runs this deletion (and can optionally call Pocket ID's API to deactivate in the same step). Under the hood the **service** drops the database halves (each engine releases its pooled handles + removes its own files/rows) then the artifact blobs (the object store), in that order so a local whole-tree wipe never races an open db handle. It stays correct whether the stores share one root or sit on separate roots - and once storage is remote (objects in S3, dbs local). `GET /api/admin/users` is just a directory scan that opens each folder's `user.db` for the username plus an object-store footprint listing - there is no central user table to keep in sync.
+
+**Crash-consistent across the stores.** Because the erase spans those independent stores, it is a
+**write-ahead-intent saga**, not a transaction: the user is marked owed in a deletion journal
+(`{Storage:DataRoot}/.pending-deletions/{key}`) *before* anything is touched and the mark is
+cleared *only after* every store is gone. If the process dies mid-delete, the mark survives, and
+the deletion is replayed to completion automatically - on the next **startup** (a recovery sweep)
+and the next time that user is **provisioned** (the residue is finished before a fresh empty
+account is created). So a crashed account delete converges to fully-erased with **no operator
+retry and no orphaned PII** ([decisions section 12](decisions.md#12-deletion-crash-consistency---a-journal--idempotent-forward-recovery)).
 
 ---
 
@@ -52,8 +61,10 @@ X-Frame-Options: DENY
 Permissions-Policy: (minimised - camera=(), microphone=(), geolocation=() ...)
 ```
 
-- The no-bundle ESM design needs **no `unsafe-inline`** for scripts - the import map and
-  `<script type="module" src>` are external - so `script-src 'self'` holds as-is
+- The no-bundle ESM design needs **no `unsafe-inline`** for scripts and **no per-build hash**:
+  there is no inline `<script>` anywhere - no import map - because every ESM import is an absolute
+  same-origin path (`/lib/van.js`, ...) and modules load via `<script type="module" src>`, so a
+  plain `script-src 'self'` holds with nothing to keep in sync
   ([ui-components](ui-components.md#6-devrelease-pipeline-no-npm)).
 - **`connect-src` is the exfiltration brake**: it lists only the API origin and Pocket ID. A token
   stolen by injected script has nowhere to be sent.

@@ -3,7 +3,7 @@
 // user is pinned to the bottom - scrolling up detaches, scrolling back re-pins.
 // An empty thread renders a centered hero (brand mark + starter-prompt chips
 // that hand their text to the composer via chat.draft) instead of bare paper.
-import van from "van";
+import van from "/lib/van.js";
 import { component } from "../../lib/component.js";
 import { BrandMark, Icon } from "../../icons/icons.js";
 import { Message } from "./message.js";

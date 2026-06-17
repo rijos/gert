@@ -1,4 +1,4 @@
-using Gert.Service.Storage;
+using Gert.Storage;
 using Microsoft.Extensions.Options;
 
 namespace Gert.Database.Sqlite;
@@ -25,25 +25,36 @@ public sealed class SqliteDatabasePaths
     /// <summary>The literal landing-project id, always present (storage-and-data.md section layout).</summary>
     public const string DefaultProjectId = StorageKeys.DefaultProjectId;
 
-    private readonly StorageOptions _options;
+    private readonly string _dataRoot;
 
-    /// <summary>Resolve paths under the configured <see cref="StorageOptions.DataRoot"/>.</summary>
-    public SqliteDatabasePaths(IOptions<StorageOptions> options)
+    /// <summary>
+    /// Resolve paths under this engine's data root: <see cref="SqliteDatabaseParameters.DataRoot"/>
+    /// when set, otherwise the shared <see cref="StorageOptions.DataRoot"/>. The structured
+    /// databases (<c>user.db</c> + <c>chat.db</c>) can thus live on their own volume,
+    /// independent of the RAG index and the object store.
+    /// </summary>
+    public SqliteDatabasePaths(
+        IOptions<StorageOptions> storage,
+        IOptions<SqliteDatabaseParameters> parameters)
     {
-        ArgumentNullException.ThrowIfNull(options);
-        _options = options.Value;
+        ArgumentNullException.ThrowIfNull(storage);
+        ArgumentNullException.ThrowIfNull(parameters);
 
-        // Mirror LocalObjectStore's fail-fast guard: an unset DataRoot would
-        // otherwise silently write ./users relative to the process CWD.
-        if (string.IsNullOrWhiteSpace(_options.DataRoot))
+        var configured = parameters.Value.DataRoot;
+        _dataRoot = string.IsNullOrWhiteSpace(configured) ? storage.Value.DataRoot : configured;
+
+        // Mirror LocalObjectStore's fail-fast guard: with neither an engine override nor a
+        // shared Storage:DataRoot, paths would silently resolve ./users relative to the CWD.
+        if (string.IsNullOrWhiteSpace(_dataRoot))
         {
             throw new InvalidOperationException(
-                $"{nameof(StorageOptions)}.{nameof(StorageOptions.DataRoot)} must be configured.");
+                $"No data root configured: set {SqliteDatabaseParameters.SectionName}:{nameof(SqliteDatabaseParameters.DataRoot)} " +
+                $"or {StorageOptions.SectionName}:{nameof(StorageOptions.DataRoot)}.");
         }
     }
 
     /// <summary>The configured <c>{DataRoot}/users</c> directory.</summary>
-    public string UsersDir => Path.Combine(_options.DataRoot, "users");
+    public string UsersDir => Path.Combine(_dataRoot, "users");
 
     /// <summary>
     /// Folder key - <c>sha256(iss + "\n" + sub)</c> lowercase hex (decisions section 3).
@@ -71,6 +82,36 @@ public sealed class SqliteDatabasePaths
 
     /// <summary>The per-user database addressed by folder <paramref name="key"/> (admin path).</summary>
     public string UserDbByKey(string key) => Path.Combine(RootByKey(key), "user.db");
+
+    /// <summary>
+    /// Every database file this engine owns under the user root - <c>user.db</c> plus each
+    /// project's <c>chat.db</c> - the database half of a whole-account delete. The RAG index
+    /// (<c>rag.db</c>) is a separate engine and removes its own files. Enumerates the on-disk
+    /// <c>projects/</c> directory so an orphaned project folder (a db with no registry row) is
+    /// caught too.
+    /// </summary>
+    public IReadOnlyList<string> UserDatabaseFiles(string iss, string sub) =>
+        DatabaseFilesUnder(Root(iss, sub));
+
+    /// <summary>As <see cref="UserDatabaseFiles"/> but addressed by folder key (admin path; F6-validated).</summary>
+    public IReadOnlyList<string> UserDatabaseFilesByKey(string key) =>
+        DatabaseFilesUnder(RootByKey(key));
+
+    private static IReadOnlyList<string> DatabaseFilesUnder(string root)
+    {
+        var files = new List<string> { Path.Combine(root, "user.db") };
+
+        var projectsDir = Path.Combine(root, "projects");
+        if (Directory.Exists(projectsDir))
+        {
+            foreach (var projectDir in Directory.EnumerateDirectories(projectsDir))
+            {
+                files.Add(Path.Combine(projectDir, "chat.db"));
+            }
+        }
+
+        return files;
+    }
 
     // ---- project-level paths (pid validated; never escapes Root) -----------
 
@@ -107,18 +148,6 @@ public sealed class SqliteDatabasePaths
     /// <summary>The conversations database <c>projects/{pid}/chat.db</c>.</summary>
     public string ChatDb(string iss, string sub, string pid) =>
         Path.Combine(ProjectRoot(iss, sub, pid), "chat.db");
-
-    /// <summary>The RAG database <c>projects/{pid}/rag.db</c> (sqlite-vec + FTS5).</summary>
-    public string RagDb(string iss, string sub, string pid) =>
-        Path.Combine(ProjectRoot(iss, sub, pid), "rag.db");
-
-    /// <summary>The uploaded-files directory <c>projects/{pid}/files/</c>.</summary>
-    public string FilesDir(string iss, string sub, string pid) =>
-        Path.Combine(ProjectRoot(iss, sub, pid), "files");
-
-    /// <summary>The memory-entries directory <c>projects/{pid}/memory/</c>.</summary>
-    public string MemoryDir(string iss, string sub, string pid) =>
-        Path.Combine(ProjectRoot(iss, sub, pid), "memory");
 
     /// <summary>
     /// Reject any <paramref name="pid"/> that is not a UUID or the literal

@@ -1,7 +1,7 @@
 using System.IO.Compression;
 using System.Text.Json;
 using Gert.Database;
-using Gert.Service.Storage;
+using Gert.Storage;
 
 namespace Gert.Service.Account;
 
@@ -17,8 +17,9 @@ namespace Gert.Service.Account;
 /// original file blobs - the project list from <c>user.db</c>
 /// (<see cref="IUserDatabaseProvider"/>), conversations via
 /// <see cref="IChatDatabaseProvider"/>, files via <see cref="IObjectStore"/>
-/// (decision: user blobs only through the object store). Delete-account is a
-/// directory <c>rm -rf</c> via <see cref="IUserStore"/>.
+/// (decision: user blobs only through the object store). Delete-account delegates to
+/// <see cref="IUserDataEraser"/>, which erases all three independent stores (databases +
+/// RAG index + blobs) crash-consistently under the deletion journal.
 /// </para>
 /// </summary>
 public sealed class AccountService : IAccountService
@@ -28,24 +29,24 @@ public sealed class AccountService : IAccountService
         WriteIndented = true,
     };
 
-    private readonly IUserStore _store;
     private readonly IUserDatabaseProvider _userDatabases;
     private readonly IChatDatabaseProvider _chatDatabases;
     private readonly IObjectStore _objects;
     private readonly IUserContext _user;
+    private readonly IUserDataEraser _eraser;
 
     public AccountService(
-        IUserStore store,
         IUserDatabaseProvider userDatabases,
         IChatDatabaseProvider chatDatabases,
         IObjectStore objects,
-        IUserContext user)
+        IUserContext user,
+        IUserDataEraser eraser)
     {
-        _store = store ?? throw new ArgumentNullException(nameof(store));
         _userDatabases = userDatabases ?? throw new ArgumentNullException(nameof(userDatabases));
         _chatDatabases = chatDatabases ?? throw new ArgumentNullException(nameof(chatDatabases));
         _objects = objects ?? throw new ArgumentNullException(nameof(objects));
         _user = user ?? throw new ArgumentNullException(nameof(user));
+        _eraser = eraser ?? throw new ArgumentNullException(nameof(eraser));
     }
 
     /// <inheritdoc />
@@ -68,12 +69,11 @@ public sealed class AccountService : IAccountService
     }
 
     /// <inheritdoc />
-    public async Task DeleteAccountAsync(CancellationToken cancellationToken = default)
-    {
-        // rm -rf users/{key} - erase all of the caller's data (not the IdP account).
-        // Nothing to invalidate: the databases self-provision on the next open.
-        await _store.DeleteUserAsync(_user.Iss, _user.Sub, cancellationToken).ConfigureAwait(false);
-    }
+    public Task DeleteAccountAsync(CancellationToken cancellationToken = default) =>
+        // Erase all of the caller's data (not the IdP account) through the journal-guarded
+        // eraser, so a crash mid-delete is resumable rather than a half-erased account. All
+        // stores self-provision again on next open.
+        _eraser.EraseAsync(StorageKeys.UserKey(_user.Iss, _user.Sub), cancellationToken);
 
     // ---- archive build -----------------------------------------------------
 

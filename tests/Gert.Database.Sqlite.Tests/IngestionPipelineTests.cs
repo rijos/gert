@@ -1,12 +1,16 @@
 using System.Text;
 using FluentAssertions;
+using Gert.Chat;
+using Gert.Ingestion.PlainText;
 using Gert.Model;
+using Gert.Model.Rag;
 using Gert.Service.Documents;
 using Gert.Service.External;
 using Gert.Service.Ingestion;
 using Gert.Service.Storage;
 using Gert.Service.Validation;
 using Gert.Storage;
+using Gert.Storage.Local;
 using Gert.Testing;
 using Gert.Testing.Fakes;
 using Xunit;
@@ -75,7 +79,7 @@ public class IngestionPipelineTests
         var reports = new List<IngestionProgress>();
         var progress = new Progress<IngestionProgress>(reports.Add);
         await harness.Ingestion.IngestAsync(
-            new IngestJob { Iss = Iss, Sub = Sub, Pid = Pid, DocumentId = documentId, ObjectKey = $"files/{documentId}.txt", Extension = "txt" },
+            new IngestJob { Iss = Iss, Sub = Sub, Pid = Pid, DocumentId = documentId, ObjectKey = $"files/{documentId}", Extension = "txt" },
             progress);
 
         // Progress is observed on the captured SynchronizationContext; give the posts a beat.
@@ -194,13 +198,34 @@ public class IngestionPipelineTests
         const string original = "Réport (2024) final.md";
         var doc = await harness.Documents.UploadAsync(Pid, Upload(original, "text/markdown", "body text here"));
 
-        // The blob exists under the server-generated {doc-id}.{ext} key - NOT the name.
+        // The blob exists under the fully server-generated files/{doc-id} key (no
+        // extension) - NOT the uploaded name.
         var scope = ObjectScope.Project(Iss, Sub, Pid);
-        (await harness.Objects.ExistsAsync(scope, $"files/{doc.Id}.md")).Should().BeTrue();
+        (await harness.Objects.ExistsAsync(scope, $"files/{doc.Id}")).Should().BeTrue();
 
         // documents.filename is base64 of the original; decoding round-trips it exactly.
         var decoded = Encoding.UTF8.GetString(Convert.FromBase64String(doc.Filename));
         decoded.Should().Be(original);
+    }
+
+    [Fact]
+    public async Task Upload_with_a_traversal_shaped_filename_still_stores_only_under_the_doc_id_key()
+    {
+        await using var root = new TempDataRoot();
+        var harness = await HarnessAsync(root);
+
+        // A traversal-shaped name with an allowed extension: the filename is metadata, so
+        // the gate accepts it - and it must NEVER reach a storage path.
+        const string malicious = "../../etc/passwd.md";
+        var doc = await harness.Documents.UploadAsync(Pid, Upload(malicious, "text/markdown", "x"));
+
+        var scope = ObjectScope.Project(Iss, Sub, Pid);
+        // Exactly one blob, under the server UUID key - nothing was written at a traversed path.
+        (await harness.Objects.ListAsync(scope, "files/")).Should()
+            .ContainSingle().Which.Should().Be($"files/{doc.Id}");
+
+        // The original name is preserved verbatim as DB metadata.
+        Encoding.UTF8.GetString(Convert.FromBase64String(doc.Filename)).Should().Be(malicious);
     }
 
     [Fact]
@@ -215,7 +240,7 @@ public class IngestionPipelineTests
         recording.Jobs.Should().ContainSingle();
         var job = recording.Jobs[0];
         job.DocumentId.Should().Be(doc.Id);
-        job.ObjectKey.Should().Be($"files/{doc.Id}.txt");
+        job.ObjectKey.Should().Be($"files/{doc.Id}");
         job.Extension.Should().Be("txt");
         job.Iss.Should().Be(Iss);
         job.Sub.Should().Be(Sub);
@@ -230,12 +255,12 @@ public class IngestionPipelineTests
 
         var doc = await harness.Documents.UploadAsync(Pid, Upload("gone.md", "text/markdown", "content to delete"));
         var scope = ObjectScope.Project(Iss, Sub, Pid);
-        (await harness.Objects.ExistsAsync(scope, $"files/{doc.Id}.md")).Should().BeTrue();
+        (await harness.Objects.ExistsAsync(scope, $"files/{doc.Id}")).Should().BeTrue();
 
         (await harness.Documents.DeleteAsync(Pid, doc.Id)).Should().BeTrue();
 
         (await harness.Documents.GetAsync(Pid, doc.Id)).Should().BeNull();
-        (await harness.Objects.ExistsAsync(scope, $"files/{doc.Id}.md")).Should().BeFalse("the blob is removed too");
+        (await harness.Objects.ExistsAsync(scope, $"files/{doc.Id}")).Should().BeFalse("the blob is removed too");
 
         await using var repo = await harness.Provider.OpenRagAsync(Iss, Sub, Pid);
         var hits = await repo.HybridSearchAsync("content to delete", FakeEmbeddings.Embed("content to delete"), k: 5);

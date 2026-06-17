@@ -8,7 +8,7 @@ public sealed record CreateConversationRequest
 {
     public string? Title { get; init; }
 
-    /// <summary>Provider id (the <c>Gert:Providers</c> slug); unset uses the default provider.</summary>
+    /// <summary>Provider id (the <c>Gert:Chat:Providers</c> slug); unset uses the default provider.</summary>
     public string? ModelId { get; init; }
 
     public ToolToggles? Tools { get; init; }

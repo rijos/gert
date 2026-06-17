@@ -44,9 +44,8 @@ PID = "default"
 GUID = "00000000-0000-0000-0000-000000000001"
 
 # One (method, path) per controller action - keep in sync with
-# src/Gert.Api/Controllers/*.cs when endpoints change. /ws/chat is excluded
-# (its bearer-subprotocol handshake is exercised by the chat scenarios), and
-# /healthz + /readyz are asserted anonymous below.
+# src/Gert.Api/Controllers/*.cs when endpoints change. /healthz + /readyz are
+# asserted anonymous below.
 ENDPOINTS: list[tuple[str, str]] = [
     # ProjectsController
     ("GET", "/api/projects"),

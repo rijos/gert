@@ -19,7 +19,7 @@ public sealed record SendMessageRequest
     public IReadOnlyList<MessageAttachment>? Attachments { get; init; }
 
     /// <summary>
-    /// Provider id for this turn (the <c>Gert:Providers</c> slug). Unset inherits the
+    /// Provider id for this turn (the <c>Gert:Chat:Providers</c> slug). Unset inherits the
     /// conversation's provider. Sampling + thinking ride the provider, not the request.
     /// </summary>
     public string? ModelId { get; init; }

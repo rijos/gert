@@ -1,5 +1,5 @@
 // components/main/conv-title.js - editable conversation title.
-import van from "van";
+import van from "/lib/van.js";
 import { component } from "../../lib/component.js";
 import { Icon } from "../../icons/icons.js";
 import * as chat from "../../state/chat.js";

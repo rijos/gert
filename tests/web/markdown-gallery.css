@@ -1,0 +1,31 @@
+/* markdown-gallery.css - styles for the renderer gallery. External (not an
+   inline <style>) so it satisfies the app CSP `style-src 'self'` exactly the way
+   production does - the gallery is held to the same constraint it validates. */
+body { margin: 0; padding: 24px; background: var(--bg, #fff); color: var(--ink, #111); font-family: var(--sans, system-ui, sans-serif); }
+h1 { font-size: 18px; margin: 0 0 4px; }
+.sub { color: var(--ink-3, #888); font-size: 13px; margin: 0 0 20px; }
+.case { border: 1px solid var(--line, #ddd); border-radius: 10px; margin: 0 0 14px; overflow: hidden; }
+.case > .name { font: 600 12px var(--mono, ui-monospace, monospace); letter-spacing: .04em; text-transform: uppercase; padding: 7px 12px; background: var(--surface-2, #f5f5f5); color: var(--ink-2, #555); border-bottom: 1px solid var(--line, #ddd); }
+.case.sec > .name { background: #2b1212; color: #ffb4a8; }
+.case > .cols { display: grid; grid-template-columns: 1fr 1fr; }
+@media (max-width: 720px) { .case > .cols { grid-template-columns: 1fr; } }
+.src { white-space: pre-wrap; font: 12px var(--mono, ui-monospace, monospace); padding: 12px; background: var(--code-bg, #1a1a1a); color: var(--code-fg, #ddd); border-right: 1px solid var(--line, #ddd); overflow-x: auto; margin: 0; }
+.out { padding: 12px 14px; }
+.out p { margin: 0 0 8px; }
+.out p:last-child { margin-bottom: 0; }
+.out strong { font-weight: 700; }
+.out em { font-style: italic; }
+.out del { opacity: .65; }
+.out a { color: var(--coral-deep, #c0392b); }
+.out code { font-family: var(--mono, ui-monospace, monospace); font-size: 12px; background: var(--surface-2, #eee); padding: 1px 4px; border-radius: 4px; }
+.out pre { background: var(--code-bg, #1a1a1a); color: var(--code-fg, #ddd); padding: 10px 12px; border-radius: 6px; overflow-x: auto; }
+.out pre code { background: none; padding: 0; }
+.out blockquote { border-left: 3px solid var(--coral, #e07856); margin: 0 0 8px; padding: 4px 12px; color: var(--ink-2, #555); }
+.out table { border-collapse: collapse; }
+.out th, .out td { border: 1px solid var(--line, #ddd); padding: 4px 8px; }
+.out hr { border: none; border-top: 1px solid var(--line, #ddd); margin: 12px 0; }
+.out img { max-width: 100%; }
+.out ul, .out ol { padding-left: 22px; }
+.out .task-list-item { list-style: none; margin-left: -22px; }
+.verdict { font: 600 12px var(--mono, ui-monospace, monospace); padding: 8px 12px; border-top: 1px solid var(--line, #ddd); }
+.pass { color: #2e7d32; } .fail { color: #c62828; }

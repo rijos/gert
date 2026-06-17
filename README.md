@@ -37,7 +37,7 @@
 - **Projects & memory** - isolated workspaces, each with its own chats, documents, and
   memory; pinned memory rides the system prompt, the rest is retrieved on demand.
 - **Detached turns** - generation runs on a background worker and survives client
-  disconnects; resume over WebSocket, SSE, or polling from an exact event cursor.
+  disconnects; resume over SSE or polling from an exact event cursor.
 - **Passkey login** - OIDC Authorization Code + PKCE against an OAuth Compatible provider;  
   RS256-pinned JWT validation, token in memory only.
 - **No npm, no CDN** - the SPA is [VanJS](https://vanjs.org) with vendored libs, served by
@@ -60,12 +60,30 @@ Point `src/Gert.Api/appsettings.json` at your model server and IdP:
 ```jsonc
 {
   "Gert": {
-    "OpenAI": {
-      "BaseUrl": "http://openaicompatible:8000",   // NO trailing /v1
-      "ChatModelId": "qwen36",
-      "EmbeddingModelId": "bge-m3"
+    "Chat": {
+      "Providers": {
+        "qwen36": {
+          "Name": "Qwen 3.6",
+          "Type": "openai",
+          "Default": true,
+          "Capabilities": [ "tools", "vision" ],
+          "Parameters": {
+            "BaseUrl": "http://openaicompatible:8000", // NO trailing /v1
+            "Model": "qwen36"
+          }
+        }
+      }
     },
-    "Search": { "BaseUrl": "http://localhost:8080" } // SearXNG compatible instance
+    "Embeddings": {
+      "Type": "OpenAI",
+      "Parameters": {
+        "BaseUrl": "http://openaicompatible:8000",   // NO trailing /v1
+        "Model": "bge-m3"
+      }
+    },
+    "Tools": {
+      "Search": { "Parameters": { "BaseUrl": "http://localhost:8080" } } // SearXNG compatible instance
+    }
   },
   "Auth": { "Authority": "https://id.example.com", "Audience": "gert-api" },
   "Storage": { "DataRoot": "/data", "ExpectedIssuer": "https://id.example.com" }
@@ -89,7 +107,6 @@ nothing but [uv](https://docs.astral.sh/uv/) installed:
 
 ```bash
 make serve-mock                                      # mocked everything, prints a signed-in URL
-make serve-mock-vllm VLLM_URL=http://host:8000/v1    # real model, mocked auth
 ```
 
 ## Development

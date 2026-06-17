@@ -1,6 +1,6 @@
 // components/main/top-bar.js - collapse btn - title - theme - model picker -
 // panel toggle. Tool toggles live in the composer's tools dropdown.
-import van from "van";
+import van from "/lib/van.js";
 import { component } from "../../lib/component.js";
 import { Icon } from "../../icons/icons.js";
 import { ConvTitle } from "./conv-title.js";

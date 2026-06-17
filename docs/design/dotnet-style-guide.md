@@ -23,8 +23,9 @@ Where a new type goes (full map: [tech-stack section solution layout](tech-stack
 | It is... | It goes in... |
 |--------|-------------|
 | Pure data (DTO, row, wire event) | `Gert.Model` (`Dtos/`, `Events/`, per-store folders) |
-| Business logic, a tool, a validator | `Gert.Service`, in its feature folder (`Chat/`, `Tools/`, `Ingestion/`, `Validation/`) |
-| A port to the outside world | interface + record DTOs in `Gert.Service/External/`; the real client in `Gert.External` |
+| Business logic, a validator, a tool *contract* or turn orchestration | `Gert.Service`, in its feature folder (`Chat/`, `Tools/`, `Ingestion/`, `Validation/`) |
+| A built-in tool *implementation* (an `ITool`) | `Gert.Tools/Builtin/` (it talks only to ports + `Gert.Model`, like any adapter) |
+| A port to the outside world | interface + record DTOs in `Gert.Service/External/`; the real client in an adapter assembly (`Gert.Chat`/`Gert.Tools`/`Gert.Ingestion`) |
 | A persistence contract | `Gert.Database`; the SQL in `Gert.Database.Sqlite` |
 | Anything that needs `HttpContext`, JWT, SSE, a `BackgroundService` | the host (`Gert.Api`) |
 
@@ -86,7 +87,7 @@ Where a new type goes (full map: [tech-stack section solution layout](tech-stack
   swallowed into a degraded result:
 
   ```csharp
-  // src/Gert.Service/Tools/SandboxTool.cs
+  // src/Gert.Tools/Builtin/PythonSandboxTool.cs
   catch (OperationCanceledException)
   {
       throw;
@@ -116,10 +117,12 @@ Where a new type goes (full map: [tech-stack section solution layout](tech-stack
   fakes rely on ([testing section 4.2](testing.md#42-two-ways-to-fake-the-outside-world)). Deliberate
   exceptions: `AddScoped<ITool, ...>` multi-registrations must accumulate.
 
-  **Rule:** *every* adapter gets one - the storage/database seam lives in the
-  `AddGertSqliteStorage(cfg)` extension in `Gert.Database.Sqlite` (which therefore also
-  references `Gert.Storage` for the local object/user store registrations); the host
-  calls it rather than hand-registering copy-pasted lines.
+  **Rule:** *every* adapter gets one, and a capability-impl registrar is named
+  `AddGert<Capability><Impl>` (`AddGertChatOpenAI`, `AddGertDatabaseSqlite`,
+  `AddGertStorageLocal`, `AddGertSearchSearXNG`, `AddGertSandboxMonty`, `AddGertSandboxGVisor`);
+  the generic per-capability registrar keeps the bare capability name (`AddGertChat`,
+  `AddGertTools`). The database seam lives in the `AddGertDatabaseSqlite(cfg)` extension in
+  `Gert.Database.Sqlite`; the host calls it rather than hand-registering copy-pasted lines.
 - **Every registration carries a lifetime-rationale comment.** The rule the comments encode:
   scoped if it (transitively) reads `IUserContext`; singleton for process-wide state. The
   exemplar (`src/Gert.Service/ServiceCollectionExtensions.cs`):
@@ -139,13 +142,13 @@ Where a new type goes (full map: [tech-stack section solution layout](tech-stack
   properties to prove every DTO has a validator). Don't inject it into new code.
 - **Rule (settled):** options bind via
   `services.AddOptions<T>().Bind(configuration.GetSection(T.SectionName)).ValidateDataAnnotations().ValidateOnStart()`
-  - *the* idiom, modelled on `Gert.External/ServiceCollectionExtensions.cs` (which does
+  - *the* idiom, modelled on `Gert.Chat/ServiceCollectionExtensions.cs` (which does
   `.Bind(...).ValidateOnStart()` for all five of its option types); add
   `.ValidateDataAnnotations()` only when the type carries annotations
-  (`RateLimiting.PolicyOptions` is the exemplar). The former stragglers are migrated: the
-  hosts' bare `services.Configure<T>(section)` registrations (Storage, SqliteVec) moved
-  into `AddGertSqliteStorage`, and the hand-bound `ArtifactTicketOptions` singleton became
-  a bound option whose >=32-byte-secret fail-fast is an
+  (`RateLimiting.PolicyOptions` is the exemplar). Each adapter binds its own options in its
+  `AddGert*` registrar (e.g. `AddGertRagSqlite` binds `StorageOptions` + `SqliteRagParameters`),
+  never a bare `services.Configure<T>(section)` at the host. `ArtifactTicketOptions` is a bound
+  option whose >=32-byte-secret fail-fast is an
   `IValidateOptions<ArtifactTicketOptions>` run by `ValidateOnStart` (security F3).
   Computed options that are derived rather than section-bound (`SecurityHeadersOptions`'
   origins) use `AddOptions<T>().Configure(...)` with the derived values. Options classes
@@ -197,7 +200,7 @@ Fail-closed, in the service layer, so validation runs identically for every call
   that is never invoked is a silent hole - a service-tier test pins the invocation.
 - Shared vocabulary lives in `ValidationRules`: the `SafeText`/`OptionalSafeText` extensions
   (length, control chars, bidi overrides) for every human-text field, and pure predicates
-  (`IsWellFormedId`, `IsSafeIdentifier`, `IsSafeFilename`) usable from validators and route
+  (`IsWellFormedId`, `IsSafeIdentifier`) usable from validators and route
   guards alike. Character checks are hand-rolled loops over allowlisted ranges - no regexes
   at the input boundary, so no ReDoS by construction.
 - Every rule carries `.WithMessage` + `.WithErrorCode` with dotted **snake_case** codes:
@@ -250,7 +253,7 @@ Fail-closed, in the service layer, so validation runs identically for every call
   but not FTS5 *query-language* injection - neutralize operators too:
 
   ```csharp
-  // src/Gert.Database.Sqlite/SqliteRagRepository.cs
+  // src/Gert.Rag.Sqlite/SqliteRagStore.cs
   private static string EscapeFtsQuery(string query) =>
       "\"" + query.Replace("\"", "\"\"", StringComparison.Ordinal) + "\"";
   ```
@@ -270,7 +273,7 @@ Fail-closed, in the service layer, so validation runs identically for every call
   `SandboxCommandBuilder`, `ZipBombGuard`) with a thin shell that does the I/O. The
   security-relevant decision must be expressible as a pure function so it is testable without
   a socket.
-- **Typed options per upstream** (`OpenAIOptions`, `SearXngOptions`, ...) bound per section 4; defaults
+- **Typed options per upstream** (`EmbeddingsOptions`, `SearXngOptions`, ...) bound per section 4; defaults
   *are* the secure posture (egress off, caps on).
 - **Resilience and timeout ownership is decided per call semantics, with the decision
   commented at the registration site**: retries on idempotent calls (embeddings, search),
@@ -310,9 +313,8 @@ Fail-closed, in the service layer, so validation runs identically for every call
   invariant explanations live at one "home" type and other sites point at it.
 - **Keep citations fresh.** `make check-links` gates markdown links but cannot see C#
   comments, so a renamed type, doc section, or migrated decision means **grepping for and
-  updating its citers in the same change** (the CLAUDE.md rule). The review found ~10 stale
-  citations (`ChatService` ghosts, `meta.json` references, the gVisor-only sandbox blurb) -
-  treat a stale citation as a review-blocking defect, the same as a broken link.
+  updating its citers in the same change** (the CLAUDE.md rule). Treat a stale citation as a
+  review-blocking defect, the same as a broken link.
 
 ## 11. Testing
 
@@ -327,7 +329,7 @@ The tiers, the fakes, and the shared spec are defined in [testing.md](testing.md
 - **Placement:** service tier = orchestration, event streams, validators (repos may be
   NSubstitute); SQLite tier = anything containing SQL - always **real temp SQLite** (vec0 +
   FTS5), never in-memory stand-ins for ranking; API tier = things that only exist with HTTP
-  (status codes, SSE/WS framing, auth middleware, headers); Python E2E = things that only
+  (status codes, SSE framing, auth middleware, headers); Python E2E = things that only
   exist in a browser, plus wire fidelity through the real adapters.
 - Repository tests: `await using var root = new TempDataRoot();` -> provider -> repo; the
   provider self-migrates on open (no setup SQL in tests). Direct-file tests call
@@ -354,7 +356,7 @@ The tiers, the fakes, and the shared spec are defined in [testing.md](testing.md
 ## Cheat sheet
 
 - New type: data -> `Gert.Model`; logic -> `Gert.Service/<Feature>/`; port interface ->
-  `Gert.Service/External/`; client -> `Gert.External`; SQL -> `Gert.Database.Sqlite`.
+  `Gert.Service/External/`; client -> an adapter assembly (`Gert.Chat`/`Gert.Tools`/`Gert.Ingestion`); SQL -> `Gert.Database.Sqlite`.
   References point inward only; the architecture test bites.
 - `sealed` everything; `sealed record` + `required`/`init` for data, `sealed class` for
   services, `readonly record struct` for tiny keys; `!` only with a comment.

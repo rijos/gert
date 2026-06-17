@@ -14,7 +14,7 @@
 //   footer      - node or fn(close) appended after the list (e.g. "+ New ...").
 //   searchable  - show a filter input at the top of the menu.
 //   renderItem  - fn(item) => node for custom row content.
-import van from "van";
+import van from "/lib/van.js";
 import { component } from "../../lib/component.js";
 import { Icon } from "../../icons/icons.js";
 import { Menu } from "./menu.js";

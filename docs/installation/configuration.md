@@ -5,6 +5,13 @@ example for each. This is the **installation** view - the *design* of the config
 cascade (server -> user -> project -> conversation) and the project model live in
 [design/configuration.md](../design/configuration.md).
 
+The `Gert:*` tree follows one rule everywhere: **functionality -> choose an implementation
+(`Type`) -> configure it (`Parameters`)**. Cross-implementation knobs sit beside `Type`; the
+connection / impl-private config (what changes when `Type` changes) lives under `Parameters`.
+HTTP resilience (`RequestTimeoutSeconds`/`RetryCount`) is **per item that makes calls** - each
+chat provider's `Parameters` and `Gert:Embeddings:Parameters` carry their own; there is no
+shared HTTP section.
+
 ---
 
 ## 1. How configuration binds
@@ -18,93 +25,147 @@ appsettings.json  ->  appsettings.{Environment}.json  ->  environment variables 
 - **appsettings.json** (`src/Gert.Api/appsettings.json`) - non-secret defaults. This is
   where a deployment's static config lives.
 - **Environment variables** - replace `:` with `__`:
-  `Gert__OpenAI__BaseUrl=http://vllm:8000`. Map entries by key:
-  `Gert__Providers__qwen36-thinking__Parameters__Model=qwen36`.
-- **Command line** - `dotnet run --project src/Gert.Api -- --Gert:OpenAI:BaseUrl=http://vllm:8000`.
+  `Gert__Embeddings__Parameters__BaseUrl=http://vllm:8000`. Map entries by key:
+  `Gert__Chat__Providers__qwen36-thinking__Parameters__Model=qwen36`.
+- **Command line** - `dotnet run --project src/Gert.Api -- --Gert:Embeddings:Parameters:BaseUrl=http://vllm:8000`.
   Highest precedence; beats launch-profile environment variables too.
 
 **Secrets never go in appsettings.json** (security F8). A bearer key, if your upstream
 needs one, arrives via an environment variable or `dotnet user-secrets`. Chat keys are
-**per provider** (`Gert:Providers:<slug>:Parameters:ApiKey`); the embeddings key is
-`Gert:OpenAI:ApiKey`:
+**per provider** (`Gert:Chat:Providers:<slug>:Parameters:ApiKey`); the embeddings key is
+`Gert:Embeddings:Parameters:ApiKey`:
 
 ```bash
-dotnet user-secrets --project src/Gert.Api set "Gert:Providers:qwen36-thinking:Parameters:ApiKey" "sk-..."
-dotnet user-secrets --project src/Gert.Api set "Gert:OpenAI:ApiKey" "sk-..."
+dotnet user-secrets --project src/Gert.Api set "Gert:Chat:Providers:qwen36-thinking:Parameters:ApiKey" "sk-..."
+dotnet user-secrets --project src/Gert.Api set "Gert:Embeddings:Parameters:ApiKey" "sk-..."
 # or
-export Gert__Providers__qwen36-thinking__Parameters__ApiKey=sk-...
-export Gert__OpenAI__ApiKey=sk-...
+export Gert__Chat__Providers__qwen36-thinking__Parameters__ApiKey=sk-...
+export Gert__Embeddings__Parameters__ApiKey=sk-...
 ```
 
 ---
 
-## 2. Minimal working example
+## 2. The complete `Gert` config tree
 
-A single vLLM box serving one chat model plus the embedding model. Chat connection +
-sampling live under `Gert:Providers` (one named preset per picker entry); `Gert:OpenAI`
-is now just the embeddings upstream and the shared chat-transport resilience defaults:
+One annotated document of every section, with example (non-secret) values. Secrets are shown
+only as env / user-secrets placeholders, never literals (F8). Per-type tables for each options
+block follow in sections 3-7.
 
 ```jsonc
 {
   "Gert": {
-    "Providers": {
-      "qwen36": {                                 // map key = the provider slug (GET /api/models id)
-        "Name": "Qwen 3.6 27B",
-        "Type": "openai",                         // selects the chat-client impl (openai = OpenAI-compatible/vLLM)
-        "Default": true,
-        "Capabilities": [ "tools", "vision" ],
-        "Context": 131072,
-        "Parameters": {
-          "BaseUrl": "http://vllm-host:8000", // NO trailing /v1 - Gert appends /v1/... itself
-          "Model": "qwen36"                       // the upstream model id (sent as `model`)
-          // ApiKey is a SECRET - env / user-secrets only (section 1), never here
+    "Database": {
+      "Type": "Sqlite"                          // engine for the per-user/per-project databases;
+      //   only "Sqlite" ships (default). See section 8.
+      // "Parameters": { "DataRoot": "/db" }    // optional: own root for user.db + chat.db (else Storage:DataRoot)
+    },
+    "Rag": {
+      "Type": "Sqlite"                          // vector/RAG index engine, decoupled from Database;
+      //   only "Sqlite" (sqlite-vec + FTS5) ships. See section 8.
+      // "Parameters": { "DataRoot": "/rag", "VecExtensionPath": "/opt/vec0.so" }   // both optional
+    },
+    "Chat": {
+      // Provider catalog for the picker - a map keyed by provider slug (the GET /api/models
+      // id). Empty -> one default "OpenAI" provider is synthesized from
+      // Gert:Embeddings:Parameters:BaseUrl (single-vLLM zero-config boot). See section 4.
+      "Providers": {
+        "qwen36-thinking": {
+          "Name": "Qwen 3.6 - thinking",
+          "Type": "openai",                 // selects the chat-client impl (only "openai" today)
+          "Default": true,                   // the cascade's server default; flag exactly one
+          "Capabilities": [ "tools", "vision" ],
+          "Context": 131072,
+          "Parameters": {
+            "BaseUrl": "http://vllm-host:8000",   // server base, NO trailing /v1
+            "Model": "qwen36",                     // upstream model id (sent as `model`)
+            // ApiKey is a SECRET (F8) - env / user-secrets only, never here.
+            "RequestTimeoutSeconds": 120,          // per-item pre-stream timeout (this provider)
+            "RetryCount": 2,                       // per-item pre-stream retries (this provider)
+            "Temperature": 0.6,
+            "TopP": 0.95,
+            "Extra": { "top_k": "20", "chat_template_kwargs.enable_thinking": "true" }
+          }
         }
       }
     },
-    "OpenAI": {
-      "BaseUrl": "http://vllm-host:8000",     // embeddings upstream, NO trailing /v1
-      "EmbeddingModelId": "bge-m3",
-      "EmbeddingDimensions": 1024
+    "Embeddings": {
+      "Type": "OpenAI",                       // only "OpenAI" ships; unknown fails fast at startup
+      "Parameters": {
+        "BaseUrl": "http://vllm-host:8000",   // embeddings upstream, NO trailing /v1
+        // ApiKey is a SECRET (F8) - env / user-secrets only.
+        "Model": "bge-m3",
+        "Dimensions": 1024,
+        "RequestTimeoutSeconds": 120,
+        "RetryCount": 2
+      }
     },
-    "Search": { "BaseUrl": "http://localhost:8080" }
+    "Tools": {
+      "Search": {
+        "Type": "SearXNG",                    // only "SearXNG" ships
+        "FetchPages": false,                  // SSRF-exposed page fetch; off by default
+        "MaxFetch": 3,
+        "MaxFetchBytes": 2097152,
+        "FetchTimeoutSeconds": 10,
+        "MaxRedirects": 3,
+        "SearchTimeoutSeconds": 15,
+        "Parameters": { "BaseUrl": "http://localhost:8080" }
+      },
+      "Sandbox": {
+        "Type": "Monty",                      // "Monty" (default) or "GVisor"; case-insensitive
+        "WallClockSeconds": 10,               // cross-backend per-run caps sit beside Type
+        "MemoryMiB": 256,
+        "MaxOutputBytes": 65536,
+        // Parameters is the per-backend bag. Monty: { BaseUrl, RequestTimeoutSeconds }.
+        // GVisor: { RunscPath, Image, CpuSeconds, PidLimit, TmpSizeMiB, EgressEnabled }.
+        "Parameters": { "BaseUrl": "http://localhost:8077" }
+      }
+    },
+    "Extractor": {
+      "Type": "Subprocess",                   // only "Subprocess" ships
+      "Parameters": {
+        "HelperPath": "gert-extract",
+        "AddressSpaceMiB": 512,
+        "CpuSeconds": 20,
+        "ProcessLimit": 16,
+        "WallClockSeconds": 30,
+        "RunAsUid": 65534,
+        "MaxDecompressedBytes": 67108864,
+        "MaxZipEntries": 2048,
+        "MaxOutputBytes": 16777216
+      }
+    }
   },
-  "Auth": {
-    "Authority": "https://id.example.com",
-    "Audience": "gert-api"
-  },
-  "Storage": {
-    "DataRoot": "/data",
-    "ExpectedIssuer": "https://id.example.com"
-  }
+  "Auth": { "Authority": "https://id.example.com", "Audience": "gert-api" },
+  "Storage": { "DataRoot": "/data", "ExpectedIssuer": "https://id.example.com" }
 }
 ```
 
-> **The `/v1` gotcha:** every base URL here - a provider's
-> `Parameters:BaseUrl` and `Gert:OpenAI:BaseUrl` - is the *server* base
-> (`http://host:8000`), not the OpenAI API base (`http://host:8000/v1`). The adapter
-> appends `/v1` itself - and tolerates a pasted `/v1` suffix (it is normalized, never
-> doubled up).
+> **The `/v1` gotcha:** every base URL here - a provider's `Parameters:BaseUrl` and
+> `Gert:Embeddings:Parameters:BaseUrl` - is the *server* base (`http://host:8000`), not the
+> OpenAI API base (`http://host:8000/v1`). The adapter appends `/v1` itself - and tolerates a
+> pasted `/v1` suffix (it is normalized, never doubled up).
 
 ---
 
-## 3. `Gert:OpenAI` - the embeddings upstream + shared chat resilience
+## 3. `Gert:Embeddings` - the embeddings upstream
 
-The **embeddings** connection plus the resilience defaults the **shared chat
-transport** reuses. Chat *connection + sampling* now live per provider in
-[`Gert:Providers`](#4-gertproviders---the-chat-provider-catalog) (this section no
-longer carries a chat model id). Binds to `OpenAIOptions`
-(`src/Gert.External/OpenAI/OpenAIOptions.cs`).
+The embeddings functionality. `Type` selects the implementation (`OpenAI` only today - an
+OpenAI-compatible `/v1/embeddings` upstream, vLLM serving bge-m3 in the reference deployment);
+an unknown `Type` fails fast at startup. The connection + resilience live under `Parameters`
+(`EmbeddingsParameters`, `src/Gert.Chat/OpenAI/EmbeddingsParameters.cs`).
 
-| Key | Default | Notes |
-|-----|---------|-------|
-| `BaseUrl` | `http://localhost:8000` | Embeddings server base URL, **without** `/v1`. |
-| `ApiKey` | *(unset)* | **Secret** - env / user-secrets only. The **embeddings** bearer key, sent as `Authorization: Bearer`. (Each chat provider carries its own key under `Gert:Providers:<slug>:Parameters:ApiKey`.) |
-| `EmbeddingModelId` | `bge-m3` | Sent as `model` on `/v1/embeddings`. Knowledge upload (RAG) fails if the upstream doesn't serve it. |
-| `EmbeddingDimensions` | `1024` | Must match the embedding model (bge-m3 = 1024). Effectively immutable once data exists - it bakes into every `rag.db` ([design section 4](../design/configuration.md)). |
-| `RequestTimeoutSeconds` | `120` | Max wait, **per attempt**, for an upstream to *accept* a request (time to response headers) - **not** the stream duration; the chat stream is bounded by the turn budget ([section 9](#9-gertturn---the-detached-turn-pipeline)). Shared by chat and embeddings. |
-| `RetryCount` | `2` | Retries on transient pre-stream (connect/headers) failures, for chat and embeddings. Safe for chat - a retried attempt means no tokens were streamed. `0` disables. |
+`Gert:Embeddings:Parameters`:
 
-> **vLLM prefix caching.** Gert's requests are built to be prefix-cache friendly:
+| Key | Default | Required? | Secret? | Notes |
+|-----|---------|-----------|---------|-------|
+| `BaseUrl` | `http://localhost:8000` | no | no | Embeddings server base URL, **without** `/v1`. |
+| `ApiKey` | *(unset)* | no | **yes (F8)** | The embeddings bearer key, sent as `Authorization: Bearer`. Env / user-secrets only. (Each chat provider carries its own key under `Gert:Chat:Providers:<slug>:Parameters:ApiKey`.) |
+| `Model` | `bge-m3` | no | no | Sent as `model` on `/v1/embeddings`. Knowledge upload (RAG) fails if the upstream doesn't serve it. |
+| `Dimensions` | `1024` | no | no | Must match the embedding model (bge-m3 = 1024). Effectively immutable once data exists - it bakes into every `rag.db` ([design section 4](../design/configuration.md)). |
+| `RequestTimeoutSeconds` | `120` | no | no | Max wait, **per attempt**, for the upstream to *accept* a request (time to response headers). Per item: the embeddings path's own resilience. |
+| `RetryCount` | `2` | no | no | Retries on transient pre-stream (connect/headers) failures. Embedding POSTs are idempotent, so retries are safe. `0` disables. |
+
+> **vLLM prefix caching.** Gert's chat requests are built to be prefix-cache friendly:
 > the system prompt is static per project, history is replayed verbatim, tool specs
 > serialize deterministically, and no per-request unique fields are sent. To benefit,
 > make sure the vLLM server has automatic prefix caching enabled - it is **on by
@@ -116,17 +177,18 @@ longer carries a chat model id). Binds to `OpenAIOptions`
 
 ---
 
-## 4. `Gert:Providers` - the chat provider catalog
+## 4. `Gert:Chat:Providers` - the chat provider catalog
 
 A **map keyed by provider slug** - each entry is one named chat preset behind Gert's
 chat abstraction, and the slug is the `id` that `GET /api/models` publishes to the
 picker (in configured/document order). Binds to `ChatProviderOptions`
-(`src/Gert.External/Providers/ChatProviderOptions.cs`). When the section is absent or
+(`src/Gert.Chat/Providers/ChatProviderOptions.cs`). When the section is absent or
 empty, the catalog falls back to a **single default `openai` provider** built from
-`Gert:OpenAI:BaseUrl` (upstream model `default`), so the picker always has one real
-option; an operator who configures `Gert:Providers` takes over completely.
+`Gert:Embeddings:Parameters:BaseUrl` (upstream model `default`), so the picker always has one
+real option; an operator who configures `Gert:Chat:Providers` takes over completely.
 
-The split is **catalog/connection on the entry, sampling under `Parameters`:**
+The split is **catalog/capabilities on the entry, connection + sampling + per-item resilience
+under `Parameters`:**
 
 | Key | Required | Notes |
 |-----|----------|-------|
@@ -136,22 +198,23 @@ The split is **catalog/connection on the entry, sampling under `Parameters`:**
 | `Capabilities` | no | Capability tokens, shown as badges. `"tools"` is **load-bearing**: it gates tool calling. **Unset (null) means permissive** - the provider is assumed tool-capable; an explicit list *without* `"tools"` (e.g. `["text only"]`) disables tools for that provider. Other tokens (`"vision"`, ...) are display-only today. |
 | `Context` | no | Context window in tokens - the "128K ctx" badge. vLLM reports it as `max_model_len` on `GET /v1/models`. Unset hides the badge. |
 | `Fast` | no | Display-only "- fast" marker. |
-| `Parameters` | yes | The `Type`-specific connection + sampling bag - see below. (The picker's `endpoint` hint is taken from `Parameters.BaseUrl`.) |
+| `Parameters` | yes | The `Type`-specific connection + sampling + resilience bag - see below. (The picker's `endpoint` hint is taken from `Parameters.BaseUrl`.) |
 
-### 4a. `Parameters` - connection + sampling (the `openai` type)
+### 4a. `Parameters` - connection + sampling + resilience (the `openai` type)
 
-Binds to `ChatProviderParameters` (`src/Gert.External/Providers/ChatProviderParameters.cs`).
-The OpenAI REST-spec sampling fields are typed and **all optional - null omits the
-field, so the upstream's own default applies**; everything *outside* the spec rides
-`Extra`.
+Binds to `ChatProviderParameters` (`src/Gert.Chat/Providers/ChatProviderParameters.cs`).
+The OpenAI REST-spec sampling fields are typed and **all optional - null omits the field**, so
+the upstream's own default applies; everything *outside* the spec rides `Extra`.
 
-| Key | Default | Notes |
-|-----|---------|-------|
-| `BaseUrl` | `http://localhost:8000` | Server base URL, **without** `/v1`. |
-| `Model` | `default` | The upstream model id, sent as `model` on `/v1/chat/completions`. Must exist on the server (`GET <BaseUrl>/v1/models`). |
-| `ApiKey` | *(unset)* | **Secret** (F8) - env / user-secrets only, **never appsettings.json**. Sent as `Authorization: Bearer`. Empty for a keyless vLLM. |
-| `Temperature` `TopP` `PresencePenalty` `FrequencyPenalty` `Seed` `Stop` | *(unset)* | Typed OpenAI-spec sampling. Each unset field is **omitted** from the request, so the upstream default stands. |
-| `Extra` | `{}` | A **string->string map** for everything *outside* the OpenAI REST spec, keyed by JSON path under the request root (dotted, `$.` is prepended at apply time), value parsed to its JSON type. This is where the **vLLM extensions** (`top_k`, `min_p`, `repetition_penalty`) and the **template kwargs** (`chat_template_kwargs.enable_thinking`, `chat_template_kwargs.preserve_thinking`) live. |
+| Key | Default | Required? | Secret? | Notes |
+|-----|---------|-----------|---------|-------|
+| `BaseUrl` | `http://localhost:8000` | no | no | Server base URL, **without** `/v1`. |
+| `Model` | `default` | no | no | The upstream model id, sent as `model` on `/v1/chat/completions`. Must exist on the server (`GET <BaseUrl>/v1/models`). |
+| `ApiKey` | *(unset)* | no | **yes (F8)** | Env / user-secrets only, **never appsettings.json**. Sent as `Authorization: Bearer`. Empty for a keyless vLLM. |
+| `RequestTimeoutSeconds` | `120` | no | no | Per-item pre-stream timeout for **this provider** (time to response headers) - **not** the stream duration; the chat stream is bounded by the turn budget ([section 9](#9-gertturn---the-detached-turn-pipeline)). Each provider gets its own named HTTP client. |
+| `RetryCount` | `2` | no | no | Per-item pre-stream retries for **this provider**. Safe for chat - a retried attempt means no tokens were streamed. `0` disables. |
+| `Temperature` `TopP` `PresencePenalty` `FrequencyPenalty` `Seed` `Stop` | *(unset)* | no | no | Typed OpenAI-spec sampling. Each unset field is **omitted** from the request, so the upstream default stands. |
+| `Extra` | `{}` | no | no | A **string->string map** for everything *outside* the OpenAI REST spec, keyed by JSON path under the request root (dotted, `$.` is prepended at apply time), value parsed to its JSON type. This is where the **vLLM extensions** (`top_k`, `min_p`, `repetition_penalty`) and the **template kwargs** (`chat_template_kwargs.enable_thinking`, `chat_template_kwargs.preserve_thinking`) live. |
 
 ### 4b. Thinking vs instruct is a *provider* choice
 
@@ -160,38 +223,34 @@ provider or an instruct provider.** The same physical model appears under severa
 with different sampling. The canonical Qwen 3.6 pair:
 
 ```jsonc
-"Providers": {
-  "qwen36-thinking": {
-    "Name": "Qwen 3.6 - thinking",
-    "Type": "openai",
-    "Default": true,
-    "Capabilities": [ "tools", "vision" ],
-    "Context": 131072,
-    "Parameters": {
-      "BaseUrl": "http://vllm-host:8000",
-      "Model": "qwen36",
-      "Temperature": 0.6,
-      "TopP": 0.95,
-      "Extra": {
-        "top_k": "20",
-        "chat_template_kwargs.enable_thinking": "true"
+"Chat": {
+  "Providers": {
+    "qwen36-thinking": {
+      "Name": "Qwen 3.6 - thinking",
+      "Type": "openai",
+      "Default": true,
+      "Capabilities": [ "tools", "vision" ],
+      "Context": 131072,
+      "Parameters": {
+        "BaseUrl": "http://vllm-host:8000",
+        "Model": "qwen36",
+        "Temperature": 0.6,
+        "TopP": 0.95,
+        "Extra": { "top_k": "20", "chat_template_kwargs.enable_thinking": "true" }
       }
-    }
-  },
-  "qwen36-instruct": {
-    "Name": "Qwen 3.6 - instruct",
-    "Type": "openai",
-    "Capabilities": [ "tools", "vision" ],
-    "Context": 131072,
-    "Parameters": {
-      "BaseUrl": "http://vllm-host:8000",
-      "Model": "qwen36",                                  // same upstream model, different preset
-      "Temperature": 0.7,
-      "TopP": 0.8,
-      "PresencePenalty": 1.5,
-      "Extra": {
-        "top_k": "20",
-        "chat_template_kwargs.enable_thinking": "false"
+    },
+    "qwen36-instruct": {
+      "Name": "Qwen 3.6 - instruct",
+      "Type": "openai",
+      "Capabilities": [ "tools", "vision" ],
+      "Context": 131072,
+      "Parameters": {
+        "BaseUrl": "http://vllm-host:8000",
+        "Model": "qwen36",                                  // same upstream model, different preset
+        "Temperature": 0.7,
+        "TopP": 0.8,
+        "PresencePenalty": 1.5,
+        "Extra": { "top_k": "20", "chat_template_kwargs.enable_thinking": "false" }
       }
     }
   }
@@ -204,102 +263,136 @@ wants its earlier reasoning fed back. The **response-side** reasoning bubble str
 persists regardless of provider ([chat-and-tools](../design/chat-and-tools.md#chat-orchestration-the-tool-loop)).
 
 Filling in `Context` and `Capabilities` is on you, the operator - Gert binds this
-statically at startup and never probes the upstream. Two quick ways to find the values:
+statically at startup and never probes the upstream:
 
 ```bash
 # context window:
 curl -s http://vllm-host:8000/v1/models | jq '.data[] | {id, max_model_len}'
-
-# tools / vision: the dev harness probes them and prints a line per model at boot -
-make serve-mock-vllm VLLM_URL=http://vllm-host:8000/v1
-#   qwen36: 131072 ctx, tools/vision
 ```
+
+`/v1/models` does not advertise tools/vision, so set `Capabilities` from the model card
+or your knowledge of the checkpoint (e.g. qwen36 serves both `tools` and `vision`).
 
 Users pick from this catalog; they can never add endpoints or model ids of their own
 ([design section 4](../design/configuration.md#4-llm-providers--models)).
 
 ---
 
-## 5. `Auth` + `Storage` - identity and the data root
+## 5. `Gert:Tools:Search` - SearXNG web search
+
+The web-search tool backend. `Type` selects the implementation (`SearXNG` only today). The
+fetch step (downloading result pages) is the SSRF-exposed part and is **off by default**. The
+`web_fetch` tool shares this section's fetch caps (`MaxFetchBytes` / `FetchTimeoutSeconds` /
+`MaxRedirects`) - same guarded fetcher, no parallel knob set; it needs no SearXNG instance and
+ignores `Parameters:BaseUrl` / `FetchPages`. Binds to `SearXngOptions`
+(`src/Gert.Tools/Search/SearXngOptions.cs`).
+
+| Key | Default | Required? | Secret? | Notes |
+|-----|---------|-----------|---------|-------|
+| `Type` | `SearXNG` | no | no | The search implementation. |
+| `FetchPages` | `false` | no | no | Fetch + summarize result pages (SSRF-guarded). |
+| `MaxFetch` | `3` | no | no | Pages fetched per search when enabled. |
+| `MaxFetchBytes` | `2097152` | no | no | Body-size cap per fetched page. Also bounds `web_fetch`. |
+| `FetchTimeoutSeconds` | `10` | no | no | Wall-clock cap per page fetch. Also bounds `web_fetch`. |
+| `MaxRedirects` | `3` | no | no | Each hop re-vetted by the SSRF guard. |
+| `SearchTimeoutSeconds` | `15` | no | no | Total budget for the search API call, retries included; the HTTP client timeout sits 1 s above as a backstop. |
+| `Parameters:BaseUrl` | `http://localhost:8080` | no | no | The SearXNG instance base URL (`SearXngParameters`). |
+
+---
+
+## 6. `Gert:Tools:Sandbox` - the `run_python` sandbox
+
+The `run_python` sandbox backend. `Type` picks one of two implementations behind the one
+`IPythonSandbox` port; an unknown value fails fast at startup. The cross-backend per-run caps
+sit beside `Type`; the per-backend bag lives under `Parameters`. The defaults *are* the
+security posture: egress off, no `/data` mount, hard caps. Raise them knowingly. Binds to
+`PythonSandboxOptions` (`src/Gert.Tools/Sandbox/PythonSandboxOptions.cs`).
+
+| Key | Default | Required? | Secret? | Notes |
+|-----|---------|-----------|---------|-------|
+| `Type` | `Monty` | no | no | `Monty` (Pydantic's Rust Python interpreter via the sidecar - no container infra) or `GVisor` (runsc container). Case-insensitive; unknown fails fast at startup. |
+| `WallClockSeconds` | `10` | no | no | Kill timeout per run (both backends). |
+| `MemoryMiB` | `256` | no | no | Memory limit (both backends). |
+| `MaxOutputBytes` | `65536` | no | no | Captured stdout/stderr cap (both backends). |
+
+### 6a. `Parameters` when `Type=Monty` - the monty sidecar
+
+Binds to `MontyParameters` (`src/Gert.Tools/Sandbox/MontyParameters.cs`). Run the sidecar
+from [tools/monty](../../tools/monty/README.md); it is reached server-side only.
+
+| Key | Default | Required? | Secret? | Notes |
+|-----|---------|-----------|---------|-------|
+| `BaseUrl` | `http://localhost:8077` | no | no | Where the monty sidecar listens. |
+| `RequestTimeoutSeconds` | `30` | no | no | HTTP backstop above the run's wall clock, for a hung sidecar. Must be strictly greater than `Gert:Tools:Sandbox:WallClockSeconds`; enforced at startup when the monty backend is selected. |
+
+### 6b. `Parameters` when `Type=GVisor` - the runsc container
+
+Binds to `GVisorParameters` (`src/Gert.Tools/Sandbox/GVisorParameters.cs`). gVisor-only; monty
+has no processes, filesystem, or network to limit.
+
+| Key | Default | Required? | Secret? | Notes |
+|-----|---------|-----------|---------|-------|
+| `RunscPath` | `runsc` | no | no | Path to the gVisor binary. |
+| `Image` | `gert-sandbox-python` | no | no | OCI bundle with a Python runtime. |
+| `CpuSeconds` | `5` | no | no | CPU-time limit. |
+| `PidLimit` | `64` | no | no | Max processes/threads. |
+| `TmpSizeMiB` | `32` | no | no | Writable `/tmp`; rootfs stays read-only. |
+| `EgressEnabled` | `false` | no | no | Outbound network - the exfiltration brake. Leave off unless you must. |
+
+---
+
+## 7. `Gert:Extractor` - isolated document extraction
+
+The document text-extractor functionality. `Type` selects the implementation (`Subprocess`
+only today - the pdf/docx extractor runs as an unprivileged, rlimit-capped helper process).
+Binds to `ExtractorOptions` (`src/Gert.Ingestion/ExtractorOptions.cs`); the caps live under
+`Parameters` (`ExtractorParameters`).
+
+`Gert:Extractor:Parameters`:
+
+| Key | Default | Required? | Secret? | Notes |
+|-----|---------|-----------|---------|-------|
+| `HelperPath` | `gert-extract` | no | no | The helper executable. |
+| `AddressSpaceMiB` | `512` | no | no | RLIMIT_AS cap. |
+| `CpuSeconds` | `20` | no | no | RLIMIT_CPU cap. |
+| `ProcessLimit` | `16` | no | no | RLIMIT_NPROC cap. |
+| `WallClockSeconds` | `30` | no | no | Kill timeout backstopping RLIMIT_CPU. |
+| `RunAsUid` | `65534` | no | no | Unprivileged uid the helper drops to. |
+| `MaxDecompressedBytes` | `67108864` | no | no | DOCX zip-bomb cap (total decompressed). |
+| `MaxZipEntries` | `2048` | no | no | DOCX zip-bomb cap (entry count). |
+| `MaxOutputBytes` | `16777216` | no | no | Cap on emitted extracted text. |
+
+---
+
+## 8. `Auth` + `Storage` + `Gert:Database` + `Gert:Rag` - identity, the data root, and the engines
 
 | Key | Notes |
 |-----|-------|
 | `Auth:Authority` | The OIDC issuer (Pocket ID). JWTs are validated against its JWKS, RS256 only. |
 | `Auth:Audience` | Expected `aud` claim, e.g. `gert-api`. |
-| `Storage:DataRoot` | Filesystem root holding the `users/` tree. Everything Gert stores lives here; back up this directory and you've backed up Gert. |
+| `Storage:DataRoot` | Filesystem root holding the `users/` tree - the **shared default** for the object store and both SQLite engines. Everything Gert stores lives here unless an engine overrides its own root below; back up this directory (and any override roots) and you've backed up Gert. |
 | `Storage:ExpectedIssuer` | Fail-closed `iss` assertion checked **before** any user folder is created (F12). Normally equal to `Auth:Authority`. |
+| `Gert:Database:Type` | Which engine the per-user/per-project databases (`user.db`/`chat.db`) use. Only `Sqlite` ships (the default - per-user SQLite files); case-insensitive, and a value with no registered engine plugin fails fast at first use. A future server engine (`Postgres`) is selected here; its connection string is a **secret** (F8) - env / user-secrets, never appsettings. |
+| `Gert:Database:Parameters:DataRoot` | *(SQLite only, optional)* Own filesystem root for `user.db` + `chat.db` (holding their `users/{key}/...` tree). Unset -> falls back to `Storage:DataRoot`. Set it to place the structured databases on their own volume. |
+| `Gert:Rag:Type` | Which engine the per-project RAG/vector index uses - a **separate** capability from `Gert:Database` (a vector store need not be SQL). Only `Sqlite` ships (the default - per-project `rag.db` with sqlite-vec + FTS5). A dedicated vector store (e.g. `Qdrant`) is a sibling plugin selected here. |
+| `Gert:Rag:Parameters:DataRoot` | *(SQLite only, optional)* Own filesystem root for `rag.db`. Unset -> falls back to `Storage:DataRoot`. Set it to place the vector index on its own (e.g. larger) volume, independent of the structured databases. |
+| `Gert:Rag:Parameters:VecExtensionPath` | *(SQLite only, optional)* Path to the native **sqlite-vec** extension (`vec0.so`/`vec0.dll`). Unset -> the copy beside the running assembly (vendored). |
 
-Both `Storage` values are **required** - the host refuses to start without them.
+Both `Storage` values are **required** - the host refuses to start without them (unless *every*
+SQLite engine sets its own `Parameters:DataRoot`, the object store still needs `Storage:DataRoot`).
+`Gert:Database:Type` and `Gert:Rag:Type` are optional and default to `Sqlite`.
+
+> **Database, RAG, and storage are independent stores.** `Gert:Database:Type` picks the engine
+> for the structured data (`user.db`/`chat.db`), `Gert:Rag:Type` the vector/RAG index
+> (`rag.db`), and the object store (uploads, memory bodies) is selected by which `AddGertStorage*`
+> the build ships. By default all three sit under `Storage:DataRoot`; a SQLite engine can take its
+> own root via `Gert:Database:Parameters:DataRoot` / `Gert:Rag:Parameters:DataRoot` (e.g. the
+> vector index on a bigger disk). Deleting a user/project drops all three - each engine removing
+> its own files - orchestrated by the service layer.
 
 Dev-only escape hatch: `Gert:Dev:JwksPath` points at a local JWKS file so the test
 harness can mint tokens offline. It is rejected in the Production environment; never
 set it on a real deployment.
-
----
-
-## 6. `Gert:Search` - SearXNG web search
-
-Binds to `SearXngOptions`. The fetch step (downloading result pages) is the
-SSRF-exposed part and is **off by default**. The `web_fetch` tool shares this
-section's fetch caps (`MaxFetchBytes` / `FetchTimeoutSeconds` / `MaxRedirects`)
-- same guarded fetcher, no parallel knob set; it needs no SearXNG instance and
-ignores `BaseUrl` / `FetchPages`.
-
-| Key | Default | Notes |
-|-----|---------|-------|
-| `BaseUrl` | `http://localhost:8080` | The SearXNG instance. |
-| `FetchPages` | `false` | Fetch + summarize result pages (SSRF-guarded). |
-| `MaxFetch` | `3` | Pages fetched per search when enabled. |
-| `MaxFetchBytes` | `2097152` | Body-size cap per fetched page. |
-| `FetchTimeoutSeconds` | `10` | Wall-clock cap per page fetch. |
-| `MaxRedirects` | `3` | Each hop re-vetted by the SSRF guard. |
-| `SearchTimeoutSeconds` | `15` | Total budget for the search API call, retries included; the HTTP client timeout sits 1 s above as a backstop. |
-
----
-
-## 7. `Gert:Sandbox` - the `run_python` sandbox
-
-Binds to `PythonSandboxOptions`. Two backends sit behind one `IPythonSandbox` port; `Backend`
-picks. The defaults *are* the security posture: egress off, no `/data` mount, hard
-caps. Raise them knowingly.
-
-| Key | Default | Notes |
-|-----|---------|-------|
-| `Backend` | `monty` | Which backend runs `run_python`: `monty` (Pydantic's Rust Python interpreter via the sidecar - no container infra) or `gvisor` (runsc container). An unknown value fails fast at startup. |
-| `WallClockSeconds` | `10` | Kill timeout per run (both backends). |
-| `MemoryMiB` | `256` | Memory limit (both backends). |
-| `MaxOutputBytes` | `65536` | Captured stdout/stderr cap (both backends). |
-| `CpuSeconds` | `5` | CPU-time limit (gVisor only). |
-| `PidLimit` | `64` | Max processes/threads (gVisor only). |
-| `TmpSizeMiB` | `32` | Writable `/tmp`; rootfs stays read-only (gVisor only). |
-| `RunscPath` | `runsc` | Path to the gVisor binary (gVisor only). |
-| `Image` | `gert-sandbox-python` | OCI bundle with a Python runtime (gVisor only). |
-| `EgressEnabled` | `false` | gVisor outbound network - the exfiltration brake. Leave off unless you must. (Monty has no network at all.) |
-
-### 7a. `Gert:Sandbox:Monty` - the monty sidecar (`Backend=monty`)
-
-Binds to `MontyOptions`. Run the sidecar from [tools/monty](../../tools/monty/README.md);
-it is reached server-side only.
-
-| Key | Default | Notes |
-|-----|---------|-------|
-| `BaseUrl` | `http://localhost:8077` | Where the monty sidecar listens. |
-| `RequestTimeoutSeconds` | `30` | HTTP backstop above the run's wall clock, for a hung sidecar. Must be strictly greater than `Gert:Sandbox:WallClockSeconds`; enforced at startup when the monty backend is selected. |
-
----
-
-## 8. `Gert:Extractor` - isolated document extraction
-
-Binds to `ExtractorOptions`. The pdf/docx text extractor runs as an unprivileged,
-rlimit-capped helper process.
-
-| Key | Default | Notes |
-|-----|---------|-------|
-| `HelperPath` | `gert-extract` | The helper executable. |
-| `AddressSpaceMiB` | `512` | RLIMIT_AS cap. |
-| `CpuSeconds` | `20` | RLIMIT_CPU cap. |
-| `ProcessLimit` | `16` | RLIMIT_NPROC cap. |
-| `WallClockSeconds` | `30` | Kill timeout backstopping RLIMIT_CPU. |
 
 ---
 
@@ -327,7 +420,7 @@ make every trip visible on its tool card.
 
 `MaxTokensPerRound` is the single per-round `max_tokens` for every turn - sampling is no
 longer a user/conversation cascade (it rides the selected provider -
-[section 4](#4-gertproviders---the-chat-provider-catalog)), so there is no per-model cogwheel to
+[section 4](#4-gertchatproviders---the-chat-provider-catalog)), so there is no per-model cogwheel to
 override it.
 
 ---
@@ -391,7 +484,6 @@ Not for production - listed here so a deployment never enables them by accident.
 | `Gert:Web:TestHarness` | Serves the component-test harness pages from the SPA origin. Off unless explicitly `true`. |
 | `make run` | Plain host against whatever appsettings says. |
 | `make serve-mock` | Everything mocked (auth, vLLM, SearXNG) + a dev proxy that signs you in - no real upstreams needed. |
-| `make serve-mock-vllm VLLM_URL=...` | Same mocked world, but chat hits a **real** vLLM; model context + tools/vision are probed and injected automatically. Boots the host at `Debug` log level ([section 14](#14-logging---verbosity)). Add `SEARXNG_URL=` (instance must allow `format=json`) to make web search real too. `VLLM_MODEL=` restricts to one id, `ROLE=` picks the identity. |
 
 The `FakeE2E` launch profile (`src/Gert.Api/Properties/launchSettings.json`) is the
 glue the harness uses: real adapters, mock URLs, dev JWKS. It is a Development-only
@@ -415,9 +507,9 @@ floor with `Logging:LogLevel:Default`, and quiet individual categories with over
 
 Bind it like any other knob ([section 1](#1-how-configuration-binds)) - appsettings, the
 `Logging__LogLevel__Default=Debug` env var, or a `--Logging:LogLevel:Default=Debug`
-command-line override. `make serve-mock-vllm` uses the last form to boot at `Debug` so chat
-behaviour (the turn pipeline + the HTTP traffic to vLLM) is visible, while the
-`Microsoft.AspNetCore` override keeps Kestrel internals quiet. Levels map onto Serilog's
+command-line override. Booting at `Debug` makes chat behaviour (the turn pipeline + the
+HTTP traffic to the model upstream) visible, while the `Microsoft.AspNetCore` override
+keeps Kestrel internals quiet. Levels map onto Serilog's
 (`Trace`->`Verbose`, `Critical`->`Fatal`); the NDJSON `level` field is lower-cased
 (`"level":"debug"`).
 
@@ -432,7 +524,7 @@ tuning sampling and the tools block. Each trace is one NDJSON line tagged `OpenA
 request bodies out cleanly with:
 
 ```bash
-make serve-mock-vllm VLLM_URL=http://...:8000/v1 2>&1 \
+Logging__LogLevel__Default=Debug make run 2>&1 \
   | jq -r 'select(.msg | startswith("OpenAI request")) | .Body' | jq .
 ```
 

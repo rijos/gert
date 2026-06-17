@@ -22,14 +22,13 @@ body{
    outline:none on the inner control. */
 :focus-visible{outline:2px solid var(--coral); outline-offset:2px;}
 
-/* fenced-code token tints (lib/highlight.js). Code blocks always sit on
-   --code-bg, which is dark in both themes, so these are fixed warm values. */
-.tok-kw{color:var(--tok-kw);}
-.tok-str{color:var(--tok-str);}
-.tok-num{color:var(--tok-num);}
-.tok-com{color:var(--tok-com); font-style:italic;}
-.tok-key{color:var(--tok-key);}
-.tok-dec{color:var(--tok-dec);}
+/* The .md-math-block scroll container is the STRUCTURAL renderer's own wrapper
+   node: it boxes a display-math leaf so a too-wide formula scrolls horizontally.
+   The fenced-code token tints (.tok-*), the math wrappers (.md-math /
+   .md-math-display), and the <math> element rules are owned by the MdCode and
+   MdMath components (components/canvas/artifacts/md-code.js, md-math.js), which
+   adopt them CSP-clean via a Constructable Stylesheet. */
+.md-math-block{margin:0 0 14px; overflow-x:auto; overflow-y:hidden;}
 
 /* themed scrollbars - one treatment for every scroll container (convo list,
    chat stream, doc list, code/artifact panes). Full-size (browser-default

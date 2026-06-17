@@ -12,9 +12,9 @@
 //     artifactSrcdoc()'s meta-CSP. Always sandbox="allow-scripts", never
 //     allow-same-origin. (src and srcdoc are mutually exclusive - srcdoc wins -
 //     so we set exactly one.)
-import van from "van";
+import van from "/lib/van.js";
 import { component } from "../../../lib/component.js";
-import { highlight } from "../../../lib/highlight.js";
+import { MdCode } from "./md-code.js";
 import { artifactSrcdoc } from "../../../lib/artifact-sandbox.js";
 import * as artifactsSvc from "../../../services/artifacts.js";
 
@@ -25,6 +25,11 @@ export const HtmlArtifact = component({
   css: `
     .html-stage{height:100%; background:var(--preview-bg); display:flex;}
     .html-stage iframe{width:100%; height:100%; border:none; background:var(--preview-bg);}
+    /* MdCode wraps the tinted source in <pre><code>; strip its UA chrome so the
+       source view reads exactly as the bare-tokens div did (the .source-view in
+       artifact.js owns the mono font, --code-bg ground, padding and pre-wrap). */
+    .source-view pre{margin:0; padding:0; background:none; overflow:visible; white-space:inherit; font:inherit;}
+    .source-view pre code{font:inherit; background:none; color:inherit;}
   `,
   view: ({ artifact } = {}) =>
   div(
@@ -60,14 +65,12 @@ export const HtmlArtifact = component({
     }),
     div(
       { class: "source" },
-      // tinted markup source - highlight() emits DOM nodes from textContent,
-      // so the document is never interpreted here (the iframe stays the only
-      // place it runs, sandboxed).
-      div({ class: "source-view" }, () => {
-        const host = div();
-        host.append(...highlight(artifact.content || "", "html"));
-        return host;
-      }),
+      // tinted markup source via the MdCode leaf - it tints from textContent into
+      // inert tok-* spans, so the document is never interpreted here (the iframe
+      // stays the only place it runs, sandboxed).
+      div({ class: "source-view" }, () =>
+        MdCode({ code: artifact.content || "", lang: "html" }),
+      ),
     ),
   ),
 });

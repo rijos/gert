@@ -4,7 +4,7 @@ namespace Gert.Service.Chat;
 /// Process-wide registry of in-flight turns, addressable for user-initiated
 /// cancellation (rest-api.md section stop generation). The runner registers at turn
 /// start and runs under <see cref="ITurnRegistration.Token"/>; the cancel
-/// endpoint / WS handler calls <see cref="Cancel"/>. A cancel that lands while
+/// endpoint calls <see cref="Cancel"/>. A cancel that lands while
 /// the job is still queued (the 202 -> worker-pickup race) leaves a short-lived
 /// tombstone that pre-cancels the eventual <see cref="Register"/>.
 /// </summary>

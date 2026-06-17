@@ -1,7 +1,7 @@
 // components/canvas/knowledge-panel.js - kb-view: header + privacy line +
 // use-in-chat switch (chat.tools.rag - chat-and-tools.md: off removes
 // search_documents for the turn) + drop zone + doc list.
-import van from "van";
+import van from "/lib/van.js";
 import { component } from "../../lib/component.js";
 import { Icon } from "../../icons/icons.js";
 import { Switch } from "../ui/switch.js";

@@ -11,7 +11,7 @@
 //   closable    - show a x in the top-right corner; the caller decides
 //                 (default false).
 // Returns close().
-import van from "van";
+import van from "/lib/van.js";
 import { component } from "../../lib/component.js";
 import { Button } from "./button.js";
 import { Icon } from "../../icons/icons.js";

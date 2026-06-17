@@ -45,10 +45,10 @@ public sealed class DocumentUploadValidatorTests
         _validator.TestValidate(Upload(filename: filename, mime: "text/plain"))
             .ShouldNotHaveValidationErrorFor(u => u.Filename);
 
-    // The decision: the upload name is metadata, not a path. Exotic names that the
-    // old path-safety rule rejected are now PRESERVED - as long as the extension is
-    // allowed. (Path traversal is impossible by construction: the blob is stored
-    // under a server-generated {doc-id}.{ext} key, never this name.)
+    // The decision: the upload name is metadata, not a path. Exotic names are PRESERVED -
+    // as long as the extension is allowed. (Path traversal is impossible by construction:
+    // the blob is stored under a fully server-generated files/{doc-id} key, no extension,
+    // never this name.)
     [Theory]
     [InlineData("../etc/passwd.pdf")]
     [InlineData("foo/bar.pdf")]

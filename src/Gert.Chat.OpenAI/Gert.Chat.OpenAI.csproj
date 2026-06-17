@@ -1,0 +1,50 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- SCME0001: System.ClientModel's JsonPatch is marked experimental. It is the
+         OpenAI SDK's sanctioned seam for vendor-extension fields, which Gert needs for
+         vLLM's chat_template_kwargs / reasoning_content (chat-and-tools.md).
+         OPENAI001: ChatCompletionOptions.Seed carries the same evaluation-only marker.
+         Revisit both when the APIs graduate. -->
+    <NoWarn>$(NoWarn);SCME0001;OPENAI001</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Implements the Gert.Chat contracts; depends on contracts + model only, never on
+         Gert.Service (the service layer drives this via the ports). -->
+    <ProjectReference Include="..\Gert.Chat\Gert.Chat.csproj" />
+    <ProjectReference Include="..\Gert.Model\Gert.Model.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Test seam: OpenAIWireLoggerTests exercises the internal OpenAIWireLogger
+         DelegatingHandler directly (it is registered, never resolved publicly). -->
+    <InternalsVisibleTo Include="Gert.Chat.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- IHttpClientFactory + typed-client wiring, options binding, configuration,
+         DI, logging abstractions. -->
+    <PackageReference Include="Microsoft.Extensions.Http"
+                      Version="$(MicrosoftExtensionsHttpVersion)" />
+    <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions"
+                      Version="$(MicrosoftExtensionsOptionsVersion)" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions"
+                      Version="$(MicrosoftExtensionsConfigVersion)" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions"
+                      Version="$(MicrosoftExtensionsLoggingVersion)" />
+
+    <!-- Resilience: per-item timeout + retry around the vLLM chat / embeddings calls
+         (configuration.md section 4). Microsoft.Extensions.Http.Resilience layers Polly v8
+         pipelines onto the typed clients. -->
+    <PackageReference Include="Microsoft.Extensions.Http.Resilience"
+                      Version="$(MicrosoftExtensionsHttpResilienceVersion)" />
+
+    <!-- Official OpenAI SDK: typed chat/embeddings wire models + clients for the
+         OpenAI-compatible upstream (tech-stack section Model API). Vendor extension fields
+         (chat_template_kwargs, reasoning_content) ride via System.ClientModel JsonPatch. -->
+    <PackageReference Include="OpenAI"
+                      Version="$(OpenAIVersion)" />
+  </ItemGroup>
+
+</Project>

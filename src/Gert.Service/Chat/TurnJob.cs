@@ -1,3 +1,4 @@
+using Gert.Model;
 using Gert.Model.Chat;
 using Gert.Service.External;
 

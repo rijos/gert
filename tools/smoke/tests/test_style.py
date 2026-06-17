@@ -94,7 +94,7 @@ def test_ask_user_question_card_renders_options_and_answered_state(
     page.evaluate(
         """async () => {
             const { QuestionCard } = await import('/components/main/question-card.js');
-            const { reactive } = await import('van-x');
+            const { reactive } = await import('/lib/van-x.js');
             window.__q = reactive({
                 questionId: 'q-harness-1',
                 text: 'Which database do you prefer?',

@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
 using Gert.Model;
+using Gert.Model.Chat;
 using Gert.Model.Json;
 using Gert.Testing;
 using Microsoft.AspNetCore.Hosting;
@@ -11,7 +12,7 @@ using Xunit;
 namespace Gert.Api.Tests;
 
 /// <summary>
-/// <c>GET /api/models</c> - the operator provider catalog (<c>Gert:Providers</c>)
+/// <c>GET /api/models</c> - the operator provider catalog (<c>Gert:Chat:Providers</c>)
 /// is served as-is; with no catalog configured the single OpenAI chat provider is
 /// surfaced so the picker always has one real option (rest-api.md section models).
 /// </summary>
@@ -39,7 +40,7 @@ public sealed class ModelsApiTests : IClassFixture<GertApiFactory>
         var models = await client.GetFromJsonAsync<IReadOnlyList<ChatProviderInfo>>("/api/models", Json);
 
         models.Should().ContainSingle();
-        models![0].Id.Should().Be("default"); // Gert:OpenAI:ChatModelId default
+        models![0].Id.Should().Be("default"); // Gert:Embeddings fallback synthesizes the default provider
         models[0].Default.Should().BeTrue();
         models[0].SupportsTools.Should().BeTrue();
     }
@@ -51,19 +52,19 @@ public sealed class ModelsApiTests : IClassFixture<GertApiFactory>
         using var client = factory
             .WithWebHostBuilder(b =>
             {
-                // Gert:Providers is a map keyed by slug (the provider id); the
+                // Gert:Chat:Providers is a map keyed by slug (the provider id); the
                 // GetChildren() order is the configured document order. Endpoint is
                 // surfaced from Parameters:BaseUrl.
-                b.UseSetting("Gert:Providers:qwen3-27b-fp8-mtp:Name", "Qwen3-27B FP8");
-                b.UseSetting("Gert:Providers:qwen3-27b-fp8-mtp:Default", "true");
-                b.UseSetting("Gert:Providers:qwen3-27b-fp8-mtp:Parameters:BaseUrl", ":8001");
-                b.UseSetting("Gert:Providers:qwen3-27b-fp8-mtp:Capabilities:0", "tools");
-                b.UseSetting("Gert:Providers:qwen3-27b-fp8-mtp:Capabilities:1", "vision");
-                b.UseSetting("Gert:Providers:qwen3-27b-fp8-mtp:Context", "131072");
-                b.UseSetting("Gert:Providers:echo-only:Name", "Echo Server");
-                b.UseSetting("Gert:Providers:echo-only:Fast", "true");
-                b.UseSetting("Gert:Providers:echo-only:Capabilities:0", "text only");
-                b.UseSetting("Gert:Providers:echo-only:Context", "0");
+                b.UseSetting("Gert:Chat:Providers:qwen3-27b-fp8-mtp:Name", "Qwen3-27B FP8");
+                b.UseSetting("Gert:Chat:Providers:qwen3-27b-fp8-mtp:Default", "true");
+                b.UseSetting("Gert:Chat:Providers:qwen3-27b-fp8-mtp:Parameters:BaseUrl", ":8001");
+                b.UseSetting("Gert:Chat:Providers:qwen3-27b-fp8-mtp:Capabilities:0", "tools");
+                b.UseSetting("Gert:Chat:Providers:qwen3-27b-fp8-mtp:Capabilities:1", "vision");
+                b.UseSetting("Gert:Chat:Providers:qwen3-27b-fp8-mtp:Context", "131072");
+                b.UseSetting("Gert:Chat:Providers:echo-only:Name", "Echo Server");
+                b.UseSetting("Gert:Chat:Providers:echo-only:Fast", "true");
+                b.UseSetting("Gert:Chat:Providers:echo-only:Capabilities:0", "text only");
+                b.UseSetting("Gert:Chat:Providers:echo-only:Context", "0");
             })
             .CreateClient();
         client.DefaultRequestHeaders.Authorization =

@@ -1,5 +1,7 @@
 using System.Runtime.CompilerServices;
-using Gert.Service.External;
+using Gert.Chat;
+using Gert.Model;
+using Gert.Model.Chat;
 
 namespace Gert.Testing.Fakes;
 

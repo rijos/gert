@@ -7,7 +7,7 @@ namespace Gert.Api;
 /// boundary every request crosses (auth.md section the user context). The databases
 /// themselves self-provision on open; this only ensures the descriptive product
 /// state - the <c>user.db</c> username row (admin scan) and the landing
-/// <c>default</c> project - exists before any controller or WS handler reads it.
+/// <c>default</c> project - exists before any controller reads it.
 /// Runs after authentication, so <see cref="HttpContext.User"/> is populated; skips
 /// anonymous requests entirely.
 /// </summary>

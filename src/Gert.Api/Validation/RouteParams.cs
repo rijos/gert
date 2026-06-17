@@ -10,7 +10,7 @@ namespace Gert.Api.Validation;
 /// <see cref="ValidationException"/> on a bad shape, so the existing
 /// <c>ValidationExceptionHandler</c> renders the same branded 400 ProblemDetails the
 /// body validators do - and, crucially, the request stops <b>before</b> the value is
-/// ever passed to a service (so it never reaches a repo or a <c>rm -rf</c>).
+/// ever passed to a service (so it never reaches a repo or a destructive delete).
 /// </summary>
 internal static class RouteParams
 {

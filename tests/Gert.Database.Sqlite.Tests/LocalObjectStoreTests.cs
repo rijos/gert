@@ -1,7 +1,7 @@
 using System.Text;
 using FluentAssertions;
-using Gert.Service.Storage;
 using Gert.Storage;
+using Gert.Storage.Local;
 using Gert.Testing;
 using Xunit;
 
@@ -98,7 +98,7 @@ public class LocalObjectStoreTests
         (await store.ExistsAsync(scope, "docs/a.pdf")).Should().BeFalse();
         (await store.ExistsAsync(scope, "docs/sub/b.pdf")).Should().BeFalse();
 
-        // The project scope also holds meta.json + the db files locally; assert by prefix.
+        // The project scope dir can also hold the db files locally; assert by prefix.
         (await store.ListAsync(scope, "exports/")).Should().Equal("exports/c.md");
         (await store.ListAsync(scope, "docs/")).Should().BeEmpty();
     }

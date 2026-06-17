@@ -4,8 +4,8 @@
 conversation's upstream history grows without bound; the only "policy" is the upstream
 model erroring when the prompt no longer fits, which surfaces as a failed turn. The
 composer's context ring (`messages.context_tokens`, migration 003) *measures* the problem
-but nothing *acts* on it. This note maps the option space so we can pick the mechanisms;
-the implementation lands via [strengthening-plan.md section S6](strengthening-plan.md#s6---context-compaction).
+but nothing *acts* on it. This note maps the option space so we can pick the mechanisms
+before the implementation is scheduled into a build plan.
 
 ---
 
@@ -15,7 +15,7 @@ The planner rebuilds upstream history as **role + content only** (tool calls/res
 re-enter the prompt - [chat-and-tools](chat-and-tools.md#chat-orchestration-the-tool-loop)),
 so growth is genuine user/assistant text - plus, on a thinking provider whose
 `chat_template_kwargs.preserve_thinking` is on
-([installation section providers](../installation/configuration.md#4-gertproviders---the-chat-provider-catalog)),
+([installation section providers](../installation/configuration.md#4-gertchatproviders---the-chat-provider-catalog)),
 prior turns' reasoning replayed as `reasoning_content`. (Model-authored *files* are already
 out of the picture: the canvas tool suite carries them as tool arguments, which drop from
 history, and `read_artifact` is the model's recall path -
@@ -34,10 +34,10 @@ Long-running conversations therefore:
 
 | Constraint | Consequence |
 |---|---|
-| **Prefix-cache friendliness** ([installation section 3](../installation/configuration.md#3-gertopenai---the-embeddings-upstream--shared-chat-resilience)) | History bytes must stay stable turn-over-turn. Anything that rewrites the *head* of the prompt invalidates the whole cache - acceptable rarely (once per compaction), fatal if it happens every turn. This is the argument **against** sliding-window truncation. |
+| **Prefix-cache friendliness** ([installation section 3](../installation/configuration.md#3-gertembeddings---the-embeddings-upstream)) | History bytes must stay stable turn-over-turn. Anything that rewrites the *head* of the prompt invalidates the whole cache - acceptable rarely (once per compaction), fatal if it happens every turn. This is the argument **against** sliding-window truncation. |
 | **The DB is the source of truth; transports replay it** | Compaction must never mutate or delete persisted messages. It changes what the *planner sends upstream*, not what the user sees. Any durable compaction state needs its own column/row with normal seq/event semantics if it's user-visible. |
 | **Detached turns** ([chat-and-tools](chat-and-tools.md#detached-turns)) | Work can run off-turn: the background-worker pattern already exists, so summarization need not add latency to the turn that triggers it. |
-| **Per-provider windows** | the selected provider's `Context` (`Gert:Providers:<slug>:Context`) is the budget denominator; a conversation switched to a smaller-window provider must re-evaluate immediately. |
+| **Per-provider windows** | the selected provider's `Context` (`Gert:Chat:Providers:<slug>:Context`) is the budget denominator; a conversation switched to a smaller-window provider must re-evaluate immediately. |
 | **Measurement exists** | The previous turn's `context_tokens` (prompt + completion of the final round) is ground truth from vLLM's usage tail - no tokenizer dependency needed for the trigger. |
 | **Fail-closed, visible trips** ([turn-budgets](turn-budgets.md) precedent) | Whatever bounds we add must trip *visibly* (an event on the conversation), never silently degrade. |
 

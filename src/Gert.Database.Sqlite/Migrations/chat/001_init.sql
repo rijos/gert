@@ -91,7 +91,7 @@ CREATE TABLE artifacts (
 CREATE INDEX ix_artifacts_conv ON artifacts(conversation_id, created_at);
 
 -- The durable streaming replay log (chat-and-tools.md section detached turns).
--- The runner appends one row per published event; range/SSE/WS catch-up reads
+-- The runner appends one row per published event; range/SSE catch-up reads
 -- `seq > cursor`. Delta rows are coalesced (flushed on size/time thresholds and
 -- tool/message boundaries), so replay is loss-free without a row per token.
 CREATE TABLE turn_events (

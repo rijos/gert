@@ -128,8 +128,8 @@ def test_switch_conversations_mid_stream_keeps_both_chats(
     expect(app.thread.bot_messages.last).to_contain_text(
         "How can I help", timeout=10000
     )
-    # ...and the composer is UNLOCKED for A: a send round-trips (previously the
-    # pinned streaming flag silently swallowed it).
+    # ...and the composer is UNLOCKED for A: a send round-trips (guards against
+    # the pinned streaming flag silently swallowing the send).
     app.composer.send("hello again")
     expect(app.thread.user_messages.last).to_contain_text("hello again", timeout=10000)
     expect(app.thread.bot_messages).to_have_count(2, timeout=15000)

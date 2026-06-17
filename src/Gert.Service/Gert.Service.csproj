@@ -6,6 +6,14 @@
          Gert.Database; the service layer consumes them, the Gert.Database.*
          adapters implement them. -->
     <ProjectReference Include="..\Gert.Database\Gert.Database.csproj" />
+    <!-- RAG capability contracts: the vector-index port the ingestion + retrieval paths
+         drive (Gert.Rag.Sqlite implements them - never referenced here). RAG is its own
+         capability, decoupled from the SQL database engine. -->
+    <ProjectReference Include="..\Gert.Rag\Gert.Rag.csproj" />
+    <ProjectReference Include="..\Gert.Storage\Gert.Storage.csproj" />
+    <!-- Chat capability contracts: the chat/embeddings ports the turn pipeline drives
+         (Gert.Chat.OpenAI implements them - never referenced here). -->
+    <ProjectReference Include="..\Gert.Chat\Gert.Chat.csproj" />
   </ItemGroup>
 
   <ItemGroup>

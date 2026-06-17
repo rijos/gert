@@ -1,6 +1,6 @@
 """Mock upstreams for the Gert E2E harness (testing.md section 4.2).
 
-The real ``Gert.External`` adapters point here in the FakeE2E profile, so the
+The real Gert.Chat/Tools/Ingestion adapters point here in the FakeE2E profile, so the
 adapter HTTP code (IHttpClientFactory/Polly, OpenAI request shaping, SSE parsing,
 the SSRF guard) is exercised against wire-level fakes. All driven by the shared
 deterministic spec in :mod:`tools.smoke.mocks.specs`.

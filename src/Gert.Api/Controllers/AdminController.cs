@@ -12,9 +12,9 @@ namespace Gert.Api.Controllers;
 /// only endpoints gated by the <see cref="GertAuthorizationExtensions.AdminPolicy"/>
 /// (<c>RequireRole("gert-admins")</c>). Admin grants <b>no</b> cross-user data read:
 /// these only scan folder footprints (sizes/counts, plus the username from each
-/// user's <c>user.db</c>) and <c>rm -rf</c> a directory. The
-/// <c>{key}</c> is the most dangerous parameter in the API - it feeds a
-/// <c>rm -rf</c> - so it is validated to <c>^[0-9a-f]{64}$</c> (security F6)
+/// user's <c>user.db</c>) and delete a user's data. The
+/// <c>{key}</c> is the most dangerous parameter in the API - it feeds a destructive
+/// whole-account delete - so it is validated to <c>^[0-9a-f]{64}$</c> (security F6)
 /// <b>before</b> it is ever handed to the service / path-joined.
 /// </summary>
 [ApiController]
@@ -46,7 +46,7 @@ public sealed class AdminController : ControllerBase
         return user is null ? NotFound() : Ok(user);
     }
 
-    /// <summary><c>rm -rf /data/users/{key}</c> after the <c>{key}</c> shape guard (F6).</summary>
+    /// <summary>Delete all of that user's data (service drops the db halves then the blob scope) after the <c>{key}</c> shape guard (F6).</summary>
     [HttpDelete("{key}")]
     public async Task<IActionResult> Delete(string key, CancellationToken cancellationToken)
     {

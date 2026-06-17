@@ -1,7 +1,7 @@
 // components/main/theme-toggle.js - sun/moon toggle. Which glyph shows is driven
 // by --sun-display / --moon-display tokens (flipped under dark in tokens.css), so
 // this component reads tokens only - no @media, per the styleguide.
-import van from "van";
+import van from "/lib/van.js";
 import { component } from "../../lib/component.js";
 import { ThemeGlyphs } from "../../icons/icons.js";
 import * as ui from "../../state/ui.js";

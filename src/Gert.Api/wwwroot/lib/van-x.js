@@ -1,4 +1,4 @@
-import van from "vanjs-core"
+import van from "/lib/van.js"
 
 // This file consistently uses `let` keyword instead of `const` for reducing the bundle size.
 

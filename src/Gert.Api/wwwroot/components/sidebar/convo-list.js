@@ -1,7 +1,7 @@
 // components/sidebar/convo-list.js - date-grouped rows: Today / Yesterday,
 // then one header per calendar date (the date description for anything older
 // than yesterday). Binds reactively to state/chat.conversations (van-x list).
-import van from "van";
+import van from "/lib/van.js";
 import { component } from "../../lib/component.js";
 import { ConvoItem } from "./convo-item.js";
 import * as chat from "../../state/chat.js";

@@ -3,7 +3,7 @@
 // (not a view-returning component), so it co-locates its CSS via a one-time
 // <style> injection when the host is first created - mirroring the component()
 // factory's inject-once behaviour.
-import van from "van";
+import van from "/lib/van.js";
 import { adoptStyles } from "../../lib/component.js";
 
 const { div } = van.tags;

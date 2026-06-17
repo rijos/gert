@@ -10,7 +10,7 @@ using Gert.Model.Chat;
 using Gert.Model.Dtos;
 using Gert.Model.Events;
 using Gert.Model.Json;
-using Gert.Service.Storage;
+using Gert.Storage;
 using Gert.Testing;
 using Xunit;
 

@@ -1,17 +1,20 @@
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using FluentAssertions;
+using Gert.Chat;
 using Gert.Database;
 using Gert.Model;
 using Gert.Model.Chat;
 using Gert.Model.Dtos;
 using Gert.Model.Events;
 using Gert.Model.Rag;
+using Gert.Rag;
 using Gert.Service.Chat;
 using Gert.Service.Chat.Bus;
 using Gert.Service.External;
 using Gert.Service.Tools;
 using Gert.Testing.Fakes;
+using Gert.Tools.Builtin;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -35,9 +38,9 @@ public sealed class TurnRunnerTests
     private const string AssistantId = "assistant-msg-1";
 
     private readonly IChatRepository _repo = Substitute.For<IChatRepository>();
-    private readonly IRagRepository _ragRepo = Substitute.For<IRagRepository>();
+    private readonly IRagStore _ragRepo = Substitute.For<IRagStore>();
     private readonly IChatDatabaseProvider _chatProvider = Substitute.For<IChatDatabaseProvider>();
-    private readonly IRagDatabaseProvider _ragProvider = Substitute.For<IRagDatabaseProvider>();
+    private readonly IRagIndexProvider _ragProvider = Substitute.For<IRagIndexProvider>();
     private readonly IConversationBus _bus = Substitute.For<IConversationBus>();
 
     private readonly List<TurnEvent> _published = [];

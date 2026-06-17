@@ -49,28 +49,6 @@ public sealed class ValidationRulesTests
     }
 
     [Theory]
-    [InlineData("doc.pdf", true)]
-    [InlineData("a really long name with spaces.docx", true)]
-    [InlineData("../etc/passwd", false)]
-    [InlineData("foo/bar.txt", false)]
-    [InlineData("foo\\bar.txt", false)]
-    [InlineData("..", false)]
-    [InlineData("with\0null.txt", false)]
-    [InlineData("/abs/path.txt", false)]
-    [InlineData("C:\\win.txt", false)]
-    [InlineData("", false)]
-    public void IsSafeFilename_rejects_traversal_and_separators(string input, bool expected) =>
-        ValidationRules.IsSafeFilename(input).Should().Be(expected);
-
-    [Theory]
-    [MemberData(nameof(TraversalRows))]
-    public void IsSafeFilename_rejects_every_traversal_payload(string payload) =>
-        ValidationRules.IsSafeFilename(payload).Should().BeFalse();
-
-    public static IEnumerable<object[]> TraversalRows() =>
-        NaughtyStrings.TheoryData(NaughtyStrings.PathTraversal);
-
-    [Theory]
     [InlineData("00000000000000000000000000000000000000000000000000000000000000ff", true)]
     [InlineData("abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789", true)]
     [InlineData("ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789", false)] // upper rejected

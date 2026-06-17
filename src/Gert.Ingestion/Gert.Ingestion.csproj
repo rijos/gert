@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\Gert.Service\Gert.Service.csproj" />
+    <ProjectReference Include="..\Gert.Model\Gert.Model.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Options binding, configuration, DI, logging abstractions. -->
+    <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions"
+                      Version="$(MicrosoftExtensionsOptionsVersion)" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions"
+                      Version="$(MicrosoftExtensionsConfigVersion)" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions"
+                      Version="$(MicrosoftExtensionsLoggingVersion)" />
+
+    <!-- F7 isolated extractor leaf parsers. These run only inside the unprivileged
+         subprocess helper; the host never feeds untrusted bytes to them in-process.
+         The parse is stubbed behind the subprocess boundary (see IsolatedTextExtractor),
+         so these are isolated here, off the chat/tool assemblies. -->
+    <PackageReference Include="PdfPig"
+                      Version="$(PdfPigVersion)" />
+    <PackageReference Include="DocumentFormat.OpenXml"
+                      Version="$(OpenXmlVersion)" />
+
+    <!-- OpenXml transitively pulls System.IO.Packaging 8.0.0, which has a known
+         high-severity advisory (NU1903). Pin a patched version directly so it wins
+         for the whole graph (the transitive flows to every project via Gert.Testing). -->
+    <PackageReference Include="System.IO.Packaging"
+                      Version="$(SystemIoPackagingVersion)" />
+  </ItemGroup>
+
+</Project>

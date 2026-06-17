@@ -1,6 +1,6 @@
-using Gert.Database;
-using Gert.Service.External;
-using Gert.Service.Storage;
+using Gert.Chat;
+using Gert.Rag;
+using Gert.Storage;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -17,12 +17,12 @@ namespace Gert.Service.Ingestion;
 /// <para>
 /// All file bytes are read through <see cref="IObjectStore"/> - never a raw path
 /// (decision: files via IObjectStore). The blob lives under the project's
-/// <c>files/</c> at <see cref="IngestJob.ObjectKey"/> (<c>{doc-id}.{ext}</c>).
+/// <c>files/</c> at <see cref="IngestJob.ObjectKey"/> (<c>files/{doc-id}</c>, no extension).
 /// </para>
 /// </summary>
 public sealed class IngestionService : IIngestionService
 {
-    private readonly IRagDatabaseProvider _databases;
+    private readonly IRagIndexProvider _databases;
     private readonly IObjectStore _objects;
     private readonly ITextExtractor _extractor;
     private readonly IEmbeddingClient _embeddings;
@@ -30,7 +30,7 @@ public sealed class IngestionService : IIngestionService
     private readonly ILogger<IngestionService> _logger;
 
     public IngestionService(
-        IRagDatabaseProvider databases,
+        IRagIndexProvider databases,
         IObjectStore objects,
         ITextExtractor extractor,
         IEmbeddingClient embeddings,
@@ -75,7 +75,7 @@ public sealed class IngestionService : IIngestionService
 
     private async Task RunAsync(
         IngestJob job,
-        IRagRepository repo,
+        IRagStore repo,
         IProgress<IngestionProgress>? progress,
         CancellationToken cancellationToken)
     {
@@ -158,12 +158,12 @@ public sealed class IngestionService : IIngestionService
 
         // 6. status='ready' + chunk_count.
         await repo.UpdateDocumentAsync(
-            document with { Status = Model.DocumentStatus.Ready, ChunkCount = total, Error = null },
+            document with { Status = Model.Rag.DocumentStatus.Ready, ChunkCount = total, Error = null },
             cancellationToken).ConfigureAwait(false);
     }
 
     private static async Task FailAsync(
-        IRagRepository repo,
+        IRagStore repo,
         Model.Rag.Document document,
         string error,
         CancellationToken cancellationToken)
@@ -176,7 +176,7 @@ public sealed class IngestionService : IIngestionService
         await repo.DeleteChunksAsync(document.Id, cancellationToken).ConfigureAwait(false);
 
         await repo.UpdateDocumentAsync(
-            document with { Status = Model.DocumentStatus.Failed, Error = error, ChunkCount = 0 },
+            document with { Status = Model.Rag.DocumentStatus.Failed, Error = error, ChunkCount = 0 },
             cancellationToken).ConfigureAwait(false);
     }
 
@@ -187,7 +187,7 @@ public sealed class IngestionService : IIngestionService
     /// intentional catch-and-continue gets a comment AND a warning).
     /// </summary>
     private async Task TryFailAsync(
-        IRagRepository repo,
+        IRagStore repo,
         string documentId,
         string error,
         CancellationToken cancellationToken)

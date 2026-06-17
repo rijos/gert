@@ -1,7 +1,7 @@
 // components/main/model-picker.js - dropdown of models + capability badges +
 // a per-model settings cogwheel (temperature/top-p/max-tokens via the modal).
 // Binds to state/models (van-x list + selected). Uses ui/menu + badge.
-import van from "van";
+import van from "/lib/van.js";
 import { component } from "../../lib/component.js";
 import { Icon } from "../../icons/icons.js";
 import { Menu } from "../ui/menu.js";
@@ -83,7 +83,7 @@ export const ModelPicker = component({
       open,
       trigger,
       children: [
-        div({ class: "menu-h" }, "Models - vLLM"),
+        div({ class: "menu-h" }, "Models"),
         () => div(...models.models.map((m) => ModelItem(m))),
       ],
     });

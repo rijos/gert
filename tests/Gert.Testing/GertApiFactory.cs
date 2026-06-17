@@ -1,5 +1,6 @@
+using Gert.Chat;
 using Gert.Service.External;
-using Gert.Service.Storage;
+using Gert.Storage;
 using Gert.Testing.Fakes;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Hosting;
@@ -20,7 +21,7 @@ namespace Gert.Testing;
 ///   <item>overrides JwtBearer so it validates <see cref="TestTokens"/>-minted RS256
 ///     tokens against the in-process public key - no Authority/JWKS fetch
 ///     (<see cref="ConfigureOfflineJwtBearer"/>);</item>
-///   <item>swaps the <c>Gert.External</c> ports for the in-process fakes
+///   <item>swaps the adapter ports for the in-process fakes
 ///     (<see cref="AddGertFakes"/>).</item>
 /// </list>
 /// A behaviour proven in a unit test is the behaviour the HTTP tier sees.
@@ -114,7 +115,7 @@ public sealed class GertApiFactory : WebApplicationFactory<Program>
     }
 
     /// <summary>
-    /// Swap the <c>Gert.External</c> ports (chat, embeddings, search, fetch, sandbox)
+    /// Swap the adapter ports (chat, embeddings, search, fetch, sandbox)
     /// for the in-process fakes - the single DI registration that makes the whole
     /// stack run against the fake outside world (testing.md section 4.2). <c>Replace</c>
     /// wins regardless of order when the real adapters are registered.

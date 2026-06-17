@@ -1,6 +1,6 @@
 // components/sidebar/convo-item.js - one .convo row.
 // The title ellipsises when too wide; move/trash buttons reveal on row hover.
-import van from "van";
+import van from "/lib/van.js";
 import { component } from "../../lib/component.js";
 import { Icon } from "../../icons/icons.js";
 import { Modal } from "../ui/modal.js";

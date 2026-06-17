@@ -22,13 +22,13 @@ removed - the tree below documents the real, shipped app.)
 | Decision | Choice | Why |
 |----------|--------|-----|
 | Framework | **VanJS** (vendored, ~1 KB) | Already the chosen SPA framework ([tech-stack](tech-stack.md)). Components are just functions returning DOM nodes - no compiler needed. |
-| Module system | **Native ES modules** + an **import map** | The browser resolves `import` directly. `wwwroot` is the source; what you debug is what you wrote. |
+| Module system | **Native ES modules**, absolute same-origin paths | Every `import` is an absolute path (e.g. `/lib/van.js`) - no bare specifiers, so **no import map** and nothing inline for the CSP to hash. The browser resolves `import` directly; `wwwroot` is the source; what you debug is what you wrote. |
 | Dev build | **None.** `dotnet run` serves raw source | Real files, real line numbers in devtools, instant refresh. No Node, no watcher. |
 | Release build | **.NET-only minify on `dotnet publish`** (NUglify) - **no npm** | Minified `.js`/`.css` written into `wwwroot` with paths unchanged, so the ESM import graph still resolves. See [section 6](#6-devrelease-pipeline-no-npm). |
 | CSS | **Tokens-only theming; component CSS co-located** via the `component()` factory; four global sheets (`tokens` - `base` - `layout` - `primitives`) | A component's rules live with the component (CSP-clean adopted stylesheets); only un-ownable rules stay global - [style guide section 2](spa-style-guide.md#2-theming---derive-everything-from-global-tokens). |
 | State | **VanJS reactive `state/` stores**, no DOM | Components bind to stores; stores never touch the DOM. One-way: store -> view. |
 | I/O | **`services/` only** | Components never `fetch`. All `/api` traffic goes through a service. |
-| Dependencies | **Vendored in `lib/`** (VanJS, VanX, tiny router) + in-house micro-libs (markdown, highlight, sandbox) | Offline-friendly, version-pinned, no CDN, no package manager. |
+| Dependencies | **Vendored in `lib/`** (VanJS, VanX, tiny router) + in-house micro-libs (markdown, highlight, sandbox, math) | Offline-friendly, version-pinned, no CDN, no package manager. **No third-party code touches model output** - markdown and math are both our own. |
 
 ---
 
@@ -39,7 +39,7 @@ files are what ship (minified) on publish.
 
 ```
 wwwroot/
-  index.html                 # shell: global <link> styles, import map, <script type="module" src="/app.js">
+  index.html                 # shell: global <link> styles, <script type="module" src="/app.js">
   app.js                     # bootstrap: theme -> session (PKCE) -> mount AppShell -> router -> initial loads
   favicon.svg
 
@@ -49,8 +49,15 @@ wwwroot/
     router.js                #   minimal History-API router (real paths, :params, data-link interception)
     component.js             #   the component() factory - CSP-clean adopted stylesheets (style guide section 1)
     action.js                #   attempt(): run a user action; on failure, toast instead of swallowing
-    markdown.js              #   vendored markdown renderer + sanitizer - never raw HTML (security F4)
-    highlight.js             #   regex code-fence tokenizer - emits DOM nodes, never HTML strings (F4)
+    markdown.js              #   THIN facade: parse -> render -> assignHeadingIds; re-exports renderMarkdown / sanitizeUrl / NODE_TYPES (security F4)
+    render/                  #   the in-house markdown renderer, split by concern (markdown.js wires + re-exports them)
+      url.js                 #     sanitizeUrl / sanitizeImgUrl / isExternal / slugify - the single URL/slug safety source (F4)
+      lines.js               #     the LINE_KINDS classifier + bounded block parser -> markdown AST (math/code are opaque leaves)
+      inline.js              #     the O(n) inline scanner (tokenizeInline / links / emphasis / entities / autolinks)
+      dom.js                 #     the structural renderer: AST -> DOM via ONE guarded createEl(ns,tag,attrs) per-(ns,tag) allow-list; calls MdMath/MdCode (F4)
+    markdown-links.js        #   attachLinkConfirm(host): delegated click -> Modal confirm before an external link leaves the app (imports isExternal from render/url.js)
+    highlight.js             #   regex code-fence tokenizer - emits DOM nodes, never HTML strings (F4); wrapped by the MdCode leaf
+    smath.js                 #   in-house TeX -> native <math> MathML; wrapped by the MdMath leaf
     artifact-sandbox.js      #   builds the srcdoc + per-document CSP for artifact iframes (F3)
     i18n.js                  #   t() UI translation - English source text as key, nl dictionary;
                              #   resolves once per load (localStorage -> navigator.language -> en),
@@ -67,7 +74,7 @@ wwwroot/
   services/                  # side effects - the ONLY place that talks to /api
     http.js                  #   fetch wrapper: base URL, Bearer header, JSON, error shaping
     auth.js                  #   PKCE login, silent refresh; the access token lives here, in memory only (F2)
-    chat.js                  #   POST message (202, detached turn); consume the TurnEvent stream (WS -> SSE -> poll)
+    chat.js                  #   POST message (202, detached turn); consume the TurnEvent stream (SSE -> poll)
     conversations.js         #   list / open / rename / delete
     projects.js              #   list / create / switch / delete projects
     documents.js             #   upload, poll status, delete
@@ -117,10 +124,12 @@ wwwroot/
       artifact-tabs.js       # the tab list
       artifact.js            # polymorphic dispatcher: picks a viewer by artifact kind
       artifacts/
-        markdown-artifact.js #   sanitized render (lib/markdown.js) + source view
-        html-artifact.js     #   sandboxed <iframe srcdoc> (lib/artifact-sandbox.js) + source
-        svg-artifact.js      #   sandboxed iframe - SVG can carry script (F3) + source
-        code-artifact.js     #   highlighted lines (lib/highlight.js)
+        markdown-artifact.js #   sanitized render (lib/markdown.js) + source view (MdCode)
+        html-artifact.js     #   sandboxed <iframe srcdoc> (lib/artifact-sandbox.js) + source (MdCode)
+        svg-artifact.js      #   sandboxed iframe - SVG can carry script (F3) + source (MdCode)
+        code-artifact.js     #   highlighted lines + Problems gutter (lib/highlight.js) + source (MdCode)
+        md-math.js           #   MdMath({latex,display}) - the math leaf: wraps smath.renderMath -> <span class="md-math"> + native <math> (F4)
+        md-code.js           #   MdCode({code,lang,gutter}) - the code leaf: wraps highlight -> <pre data-lang><code> tok-* spans (F4)
       knowledge-panel.js     # kb-view: header + privacy note + use-in-chat switch
       drop-zone.js
       doc-list.js
@@ -185,7 +194,7 @@ rules that belong here:
 1. **One component per file**, in the `components/<area>/` that owns it. Co-locate a
    trivial subcomponent; promote it to its own file once reused or past ~40 lines
    (e.g. the brand header lives inside `sidebar.js`).
-2. **Named exports only** - no `default`. Keeps imports greppable and the import map flat.
+2. **Named exports only** - no `default`. Keeps imports greppable and the import graph flat.
 3. **No top-level side effects** (no `fetch`, no global mutation at import time) -
    a component module must be importable by the test harness without booting the app.
 4. **I/O through `services/`, state through `state/`.** A click handler calls a service;
@@ -239,8 +248,8 @@ Settings opens as a modal from the user chip - deliberately not a route.
 ### Streaming
 `services/chat.js` POSTs the message (a **202 detached turn** -
 [rest-api](rest-api.md#sending-a-message-detached-turn)), then consumes the
-conversation's TurnEvent stream over the best available transport - **WebSocket, then
-SSE, then range polling**, all gap-free over the same `seq` cursor - and pushes each
+conversation's TurnEvent stream over the best available transport - **SSE, then range
+polling**, both gap-free over the same `seq` cursor - and pushes each
 event onto `state/chat.js` (+ `state/artifacts.js`). `message.js`, `tool-card.js`, and
 the canvas bind to that state, so the typewriter effect, tool-card progress, and
 artifact tabs are just reactive renders of incoming events.
@@ -262,11 +271,72 @@ construction (full rationale in [security](security.md#3-findings--remediations)
   `<script>`/`onload` that would otherwise run in the app origin and steal the token
   ([security F3](security.md#3-findings--remediations)). The **Source** view shows raw text, never a
   live injected node.
-- **Markdown is sanitized by construction.** `lib/markdown.js` (and `lib/highlight.js` for code)
-  build **real DOM nodes from `textContent`** - raw HTML is never interpreted, `javascript:`/`data:`
-  URLs are stripped, and external links get `rel="noopener noreferrer" target="_blank"`. VanJS text
-  bindings escape by default; these two vendored micro-libs are the only "render rich text" paths
-  ([security F4](security.md#3-findings--remediations)).
+- **Markdown is sanitized by construction.** `lib/markdown.js` is a **thin facade** over an in-house renderer
+  (smd2 lineage) split across `lib/render/`: it wires `parse -> render -> assignHeadingIds` inside one
+  `try/catch` (any fault degrades to literal source, so `renderMarkdown` is **total**) and re-exports the public
+  surface - `renderMarkdown(src) -> DocumentFragment`, `sanitizeUrl(url) -> string`, and the closed `NODE_TYPES`
+  set (identity preserved). The pipeline:
+  - `render/lines.js` - **one declarative `LINE_KINDS` table** drives block classification: `classifyLine(line,
+    lookahead, depth)` runs **once** per line and feeds **both** the block dispatcher **and** the
+    paragraph-interrupt, so a line can never be read two ways. The bounded block parser (`MAX_NEST = 32`; past
+    the cap a would-be container is plain text) builds a markdown AST in which **math and code are opaque leaves**
+    carrying raw latex/code + lang/display.
+  - `render/inline.js` - the O(n) left-to-right inline scanner (links, emphasis, code, entities, autolinks),
+    bounded by `MAX_INLINE`/`MAX_DEST`/`MAX_TITLE` so unbalanced delimiters degrade to text, never recurse.
+  - `render/dom.js` - the **structural renderer**: it emits every markdown element through **one guarded
+    `createEl(ns, tag, attrs)` chokepoint** over a **closed per-`(ns, tag)` allow-list** (each tag's permitted
+    attribute set is pinned; `href` only on `<a>`, `src` only on `<img>`) with a **fail-closed throw** on any
+    unknown `(ns, tag)` or attribute - so the emitted DOM is a fixed allow-list and `innerHTML` is **never** used.
+    `sanitizeUrl`/`sanitizeImgUrl` + `rel`/`target` are applied **locally at the link/image nodes** (sink-side).
+    `MAX_INLINE = 32` bounds inline-container nesting here too (past the cap an emph/strong/del/link degrades to
+    flattened text). For a math/code leaf the renderer **calls a VanJS component** (`MdMath`/`MdCode`) and inserts
+    the returned DOM - it never reaches into smath/highlight itself.
+  - `render/url.js` - the **single source** for `sanitizeUrl` (`javascript:`/`data:`/`vbscript:` plus control-char
+    and `&colon;` smuggling collapse to `#`), `sanitizeImgUrl` (inline `data:image/(png|jpe?g|gif|webp|avif|bmp|
+    x-icon);base64` **only**; every other url-shaped `src` -> `#`), `isExternal`, and `slugify`. External links get
+    `rel="noopener noreferrer" target="_blank"`. `lib/markdown-links.js` imports `isExternal` from here (one copy).
+
+  VanJS text bindings escape by default; the `render/` graph plus the `MdCode`/`MdMath` leaves are the only "render
+  rich text" paths ([security F4](security.md#3-findings--remediations)). The **external-link confirm step lives
+  outside** the pure renderer: `lib/markdown-links.js` exports `attachLinkConfirm(host)` - one delegated click
+  listener per rendered body (not per `<a>`) that opens Gert's Modal before an external link leaves the app, wired
+  in `components/main/message.js` and `components/canvas/artifacts/markdown-artifact.js` (kept out of the renderer
+  the same way `lib/action.js`'s toast reach is). Headings carry a GitHub-style slug `id` (folded to `[a-z0-9_-]`,
+  deduped `-1`/`-2` within the fragment) via `assignHeadingIds`, a **DOM post-pass** that reads `textContent`, so
+  in-document `[x](#slug)` links resolve.
+- **Code and math are VanJS sub-language components.** The two opaque leaves render through
+  `component({ name, css, view })` ([style guide section 1](spa-style-guide.md#1-the-component-shape)) - the same
+  factory as the ~30 other components, so each adopts its CSS once via a Constructable Stylesheet (CSP-clean under
+  `style-src 'self'`) and its `view(props)` returns standard DOM built with `createElement`/`createElementNS` (never
+  `van.tags`, which has no allow-list, and never `innerHTML`). The output DOM shape is **unchanged**, so existing
+  selectors/CSS/consumers all still hold:
+  - **`MdCode({ code, lang, gutter })`** (`md-code.js`) wraps `lib/highlight.js` -> `<pre data-lang><code>…tok-*
+    spans…</code></pre>` where `<code>` holds **only** inert `tok-*` spans + text (highlight tints from
+    `textContent`, never an HTML string; no attribute but `class`, no class outside `tok-*`). `data-lang` is the
+    fence language for the chrome label, guarded to `/^[\w+#.-]{1,16}$/` and only ever set in `dataset`. The
+    optional `gutter:true` path uses `highlightLines` for one `<code>` line-run per source line; the default is
+    byte-for-byte the old inline code block. The four artifact source views (`code`/`markdown`/`html`/`svg`) and the
+    chat code fence all flow through `MdCode`. `highlight.js` tints the fence languages the assistant emits (json,
+    python, js/ts, c#/c/c++, rust, **go**, **bash/shell**, html/xml, markdown) and degrades unknown languages to
+    plain text.
+  - **`MdMath({ latex, display })`** (`md-math.js`) wraps `lib/smath.js`'s `renderMath` -> `<span class="md-math">`
+    (or `"md-math md-math-display"`) wrapping a **native `<math>`** element. smath keeps its **closed
+    `MML_ELEMENTS` allow-list** (`toDom`, built with `createElementNS`) and its **per-formula `try/catch`** so bad
+    TeX degrades to literal text **per formula**, never document-wide. The `.md-math*` + `<math>` CSS moved into the
+    component's adopted sheet; the renderer's own `.md-math-block` scroll wrapper stays in `styles/base.css`.
+- **Math holds the same line - no third-party engine.** `lib/smath.js` is our own **zero-dependency** TeX -> native
+  `<math>` MathML converter (not Temml, not KaTeX). A linear lexer (O(n), no ReDoS) feeds a bounded recursive descent
+  (`MAX_DEPTH = 32`, `MAX_NODES = 6000`, `MAX_TEX = 8192`; past a bound it degrades to literal source) that is
+  **total** over the closed `MML_ELEMENTS` allow-list - **never** `innerHTML`. The browser renders the emitted
+  `<math>` natively (MathML Core: Firefox, Chromium 109+/Jan 2023, WebKit). There is no `trust`/`throwOnError` to set
+  because there is no third-party engine: unknown control words degrade to a visible `<mtext>`, and the **only**
+  attributes set are inert MathML presentation hints (`mathvariant`, `stretchy`, `fence`, `accent`, `displaystyle`,
+  `movablelimits`, `width`) - **no `href`/`src`/`style` sink**, so math cannot navigate, fetch, or script, and emits
+  no inline `style` (CSP-safe under `style-src 'self'`, nothing to mirror or strip). The converter recognises math
+  only on a **closed** delimiter pair and length-caps the inline scan, so streaming stays literal-until-complete.
+  `\[...\]` is **block-level only** (a line that opens with `\[`), so a mid-line `\[escaped\]` stays a literal bracket
+  escape, not math ([security F4](security.md#3-findings--remediations)). Because no vendored third-party file touches
+  model output, there is nothing here for a dependency scanner to miss.
 
 ---
 
@@ -278,20 +348,17 @@ publish-time concern handled entirely by .NET.
 ### Development - raw source
 - `Gert.Api` serves `wwwroot/` directly in `Development` (`UseStaticFiles`,
   no-cache, `MapFallbackToFile("index.html")`).
-- The browser loads `app.js` as a module and resolves every `import` by path. The bare
-  specifiers resolve through the **import map** in `index.html`:
+- The browser loads `app.js` as a module and resolves every `import` by path. Every import is
+  an **absolute same-origin path** - there are no bare specifiers, so there is **no import map**
+  and nothing inline for the CSP to allow:
 
 ```html
-<script type="importmap">
-{ "imports": {
-    "van":        "/lib/van.js",
-    "vanjs-core": "/lib/van.js",
-    "van-x":      "/lib/van-x.js"
-} }
-</script>
 <script type="module" src="/app.js"></script>
 ```
 
+- This is what keeps the CSP a plain `script-src 'self'` with **no `sha256` hash** to maintain:
+  with no inline `<script>` there is nothing to hash, so `SecurityHeadersMiddleware.cs` carries no
+  import-map hash constant and edits to the SPA never force a recompute.
 - What you see in devtools **is** the file on disk - real names, real line numbers, no
   source maps. Edit, refresh, done.
 
@@ -299,8 +366,9 @@ publish-time concern handled entirely by .NET.
 An MSBuild target runs **[NUglify](https://github.com/trullock/NUglify)** (pure .NET,
 NuGet, **no npm**) over the assets as they land in the publish output, minifying each
 `.js`/`.css` **to the same relative path** (`tools/Gert.Web.Minify`, invoked from
-`Gert.Api.csproj` after publish). Because paths don't change, the ESM import graph and
-the import map keep resolving - we minify, we don't bundle or rename.
+`Gert.Api.csproj` after publish). Because paths don't change, the ESM import graph keeps
+resolving - we minify, we don't bundle or rename. The minifier only touches `.js`/`.css`,
+never `.html`, so there is no inline-script hash for it to invalidate.
 
 **ESM caveat - validated.** NUglify must parse modern module syntax; this was verified
 against the real `wwwroot` on `dotnet publish` (the published graph
@@ -343,6 +411,7 @@ Every interactive piece of the app, and where it lives.
 | Context-window usage ring | `components/main/context-ring.js` |
 | Canvas tab strip + bar tools | `components/canvas/canvas-bar.js` + `artifact-tabs.js` |
 | Markdown / HTML / SVG / Code artifacts | `components/canvas/artifacts/*.js` via `artifact.js` |
+| Markdown math / code leaves (the renderer's sub-language components) | `components/canvas/artifacts/md-math.js` (smath), `md-code.js` (highlight) |
 | Knowledge panel (privacy, use-in-chat switch) | `components/canvas/knowledge-panel.js`, `components/ui/switch.js` |
 | Drop zone + doc list + status pills + trash | `components/canvas/drop-zone.js`, `doc-list.js`, `doc-row.js`, `components/ui/pill.js` |
 | Toasts / modals / progress | `components/ui/toast.js`, `modal.js`, `progress-bar.js` |

@@ -3,14 +3,23 @@ using Gert.Api.Errors;
 using Gert.Api.Ingestion;
 using Gert.Api.Logging;
 using Gert.Api.Security;
-using Gert.Api.WebSockets;
 using Gert.Authentication;
+using Gert.Chat;
+using Gert.Chat.OpenAI;
+using Gert.Database;
 using Gert.Database.Sqlite;
-using Gert.External;
+using Gert.Ingestion;
+using Gert.Rag;
+using Gert.Rag.Sqlite;
 using Gert.Service;
 using Gert.Service.Chat;
 using Gert.Service.Ingestion;
 using Gert.Service.Observability;
+using Gert.Storage.Local;
+using Gert.Tools;
+using Gert.Tools.Sandbox.GVisor;
+using Gert.Tools.Sandbox.Monty;
+using Gert.Tools.Search.SearXNG;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -30,8 +39,8 @@ builder.WebHost.ConfigureKestrel(kestrel =>
         Gert.Service.Validation.UploadConstraints.MaxSizeBytes + 1_048_576);
 
 // --- Bounded shutdown ---------------------------------------------------------
-// Open SSE/WS streams end themselves on ApplicationStopping (the stream and ws
-// endpoints link it), so this backstop only catches a request that ignores the
+// Open SSE streams end themselves on ApplicationStopping (the stream endpoint
+// links it), so this backstop only catches a request that ignores the
 // signal - Ctrl+C must stop the host in seconds, never the framework's default
 // 30 s drain.
 builder.Services.Configure<HostOptions>(host =>
@@ -43,7 +52,7 @@ builder.Services.Configure<HostOptions>(host =>
 // pushed by RequestLogContextMiddleware. Never logs tokens/raw sub/email/content.
 // Serilog owns the sink, so MS.Extensions.Logging's own level filters never
 // reach it - read the standard Logging:LogLevel config ourselves so the level
-// is operator/harness-configurable (e.g. serve-mock-vllm sets Default=Debug).
+// stays operator-configurable via the standard Logging:LogLevel:Default knob.
 // Default is Information; appsettings keeps Microsoft.AspNetCore at Warning, so
 // a Debug run stays focused on Gert instead of flooding Kestrel internals.
 builder.Host.UseSerilog((context, loggerConfiguration) =>
@@ -96,12 +105,13 @@ builder.Services.AddOptions<Gert.Service.Chat.TurnOptions>()
     .Validate(o => o.MaxConcurrentTurns >= 1, "Gert:Turn:MaxConcurrentTurns must be >= 1")
     .ValidateOnStart();
 
-// AddGertServices registers the built-in tools (rag/search/sandbox/...)
-// as scoped ITool and the id-only ToolRegistry singleton the auth + validation
+// AddGertServices registers the id-only ToolRegistry singleton the auth + validation
 // layers use for entitlement/toggle id checks (auth.md section tool entitlements). The
-// orchestrator resolves the tool instances via IEnumerable<ITool>; the external
-// ports each tool needs (IChatModelClient / IEmbeddingClient / IWebSearch /
-// IPythonSandbox) are registered by the Gert.External adapters (or a Testing host's fakes).
+// built-in tool implementations (rag/search/sandbox/...) are registered as scoped ITool
+// by the Gert.Tools adapter's AddBuiltinTools (called from AddGertTools below); the
+// orchestrator resolves the tool instances via IEnumerable<ITool>. The external ports
+// each tool needs (IChatModelClient / IEmbeddingClient / IWebSearch / IPythonSandbox)
+// are registered by the Gert.Chat/Tools/Ingestion adapters (or a Testing host's fakes).
 
 // --- Auth (auth.md section ASP.NET Core wiring) -----------------------------------
 // AddGertJwtAuth also registers IHttpContextAccessor + IUserContext (HttpUserContext).
@@ -219,19 +229,50 @@ builder.Services.PostConfigure<JwtBearerOptions>(
     });
 
 // --- Storage seam (storage-and-data.md section lazy provisioning) -----------------
-// One AddGertX per adapter (dotnet-style-guide.md section 4): the SQLite providers, the
-// local IObjectStore/IUserStore backends, and the bound Storage options. An
-// S3/Azure-Blob backend is a drop-in: one IObjectStore registration after this call.
-builder.Services.AddGertSqliteStorage(builder.Configuration);
+// One AddGert<Capability><Impl> per adapter (dotnet-style-guide.md section 4). Database is a
+// keyed capability-plugin like chat: AddGertDatabase wires the GENERIC engine selector
+// (Gert:Database:Type) + the three provider ports; AddGertDatabaseSqlite makes the SQLite engine
+// available (the keyed builder + bound Storage options). AddGertStorageLocal the local
+// IObjectStore backend over the same data-root. Database + storage are independent stores - the
+// database engine owns destroying its own data, the object store owns artifact bytes - and the
+// service layer orchestrates a user/project delete across both (principle #5). A Postgres engine
+// is a drop-in: AddGertDatabasePostgres + Gert:Database:Type=Postgres; an S3/Azure-Blob backend
+// swaps AddGertStorageLocal for that backend's AddGertStorage* call.
+builder.Services.AddGertDatabase(builder.Configuration);
+builder.Services.AddGertDatabaseSqlite(builder.Configuration);
+// RAG is its own capability-plugin (vector index, decoupled from the SQL engine):
+// AddGertRag the generic engine selector (Gert:Rag:Type) + the index provider port,
+// AddGertRagSqlite the sqlite-vec + FTS5 engine. A dedicated vector store is a drop-in:
+// AddGertRagQdrant + Gert:Rag:Type=Qdrant.
+builder.Services.AddGertRag(builder.Configuration);
+builder.Services.AddGertRagSqlite(builder.Configuration);
+builder.Services.AddGertStorageLocal(builder.Configuration);
+
+// Forward-recovery for the deletion saga: on startup, finish any account deletion a previous
+// run left interrupted (the deletion journal + the idempotent eraser are wired above).
+builder.Services.AddHostedService<Gert.Api.Lifecycle.DeletionRecoveryService>();
 
 // --- External-world ports ----------------------------------------------------
-// AddGertExternal registers the real IChatModelClient / IEmbeddingClient /
-// IWebSearch / IPythonSandbox adapters (vLLM/SearXNG over IHttpClientFactory + Polly,
-// gVisor sandbox) plus the isolated pdf/docx extractor leaf, with options bound from
-// config and secrets from env/user-secrets (F8). The Testing host's
-// GertApiFactory.AddGertFakes() Replaces the four ports afterwards, so the fakes win
-// in tests regardless of order.
-builder.Services.AddGertExternal(builder.Configuration);
+// One AddGert* per functionality (dotnet-style-guide.md section 4). Chat is split into the
+// GENERIC layer (AddGertChat: the impl-agnostic provider catalog + keyed-plugin chat-client
+// factory + IChatProviderCatalog) and the IMPLEMENTATION plugins the composition root makes
+// available (AddGertChatOpenAI: the OpenAI chat-client builder + per-provider transports +
+// IEmbeddingClient). Configuration selects which registered plugin builds each provider
+// (Gert:Chat:Providers:<slug>:Type). Search and the run_python sandbox follow the same keyed
+// capability-plugin pattern: AddGertTools registers the GENERIC selectors over the IWebSearch /
+// IWebFetcher / IPythonSandbox ports, and the composition root makes the shipped plugins
+// available (AddGertSearchSearXNG; AddGertSandboxMonty / AddGertSandboxGVisor) - configuration
+// picks the active one (Gert:Tools:Search:Type / Gert:Tools:Sandbox:Type). AddGertIngestion the
+// isolated pdf/docx extractor leaf. Options bind from config; secrets come from env/user-secrets
+// (F8). The Testing host's GertApiFactory.AddGertFakes() Replaces the ports afterwards, so the
+// fakes win in tests regardless of order.
+builder.Services.AddGertChat(builder.Configuration);
+builder.Services.AddGertChatOpenAI(builder.Configuration);
+builder.Services.AddGertTools(builder.Configuration);
+builder.Services.AddGertSearchSearXNG();
+builder.Services.AddGertSandboxMonty(builder.Configuration);
+builder.Services.AddGertSandboxGVisor(builder.Configuration);
+builder.Services.AddGertIngestion(builder.Configuration);
 
 // One consistent, Gert-branded ProblemDetails contract: stamp every problem with
 // the service marker + a traceId (Change B). The customizer runs for framework-
@@ -246,10 +287,6 @@ builder.Services.AddExceptionHandler<ValidationExceptionHandler>();
 // 409: a turn is already streaming in this conversation (turns are serialized
 // per conversation - chat-and-tools.md section detached turns).
 builder.Services.AddExceptionHandler<TurnConflictExceptionHandler>();
-
-// The WS message dispatch table (subscribe/range/cancel). Singleton -
-// per-connection state lives on the ChatSocketSession.
-builder.Services.AddSingleton<Gert.Api.WebSockets.MessageHandlerRegistry>();
 
 var app = builder.Build();
 
@@ -301,12 +338,6 @@ if (!app.Environment.IsProduction() &&
     }
 }
 
-// WS auth shim (security F2): lift the bearer subprotocol into the Authorization
-// header BEFORE authentication, so WS upgrades flow through the same JwtBearer +
-// fallback-policy gate as everything else (the auth result is cached per request,
-// so this must precede UseAuthentication).
-app.UseMiddleware<WsBearerSubprotocolMiddleware>();
-
 app.UseAuthentication();
 
 // After authentication so context.User is populated: push comp/req/uid onto the
@@ -317,7 +348,7 @@ app.UseMiddleware<RequestLogContextMiddleware>();
 app.UseAuthorization();
 
 // First touch from a valid identity materialises their user.db (username + default
-// project) before any controller/WS handler reads it. The databases self-provision
+// project) before any controller reads it. The databases self-provision
 // on open; this only seeds the descriptive, product-level state.
 app.UseMiddleware<Gert.Api.UserProvisioningMiddleware>();
 
@@ -333,13 +364,6 @@ if (rateLimitingEnabled)
 {
     controllers.RequireRateLimiting(RateLimiting.PerUserPolicy);
 }
-
-// The WS delivery transport (rest-api.md section the ws endpoint). UseWebSockets only
-// upgrades; auth happens inside the endpoint via the bearer subprotocol
-// handshake (the SPA cannot set an Authorization header on a WebSocket).
-// Deliberately NOT rate-limited per-request: one long-lived connection.
-app.UseWebSockets();
-app.MapChatWebSocket();
 
 // Liveness probe - the one anonymous endpoint (auth.md authorization matrix).
 // UNCHANGED: always 200 for anonymous (the WalkingSkeleton test asserts this).

@@ -1,6 +1,6 @@
 """monty.py - mock of the monty sandbox sidecar (testing.md section 4.2).
 
-The real ``Gert.External`` ``MontySandbox`` adapter (the default ``ISandbox`` backend)
+The real ``Gert.Tools`` ``MontySandbox`` adapter (the default ``ISandbox`` backend)
 POSTs ``/run`` here in the FakeE2E profile, so the adapter HTTP path (typed client,
 request shaping, response mapping, graceful failure) is exercised against a wire-level
 fake - no ``pydantic-monty``, no Rust.

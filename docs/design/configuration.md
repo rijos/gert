@@ -7,15 +7,16 @@ chat, retrieval, language, and appearance. (For the *operator* view - every serv
 appsettings/env knob with defaults - see
 [installation/configuration.md](../installation/configuration.md).)
 
-> **One-line model:** a **project is a folder** - its own conversations, its own documents,
-> its own memory, fully isolated from every other project. **"Default" is just the project you
-> start in.** The same principle that isolates users now isolates projects: a query physically
-> cannot reach another project's data because the connection only opens *that project's* files.
-> Deleting a project is deleting its directory.
+> **One-line model:** a **project is its own scope** - its own conversations, documents, and
+> memory, fully isolated from every other project. **"Default" is just the project you start
+> in.** The same principle that isolates users isolates projects: a query is opened against
+> *that project's* store, so it cannot reach another project's data. Deleting a project drops
+> its stores.
 
-This pushes [principle #2](principles.md) (isolation is a filesystem property) one level
-deeper, keeps [principle #5](principles.md) (deletion is `rm -rf`) intact at project scope, and
-gates every new setting through [principle #6](principles.md) (fail-closed validation).
+This pushes [principle #2](principles.md) (the store scopes by token, not an application
+filter) one level deeper, keeps [principle #5](principles.md) (deletion is a per-store erase,
+not a row-scrub) intact at project scope, and gates every new setting through
+[principle #6](principles.md) (fail-closed validation).
 
 ---
 
@@ -44,7 +45,7 @@ falls back to the server's flagged-default provider.
 
 **Sampling is *not* a cascade level.** Temperature, top_p, the penalties, `top_k`, the
 template kwargs - they live with the **provider** the picker selects
-([section 4](#4-llm-providers--models), [installation section providers](../installation/configuration.md#4-gertproviders---the-chat-provider-catalog)),
+([section 4](#4-llm-providers--models), [installation section providers](../installation/configuration.md#4-gertchatproviders---the-chat-provider-catalog)),
 not on the user, project, or conversation. What cascades is the **provider choice** (and
 the tool toggles); the sampling rides whichever provider wins.
 
@@ -127,7 +128,7 @@ public string RagDb (string iss, string sub, string projectId) => Path.Combine(P
 
 The user key still comes **only** from the validated token `(iss, sub)` - anchored on the stable,
 never-recycled `sub`
-([principle #3](principles.md), [decisions section 3](decisions.md#3-folder-key)). The project id
+([principle #3](principles.md), [decisions section 3](decisions.md#3-user-key)). The project id
 *does* come from the request - but it is validated to a safe shape (a UUID, or the literal
 `default`) and is only ever joined **under the token-derived user folder**. So a tampered
 project id can, at worst, reach *this same user's* other project or 404 - it can never escape
@@ -180,10 +181,10 @@ Sampling is not here - it belongs to the selected provider
 ## 4. LLM providers & models
 
 - **The admin owns the catalog.** The published provider list is server config
-  ([tech-stack](tech-stack.md)): a `Gert:Providers` map keyed by slug, each entry a named
+  ([tech-stack](tech-stack.md)): a `Gert:Chat:Providers` map keyed by slug, each entry a named
   preset carrying its own connection (an **OpenAI-compatible** base URL + upstream model -
   vLLM today; any compatible endpoint) **and its sampling**
-  ([installation section providers](../installation/configuration.md#4-gertproviders---the-chat-provider-catalog)).
+  ([installation section providers](../installation/configuration.md#4-gertchatproviders---the-chat-provider-catalog)).
   `GET /api/models` ([rest-api](rest-api.md)) surfaces the catalog to the picker (the slug
   is the `id`).
 - **Users select, they don't add endpoints.** A user/project/conversation chooses a
@@ -216,15 +217,15 @@ fine-grained ones possible ([storage-and-data](storage-and-data.md)).
 |--------|--------|-----------|
 | **Forget documents** (a project) | wipe that project's corpus, keep its chats | clear `rag.db` (+ `files/`); `chat.db` untouched |
 | **Clear memory** (a project) | drop curated/auto memory | delete `memory/` + its `kind='memory'` rows |
-| **Delete a project** | remove the whole workspace at once | `rm -rf projects/{id}` (chats **and** docs together) |
-| **Delete account data** | erase everything the app stores | `rm -rf users/{key}` - every project |
+| **Delete a project** | remove the whole workspace at once | drop the project's `chat.db` + `rag.db` + blobs together |
+| **Delete account data** | erase everything the app stores | drop every store the user has - all projects |
 | **Export** | take your data with you | per-project or whole-account archive: conversations as JSON/Markdown + original `files/` |
 
 Two honest edges:
 - **The `default` project can be emptied but not removed** - deleting it clears its contents and
   leaves an empty `default`, so the user always has a landing project.
-- **Account deletion erases data, not identity.** The app `rm -rf`s the folder; the Pocket ID
-  account is the IdP's to remove ([operations -> user lifecycle](operations.md#user-lifecycle---remove-a-user--remove-a-folder)).
+- **Account deletion erases data, not identity.** The app drops the user's data across its stores;
+  the Pocket ID account is the IdP's to remove ([operations -> user lifecycle](operations.md#user-lifecycle---remove-a-user)).
   Full off-boarding is "delete my data here" **+** "remove me in Pocket ID."
 
 ---
@@ -258,7 +259,7 @@ GET    /api/projects                       # list (the user.db project registry)
 POST   /api/projects                       # { name, description?, instructions?, defaults? }
 GET    /api/projects/{pid}                  # config + counts
 PATCH  /api/projects/{pid}                  # rename / instructions / defaults
-DELETE /api/projects/{pid}                  # rm -rf projects/{pid}  (default -> emptied, not removed)
+DELETE /api/projects/{pid}                  # drop the project  (default -> emptied, not removed)
 
 # project memory
 GET    /api/projects/{pid}/memory
@@ -269,7 +270,7 @@ DELETE /api/projects/{pid}/memory/{id}
 POST   /api/projects/{pid}/forget-documents
 GET    /api/projects/{pid}/export
 GET    /api/account/export
-DELETE /api/account                        # rm -rf users/{key}
+DELETE /api/account                        # erase all of this user's data
 ```
 
 **All data endpoints are project-scoped** - conversations, the message endpoint, documents,
@@ -305,11 +306,6 @@ Where this lands in the SPA (`Gert.Api/wwwroot`, [ui-components](ui-components.m
 
 ## 9. Open decisions
 
-- ~~**Per-conversation / per-user generation-param overrides.**~~ Removed: sampling is no
-  longer a cascade level at all. Each named **provider** carries its own sampling in
-  `appsettings` ([section 4](#4-llm-providers--models)); picking a thinking vs an instruct
-  provider is how the decode changes, so there is nothing on the conversation or user to
-  override.
 - **Custom accent / theming beyond Manila/Ember** - fixed palettes for v1; revisit if asked.
 - **Per-user BYO provider keys** - non-feature for now (security + keeps everything on-box);
   reconsider only if a user genuinely needs an off-box model.

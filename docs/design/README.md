@@ -5,16 +5,16 @@ Web API serving a VanJS SPA, with per-user SQLite, hybrid RAG, sandboxed code ex
 web search. These documents are the source of truth for **how the system is designed and
 why**; the code in [`src/`](../../src/) implements them.
 
-> **One-line architecture:** the **IdP owns identity**, the **filesystem owns data**, and the
-> **API owns nothing persistent of its own**. Every user is one folder; deleting a user is
-> deleting that folder.
+> **One-line architecture:** the **IdP owns identity**, a **per-user store owns the data**, and
+> the **API owns nothing persistent of its own**. Every user is their own store; deleting a user
+> is dropping it.
 
 ## How this folder works
 
 - Every doc here is **live** - kept true to the shipped system - except where marked:
   [turn-budgets.md](turn-budgets.md) and [context-compaction.md](context-compaction.md) are
-  **open design notes**, and [strengthening-plan.md](strengthening-plan.md) is the
-  **active build plan**.
+  **open design notes**, and [defense-in-depth.md](defense-in-depth.md) is a
+  **forward-looking hardening wishlist**.
 - **Settled choices** live in [decisions.md](decisions.md) with their why; **open questions**
   live with their owning doc ([configuration section 9](configuration.md#9-open-decisions),
   [turn-budgets section 6](turn-budgets.md#6-open-questions)) until settled.
@@ -28,15 +28,16 @@ why**; the code in [`src/`](../../src/) implements them.
 ## Contents
 
 ### Foundations
-- [principles.md](principles.md) - the six core principles: no central DB, isolation as a
-  filesystem property, the token-derived user key, lazy provisioning, deletion is `rm -rf`,
-  fail-closed validation.
+- [principles.md](principles.md) - the six core principles: no central DB, database-level
+  user isolation (the store scopes by token, not an application query filter), the
+  token-derived user key, lazy provisioning, deletion as a per-store erase (no central
+  row-scrub), fail-closed validation.
 - [components.md](components.md) - the moving parts and how they talk: SPA, Pocket ID,
   Gert.Api, vLLM, SearXNG, the gVisor sandbox.
 - [tech-stack.md](tech-stack.md) - chosen libraries, the host-agnostic architecture
   (Gert.Api over one service layer), the solution layout, engine/storage portability.
 - [decisions.md](decisions.md) - the decision record: embedding model, two DBs per project,
-  folder key, revocation, OCR, ingestion progress, project isolation, the `IObjectStore` seam,
+  user key, revocation, OCR, ingestion progress, project isolation, the `IObjectStore` seam,
   `user.db` over JSON sidecars, and JWT-only tool entitlement.
 
 ### Backend
@@ -45,7 +46,7 @@ why**; the code in [`src/`](../../src/) implements them.
 - [storage-and-data.md](storage-and-data.md) - the per-user/per-project folder layout, path
   resolution, lazy provisioning + migrations, and the `chat.db` / `rag.db` schemas.
 - [rest-api.md](rest-api.md) - every endpoint: settings, projects, conversations, the
-  **detached turn** (202 + seq-cursor delivery over WS/SSE/polling), documents, memory,
+  **detached turn** (202 + seq-cursor delivery over SSE/polling), documents, memory,
   artifacts, account, admin.
 - [chat-and-tools.md](chat-and-tools.md) - the tool loop and detached-turn pipeline, artifacts,
   hybrid RAG (vec0 + FTS5 + RRF), the ingestion pipeline, and per-tool detail (RAG, web
@@ -82,9 +83,10 @@ why**; the code in [`src/`](../../src/) implements them.
   shipped, and the still-open token-budget and steering proposals.
 - [context-compaction.md](context-compaction.md) - keeping long conversations inside the
   model's context window: bounds, elision, auto-compaction. **Open - under discussion.**
-- [strengthening-plan.md](strengthening-plan.md) - the active build plan: heartbeat,
-  steering, split embeddings endpoint, event-log pruning, multi-instance decision,
-  compaction, import.
+- [defense-in-depth.md](defense-in-depth.md) - the security hardening wishlist: an external key
+  authority + per-user encryption, scoped data credentials, process privilege-separation, and a
+  network egress brake - bounding blast radius and exfiltration if the process is compromised.
+  **Wishlist - not implemented.**
 
 ## Reading paths
 
@@ -112,3 +114,4 @@ why**; the code in [`src/`](../../src/) implements them.
 | Tests, fakes, fixtures, E2E | [testing.md](testing.md) | [tech-stack section architecture](tech-stack.md#architecture) |
 | Any C# (`src/`, `tests/`) - conventions, idioms | [dotnet-style-guide.md](dotnet-style-guide.md) | [tech-stack.md](tech-stack.md) |
 | Deployment, logging, headers, limits | [operations.md](operations.md) | [installation/configuration.md](../installation/configuration.md) |
+| Encryption at rest, key management, blast-radius / egress hardening | [defense-in-depth.md](defense-in-depth.md) | [security.md](security.md), [principles](principles.md) |

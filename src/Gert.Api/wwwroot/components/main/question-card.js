@@ -6,7 +6,7 @@
 // Required prop: `q` - the reactive card.question object set by
 // services/chat.js ({ questionId, text, options, allowFreeText, answered,
 // answer, expired, posting }).
-import van from "van";
+import van from "/lib/van.js";
 import { component } from "../../lib/component.js";
 import * as chatSvc from "../../services/chat.js";
 

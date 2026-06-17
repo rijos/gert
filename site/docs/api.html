@@ -94,8 +94,7 @@
     <p>Every event carries a per-conversation monotonic <code>seq</code>. Three delivery
     views over the same durable event log - pick by capability, switch freely:</p>
     <pre><code>GET .../conversations/{id}/events?after={seq}&amp;limit={n}   <span class="c"># range / poll</span>
-GET .../conversations/{id}/stream?after={seq}             <span class="c"># SSE (live)</span>
-GET .../conversations/{id}/ws                             <span class="c"># WebSocket (live + cancel)</span></code></pre>
+GET .../conversations/{id}/stream?after={seq}             <span class="c"># SSE (live)</span></code></pre>
     <div class="table-wrap"><table>
       <tr><th>Event</th><th>UI effect</th></tr>
       <tr><td><code>message_start</code></td><td>Creates the assistant bubble.</td></tr>

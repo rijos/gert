@@ -1,6 +1,6 @@
 // components/sidebar/user-chip.js - avatar + name + auth line + settings
 // button; admins additionally get a shield button into the admin panel.
-import van from "van";
+import van from "/lib/van.js";
 import { component } from "../../lib/component.js";
 import { Icon } from "../../icons/icons.js";
 import { navigate } from "../../lib/router.js";

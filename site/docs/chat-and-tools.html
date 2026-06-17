@@ -100,7 +100,7 @@
     <strong>202 Accepted</strong>. A background worker runs the tool loop:</p>
     <ul>
       <li>Every event gets a per-conversation monotonic <code>seq</code> and is <strong>persisted before it is published</strong> - the database is the source of truth, transports are just delivery.</li>
-      <li>Clients attach over <strong>WebSocket, SSE, or range polling</strong> and switch freely - the seq watermark makes it gap- and duplicate-free.</li>
+      <li>Clients attach over <strong>SSE or range polling</strong> and switch freely - the seq watermark makes it gap- and duplicate-free.</li>
       <li><strong>Generation survives disconnects</strong>: a reload mid-turn resubscribes from the streaming row's <code>seq</code> and loses nothing.</li>
       <li><code>POST .../cancel</code> stops the in-flight turn server-side; the partial answer persists as <code>cancelled</code>.</li>
     </ul>

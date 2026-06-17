@@ -1,13 +1,16 @@
 using FluentAssertions;
+using Gert.Chat;
 using Gert.Database;
 using Gert.Model;
 using Gert.Model.Chat;
 using Gert.Model.Dtos;
+using Gert.Rag;
 using Gert.Service.Chat;
 using Gert.Service.External;
 using Gert.Service.Tools;
 using Gert.Service.Validation;
 using Gert.Testing.Fakes;
+using Gert.Tools.Builtin;
 using Microsoft.Extensions.Options;
 using NSubstitute;
 using Xunit;
@@ -28,7 +31,7 @@ public sealed class TurnPlannerTests
 
     private readonly IChatRepository _repo = Substitute.For<IChatRepository>();
     private readonly IChatDatabaseProvider _provider = Substitute.For<IChatDatabaseProvider>();
-    private readonly IRagDatabaseProvider _ragProvider = Substitute.For<IRagDatabaseProvider>();
+    private readonly IRagIndexProvider _ragProvider = Substitute.For<IRagIndexProvider>();
     private readonly IValidationProvider _validation = Substitute.For<IValidationProvider>();
     private readonly TurnOptions _options = new();
     private readonly List<Message> _persisted = [];

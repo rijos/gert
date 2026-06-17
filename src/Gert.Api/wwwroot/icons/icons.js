@@ -1,6 +1,6 @@
 // icons/icons.js - named SVG factories (de-dupes the mockup's inline SVGs).
 // Usage: Icon("trash", { size: 14, class: "fi" }). Returns a VanJS <svg> node.
-import van from "van";
+import van from "/lib/van.js";
 
 // van.tags is a Proxy: calling it with a namespace URI yields namespaced tags.
 const { svg, path, circle, rect } = van.tags("http://www.w3.org/2000/svg");

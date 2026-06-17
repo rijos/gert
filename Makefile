@@ -60,14 +60,6 @@ serve-mock: ## Boot python mocks + FakeE2E host + a dev proxy; open the printed 
 	cd $(SMOKE_DIR) && uv sync --group monty
 	PYTHONPATH=. $(SMOKE_DIR)/.venv/bin/python -m tools.smoke.run --proxy --monty-real --role $(or $(ROLE),admin)
 
-.PHONY: serve-mock-vllm
-serve-mock-vllm: ## serve-mock, but chat hits a REAL vLLM at VLLM_URL; optional SEARXNG_URL makes web search real too (e.g. https://searx.zaggy.nl - needs format=json). Auth stays mocked. [VLLM_MODEL=...] [ROLE=admin]
-	@test -n "$(VLLM_URL)" || { echo "usage: make serve-mock-vllm VLLM_URL=http://<host>:8000/v1 [SEARXNG_URL=https://searx.zaggy.nl] [VLLM_MODEL=<id>] [ROLE=admin|user|limited]"; exit 2; }
-	cd $(SMOKE_DIR) && uv sync --group monty
-	PYTHONPATH=. $(SMOKE_DIR)/.venv/bin/python -m tools.smoke.run --proxy --monty-real --role $(or $(ROLE),admin) \
-		--vllm-url $(VLLM_URL) $(if $(VLLM_MODEL),--vllm-model $(VLLM_MODEL)) \
-		$(if $(SEARXNG_URL),--searxng-url $(SEARXNG_URL))
-
 .PHONY: coverage
 coverage: ## Run tests with coverage + generate an HTML report (needs coverlet.collector + reportgenerator tool)
 	rm -rf $(COVERAGE_DIR)

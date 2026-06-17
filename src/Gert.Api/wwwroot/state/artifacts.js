@@ -1,7 +1,7 @@
 // state/artifacts.js - artifacts open in the canvas for the active thread.
 // Keyed list via van-x so a streamed artifact opens a new tab without
 // re-rendering the others. No DOM, no fetch.
-import { reactive } from "van-x";
+import { reactive } from "/lib/van-x.js";
 
 export const artifacts = reactive([]); // [{ id, kind: "md"|"html"|"svg"|"py"|"cs"|"cpp"|"js"|"rs", name, content, problems? }]
 

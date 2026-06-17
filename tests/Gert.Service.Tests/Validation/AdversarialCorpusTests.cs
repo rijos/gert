@@ -43,9 +43,9 @@ public sealed class AdversarialCorpusTests
 
     /// <summary>
     /// Filenames: the upload name is display metadata, not a storage
-    /// path (it is base64'd into <c>documents.filename</c>; the blob lives under a
-    /// server-generated <c>{doc-id}.{ext}</c> key), so the gate is extension allowlist
-    /// + length + non-empty only - it does NOT sanitize the name for traversal/bidi.
+    /// path (it is base64'd into <c>documents.filename</c>; the blob lives under a fully
+    /// server-generated <c>files/{doc-id}</c> key, no extension), so the gate is extension
+    /// allowlist + length + non-empty only - it does NOT sanitize the name for traversal/bidi.
     /// The contract here: validation never crashes, and a name is rejected exactly
     /// when its extension is disallowed, it is empty, or it is overlong. Path-shaped
     /// or bidi-laden names with an allowed extension are preserved.

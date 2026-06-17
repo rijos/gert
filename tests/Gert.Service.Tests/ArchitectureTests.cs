@@ -23,9 +23,16 @@ public class ArchitectureTests
             .NotHaveDependencyOnAny(
                 "Gert.Api",
                 "Gert.Authentication",
-                "Gert.External",
+                // Capability CONTRACTS (Gert.Chat, Gert.Storage, Gert.Database, Gert.Rag) are
+                // inward of the service layer - they hold the ports + the generic, impl-agnostic
+                // catalog/factory; only the per-impl leaf assemblies are forbidden.
+                "Gert.Chat.OpenAI",
+                "Gert.Tools",
+                "Gert.Ingestion",
+                "Gert.Storage.Local",
                 "Gert.Database.Sqlite",
-                "Gert.Database.Postgres")
+                "Gert.Database.Postgres",
+                "Gert.Rag.Sqlite")
             .GetResult();
 
         Assert.True(

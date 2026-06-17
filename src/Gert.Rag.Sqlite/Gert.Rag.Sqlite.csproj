@@ -1,0 +1,43 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- The SQLite RAG-engine IMPL leaf (sqlite-vec + FTS5): SqliteRagIndexProvider /
+       SqliteRagStore over per-project rag.db, with a self-contained connection factory,
+       migration runner, Dapper bootstrap and path resolver so this capability has NO
+       dependency on Gert.Database.Sqlite (the SQL database engine) - the two are
+       independent stores. Implements the Gert.Rag contracts; depends on Gert.Storage for
+       the shared data-root + key policy. Selected by Gert:Rag:Type=Sqlite; the host wires
+       it via AddGertRagSqlite. -->
+
+  <ItemGroup>
+    <ProjectReference Include="..\Gert.Rag\Gert.Rag.csproj" />
+    <ProjectReference Include="..\Gert.Storage\Gert.Storage.csproj" />
+    <ProjectReference Include="..\Gert.Model\Gert.Model.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Versions centralized in the repo-root Directory.Build.props. -->
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="$(MicrosoftDataSqliteVersion)" />
+    <PackageReference Include="Dapper" Version="$(DapperVersion)" />
+    <PackageReference Include="Microsoft.Extensions.Options" Version="$(MicrosoftExtensionsOptionsVersion)" />
+    <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="$(MicrosoftExtensionsOptionsVersion)" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" Version="$(MicrosoftExtensionsConfigVersion)" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="$(MicrosoftExtensionsDIAbstractionsVersion)" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- SQL migrations are embedded resources; SqliteRagMigrationRunner reads them
+         as Gert.Rag.Sqlite.Migrations.{family}.{NNN_name}.sql -->
+    <EmbeddedResource Include="Migrations\**\*.sql" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Vendored native sqlite-vec extension. Copied to the output as vec0.so so
+         every consumer (incl. the test bin, transitively) finds it beside the
+         assembly; the RAG connection factory loads it on each rag.db connection. -->
+    <None Include="native\linux-x64\vec0.so">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>vec0.so</Link>
+    </None>
+  </ItemGroup>
+
+</Project>

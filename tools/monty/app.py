@@ -11,8 +11,8 @@ Run it (no container needed)::
 
     cd tools/monty && uv run python app.py        # listens on 127.0.0.1:8077
 
-Then point Gert at it with ``Gert:Sandbox:Backend=monty`` and
-``Gert:Sandbox:Monty:BaseUrl=http://127.0.0.1:8077`` (both are the defaults).
+Then point Gert at it with ``Gert:Tools:Sandbox:Type=Monty`` and
+``Gert:Tools:Sandbox:Parameters:BaseUrl=http://127.0.0.1:8077`` (both are the defaults).
 
 Lock it down at deploy time the way Gert expects (security F5): run as an unprivileged
 user, with NO mount of the per-user data root and egress off. Monty itself has no

@@ -1,12 +1,14 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <!-- Database-agnostic persistence contracts shared by every database adapter
+  <!-- Database CONTRACTS + generic wiring shared by every database engine
        (Gert.Database.Sqlite today, e.g. Gert.Database.Postgres tomorrow): the
-       repository interfaces (IChatRepository, IRagRepository), the provisioning
-       seam (IDatabaseProvider, IDatabaseHandleReleaser), their row DTOs
-       (ChunkInsert, RetrievedChunk), and the fail-closed provisioning-gate
-       exception. Consumed by Gert.Service (never the reverse); nothing in here
-       may reference a concrete database driver. -->
+       per-database provider ports (IUserDatabaseProvider / IChatDatabaseProvider /
+       IRagDatabaseProvider) and repository interfaces, their row DTOs (ChunkInsert,
+       RetrievedChunk), the fail-closed provisioning-gate exception, and the
+       engine-selection plugin seam (DatabaseOptions + IDatabaseEngineBuilder +
+       DatabaseEngineFactory + the generic AddGertDatabase registrar). Concrete engines
+       live in a per-impl leaf assembly. Consumed by Gert.Service (never the reverse);
+       nothing in here may reference a concrete database driver. -->
 
   <ItemGroup>
     <ProjectReference Include="..\Gert.Model\Gert.Model.csproj" />
@@ -16,6 +18,15 @@
     <!-- Versions centralized in the repo-root Directory.Build.props. -->
     <PackageReference Include="Microsoft.Extensions.Options" Version="$(MicrosoftExtensionsOptionsVersion)" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="$(MicrosoftExtensionsLoggingVersion)" />
+    <!-- The generic AddGertDatabase registrar + the keyed-plugin engine factory: DI
+         abstractions (keyed services + IServiceCollection) and configuration binding only.
+         No concrete driver - that belongs to the engine plugins. -->
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions"
+                      Version="$(MicrosoftExtensionsDIAbstractionsVersion)" />
+    <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions"
+                      Version="$(MicrosoftExtensionsOptionsVersion)" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions"
+                      Version="$(MicrosoftExtensionsConfigVersion)" />
   </ItemGroup>
 
 </Project>

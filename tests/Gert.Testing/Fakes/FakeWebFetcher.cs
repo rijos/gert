@@ -1,3 +1,5 @@
+using Gert.Model;
+using Gert.Model.Tools;
 using Gert.Service.External;
 
 namespace Gert.Testing.Fakes;
@@ -6,7 +8,7 @@ namespace Gert.Testing.Fakes;
 /// Web-fetch double (testing.md section 4.1). Replays the canned outcome for a URL
 /// from <c>fixtures.json</c>'s <c>fetch</c> section: a body, or the
 /// SSRF-blocked refusal (security F5) - needed because the REAL
-/// <see cref="Gert.External"/> fetcher rightly blocks loopback, i.e. it would
+/// <c>Gert.Tools</c> fetcher rightly blocks loopback, i.e. it would
 /// refuse the in-process mock servers themselves. An unknown URL fails like a
 /// dead host so a typo'd fixture shows up as a readable card error, not a hang.
 /// </summary>

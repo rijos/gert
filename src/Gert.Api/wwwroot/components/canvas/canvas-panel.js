@@ -1,7 +1,7 @@
 // components/canvas/canvas-panel.js - right pane container. Holds the tab bar,
 // the artifact stage (one Artifact per tab), and the knowledge view. Drawer
 // behaviour comes from the .app state classes (app-shell.js).
-import van from "van";
+import van from "/lib/van.js";
 import { component } from "../../lib/component.js";
 import { Icon } from "../../icons/icons.js";
 import { CanvasBar } from "./canvas-bar.js";

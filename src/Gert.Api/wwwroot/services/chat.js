@@ -2,9 +2,9 @@
 // conversation's TurnEvent stream, pushing each event onto state/chat.js
 // (+ artifacts). Components bind to the state, so the typewriter, tool cards,
 // citations, and canvas tabs are all just reactive re-renders of incoming
-// events. Delivery rides the best available transport - WS, then the SSE
-// stream endpoint (the dev-proxy-compatible path), then range polling - all
-// sharing one seq cursor, so a fallback resumes without gaps or duplicates.
+// events. Delivery rides the best available transport - the SSE stream endpoint
+// (the dev-proxy-compatible path), then range polling - both sharing one seq
+// cursor, so a fallback resumes without gaps or duplicates.
 import * as http from "./http.js";
 import * as chat from "../state/chat.js";
 import * as artifacts from "../state/artifacts.js";
@@ -241,54 +241,6 @@ const applyTurnEvent = (assistant, cursor, seq, data) => {
   return TERMINAL.has(data.$type);
 };
 
-// WS: subscribe with the cursor; server frames are {kind:"event", seq, event}.
-// Resolves true when the turn finished, false to fall back (e.g. the dev proxy
-// does not speak WS).
-const consumeWs = (pid, cid, cursor, assistant, signal) =>
-  new Promise((resolve) => {
-    if (signal?.aborted) {
-      resolve(true); // stopped before we opened - treat as terminal, no fallback
-      return;
-    }
-    let socket;
-    try {
-      socket = http.ws(`/projects/${pid}/conversations/${cid}/ws`);
-    } catch {
-      resolve(false);
-      return;
-    }
-    let settled = false;
-    const settle = (ok) => {
-      if (settled) return;
-      settled = true;
-      try {
-        socket.close();
-      } catch {
-        /* already closed */
-      }
-      resolve(ok);
-    };
-    // Stop button: abort closes the socket and reports terminal so consume()
-    // doesn't fall through to SSE/poll. (The server turn is detached and keeps
-    // running; this just detaches the client - true cancel awaits the WS
-    // `cancel` message the backend has yet to register.)
-    signal?.addEventListener("abort", () => settle(true), { once: true });
-    socket.onopen = () =>
-      socket.send(JSON.stringify({ type: "subscribe", after: cursor.seq }));
-    socket.onmessage = (e) => {
-      let frame;
-      try {
-        frame = JSON.parse(e.data);
-      } catch {
-        return;
-      }
-      if (frame?.kind !== "event") return;
-      if (applyTurnEvent(assistant, cursor, frame.seq, frame.event)) settle(true);
-    };
-    socket.onerror = () => settle(false);
-    socket.onclose = () => settle(false);
-  });
-
 // SSE: the GET stream endpoint with ?after= (works through the dev proxy).
 const consumeSse = async (pid, cid, cursor, assistant, signal) => {
   try {
@@ -332,8 +284,6 @@ const consumePoll = async (pid, cid, cursor, assistant, signal) => {
 // Drive one turn's events into `assistant` from a cursor until terminal.
 const consume = async (pid, cid, after, assistant, signal) => {
   const cursor = { seq: after };
-  if (signal?.aborted) return;
-  if (await consumeWs(pid, cid, cursor, assistant, signal)) return;
   if (signal?.aborted) return;
   if (await consumeSse(pid, cid, cursor, assistant, signal)) return;
   if (signal?.aborted) return;

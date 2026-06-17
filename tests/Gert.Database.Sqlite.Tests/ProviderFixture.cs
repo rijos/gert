@@ -1,7 +1,9 @@
 using Gert.Database;
 using Gert.Model.Projects;
-using Gert.Service.Storage;
+using Gert.Rag;
+using Gert.Rag.Sqlite;
 using Gert.Storage;
+using Gert.Storage.Local;
 using Gert.Testing;
 using Microsoft.Extensions.Options;
 
@@ -9,9 +11,8 @@ namespace Gert.Database.Sqlite.Tests;
 
 /// <summary>
 /// Shared helpers to spin the split SQLite database providers (user/chat/rag), the
-/// <see cref="LocalObjectStore"/> backend + <see cref="ObjectStoreUserStore"/> blob
-/// layer, and <see cref="SqliteDatabasePaths"/> over a throwaway
-/// <see cref="TempDataRoot"/>. <see cref="ProviderFor"/> returns a small
+/// <see cref="LocalObjectStore"/> backend, and <see cref="SqliteDatabasePaths"/> over a
+/// throwaway <see cref="TempDataRoot"/>. <see cref="ProviderFor"/> returns a small
 /// <see cref="TestDatabases"/> facade that keeps the legible open/ensure surface and
 /// replicates the request-edge provisioner (username + default project).
 /// </summary>
@@ -26,25 +27,31 @@ internal static class ProviderFixture
     };
 
     public static SqliteConnectionFactory FactoryFor(TempDataRoot root) =>
-        new(Options.Create(new SqliteVecOptions()));
+        new();
+
+    public static SqliteRagConnectionFactory RagFactoryFor(TempDataRoot root) =>
+        new(Options.Create(new SqliteRagParameters()));
 
     public static LocalObjectStore ObjectsFor(TempDataRoot root) =>
-        new(Options.Create(OptionsFor(root)), new SqliteHandleReleaser());
-
-    public static ObjectStoreUserStore StoreFor(TempDataRoot root) =>
-        new(ObjectsFor(root));
-
-    public static SqliteDatabasePaths PathsFor(TempDataRoot root) =>
         new(Options.Create(OptionsFor(root)));
 
+    public static LocalDeletionJournal JournalFor(TempDataRoot root) =>
+        new(Options.Create(OptionsFor(root)));
+
+    public static SqliteDatabasePaths PathsFor(TempDataRoot root) =>
+        new(Options.Create(OptionsFor(root)), Options.Create(new SqliteDatabaseParameters()));
+
+    public static SqliteRagPaths RagPathsFor(TempDataRoot root) =>
+        new(Options.Create(OptionsFor(root)), Options.Create(new SqliteRagParameters()));
+
     public static IUserDatabaseProvider UserProviderFor(TempDataRoot root) =>
-        new SqliteUserDatabaseProvider(Options.Create(OptionsFor(root)), FactoryFor(root), TimeProvider.System);
+        new SqliteUserDatabaseProvider(PathsFor(root), FactoryFor(root), TimeProvider.System);
 
     public static IChatDatabaseProvider ChatProviderFor(TempDataRoot root) =>
-        new SqliteChatDatabaseProvider(Options.Create(OptionsFor(root)), FactoryFor(root));
+        new SqliteChatDatabaseProvider(PathsFor(root), FactoryFor(root));
 
-    public static IRagDatabaseProvider RagProviderFor(TempDataRoot root) =>
-        new SqliteRagDatabaseProvider(Options.Create(OptionsFor(root)), FactoryFor(root));
+    public static IRagIndexProvider RagProviderFor(TempDataRoot root) =>
+        new SqliteRagIndexProvider(RagPathsFor(root), RagFactoryFor(root));
 
     public static TestDatabases ProviderFor(TempDataRoot root) => new(OptionsFor(root));
 
@@ -57,21 +64,26 @@ internal static class ProviderFixture
     {
         public IUserDatabaseProvider Users { get; }
         public IChatDatabaseProvider Chat { get; }
-        public IRagDatabaseProvider Rag { get; }
+        public IRagIndexProvider Rag { get; }
 
         public TestDatabases(StorageOptions options)
         {
             var opt = Options.Create(options);
-            var factory = new SqliteConnectionFactory(Options.Create(new SqliteVecOptions()));
-            Users = new SqliteUserDatabaseProvider(opt, factory, TimeProvider.System);
-            Chat = new SqliteChatDatabaseProvider(opt, factory);
-            Rag = new SqliteRagDatabaseProvider(opt, factory);
+            var dbParams = Options.Create(new SqliteDatabaseParameters());
+            var ragParams = Options.Create(new SqliteRagParameters());
+            var paths = new SqliteDatabasePaths(opt, dbParams);
+            var ragPaths = new SqliteRagPaths(opt, ragParams);
+            var factory = new SqliteConnectionFactory();
+            var ragFactory = new SqliteRagConnectionFactory(ragParams);
+            Users = new SqliteUserDatabaseProvider(paths, factory, TimeProvider.System);
+            Chat = new SqliteChatDatabaseProvider(paths, factory);
+            Rag = new SqliteRagIndexProvider(ragPaths, ragFactory);
         }
 
         public Task<IChatRepository> OpenChatAsync(string iss, string sub, string pid, CancellationToken ct = default) =>
             Chat.OpenAsync(iss, sub, pid, ct);
 
-        public Task<IRagRepository> OpenRagAsync(string iss, string sub, string pid, CancellationToken ct = default) =>
+        public Task<IRagStore> OpenRagAsync(string iss, string sub, string pid, CancellationToken ct = default) =>
             Rag.OpenAsync(iss, sub, pid, ct);
 
         public async Task EnsureProvisionedAsync(string iss, string sub, CancellationToken ct = default)
