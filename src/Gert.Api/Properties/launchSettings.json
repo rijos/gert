@@ -34,12 +34,14 @@
         "Gert__Tools__Sandbox__Type": "Monty",
         "Gert__Tools__Sandbox__Parameters__BaseUrl": "http://127.0.0.1:8077",
 
-        "Gert__Models__0__Id": "default",
-        "Gert__Models__0__Name": "Echo Server",
-        "Gert__Models__0__Default": "true",
-        "Gert__Models__0__Endpoint": ":8000",
-        "Gert__Models__0__Capabilities__0": "text only",
-        "Gert__Models__0__Context": "0",
+        "$comment_chat": "The picker's provider catalog: one 'echo' provider named 'Echo Server' pointed at the vLLM mock (:8000), declaring tools+vision so the tool scenarios are offered. Mirrors the zero-config synthesized default with a friendly name.",
+        "Gert__Chat__Providers__echo__Name": "Echo Server",
+        "Gert__Chat__Providers__echo__Type": "openai",
+        "Gert__Chat__Providers__echo__Default": "true",
+        "Gert__Chat__Providers__echo__Capabilities__0": "tools",
+        "Gert__Chat__Providers__echo__Capabilities__1": "vision",
+        "Gert__Chat__Providers__echo__Parameters__BaseUrl": "http://127.0.0.1:8000",
+        "Gert__Chat__Providers__echo__Parameters__Model": "echo",
 
         "Storage__DataRoot": ".dev/e2e-data",
 

@@ -263,15 +263,6 @@ a:hover { color: var(--accent-hover); }
   text-align: center;
 }
 
-.arch-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 2rem;
-  align-items: center;
-}
-@media (max-width: 880px) { .arch-grid { grid-template-columns: 1fr; } }
-.arch-grid pre { margin: 0; }
-
 .landing-footer {
   margin-top: 4.5rem;
   border-top: 1px solid var(--border-subtle);

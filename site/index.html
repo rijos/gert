@@ -48,39 +48,6 @@
 
 <main>
   <section class="section">
-    <h2>The architecture is the privacy model</h2>
-    <p class="lead">
-      The IdP owns identity, the filesystem owns data, and the API owns nothing
-      persistent of its own. There is no <code>users</code> table - and no
-      <code>WHERE user_id = ?</code> you can forget to apply.
-    </p>
-    <div class="arch-grid">
-      <pre><code>/data/users/{sha256(iss + sub)}/
-├── meta.json        <span class="c"># who this folder belongs to</span>
-├── settings.json    <span class="c"># theme, language, defaults</span>
-└── projects/
-    └── default/
-        ├── chat.db  <span class="c"># conversations &amp; artifacts</span>
-        ├── rag.db   <span class="c"># sqlite-vec + FTS5 index</span>
-        ├── files/   <span class="c"># original uploads</span>
-        └── memory/  <span class="c"># project memory notes</span></code></pre>
-      <div>
-        <p>
-          The folder key is derived <strong>only from the validated JWT</strong> -
-          never from a route, query string, or body. A connection physically cannot
-          open another user's files, so cross-user data access (IDOR) is
-          structurally impossible, not policy-enforced.
-        </p>
-        <p>
-          A valid token is sufficient to exist: folders are provisioned lazily on
-          first request. Deleting a user is <code>rm -rf</code>. Backing up Gert is
-          backing up one directory.
-        </p>
-      </div>
-    </div>
-  </section>
-
-  <section class="section">
     <h2>Everything you expect from modern AI chat</h2>
     <p class="lead">Streaming chat with a full tool loop - against any OpenAI-compatible model server you run yourself, like vLLM.</p>
     <div class="features">
@@ -140,15 +107,27 @@
   <section class="section">
     <h2>Up and running in minutes</h2>
     <p class="lead">Point Gert at your vLLM box and your OIDC issuer. That's the whole config.</p>
-    <pre><code><span class="c">// appsettings.json</span>
+    <pre><code><span class="c">// appsettings.json - point Gert at your model server and OIDC issuer</span>
 {
   <span class="k">"Gert"</span>: {
-    <span class="k">"OpenAI"</span>: {
-      <span class="k">"BaseUrl"</span>: <span class="s">"http://192.168.1.50:8000"</span>,
-      <span class="k">"ChatModelId"</span>: <span class="s">"qwen36"</span>,
-      <span class="k">"EmbeddingModelId"</span>: <span class="s">"bge-m3"</span>
+    <span class="k">"Chat"</span>: {
+      <span class="k">"Providers"</span>: {
+        <span class="k">"qwen36"</span>: {
+          <span class="k">"Name"</span>: <span class="s">"Qwen 3.6"</span>,
+          <span class="k">"Type"</span>: <span class="s">"openai"</span>,
+          <span class="k">"Default"</span>: true,
+          <span class="k">"Capabilities"</span>: [ <span class="s">"tools"</span>, <span class="s">"vision"</span> ],
+          <span class="k">"Parameters"</span>: { <span class="k">"BaseUrl"</span>: <span class="s">"http://192.168.1.50:8000"</span>, <span class="k">"Model"</span>: <span class="s">"qwen36"</span> }
+        }
+      }
     },
-    <span class="k">"Search"</span>: { <span class="k">"BaseUrl"</span>: <span class="s">"http://localhost:8080"</span> }
+    <span class="k">"Embeddings"</span>: {
+      <span class="k">"Type"</span>: <span class="s">"OpenAI"</span>,
+      <span class="k">"Parameters"</span>: { <span class="k">"BaseUrl"</span>: <span class="s">"http://192.168.1.50:8000"</span>, <span class="k">"Model"</span>: <span class="s">"bge-m3"</span> }
+    },
+    <span class="k">"Tools"</span>: {
+      <span class="k">"Search"</span>: { <span class="k">"Parameters"</span>: { <span class="k">"BaseUrl"</span>: <span class="s">"http://localhost:8080"</span> } }
+    }
   },
   <span class="k">"Auth"</span>: { <span class="k">"Authority"</span>: <span class="s">"https://id.example.com"</span>, <span class="k">"Audience"</span>: <span class="s">"gert-api"</span> },
   <span class="k">"Storage"</span>: { <span class="k">"DataRoot"</span>: <span class="s">"/data"</span>, <span class="k">"ExpectedIssuer"</span>: <span class="s">"https://id.example.com"</span> }
