@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """check_links.py - CI gate: relative links in tracked markdown resolve.
 
-Checks, across all git-tracked *.md files:
+Checks, across all git-tracked *.md files (adversarial fuzzer corpora
+excluded - see EXCLUDE_PREFIXES):
   * markdown inline links  [text](target)  and HTML  href= / src= /
     srcset= attributes
   * the target file/directory exists (resolved relative to the source
@@ -31,6 +32,12 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 
+# Adversarial markdown fixtures for the renderer fuzzer / differential
+# tester: they intentionally carry javascript:/vbscript:/dangling
+# relative link targets to exercise the renderer's sanitization (F4), so
+# they are not part of the docs' navigable cross-link graph.
+EXCLUDE_PREFIXES = ("tools/markdown/corpus/",)
+
 MD_LINK = re.compile(
     r"\[(?:[^\]\[]|\[[^\]]*\])*\]"  # [text], one nesting level deep
     r"\(([^)\s]+)(?:\s+\"[^\"]*\")?\)"  # (target "optional title")
@@ -48,7 +55,10 @@ def tracked_markdown() -> list[Path]:
         capture_output=True,
         check=True,
     ).stdout
-    return [ROOT / p.decode() for p in out.split(b"\0") if p]
+    rels = [p.decode() for p in out.split(b"\0") if p]
+    return [
+        ROOT / rel for rel in rels if not rel.startswith(EXCLUDE_PREFIXES)
+    ]
 
 
 def mask_fences(text: str) -> list[str]:
