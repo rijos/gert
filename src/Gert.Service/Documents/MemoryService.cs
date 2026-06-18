@@ -31,7 +31,6 @@ public sealed class MemoryService : IMemoryService
     private readonly IRagIndexProvider _databases;
     private readonly IObjectStore _objects;
     private readonly IEmbeddingClient _embeddings;
-    private readonly IValidationProvider _validation;
     private readonly IUserContext _user;
     private readonly TimeProvider _time;
     private readonly ChunkingOptions _chunking;
@@ -42,14 +41,12 @@ public sealed class MemoryService : IMemoryService
         IRagIndexProvider databases,
         IObjectStore objects,
         IEmbeddingClient embeddings,
-        IValidationProvider validation,
         IUserContext user,
         TimeProvider time)
     {
         _databases = databases ?? throw new ArgumentNullException(nameof(databases));
         _objects = objects ?? throw new ArgumentNullException(nameof(objects));
         _embeddings = embeddings ?? throw new ArgumentNullException(nameof(embeddings));
-        _validation = validation ?? throw new ArgumentNullException(nameof(validation));
         _user = user ?? throw new ArgumentNullException(nameof(user));
         _time = time ?? throw new ArgumentNullException(nameof(time));
         _chunking = ChunkingOptions.Default;
@@ -83,18 +80,14 @@ public sealed class MemoryService : IMemoryService
     /// <inheritdoc />
     public async Task<MemoryEntry> UpsertAsync(
         string pid,
-        CreateMemoryRequest request,
+        Validated<CreateMemoryRequest> request,
         CancellationToken cancellationToken = default)
     {
-        // Validate at the boundary (fail-closed) before any disk touch.
-        var validation = _validation.Validate(request);
-        if (!validation.IsValid)
-        {
-            throw new ValidationException(validation);
-        }
+        ArgumentNullException.ThrowIfNull(request);
+        var dto = request.Value;
 
         var id = Guid.NewGuid().ToString("D");
-        var pinned = request.Pinned ?? false;
+        var pinned = dto.Pinned ?? false;
         // Injected clock (dotnet-style-guide.md section 5) so tests can pin the timestamp.
         var now = _time.GetUtcNow();
         var scope = ScopeFor(pid);
@@ -105,7 +98,7 @@ public sealed class MemoryService : IMemoryService
         // embedding failure aborts before anything is persisted (no Ready-but-
         // unsearchable row, no orphan blob). Only then blob, then rows.
         var chunks = TextChunker.Chunk(
-            [new ExtractedPage { Text = request.Content }],
+            [new ExtractedPage { Text = dto.Content }],
             _chunking);
 
         IReadOnlyList<float[]> vectors = [];
@@ -117,7 +110,7 @@ public sealed class MemoryService : IMemoryService
         }
 
         // 1. Store the markdown body via the object store (decision: files via IObjectStore).
-        var bodyBytes = Encoding.UTF8.GetBytes(request.Content);
+        var bodyBytes = Encoding.UTF8.GetBytes(dto.Content);
         await using (var body = new MemoryStream(bodyBytes, writable: false))
         {
             await _objects.PutAsync(scope, key, body, cancellationToken).ConfigureAwait(false);
@@ -129,7 +122,7 @@ public sealed class MemoryService : IMemoryService
         var document = new Document
         {
             Id = id,
-            Filename = EncodeTitle(request.Title),
+            Filename = EncodeTitle(dto.Title),
             Mime = MemoryMime,
             SizeBytes = bodyBytes.LongLength,
             Status = DocumentStatus.Ready,
@@ -173,8 +166,8 @@ public sealed class MemoryService : IMemoryService
         return new MemoryEntry
         {
             Id = id,
-            Title = request.Title,
-            Content = request.Content,
+            Title = dto.Title,
+            Content = dto.Content,
             Pinned = pinned,
             UpdatedAt = now,
         };

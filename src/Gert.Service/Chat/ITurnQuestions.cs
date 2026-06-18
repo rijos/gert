@@ -1,4 +1,5 @@
 using Gert.Model.Dtos;
+using Gert.Service.Validation;
 
 namespace Gert.Service.Chat;
 
@@ -35,7 +36,7 @@ public interface ITurnQuestions
     /// is closed (<c>allow_free_text=false</c>) and the answer is not one of
     /// its options.
     /// </summary>
-    AnswerOutcome Answer(TurnKey key, AnswerRequest request);
+    AnswerOutcome Answer(TurnKey key, Validated<AnswerRequest> request);
 }
 
 /// <summary>One open question - disposed by the asking tool when its wait ends.</summary>

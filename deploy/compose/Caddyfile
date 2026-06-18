@@ -1,0 +1,29 @@
+# Caddy edge: automatic HTTPS (Let's Encrypt) for the three Gert hostnames.
+# Requires public DNS A/AAAA records for all three pointing at this host, and
+# ports 80/443 reachable for the ACME challenge.
+
+{
+	email {$ACME_EMAIL}
+	# Uncomment for issuance testing without hitting rate limits:
+	# acme_ca https://acme-staging-v02.api.letsencrypt.org/directory
+}
+
+# The app + SPA.
+{$GERT_DOMAIN} {
+	encode zstd gzip
+	reverse_proxy gert:8080
+}
+
+# F3: rendered HTML artifacts on a SEPARATE origin (distinct hostname = real
+# cross-origin isolation in the browser). Same backend - Gert serves the artifact
+# ticket route and distinguishes the origin by hostname.
+{$ARTIFACTS_DOMAIN} {
+	encode zstd gzip
+	reverse_proxy gert:8080
+}
+
+# Pocket ID: OIDC issuer, login UI, JWKS, discovery.
+{$ID_DOMAIN} {
+	encode zstd gzip
+	reverse_proxy pocket-id:1411
+}

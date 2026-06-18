@@ -1,0 +1,23 @@
+# Monty sandbox sidecar (run_python backend). Build context = tools/monty.
+# Monty itself has no syscalls; the compose service adds the OS sandbox around it
+# (unprivileged, read-only rootfs, internal-only network). See tools/monty/README.md.
+FROM python:3.12-slim
+
+WORKDIR /app
+COPY pyproject.toml app.py ./
+
+# Pin pydantic-monty - it's experimental (0.0.x). Matches tools/monty/pyproject.toml.
+RUN pip install --no-cache-dir \
+      "pydantic-monty>=0.0.18" \
+      "starlette>=0.37" \
+      "uvicorn>=0.30"
+
+ENV GERT_MONTY_HOST=0.0.0.0 \
+    GERT_MONTY_PORT=8077 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+
+USER nobody
+EXPOSE 8077
+CMD ["python", "app.py"]

@@ -1,0 +1,13 @@
+---
+# Provision a fresh Debian/Ubuntu host and deploy the Gert Docker Compose stack.
+#
+#   ansible-playbook -i inventory.ini site.yml
+#
+# Copy inventory.example.ini -> inventory.ini and group_vars/all.example.yml ->
+# group_vars/all.yml (encrypt the secrets with `ansible-vault encrypt`).
+- name: Deploy Gert (Docker Compose + Caddy + Pocket ID)
+  hosts: gert
+  become: true
+  roles:
+    - role: docker      # install Docker Engine + compose plugin
+    - role: gert_stack  # clone repo, template .env, run via systemd

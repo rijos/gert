@@ -25,7 +25,6 @@ public sealed class TurnPlanner : ITurnPlanner
 {
     private readonly IChatDatabaseProvider _databases;
     private readonly IUserContext _user;
-    private readonly IValidationProvider _validation;
     private readonly IReadOnlyList<ITool> _tools;
     private readonly IProjectInstructionsReader? _instructions;
     private readonly IChatProviderCatalog _catalog;
@@ -36,7 +35,6 @@ public sealed class TurnPlanner : ITurnPlanner
     public TurnPlanner(
         IChatDatabaseProvider databases,
         IUserContext user,
-        IValidationProvider validation,
         IEnumerable<ITool> tools,
         IOptions<TurnOptions> options,
         TimeProvider time,
@@ -46,7 +44,6 @@ public sealed class TurnPlanner : ITurnPlanner
     {
         _databases = databases ?? throw new ArgumentNullException(nameof(databases));
         _user = user ?? throw new ArgumentNullException(nameof(user));
-        _validation = validation ?? throw new ArgumentNullException(nameof(validation));
         ArgumentNullException.ThrowIfNull(tools);
         _tools = tools.ToList();
         _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
@@ -60,17 +57,11 @@ public sealed class TurnPlanner : ITurnPlanner
     public async Task<TurnJob> PlanAsync(
         string pid,
         string conversationId,
-        SendMessageRequest request,
+        Validated<SendMessageRequest> request,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
-
-        // 1. Validate (fail-closed at the service boundary, before any disk touch).
-        var validation = _validation.Validate(request);
-        if (!validation.IsValid)
-        {
-            throw new ValidationException(validation);
-        }
+        var dto = request.Value;
 
         await using var repo = await _databases
             .OpenAsync(_user.Iss, _user.Sub, pid, cancellationToken)
@@ -121,15 +112,15 @@ public sealed class TurnPlanner : ITurnPlanner
             conversation = new Conversation
             {
                 Id = conversationId,
-                Title = DeriveTitle(request.Content),
-                ModelId = request.ModelId ?? ChatProviderInfo.DefaultId,
-                Tools = request.Tools ?? new ToolToggles(),
+                Title = DeriveTitle(dto.Content),
+                ModelId = dto.ModelId ?? ChatProviderInfo.DefaultId,
+                Tools = dto.Tools ?? new ToolToggles(),
                 CreatedAt = now,
                 UpdatedAt = now,
             };
             await repo.InsertConversationAsync(conversation, cancellationToken).ConfigureAwait(false);
         }
-        else if (request.Tools is not null && !request.Tools.Equals(conversation.Tools))
+        else if (dto.Tools is not null && !dto.Tools.Equals(conversation.Tools))
         {
             // Tool toggles ride each send; a changed set persists onto the
             // conversation: ResolveOfferedTools intersects with the conversation
@@ -138,7 +129,7 @@ public sealed class TurnPlanner : ITurnPlanner
             // (off->on was impossible).
             conversation = conversation with
             {
-                Tools = request.Tools,
+                Tools = dto.Tools,
                 UpdatedAt = now,
             };
             await repo.UpdateConversationAsync(conversation, cancellationToken).ConfigureAwait(false);
@@ -159,8 +150,8 @@ public sealed class TurnPlanner : ITurnPlanner
             Id = Guid.NewGuid().ToString("D"),
             ConversationId = conversationId,
             Role = MessageRole.User,
-            Content = request.Content,
-            Attachments = request.Attachments is { Count: > 0 } ? request.Attachments : null,
+            Content = dto.Content,
+            Attachments = dto.Attachments is { Count: > 0 } ? dto.Attachments : null,
             ModelId = null,
             TokenCount = null,
             Seq = await repo.AllocateSeqAsync(conversationId, cancellationToken).ConfigureAwait(false),
@@ -175,7 +166,7 @@ public sealed class TurnPlanner : ITurnPlanner
             ConversationId = conversationId,
             Role = MessageRole.Assistant,
             Content = string.Empty,
-            ModelId = request.ModelId ?? conversation.ModelId ?? ChatProviderInfo.DefaultId,
+            ModelId = dto.ModelId ?? conversation.ModelId ?? ChatProviderInfo.DefaultId,
             TokenCount = null,
             Seq = assistantSeq,
             Status = MessageStatus.Streaming,
@@ -213,7 +204,7 @@ public sealed class TurnPlanner : ITurnPlanner
         // tools, whatever the toggles say. Plus the entitlement SNAPSHOT for
         // the off-thread execution-time re-check.
         var offered = _catalog.SupportsTools(assistantMessage.ModelId!)
-            ? ResolveOfferedTools(request, conversation)
+            ? ResolveOfferedTools(dto, conversation)
             : Array.Empty<ITool>();
 
         // 6.5 Cross-turn state revival: the history above is role+content only, so
@@ -266,7 +257,7 @@ public sealed class TurnPlanner : ITurnPlanner
             ToolIds = offered.Select(t => t.Id).ToList(),
             Tools = offered.Select(ToSpec).ToList(),
             SystemPrompt = systemPrompt,
-            ClientTimezone = request.Timezone,
+            ClientTimezone = dto.Timezone,
         };
     }
 

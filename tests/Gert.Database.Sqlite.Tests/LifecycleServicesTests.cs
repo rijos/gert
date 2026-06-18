@@ -51,15 +51,14 @@ public class LifecycleServicesTests
         var objects = ProviderFixture.ObjectsFor(root);
         var journal = ProviderFixture.JournalFor(root);
         var eraser = new UserDataEraser(dbs.Users, dbs.Rag, objects, journal);
-        var validation = new PassThroughValidationProvider();
         IUserContext user = new FixedUserContext { Sub = sub };
 
         // Mirror the request-edge provisioner: seed username + default project.
         await dbs.EnsureProvisionedAsync(Iss, sub);
 
         return new Harness(
-            new ProjectService(dbs.Users, dbs.Chat, dbs.Rag, objects, validation, user, TimeProvider.System),
-            new SettingsService(dbs.Users, validation, user),
+            new ProjectService(dbs.Users, dbs.Chat, dbs.Rag, objects, user, TimeProvider.System),
+            new SettingsService(dbs.Users, user),
             new AccountService(dbs.Users, dbs.Chat, objects, user, eraser),
             new AdminService(objects, dbs.Users, eraser),
             dbs,
@@ -79,7 +78,7 @@ public class LifecycleServicesTests
         var defaults = await h.Settings.GetAsync();
         defaults.ReplyLanguage.Should().BeNull();
 
-        var updated = await h.Settings.UpdateAsync(new UpdateSettingsRequest { ReplyLanguage = "nl" });
+        var updated = await h.Settings.UpdateAsync(Proof.Of(new UpdateSettingsRequest { ReplyLanguage = "nl" }));
         updated.ReplyLanguage.Should().Be("nl");
 
         // Persisted across reads.
@@ -92,7 +91,7 @@ public class LifecycleServicesTests
         await using var root = new TempDataRoot();
         var h = await BuildAsync(root);
 
-        var created = await h.Projects.CreateAsync(new CreateProjectRequest { Name = "Research" });
+        var created = await h.Projects.CreateAsync(Proof.Of(new CreateProjectRequest { Name = "Research" }));
         created.Name.Should().Be("Research");
         Guid.TryParseExact(created.Id, "D", out _).Should().BeTrue();
 
@@ -112,9 +111,9 @@ public class LifecycleServicesTests
         await using var root = new TempDataRoot();
         var h = await BuildAsync(root);
 
-        var created = await h.Projects.CreateAsync(new CreateProjectRequest { Name = "Old", Description = "keep" });
+        var created = await h.Projects.CreateAsync(Proof.Of(new CreateProjectRequest { Name = "Old", Description = "keep" }));
 
-        var updated = await h.Projects.UpdateAsync(created.Id, new UpdateProjectRequest { Name = "New" });
+        var updated = await h.Projects.UpdateAsync(created.Id, Proof.Of(new UpdateProjectRequest { Name = "New" }));
         updated!.Name.Should().Be("New");
         updated.Description.Should().Be("keep", "an omitted field is left unchanged");
     }
@@ -125,7 +124,7 @@ public class LifecycleServicesTests
         await using var root = new TempDataRoot();
         var h = await BuildAsync(root);
 
-        var created = await h.Projects.CreateAsync(new CreateProjectRequest { Name = "Temp" });
+        var created = await h.Projects.CreateAsync(Proof.Of(new CreateProjectRequest { Name = "Temp" }));
         // Materialise the project's databases so there is a directory to remove.
         await h.Provider.EnsureProjectAsync(Iss, Sub, created.Id);
         Directory.Exists(h.Paths.ProjectRoot(Iss, Sub, created.Id)).Should().BeTrue();
@@ -191,7 +190,7 @@ public class LifecycleServicesTests
         await using var root = new TempDataRoot();
         var h = await BuildAsync(root);
 
-        await h.Projects.CreateAsync(new CreateProjectRequest { Name = "Extra" });
+        await h.Projects.CreateAsync(Proof.Of(new CreateProjectRequest { Name = "Extra" }));
 
         var archive = await h.Account.ExportAsync();
         await using var stream = await archive.OpenReadAsync(default);

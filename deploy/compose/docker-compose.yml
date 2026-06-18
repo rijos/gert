@@ -1,0 +1,152 @@
+# Gert - Docker Compose deployment (one of the options under deploy/).
+#
+# Edge:      Caddy (automatic HTTPS via Let's Encrypt) terminates TLS for three
+#            hostnames and reverse-proxies them to the right backend:
+#              {GERT_DOMAIN}       -> gert        (the app + SPA)
+#              {ARTIFACTS_DOMAIN}  -> gert        (F3: rendered HTML artifacts; a
+#                                                  SEPARATE origin, same backend -
+#                                                  Gert distinguishes by hostname)
+#              {ID_DOMAIN}         -> pocket-id   (the OIDC issuer + login UI)
+# IdP:       Pocket ID (passkey-only OIDC). The SPA is a public PKCE client; the
+#            API validates the JWT against Pocket ID's JWKS (Auth:Authority).
+# Upstreams: chat + embeddings are EXTERNAL (point GERT_CHAT_*/GERT_EMBED_* at your
+#            OpenAI-compatible endpoints). SearXNG (web_search) and the Monty
+#            sandbox (run_python) run in-stack.
+#
+# Copy .env.example -> .env, set the values, then:  docker compose up -d --build
+# First-time IdP setup (create the OIDC client, groups, gert_tools claim) is a
+# manual step in the Pocket ID admin UI - see deploy/README.md.
+
+name: gert
+
+services:
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp" # HTTP/3
+    environment:
+      GERT_DOMAIN: ${GERT_DOMAIN:?set in .env}
+      ARTIFACTS_DOMAIN: ${ARTIFACTS_DOMAIN:?set in .env}
+      ID_DOMAIN: ${ID_DOMAIN:?set in .env}
+      ACME_EMAIL: ${ACME_EMAIL:?set in .env}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data     # ACME certs/keys - back this up to avoid re-issuance limits
+      - caddy-config:/config
+    depends_on:
+      - gert
+      - pocket-id
+    networks: [edge]
+
+  gert:
+    build:
+      context: ../..                       # repo root - publish needs the whole solution
+      dockerfile: deploy/compose/Dockerfile.gert
+    restart: unless-stopped
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_URLS: http://+:8080
+      # Honour Caddy's X-Forwarded-Proto/-For so the app knows it's on HTTPS
+      # (secure context for passkeys, HSTS, correct absolute URLs) - operations.md.
+      ASPNETCORE_FORWARDEDHEADERS_ENABLED: "true"
+
+      # --- Identity (Pocket ID) ---
+      Auth__Authority: https://${ID_DOMAIN}        # OIDC issuer; API fetches JWKS here (RS256)
+      Auth__Audience: ${GERT_OIDC_CLIENT_ID:-gert} # expected aud == the OIDC client id
+      Storage__ExpectedIssuer: https://${ID_DOMAIN} # fail-closed iss assertion before any folder (F12)
+
+      # --- SPA OIDC config (injected into index.html by the entrypoint) ---
+      GERT_AUTH_AUTHORITY: https://${ID_DOMAIN}
+      GERT_AUTH_CLIENT_ID: ${GERT_OIDC_CLIENT_ID:-gert}
+
+      # --- Storage (per-user SQLite + object store live here; back it up) ---
+      Storage__DataRoot: /data
+
+      # --- Artifacts: separate origin (F3) + ticket signing secret (F8, >=32 bytes) ---
+      Artifacts__Origin: https://${ARTIFACTS_DOMAIN}
+      Artifacts__Secret: ${ARTIFACTS_SECRET:?set in .env - openssl rand -base64 32}
+
+      # --- Chat provider catalog (EXTERNAL, OpenAI-compatible) ---
+      Gert__Chat__Providers__default__Name: ${GERT_CHAT_NAME:-Default}
+      Gert__Chat__Providers__default__Type: openai
+      Gert__Chat__Providers__default__Default: "true"
+      Gert__Chat__Providers__default__Capabilities__0: tools
+      Gert__Chat__Providers__default__Capabilities__1: vision
+      Gert__Chat__Providers__default__Parameters__BaseUrl: ${GERT_CHAT_BASEURL:?set in .env}
+      Gert__Chat__Providers__default__Parameters__Model: ${GERT_CHAT_MODEL:?set in .env}
+      Gert__Chat__Providers__default__Parameters__ApiKey: ${GERT_CHAT_APIKEY:-}
+
+      # --- Embeddings (EXTERNAL, OpenAI-compatible /v1/embeddings) ---
+      Gert__Embeddings__Type: OpenAI
+      Gert__Embeddings__Parameters__BaseUrl: ${GERT_EMBED_BASEURL:?set in .env}
+      Gert__Embeddings__Parameters__Model: ${GERT_EMBED_MODEL:-bge-m3}
+      Gert__Embeddings__Parameters__Dimensions: ${GERT_EMBED_DIMENSIONS:-1024}
+      Gert__Embeddings__Parameters__ApiKey: ${GERT_EMBED_APIKEY:-}
+
+      # --- Tools: web search (SearXNG) + sandbox (Monty), in-stack ---
+      Gert__Tools__Search__Type: SearXNG
+      Gert__Tools__Search__Parameters__BaseUrl: http://searxng:8080
+      Gert__Tools__Sandbox__Type: Monty
+      Gert__Tools__Sandbox__Parameters__BaseUrl: http://monty:8077
+    volumes:
+      - gert-data:/data
+    depends_on:
+      - pocket-id
+      - searxng
+      - monty
+    networks: [edge, sandboxnet] # sandboxnet to reach monty; edge for caddy + outbound
+
+  pocket-id:
+    # Passkey-only OIDC IdP. PIN a digest in production.
+    # NOTE: env var names / data dir / port can change between major versions -
+    # verify against the pinned tag's release notes (see deploy/README.md).
+    image: ghcr.io/pocket-id/pocket-id:v1
+    restart: unless-stopped
+    environment:
+      APP_URL: https://${ID_DOMAIN}
+      TRUST_PROXY: "true"
+    volumes:
+      - pocket-id-data:/app/data
+    networks: [edge]
+
+  searxng:
+    image: searxng/searxng:latest
+    restart: unless-stopped
+    environment:
+      SEARXNG_BASE_URL: http://searxng:8080/
+      SEARXNG_SECRET: ${SEARXNG_SECRET:?set in .env - openssl rand -hex 32}
+    volumes:
+      - ./searxng:/etc/searxng:ro # ships settings.yml enabling the JSON API Gert calls
+    networks: [edge] # needs egress to reach search engines
+
+  monty:
+    # run_python sandbox sidecar. Monty has no syscalls; this wraps it in an OS
+    # sandbox too (security F5): unprivileged, read-only rootfs, no data mount, and
+    # on an INTERNAL network (no egress).
+    build:
+      context: ../../tools/monty
+      dockerfile: ../../deploy/compose/Dockerfile.monty
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp
+    networks: [sandboxnet] # internal-only -> no outbound network from sandboxed code
+
+networks:
+  edge:
+    driver: bridge
+  sandboxnet:
+    driver: bridge
+    internal: true # no route to the outside world - keeps run_python egress-off
+
+volumes:
+  gert-data:       # per-user SQLite (chat.db/rag.db) + object store - THE backup target
+  pocket-id-data:  # users, passkeys, OIDC clients - also back up
+  caddy-data:      # ACME certificates
+  caddy-config:

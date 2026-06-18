@@ -1,6 +1,8 @@
 using FluentAssertions;
 using Gert.Model.Dtos;
 using Gert.Service.Chat;
+using Gert.Service.Validation;
+using Gert.Testing;
 using Xunit;
 
 namespace Gert.Service.Tests;
@@ -24,8 +26,8 @@ public sealed class TurnQuestionsTests
 
     private readonly TurnQuestions _registry = new();
 
-    private static AnswerRequest Reply(string questionId, string answer) =>
-        new() { QuestionId = questionId, Answer = answer };
+    private static Validated<AnswerRequest> Reply(string questionId, string answer) =>
+        Proof.Of(new AnswerRequest { QuestionId = questionId, Answer = answer });
 
     [Fact]
     public async Task An_answer_completes_the_wait_with_its_text()

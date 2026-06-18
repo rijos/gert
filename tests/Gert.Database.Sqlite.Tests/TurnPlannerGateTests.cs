@@ -25,7 +25,6 @@ public class TurnPlannerGateTests
     private TurnPlanner PlannerFor(TempDataRoot root, TurnOptions options) => new(
         ProviderFixture.ChatProviderFor(root),
         _user,
-        new PassThroughValidationProvider(),
         tools: [],
         Options.Create(options),
         TimeProvider.System,
@@ -60,7 +59,7 @@ public class TurnPlannerGateTests
             try
             {
                 return await PlannerFor(root, options)
-                    .PlanAsync(Pid, conversationId, new SendMessageRequest { Content = "go" });
+                    .PlanAsync(Pid, conversationId, Proof.Of(new SendMessageRequest { Content = "go" }));
             }
             catch (TurnInProgressException)
             {
@@ -139,7 +138,7 @@ public class TurnPlannerGateTests
         }
 
         var job = await PlannerFor(root, options)
-            .PlanAsync(Pid, conversationId, new SendMessageRequest { Content = "retry" });
+            .PlanAsync(Pid, conversationId, Proof.Of(new SendMessageRequest { Content = "retry" }));
 
         job.AssistantMessageId.Should().NotBeNullOrEmpty();
 

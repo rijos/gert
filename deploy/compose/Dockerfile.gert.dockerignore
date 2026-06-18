@@ -1,0 +1,17 @@
+# Build context = repo root. Keep src/, tools/, *.sln, Directory.Build.*; drop the
+# rest so the context stays small and stale build output never leaks into the image.
+.git
+.github
+**/bin
+**/obj
+**/.vs
+**/.idea
+.dev
+**/.venv
+**/node_modules
+site
+docs
+tests
+*.user
+# NOTE: deploy/ is intentionally NOT ignored - the runtime stage copies
+# deploy/compose/entrypoint-gert.sh from the build context.

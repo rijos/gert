@@ -1,5 +1,6 @@
 using Gert.Model.Dtos;
 using Gert.Model.Rag;
+using Gert.Service.Validation;
 
 namespace Gert.Service.Documents;
 
@@ -18,7 +19,7 @@ public interface IMemoryService
     /// <summary>Add or edit an entry; it is (re)embedded for retrieval.</summary>
     Task<MemoryEntry> UpsertAsync(
         string pid,
-        CreateMemoryRequest request,
+        Validated<CreateMemoryRequest> request,
         CancellationToken cancellationToken = default);
 
     /// <summary>Remove an entry and its chunks.</summary>

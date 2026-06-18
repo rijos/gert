@@ -1,41 +1,64 @@
-using System.Reflection;
 using FluentAssertions;
 using FluentValidation;
 using Gert.Service;
+using Gert.Service.Validation;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
 namespace Gert.Service.Tests.Validation;
 
 /// <summary>
-/// The keystone (testing.md section 5 #3; principle #6 in executable form): a
-/// reflection test asserting <b>every request DTO a service method accepts has a
-/// registered <c>IValidator&lt;T&gt;</c></b>. If a new DTO ships without a
-/// validator, this goes RED - validation can never be silently forgotten.
+/// The keystone (testing.md section 5 #3; principle #6 in executable form). Since the
+/// move to proof types, the contract is enforced two ways the older
+/// "is a validator registered?" check could not:
+/// <list type="number">
+///   <item><b>No service method accepts a raw request DTO.</b> Every request DTO a
+///   host hands a service crosses the boundary as <see cref="Validated{T}"/>, never the
+///   bare POCO - so validation cannot be silently forgotten in a method body, because
+///   the method cannot be <i>written</i> to take an unvalidated value.</item>
+///   <item><b>Every wrapped DTO still has a registered validator.</b> A
+///   <c>Validated&lt;T&gt;</c> whose <c>T</c> has no <c>IValidator&lt;T&gt;</c> would
+///   throw at proof construction - fail-closed - so the registration check rides along
+///   on the unwrapped inner type.</item>
+/// </list>
 ///
-/// <para><b>Discovery strategy.</b> The single, authoritative list of "the
-/// services a host calls" is the <see cref="IGertServices"/> hub. We walk its
-/// property types (the granular service interfaces), then every method parameter
-/// of those interfaces, and keep the parameters that are <i>request DTOs</i>: a
-/// class/record (not an interface, primitive, string, enum, CancellationToken, or
-/// a streaming/event type) declared in the Gert.Model or Gert.Service assemblies.
-/// That set is exactly the inputs that cross the validation boundary
-/// (SendMessageRequest, the Create/Update requests, CreateMemoryRequest,
-/// DocumentUpload, ...). Route-param strings (<c>pid</c>, admin <c>{key}</c>) are
-/// not DTOs and are covered by <see cref="RouteParamValidationTests"/>.</para>
+/// <para><b>Discovery strategy.</b> The single, authoritative list of "the services a
+/// host calls" is the <see cref="IGertServices"/> hub. We walk its property types (the
+/// granular service interfaces) plus the two detached chat boundaries
+/// (<see cref="Gert.Service.Chat.ITurnPlanner"/>, <see cref="Gert.Service.Chat.ITurnQuestions"/>),
+/// then every method parameter. Route-param strings (<c>pid</c>, admin <c>{key}</c>)
+/// are not DTOs and are covered by <see cref="RouteParamValidationTests"/>.</para>
 /// </summary>
 public sealed class FailClosedMetaTest
 {
     [Fact]
-    public void Every_request_dto_a_service_accepts_has_a_registered_validator()
+    public void No_service_method_accepts_a_raw_request_dto()
+    {
+        // The structural invariant: a request DTO must arrive as Validated<T>. Any
+        // bare DTO parameter means a service that validates (or forgets to) inside its
+        // own body - the exact pattern proof types replace.
+        var raw = ServiceParameterTypes()
+            .Where(IsRequestDto)
+            .Select(t => t.FullName ?? t.Name)
+            .Distinct()
+            .ToList();
+
+        raw.Should().BeEmpty(
+            "every request DTO a service accepts must cross the boundary as " +
+            "Validated<T>, not a raw POCO (principle #6). Raw: " +
+            string.Join(", ", raw));
+    }
+
+    [Fact]
+    public void Every_validated_request_dto_has_a_registered_validator()
     {
         var sp = ValidationTestHost.Build("rag", "search", "sandbox");
-        var dtoTypes = DiscoverRequestDtoTypes();
+        var wrapped = WrappedRequestDtoTypes();
 
-        dtoTypes.Should().NotBeEmpty("the discovery must find the service request DTOs");
+        wrapped.Should().NotBeEmpty("the discovery must find the wrapped service request DTOs");
 
         var missing = new List<string>();
-        foreach (var dto in dtoTypes)
+        foreach (var dto in wrapped)
         {
             var validatorType = typeof(IValidator<>).MakeGenericType(dto);
             if (sp.GetService(validatorType) is null)
@@ -45,23 +68,25 @@ public sealed class FailClosedMetaTest
         }
 
         missing.Should().BeEmpty(
-            "every request DTO a service accepts must have a registered IValidator<T> " +
-            "(principle #6, fail-closed). Missing: " + string.Join(", ", missing));
+            "every DTO wrapped in Validated<T> at a service boundary must have a " +
+            "registered IValidator<T> (else Validated<T>.From throws - fail-closed). " +
+            "Missing: " + string.Join(", ", missing));
     }
 
     [Fact]
     public void Discovery_finds_the_known_request_dtos()
     {
         // Guards the discovery itself: if the filter ever stops seeing these, the
-        // meta-test above could pass vacuously. These are the inputs we know cross
-        // the boundary today.
-        var names = DiscoverRequestDtoTypes().Select(t => t.Name).ToHashSet(StringComparer.Ordinal);
+        // checks above could pass vacuously. These are the inputs we know cross the
+        // boundary today - now as the inner type of a Validated<T> parameter.
+        var names = WrappedRequestDtoTypes().Select(t => t.Name).ToHashSet(StringComparer.Ordinal);
 
         names.Should().Contain(new[]
         {
             "SendMessageRequest",
             "CreateConversationRequest",
             "UpdateConversationRequest",
+            "MoveConversationRequest",
             "CreateProjectRequest",
             "UpdateProjectRequest",
             "CreateMemoryRequest",
@@ -71,7 +96,8 @@ public sealed class FailClosedMetaTest
         });
     }
 
-    private static IReadOnlyList<Type> DiscoverRequestDtoTypes()
+    /// <summary>Every parameter type of every service-boundary method (proof types and all).</summary>
+    private static IReadOnlyList<Type> ServiceParameterTypes()
     {
         var serviceInterfaces = typeof(IGertServices)
             .GetProperties()
@@ -80,32 +106,28 @@ public sealed class FailClosedMetaTest
             .ToList();
 
         // Chat is not on the hub (the detached turn pipeline injects its seams
-        // directly - chat-and-tools.md section detached turns), but its planner is still
-        // a host-called boundary that accepts a request DTO: include it explicitly
-        // so SendMessageRequest never drops out of the fail-closed net.
+        // directly - chat-and-tools.md section detached turns), but its planner and the
+        // ask_user answer registry are still host-called boundaries that accept request
+        // DTOs: include them explicitly so SendMessageRequest / AnswerRequest never drop
+        // out of the net.
         serviceInterfaces.Add(typeof(Gert.Service.Chat.ITurnPlanner));
-
-        // Same for the ask_user answer registry: the controller hands it the
-        // AnswerRequest body, so that DTO must stay in the net too.
         serviceInterfaces.Add(typeof(Gert.Service.Chat.ITurnQuestions));
 
-        var dtos = new HashSet<Type>();
-        foreach (var svc in serviceInterfaces)
-        {
-            foreach (var method in svc.GetMethods())
-            {
-                foreach (var param in method.GetParameters())
-                {
-                    if (IsRequestDto(param.ParameterType))
-                    {
-                        dtos.Add(param.ParameterType);
-                    }
-                }
-            }
-        }
-
-        return dtos.OrderBy(t => t.FullName, StringComparer.Ordinal).ToList();
+        return serviceInterfaces
+            .SelectMany(svc => svc.GetMethods())
+            .SelectMany(method => method.GetParameters())
+            .Select(p => p.ParameterType)
+            .ToList();
     }
+
+    /// <summary>The inner <c>T</c> of every <c>Validated&lt;T&gt;</c> service parameter.</summary>
+    private static IReadOnlyList<Type> WrappedRequestDtoTypes() =>
+        ServiceParameterTypes()
+            .Where(t => t.IsGenericType && t.GetGenericTypeDefinition() == typeof(Validated<>))
+            .Select(t => t.GetGenericArguments()[0])
+            .Distinct()
+            .OrderBy(t => t.FullName, StringComparer.Ordinal)
+            .ToList();
 
     private static bool IsRequestDto(Type t)
     {

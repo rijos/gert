@@ -1,5 +1,6 @@
 using Gert.Model.Dtos;
 using Gert.Model.Projects;
+using Gert.Service.Validation;
 
 namespace Gert.Service.Projects;
 
@@ -14,6 +15,6 @@ public interface ISettingsService
 
     /// <summary>Apply a partial update and return the merged result.</summary>
     Task<UserSettings> UpdateAsync(
-        UpdateSettingsRequest request,
+        Validated<UpdateSettingsRequest> request,
         CancellationToken cancellationToken = default);
 }

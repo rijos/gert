@@ -1,0 +1,44 @@
+---
+# Clone the Gert repo (single source of truth for the compose files), template the
+# secret-bearing .env, and manage the stack as a systemd unit that runs
+# `docker compose up -d --build`.
+
+- name: Fail early if required secrets are unset
+  ansible.builtin.assert:
+    that:
+      - artifacts_secret | length >= 32
+      - searxng_secret | length > 0
+    fail_msg: >-
+      Set artifacts_secret (>=32 bytes) and searxng_secret in group_vars/all.yml
+      (vault them). Generate with: openssl rand -base64 32 / openssl rand -hex 32.
+
+- name: Clone/update the Gert repository
+  ansible.builtin.git:
+    repo: "{{ gert_repo_url }}"
+    dest: "{{ gert_dir }}"
+    version: "{{ gert_repo_version }}"
+    force: true
+  notify: Restart gert stack
+
+- name: Template the environment file (secrets - 0600)
+  ansible.builtin.template:
+    src: env.j2
+    dest: "{{ gert_dir }}/deploy/compose/.env"
+    mode: "0600"
+  notify: Restart gert stack
+
+- name: Install the systemd unit
+  ansible.builtin.template:
+    src: gert.service.j2
+    dest: /etc/systemd/system/gert.service
+    mode: "0644"
+  notify:
+    - Reload systemd
+    - Restart gert stack
+
+- name: Enable and start the stack
+  ansible.builtin.systemd_service:
+    name: gert
+    enabled: true
+    state: started
+    daemon_reload: true

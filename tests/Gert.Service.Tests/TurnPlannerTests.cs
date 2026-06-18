@@ -75,12 +75,17 @@ public sealed class TurnPlannerTests
         new(
             _provider,
             user ?? new TestUserContext(),
-            _validation,
             tools ?? [],
             Options.Create(_options),
             TimeProvider.System,
             instructions,
             catalog);
+
+    // Mint the proof through the substitute provider (Success by default) so these
+    // planning tests stay isolated from the real validators - a fake tool id the
+    // production validator would reject still flows through.
+    private Validated<SendMessageRequest> Valid(SendMessageRequest request) =>
+        Validated<SendMessageRequest>.From(request, _validation);
 
     private void SeedConversation(params (string Id, bool On)[] toggles)
     {
@@ -118,21 +123,20 @@ public sealed class TurnPlannerTests
         });
 
     [Fact]
-    public async Task Validation_failure_throws_before_any_disk_touch()
+    public void An_invalid_request_cannot_produce_a_proof()
     {
         _validation.Validate(Arg.Any<SendMessageRequest>())
             .Returns(ValidationResult.Failure([new ValidationError { Property = "content", Message = "required" }]));
 
-        var act = () => NewPlanner().PlanAsync(Pid, Conv, new SendMessageRequest { Content = string.Empty });
+        var act = () => Valid(new SendMessageRequest { Content = string.Empty });
 
-        await act.Should().ThrowAsync<ValidationException>();
-        await _provider.DidNotReceiveWithAnyArgs().OpenAsync(default!, default!, default!, default);
+        act.Should().Throw<ValidationException>();
     }
 
     [Fact]
     public async Task New_conversation_is_materialised_with_a_derived_title()
     {
-        var job = await NewPlanner().PlanAsync(Pid, Conv, new SendMessageRequest { Content = "hello world" });
+        var job = await NewPlanner().PlanAsync(Pid, Conv, Valid(new SendMessageRequest { Content = "hello world" }));
 
         await _repo.Received(1).InsertConversationAsync(
             Arg.Is<Conversation>(c => c.Id == Conv && c.Title == "hello world"),
@@ -152,7 +156,7 @@ public sealed class TurnPlannerTests
         // a naive text[..60] would end on the lone high surrogate - invalid UTF-16.
         var content = new string('a', 59) + "\U0001F600 and more text well beyond the sixty-char cap";
 
-        await NewPlanner().PlanAsync(Pid, Conv, new SendMessageRequest { Content = content });
+        await NewPlanner().PlanAsync(Pid, Conv, Valid(new SendMessageRequest { Content = content }));
 
         inserted.Should().NotBeNull();
         inserted!.Title.Length.Should().BeLessThanOrEqualTo(60);
@@ -164,7 +168,7 @@ public sealed class TurnPlannerTests
     [Fact]
     public async Task Persists_a_complete_user_row_and_a_streaming_assistant_placeholder_with_seqs()
     {
-        var job = await NewPlanner().PlanAsync(Pid, Conv, new SendMessageRequest { Content = "hello" });
+        var job = await NewPlanner().PlanAsync(Pid, Conv, Valid(new SendMessageRequest { Content = "hello" }));
 
         _persisted.Should().HaveCount(2);
 
@@ -188,7 +192,7 @@ public sealed class TurnPlannerTests
     [Fact]
     public async Task PlannedAt_is_the_exact_instant_stamped_on_the_placeholder_row()
     {
-        var job = await NewPlanner().PlanAsync(Pid, Conv, new SendMessageRequest { Content = "hello" });
+        var job = await NewPlanner().PlanAsync(Pid, Conv, Valid(new SendMessageRequest { Content = "hello" }));
 
         // One clock read, not two: the job's anchor IS the placeholder's
         // CreatedAt, so the runner's remaining-budget cap and the readers'
@@ -211,7 +215,7 @@ public sealed class TurnPlannerTests
         // A user-stopped turn: same rule - the partial is UI context only.
         SeedExisting(MessageStatus.Cancelled, now.AddMinutes(-3), MessageRole.Assistant, "stopped partial");
 
-        var job = await NewPlanner().PlanAsync(Pid, Conv, new SendMessageRequest { Content = "follow-up" });
+        var job = await NewPlanner().PlanAsync(Pid, Conv, Valid(new SendMessageRequest { Content = "follow-up" }));
 
         job.History.Select(m => m.Content)
             .Should().Equal("earlier question", "earlier answer", "follow-up");
@@ -234,7 +238,7 @@ public sealed class TurnPlannerTests
             Tools = new ToolToggles(new Dictionary<string, bool> { ["sandbox"] = true }),
         };
 
-        var job = await NewPlanner(user, [sandbox]).PlanAsync(Pid, Conv, request);
+        var job = await NewPlanner(user, [sandbox]).PlanAsync(Pid, Conv, Valid(request));
 
         // The flip applies to THIS turn...
         job.ToolIds.Should().Contain("sandbox");
@@ -256,7 +260,7 @@ public sealed class TurnPlannerTests
         SeedExisting(MessageStatus.Complete, now.AddMinutes(-2), MessageRole.User, "q");
         SeedExisting(MessageStatus.Complete, now.AddMinutes(-1), MessageRole.Assistant, "391", reasoning: "17*23 = 391.");
 
-        var job = await NewPlanner().PlanAsync(Pid, Conv, new SendMessageRequest { Content = "next" });
+        var job = await NewPlanner().PlanAsync(Pid, Conv, Valid(new SendMessageRequest { Content = "next" }));
 
         job.History.Single(m => m.Role == "assistant").ReasoningContent.Should().Be("17*23 = 391.");
         job.History.Single(m => m.Content == "q").ReasoningContent.Should().BeNull();
@@ -287,7 +291,7 @@ public sealed class TurnPlannerTests
         };
 
         // Default catalog (NullModelCatalog) is vision-permissive.
-        var job = await NewPlanner().PlanAsync(Pid, Conv, request);
+        var job = await NewPlanner().PlanAsync(Pid, Conv, Valid(request));
 
         var userRow = _persisted.Single(m => m.Role == MessageRole.User);
         userRow.Attachments.Should().ContainSingle()
@@ -315,7 +319,7 @@ public sealed class TurnPlannerTests
             Attachments = [new MessageAttachment { MimeType = "image/png", Data = "aGVsbG8=" }],
         };
 
-        var job = await NewPlanner(catalog: catalog).PlanAsync(Pid, Conv, request);
+        var job = await NewPlanner(catalog: catalog).PlanAsync(Pid, Conv, Valid(request));
 
         // The row keeps the attachment (UI truth) but the prompt degrades to
         // text-only rather than erroring the turn - mirror of the tools gate.
@@ -331,7 +335,7 @@ public sealed class TurnPlannerTests
         // Just stopped seconds ago: cancelled is terminal, never in-progress.
         SeedExisting(MessageStatus.Cancelled, DateTimeOffset.UtcNow.AddSeconds(-2));
 
-        var job = await NewPlanner().PlanAsync(Pid, Conv, new SendMessageRequest { Content = "again" });
+        var job = await NewPlanner().PlanAsync(Pid, Conv, Valid(new SendMessageRequest { Content = "again" }));
 
         job.AssistantMessageId.Should().NotBeNullOrEmpty();
     }
@@ -342,7 +346,7 @@ public sealed class TurnPlannerTests
         SeedConversation();
         SeedExisting(MessageStatus.Streaming, DateTimeOffset.UtcNow.AddSeconds(-5));
 
-        var act = () => NewPlanner().PlanAsync(Pid, Conv, new SendMessageRequest { Content = "again" });
+        var act = () => NewPlanner().PlanAsync(Pid, Conv, Valid(new SendMessageRequest { Content = "again" }));
 
         await act.Should().ThrowAsync<TurnInProgressException>();
         _persisted.Should().BeEmpty("the 409 must reject before any write");
@@ -357,7 +361,7 @@ public sealed class TurnPlannerTests
         SeedExisting(MessageStatus.Streaming, DateTimeOffset.UtcNow - _options.MaxTurnDuration - TimeSpan.FromMinutes(1));
         var expiredRowId = _existing.Single().Id;
 
-        var job = await NewPlanner().PlanAsync(Pid, Conv, new SendMessageRequest { Content = "retry" });
+        var job = await NewPlanner().PlanAsync(Pid, Conv, Valid(new SendMessageRequest { Content = "retry" }));
 
         job.AssistantMessageId.Should().NotBeNullOrEmpty();
         // The lazy orphan mapping became a durable write: the dead row must free
@@ -371,7 +375,7 @@ public sealed class TurnPlannerTests
         SeedConversation();
         SeedExisting(MessageStatus.Streaming, DateTimeOffset.UtcNow.AddSeconds(-5));
 
-        var act = () => NewPlanner().PlanAsync(Pid, Conv, new SendMessageRequest { Content = "again" });
+        var act = () => NewPlanner().PlanAsync(Pid, Conv, Valid(new SendMessageRequest { Content = "again" }));
 
         await act.Should().ThrowAsync<TurnInProgressException>();
         // The 409 path rejects before the write-back: a healthy turn's row is
@@ -388,7 +392,7 @@ public sealed class TurnPlannerTests
         _repo.TryInsertTurnMessagesAsync(Arg.Any<Message>(), Arg.Any<Message>(), Arg.Any<CancellationToken>())
             .Returns(false);
 
-        var act = () => NewPlanner().PlanAsync(Pid, Conv, new SendMessageRequest { Content = "raced" });
+        var act = () => NewPlanner().PlanAsync(Pid, Conv, Valid(new SendMessageRequest { Content = "raced" }));
 
         await act.Should().ThrowAsync<TurnInProgressException>();
     }
@@ -420,7 +424,7 @@ public sealed class TurnPlannerTests
             Tools = new ToolToggles(new Dictionary<string, bool> { ["todo"] = true }),
         };
 
-        var job = await NewPlanner(user, [new TodoTool()]).PlanAsync(Pid, Conv, request);
+        var job = await NewPlanner(user, [new TodoTool()]).PlanAsync(Pid, Conv, Valid(request));
 
         // The reminder rides at the TAIL of the rendered prompt; prior history
         // keeps its exact bytes (prefix cache) and the persisted user row keeps
@@ -443,7 +447,7 @@ public sealed class TurnPlannerTests
             Tools = new ToolToggles(new Dictionary<string, bool> { ["todo"] = true }),
         };
 
-        var job = await NewPlanner(user, [new TodoTool()]).PlanAsync(Pid, Conv, request);
+        var job = await NewPlanner(user, [new TodoTool()]).PlanAsync(Pid, Conv, Valid(request));
 
         // A finished list needs no revival - no prompt tokens spent on it.
         job.History[^1].Content.Should().Be("thanks!");
@@ -465,7 +469,7 @@ public sealed class TurnPlannerTests
             Tools = new ToolToggles(new Dictionary<string, bool> { ["todo"] = false }),
         };
 
-        var job = await NewPlanner(user, [new TodoTool()]).PlanAsync(Pid, Conv, request);
+        var job = await NewPlanner(user, [new TodoTool()]).PlanAsync(Pid, Conv, Valid(request));
 
         job.History[^1].Content.Should().Be("continue");
     }
@@ -484,7 +488,7 @@ public sealed class TurnPlannerTests
             Tools = new ToolToggles(new Dictionary<string, bool> { ["todo"] = true }),
         };
 
-        var job = await NewPlanner(user, [new TodoTool()]).PlanAsync(Pid, Conv, request);
+        var job = await NewPlanner(user, [new TodoTool()]).PlanAsync(Pid, Conv, Valid(request));
 
         // Best-effort: the reminder is a nicety, never a turn-blocker.
         job.History[^1].Content.Should().Be("continue");
@@ -515,7 +519,7 @@ public sealed class TurnPlannerTests
             Tools = new ToolToggles(new Dictionary<string, bool> { ["stub"] = true }),
         };
 
-        var job = await NewPlanner(user, [new StubRevivableTool()]).PlanAsync(Pid, Conv, request);
+        var job = await NewPlanner(user, [new StubRevivableTool()]).PlanAsync(Pid, Conv, Valid(request));
 
         job.History[^1].Content.Should().Be("go\n\n<revived>STATE</revived>");
     }
@@ -558,7 +562,7 @@ public sealed class TurnPlannerTests
             Tools = new ToolToggles(new Dictionary<string, bool> { ["rag"] = true, ["sandbox"] = true }),
         };
 
-        var job = await NewPlanner(user, [rag, sandbox]).PlanAsync(Pid, Conv, request);
+        var job = await NewPlanner(user, [rag, sandbox]).PlanAsync(Pid, Conv, Valid(request));
 
         // Offered = requested AND enabled AND entitlement AND registry.
         job.ToolIds.Should().Contain("rag").And.NotContain("sandbox");
@@ -586,7 +590,7 @@ public sealed class TurnPlannerTests
             Tools = new ToolToggles(new Dictionary<string, bool> { ["rag"] = true }),
         };
 
-        var job = await NewPlanner(user, [rag], catalog: catalog).PlanAsync(Pid, Conv, request);
+        var job = await NewPlanner(user, [rag], catalog: catalog).PlanAsync(Pid, Conv, Valid(request));
 
         // Requested + enabled + entitled - but the model can't call tools, so
         // nothing is advertised upstream.
@@ -602,7 +606,7 @@ public sealed class TurnPlannerTests
             .Returns("Always answer in haiku.");
 
         var job = await NewPlanner(instructions: reader)
-            .PlanAsync(Pid, Conv, new SendMessageRequest { Content = "hello" });
+            .PlanAsync(Pid, Conv, Valid(new SendMessageRequest { Content = "hello" }));
 
         job.SystemPrompt.Should().StartWith(SystemPrompts.Canvas);
         job.SystemPrompt.Should().EndWith("Always answer in haiku.");
@@ -613,7 +617,7 @@ public sealed class TurnPlannerTests
     {
         // No instructions reader at all: real models still must learn to put
         // complete files in the canvas via the make_artifact tool.
-        var job = await NewPlanner().PlanAsync(Pid, Conv, new SendMessageRequest { Content = "hello" });
+        var job = await NewPlanner().PlanAsync(Pid, Conv, Valid(new SendMessageRequest { Content = "hello" }));
 
         job.SystemPrompt.Should().Be(SystemPrompts.Canvas);
         job.SystemPrompt.Should().Contain("make_artifact");

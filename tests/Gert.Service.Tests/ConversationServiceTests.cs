@@ -34,7 +34,7 @@ public sealed class ConversationServiceTests
             .Returns(_repo);
     }
 
-    private ConversationService NewService() => new(_provider, _validation, _user, TimeProvider.System);
+    private ConversationService NewService() => new(_provider, _user, TimeProvider.System);
 
     [Fact]
     public async Task Create_sets_id_timestamps_and_inserts()
@@ -44,7 +44,7 @@ public sealed class ConversationServiceTests
 
         var result = await sut.CreateAsync(
             "default",
-            new CreateConversationRequest { Title = "Planning", ModelId = "qwen" });
+            _validation.Prove(new CreateConversationRequest { Title = "Planning", ModelId = "qwen" }));
 
         result.Id.Should().NotBeNullOrWhiteSpace();
         Guid.TryParse(result.Id, out _).Should().BeTrue("ids are UUIDs");
@@ -64,7 +64,7 @@ public sealed class ConversationServiceTests
     {
         var sut = NewService();
 
-        var result = await sut.CreateAsync("default", new CreateConversationRequest());
+        var result = await sut.CreateAsync("default", _validation.Prove(new CreateConversationRequest()));
 
         result.Title.Should().NotBeNullOrWhiteSpace();
     }
@@ -77,7 +77,7 @@ public sealed class ConversationServiceTests
     public async Task Create_with_unsafe_title_throws_before_any_disk_touch(string badTitle)
     {
         var act = () => NewService().CreateAsync(
-            "default", new CreateConversationRequest { Title = badTitle });
+            "default", _validation.Prove(new CreateConversationRequest { Title = badTitle }));
 
         await act.Should().ThrowAsync<ValidationException>();
         await _provider.DidNotReceiveWithAnyArgs().OpenAsync(default!, default!, default!, default);
@@ -88,7 +88,7 @@ public sealed class ConversationServiceTests
     {
         var act = () => NewService().CreateAsync(
             "default",
-            new CreateConversationRequest { Title = new string('a', ValidationRules.ShortTextMax + 1) });
+            _validation.Prove(new CreateConversationRequest { Title = new string('a', ValidationRules.ShortTextMax + 1) }));
 
         await act.Should().ThrowAsync<ValidationException>();
         await _provider.DidNotReceiveWithAnyArgs().OpenAsync(default!, default!, default!, default);
@@ -98,7 +98,7 @@ public sealed class ConversationServiceTests
     public async Task Create_with_unsafe_model_id_throws_before_any_disk_touch()
     {
         var act = () => NewService().CreateAsync(
-            "default", new CreateConversationRequest { ModelId = "model with spaces {}" });
+            "default", _validation.Prove(new CreateConversationRequest { ModelId = "model with spaces {}" }));
 
         await act.Should().ThrowAsync<ValidationException>();
         await _provider.DidNotReceiveWithAnyArgs().OpenAsync(default!, default!, default!, default);
@@ -110,7 +110,7 @@ public sealed class ConversationServiceTests
     public async Task Update_with_unsafe_title_throws_before_any_disk_touch(string badTitle)
     {
         var act = () => NewService().UpdateAsync(
-            "default", "a", new UpdateConversationRequest { Title = badTitle });
+            "default", "a", _validation.Prove(new UpdateConversationRequest { Title = badTitle }));
 
         await act.Should().ThrowAsync<ValidationException>();
         await _provider.DidNotReceiveWithAnyArgs().OpenAsync(default!, default!, default!, default);
@@ -121,7 +121,7 @@ public sealed class ConversationServiceTests
     public async Task Update_with_unsafe_model_id_throws_before_any_disk_touch()
     {
         var act = () => NewService().UpdateAsync(
-            "default", "a", new UpdateConversationRequest { ModelId = "model with spaces {}" });
+            "default", "a", _validation.Prove(new UpdateConversationRequest { ModelId = "model with spaces {}" }));
 
         await act.Should().ThrowAsync<ValidationException>();
         await _provider.DidNotReceiveWithAnyArgs().OpenAsync(default!, default!, default!, default);
@@ -158,7 +158,7 @@ public sealed class ConversationServiceTests
         _repo.GetConversationAsync("a", Arg.Any<CancellationToken>()).Returns(existing);
 
         var result = await NewService().UpdateAsync(
-            "default", "a", new UpdateConversationRequest { Title = "New" });
+            "default", "a", _validation.Prove(new UpdateConversationRequest { Title = "New" }));
 
         result.Should().NotBeNull();
         result!.Title.Should().Be("New");
@@ -176,7 +176,7 @@ public sealed class ConversationServiceTests
             .Returns((Conversation?)null);
 
         var result = await NewService().UpdateAsync(
-            "default", "missing", new UpdateConversationRequest { Title = "x" });
+            "default", "missing", _validation.Prove(new UpdateConversationRequest { Title = "x" }));
 
         result.Should().BeNull();
         await _repo.DidNotReceive().UpdateConversationAsync(
@@ -200,7 +200,7 @@ public sealed class ConversationServiceTests
             .Returns((IReadOnlyList<Conversation>)Array.Empty<Conversation>());
 
         await NewService().ListAsync("proj-1");
-        await NewService().CreateAsync("proj-1", new CreateConversationRequest());
+        await NewService().CreateAsync("proj-1", _validation.Prove(new CreateConversationRequest()));
 
         // Identity always comes from IUserContext - never widened by a parameter.
         await _provider.Received().OpenAsync(

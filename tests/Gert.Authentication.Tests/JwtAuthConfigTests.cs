@@ -19,11 +19,17 @@ public sealed class JwtAuthConfigTests
                 new KeyValuePair<string, string?>(p.Key, p.Value)))
             .Build();
 
+    /// <summary>A fully-configured (Authority + Audience present) config - the happy path.</summary>
+    private static IConfiguration ValidConfig() =>
+        Config(
+            ("Auth:Authority", "https://id.test.local"),
+            ("Auth:Audience", "gert-api"));
+
     [Fact]
     public void ValidAlgorithms_is_pinned_to_rs256()
     {
         var options = new JwtBearerOptions();
-        GertJwtAuthExtensions.ConfigureJwtBearer(options, Config());
+        GertJwtAuthExtensions.ConfigureJwtBearer(options, ValidConfig());
 
         options.TokenValidationParameters.ValidAlgorithms
             .Should().Equal("RS256");
@@ -36,7 +42,7 @@ public sealed class JwtAuthConfigTests
         // long WS-* URIs and HttpUserContext can't find "sub" (auth.md section the user
         // context).
         var options = new JwtBearerOptions();
-        GertJwtAuthExtensions.ConfigureJwtBearer(options, Config());
+        GertJwtAuthExtensions.ConfigureJwtBearer(options, ValidConfig());
 
         options.MapInboundClaims.Should().BeFalse();
     }
@@ -45,11 +51,7 @@ public sealed class JwtAuthConfigTests
     public void Validation_flags_and_claim_mappings_are_set()
     {
         var options = new JwtBearerOptions();
-        GertJwtAuthExtensions.ConfigureJwtBearer(
-            options,
-            Config(
-                ("Auth:Authority", "https://id.test.local"),
-                ("Auth:Audience", "gert-api")));
+        GertJwtAuthExtensions.ConfigureJwtBearer(options, ValidConfig());
 
         var tvp = options.TokenValidationParameters;
         tvp.ValidateIssuer.Should().BeTrue();
@@ -62,5 +64,56 @@ public sealed class JwtAuthConfigTests
 
         options.Authority.Should().Be("https://id.test.local");
         options.Audience.Should().Be("gert-api");
+    }
+
+    [Fact]
+    public void Issuer_and_audience_are_pinned_explicitly_not_just_via_discovery()
+    {
+        var options = new JwtBearerOptions();
+        GertJwtAuthExtensions.ConfigureJwtBearer(options, ValidConfig());
+
+        var tvp = options.TokenValidationParameters;
+        tvp.ValidIssuer.Should().Be("https://id.test.local");
+        tvp.ValidAudience.Should().Be("gert-api");
+    }
+
+    [Fact]
+    public void Hardening_pins_are_set()
+    {
+        var options = new JwtBearerOptions();
+        GertJwtAuthExtensions.ConfigureJwtBearer(options, ValidConfig());
+
+        var tvp = options.TokenValidationParameters;
+        options.RequireHttpsMetadata.Should().BeTrue();   // JWKS/discovery over TLS only
+        tvp.RequireExpirationTime.Should().BeTrue();       // no exp -> reject
+        tvp.RequireSignedTokens.Should().BeTrue();         // unsigned -> reject
+    }
+
+    [Fact]
+    public void ValidTypes_pins_access_token_typ_so_an_id_token_cannot_be_replayed()
+    {
+        // Pocket ID issues access tokens (at+jwt per RFC 9068); our minters default to "JWT".
+        var options = new JwtBearerOptions();
+        GertJwtAuthExtensions.ConfigureJwtBearer(options, ValidConfig());
+
+        options.TokenValidationParameters.ValidTypes
+            .Should().Equal("at+jwt", "JWT");
+    }
+
+    [Theory]
+    [InlineData("Auth:Authority")]
+    [InlineData("Auth:Audience")]
+    public void Missing_required_config_fails_fast(string missingKey)
+    {
+        // Booting an auth scheme that validates nothing is worse than refusing to boot.
+        var pairs = new (string Key, string? Value)[]
+        {
+            ("Auth:Authority", "https://id.test.local"),
+            ("Auth:Audience", "gert-api"),
+        }.Where(p => p.Key != missingKey).ToArray();
+
+        var act = () => GertJwtAuthExtensions.ConfigureJwtBearer(new JwtBearerOptions(), Config(pairs));
+
+        act.Should().Throw<InvalidOperationException>().WithMessage($"*{missingKey}*");
     }
 }

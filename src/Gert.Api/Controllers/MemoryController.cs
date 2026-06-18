@@ -2,6 +2,7 @@ using Gert.Api.Validation;
 using Gert.Model.Dtos;
 using Gert.Model.Rag;
 using Gert.Service.Documents;
+using Gert.Service.Validation;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Gert.Api.Controllers;
@@ -17,9 +18,13 @@ public sealed class MemoryController : ControllerBase
 {
     // Granular interface, not the IGertServices hub (dotnet-style-guide.md section 4).
     private readonly IMemoryService _memory;
+    private readonly IValidationProvider _validation;
 
-    public MemoryController(IMemoryService memory) =>
+    public MemoryController(IMemoryService memory, IValidationProvider validation)
+    {
         _memory = memory ?? throw new ArgumentNullException(nameof(memory));
+        _validation = validation ?? throw new ArgumentNullException(nameof(validation));
+    }
 
     /// <summary>List entries (id, title, pinned, updated_at).</summary>
     [HttpGet]
@@ -42,7 +47,7 @@ public sealed class MemoryController : ControllerBase
     {
         RouteParams.RequireValidProjectId(pid);
 
-        var entry = await _memory.UpsertAsync(pid, request, cancellationToken).ConfigureAwait(false);
+        var entry = await _memory.UpsertAsync(pid, _validation.Prove(request), cancellationToken).ConfigureAwait(false);
         return Ok(entry);
     }
 

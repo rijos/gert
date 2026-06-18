@@ -58,7 +58,6 @@ public sealed class MemoryServiceTests
             provider,
             Substitute.For<IObjectStore>(),
             Substitute.For<IEmbeddingClient>(),
-            Substitute.For<IValidationProvider>(),
             user,
             TimeProvider.System);
 

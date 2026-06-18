@@ -3,6 +3,7 @@ using Gert.Model.Dtos;
 using Gert.Model.Events;
 using Gert.Service.Chat;
 using Gert.Service.Tools;
+using Gert.Testing;
 using Gert.Testing.Fakes;
 using Gert.Tools.Builtin;
 using Microsoft.Extensions.Options;
@@ -140,7 +141,7 @@ public sealed class AskUserToolTests
         asked.Options.Should().Equal("red", "blue");
         asked.AllowFreeText.Should().BeFalse("options without allow_free_text default to closed");
 
-        _registry.Answer(Key, new AnswerRequest { QuestionId = asked.QuestionId, Answer = "blue" })
+        _registry.Answer(Key, Proof.Of(new AnswerRequest { QuestionId = asked.QuestionId, Answer = "blue" }))
             .Should().Be(AnswerOutcome.Delivered);
 
         var result = await task;

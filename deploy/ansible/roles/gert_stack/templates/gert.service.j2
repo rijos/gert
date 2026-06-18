@@ -1,0 +1,19 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Gert (Docker Compose stack)
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=true
+WorkingDirectory={{ gert_dir }}/deploy/compose
+# --build so a new repo checkout rebuilds the gert/monty images; --pull keeps the
+# base/pinned images current. Compose reads ./.env automatically.
+ExecStart=/usr/bin/docker compose up -d --build --remove-orphans
+ExecStop=/usr/bin/docker compose down
+TimeoutStartSec=0
+
+[Install]
+WantedBy=multi-user.target

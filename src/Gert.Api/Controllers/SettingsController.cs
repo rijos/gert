@@ -2,6 +2,7 @@ using Gert.Model.Dtos;
 using Gert.Model.Projects;
 using Gert.Service;
 using Gert.Service.Projects;
+using Gert.Service.Validation;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Gert.Api.Controllers;
@@ -17,9 +18,13 @@ public sealed class SettingsController : ControllerBase
 {
     // Granular interface, not the IGertServices hub (dotnet-style-guide.md section 4).
     private readonly ISettingsService _settings;
+    private readonly IValidationProvider _validation;
 
-    public SettingsController(ISettingsService settings) =>
+    public SettingsController(ISettingsService settings, IValidationProvider validation)
+    {
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
+        _validation = validation ?? throw new ArgumentNullException(nameof(validation));
+    }
 
     /// <summary>Get the caller's current preferences.</summary>
     [HttpGet]
@@ -35,7 +40,7 @@ public sealed class SettingsController : ControllerBase
         [FromBody] UpdateSettingsRequest request,
         CancellationToken cancellationToken)
     {
-        var settings = await _settings.UpdateAsync(request, cancellationToken).ConfigureAwait(false);
+        var settings = await _settings.UpdateAsync(_validation.Prove(request), cancellationToken).ConfigureAwait(false);
         return Ok(settings);
     }
 }

@@ -269,9 +269,9 @@ public sealed class ApiBreadthTests : IClassFixture<GertApiFactory>
         csp.Should().Contain("base-uri 'none'");
         csp.Should().Contain("frame-ancestors 'none'");
 
-        // connect-src lists only 'self' (no Pocket ID origin is configured in Testing).
-        csp.Should().Contain("connect-src 'self'");
-        csp.Should().NotContain("connect-src 'self' http");
+        // connect-src is the exfiltration brake: 'self' + exactly the Pocket ID origin
+        // derived from Auth:Authority (the test host's TestTokens.DefaultIssuer).
+        csp.Should().Contain("connect-src 'self' https://id.test.local");
 
         response.Headers.GetValues("X-Content-Type-Options").Single().Should().Be("nosniff");
         response.Headers.GetValues("Referrer-Policy").Single().Should().Be("no-referrer");

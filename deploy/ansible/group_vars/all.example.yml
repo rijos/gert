@@ -1,0 +1,34 @@
+---
+# Copy to group_vars/all.yml. Encrypt the secrets:
+#   ansible-vault encrypt group_vars/all.yml
+# (or keep secrets in a separate vault file and reference them here).
+
+# --- Source: which Gert checkout to build on the host ---
+gert_repo_url: "https://github.com/your-org/gert.git"
+gert_repo_version: "main"        # pin a tag/sha for reproducible deploys
+gert_dir: "/opt/gert"            # repo is cloned here; compose runs from {{ gert_dir }}/deploy/compose
+
+# --- Public hostnames (must have DNS records pointing at the host) ---
+gert_domain: "gert.example.com"
+artifacts_domain: "artifacts.example.com"
+id_domain: "id.example.com"
+acme_email: "admin@example.com"
+
+# --- OIDC client id (matches the client created in Pocket ID; also the aud) ---
+gert_oidc_client_id: "gert"
+
+# --- Secrets (VAULT THESE) ---
+artifacts_secret: ""             # openssl rand -base64 32  (>=32 bytes)
+searxng_secret: ""               # openssl rand -hex 32
+
+# --- Chat upstream (EXTERNAL, OpenAI-compatible) ---
+gert_chat_name: "Default"
+gert_chat_baseurl: "https://your-vllm.example.com/v1"
+gert_chat_model: "qwen3"
+gert_chat_apikey: ""             # blank for keyless vLLM (VAULT if set)
+
+# --- Embeddings upstream (EXTERNAL, OpenAI-compatible) ---
+gert_embed_baseurl: "https://your-embeddings.example.com/v1"
+gert_embed_model: "bge-m3"
+gert_embed_dimensions: 1024
+gert_embed_apikey: ""            # VAULT if set

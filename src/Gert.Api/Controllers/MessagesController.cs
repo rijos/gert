@@ -57,7 +57,9 @@ public sealed class MessagesController : ControllerBase
     {
         RouteParams.RequireValidProjectId(pid);
 
-        var job = await _planner.PlanAsync(pid, id, request, cancellationToken).ConfigureAwait(false);
+        // Prove at the boundary (principle #6): an invalid body throws -> 400.
+        var job = await _planner.PlanAsync(pid, id, _validation.Prove(request), cancellationToken)
+            .ConfigureAwait(false);
         await _queue.EnqueueAsync(job, cancellationToken).ConfigureAwait(false);
 
         return Accepted(new TurnAccepted
@@ -103,15 +105,10 @@ public sealed class MessagesController : ControllerBase
     {
         RouteParams.RequireValidProjectId(pid);
 
-        // Fail-closed body validation (principle #6): same 400 ProblemDetails
-        // path as the service-layer validators, via ValidationExceptionHandler.
-        var result = _validation.Validate(request);
-        if (!result.IsValid)
-        {
-            throw new ValidationException(result);
-        }
-
-        var outcome = _questions.Answer(new TurnKey(_user.Iss, _user.Sub, pid, id), request);
+        // Prove at the boundary (principle #6): an invalid body throws -> 400.
+        var outcome = _questions.Answer(
+            new TurnKey(_user.Iss, _user.Sub, pid, id),
+            _validation.Prove(request));
         return outcome switch
         {
             AnswerOutcome.Delivered => Accepted(),

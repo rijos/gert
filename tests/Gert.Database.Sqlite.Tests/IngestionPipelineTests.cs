@@ -177,7 +177,7 @@ public class IngestionPipelineTests
             SizeBytes = null,
         };
 
-        var act = async () => await harness.Documents.UploadAsync(Pid, upload);
+        var act = async () => await harness.Documents.UploadAsync(Pid, Proof.Of(upload));
         var thrown = await act.Should().ThrowAsync<ValidationException>();
         thrown.Which.Result.Errors.Should().ContainSingle()
             .Which.Code.Should().Be("upload.too_large", "the streamed cap surfaces the same 400 as the validator path");
@@ -275,12 +275,12 @@ public class IngestionPipelineTests
         await using var root = new TempDataRoot();
         var harness = await HarnessAsync(root);
 
-        var entry = await harness.Memory.UpsertAsync(Pid, new Gert.Model.Dtos.CreateMemoryRequest
+        var entry = await harness.Memory.UpsertAsync(Pid, Proof.Of(new Gert.Model.Dtos.CreateMemoryRequest
         {
             Title = "Preferences",
             Content = "Remember the user prefers concise answers about widgets.",
             Pinned = true,
-        });
+        }));
 
         // Body blob exists under memory/{id}.md (via the object store).
         var scope = ObjectScope.Project(Iss, Sub, Pid);
@@ -304,11 +304,11 @@ public class IngestionPipelineTests
         await using var root = new TempDataRoot();
         var harness = await HarnessAsync(root);
 
-        var entry = await harness.Memory.UpsertAsync(Pid, new Gert.Model.Dtos.CreateMemoryRequest
+        var entry = await harness.Memory.UpsertAsync(Pid, Proof.Of(new Gert.Model.Dtos.CreateMemoryRequest
         {
             Title = "Throwaway",
             Content = "ephemeral memory body",
-        });
+        }));
         var scope = ObjectScope.Project(Iss, Sub, Pid);
         (await harness.Objects.ExistsAsync(scope, $"memory/{entry.Id}.md")).Should().BeTrue();
 
@@ -327,11 +327,11 @@ public class IngestionPipelineTests
         // unsearchable entry) and no memory/{id}.md blob behind.
         var harness = await HarnessAsync(root, embeddings: new FailingEmbeddings(succeedCalls: 0));
 
-        var act = async () => await harness.Memory.UpsertAsync(Pid, new Gert.Model.Dtos.CreateMemoryRequest
+        var act = async () => await harness.Memory.UpsertAsync(Pid, Proof.Of(new Gert.Model.Dtos.CreateMemoryRequest
         {
             Title = "Doomed",
             Content = "this body never gets persisted",
-        });
+        }));
 
         await act.Should().ThrowAsync<InvalidOperationException>();
 
@@ -347,11 +347,11 @@ public class IngestionPipelineTests
         var harness = await HarnessAsync(root);
 
         var doc = await harness.Documents.UploadAsync(Pid, Upload("d.txt", "text/plain", "a document"));
-        var mem = await harness.Memory.UpsertAsync(Pid, new Gert.Model.Dtos.CreateMemoryRequest
+        var mem = await harness.Memory.UpsertAsync(Pid, Proof.Of(new Gert.Model.Dtos.CreateMemoryRequest
         {
             Title = "m",
             Content = "a memory",
-        });
+        }));
 
         (await harness.Documents.ListAsync(Pid)).Should().ContainSingle().Which.Id.Should().Be(doc.Id);
         (await harness.Memory.ListAsync(Pid)).Should().ContainSingle().Which.Id.Should().Be(mem.Id);
@@ -373,24 +373,23 @@ public class IngestionPipelineTests
         var extractor = new CompositeTextExtractor(new ITextExtractor[] { new PlainTextExtractor() });
         var ingestion = new IngestionService(provider.Rag, objects, extractor, embeddings, chunking);
         var ingestionQueue = queue ?? new InlineIngestionQueue(ingestion);
-        var validation = new PassThroughValidationProvider();
 
-        var documents = new DocumentService(provider.Rag, objects, ingestionQueue, validation, _user, TimeProvider.System);
-        var memory = new MemoryService(provider.Rag, objects, embeddings, validation, _user, TimeProvider.System);
+        var documents = new DocumentService(provider.Rag, objects, ingestionQueue, _user, TimeProvider.System);
+        var memory = new MemoryService(provider.Rag, objects, embeddings, _user, TimeProvider.System);
 
         return new Harness(provider, objects, ingestion, documents, memory);
     }
 
-    private static DocumentUpload Upload(string filename, string mime, string content)
+    private static Validated<DocumentUpload> Upload(string filename, string mime, string content)
     {
         var bytes = Encoding.UTF8.GetBytes(content);
-        return new DocumentUpload
+        return Proof.Of(new DocumentUpload
         {
             Filename = filename,
             Mime = mime,
             OpenReadStream = () => new MemoryStream(bytes, writable: false),
             SizeBytes = bytes.LongLength,
-        };
+        });
     }
 
     private static async Task WaitForAsync(Func<bool> condition)

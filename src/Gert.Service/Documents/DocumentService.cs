@@ -31,7 +31,6 @@ public sealed class DocumentService : IDocumentService
     private readonly IRagIndexProvider _databases;
     private readonly IObjectStore _objects;
     private readonly IIngestionQueue _queue;
-    private readonly IValidationProvider _validation;
     private readonly IUserContext _user;
     private readonly TimeProvider _time;
 
@@ -39,14 +38,12 @@ public sealed class DocumentService : IDocumentService
         IRagIndexProvider databases,
         IObjectStore objects,
         IIngestionQueue queue,
-        IValidationProvider validation,
         IUserContext user,
         TimeProvider time)
     {
         _databases = databases ?? throw new ArgumentNullException(nameof(databases));
         _objects = objects ?? throw new ArgumentNullException(nameof(objects));
         _queue = queue ?? throw new ArgumentNullException(nameof(queue));
-        _validation = validation ?? throw new ArgumentNullException(nameof(validation));
         _user = user ?? throw new ArgumentNullException(nameof(user));
         _time = time ?? throw new ArgumentNullException(nameof(time));
     }
@@ -76,22 +73,17 @@ public sealed class DocumentService : IDocumentService
     /// <inheritdoc />
     public async Task<Document> UploadAsync(
         string pid,
-        DocumentUpload upload,
+        Validated<DocumentUpload> upload,
         CancellationToken cancellationToken = default)
     {
-        // 1. Validate at the service boundary (fail-closed): extension allowlist +
-        //    size + mime + non-empty. The filename is metadata, not a path - no
-        //    path-safety check (decision). Reject before any disk touch.
-        var validation = _validation.Validate(upload);
-        if (!validation.IsValid)
-        {
-            throw new ValidationException(validation);
-        }
+        // The filename is metadata, not a path - no path-safety check (decision).
+        ArgumentNullException.ThrowIfNull(upload);
+        var dto = upload.Value;
 
         var documentId = Guid.NewGuid().ToString("D");
         // The extension is derived only to (a) route extraction and (b) preserve the
         // original name in the DB - it is NEVER part of the storage key.
-        var extension = ValidationRules.ExtensionOf(upload.Filename);
+        var extension = ValidationRules.ExtensionOf(dto.Filename);
         var key = ObjectKey(documentId);
         var scope = ScopeFor(pid);
 
@@ -102,7 +94,7 @@ public sealed class DocumentService : IDocumentService
         //    the validator above), so the streaming cap is defence-in-depth for
         //    callers that cannot know the size up front (SizeBytes == null).
         long sizeBytes;
-        await using (var counting = new CountingStream(upload.OpenReadStream(), UploadConstraints.MaxSizeBytes))
+        await using (var counting = new CountingStream(dto.OpenReadStream(), UploadConstraints.MaxSizeBytes))
         {
             try
             {
@@ -128,9 +120,9 @@ public sealed class DocumentService : IDocumentService
         var document = new Document
         {
             Id = documentId,
-            Filename = StoredFilenames.Encode(upload.Filename),
-            Mime = upload.Mime,
-            SizeBytes = upload.SizeBytes ?? sizeBytes,
+            Filename = StoredFilenames.Encode(dto.Filename),
+            Mime = dto.Mime,
+            SizeBytes = dto.SizeBytes ?? sizeBytes,
             Status = DocumentStatus.Processing,
             ChunkCount = 0,
             Kind = DocumentKind.Document,

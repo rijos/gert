@@ -4,6 +4,7 @@ using Gert.Model.Chat;
 using Gert.Model.Dtos;
 using Gert.Service.Chat;
 using Gert.Service.Conversations;
+using Gert.Service.Validation;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Gert.Api.Controllers;
@@ -22,11 +23,16 @@ public sealed class ConversationsController : ControllerBase
 {
     private readonly IConversationService _conversations;
     private readonly IConversationReader _reader;
+    private readonly IValidationProvider _validation;
 
-    public ConversationsController(IConversationService conversations, IConversationReader reader)
+    public ConversationsController(
+        IConversationService conversations,
+        IConversationReader reader,
+        IValidationProvider validation)
     {
         _conversations = conversations ?? throw new ArgumentNullException(nameof(conversations));
         _reader = reader ?? throw new ArgumentNullException(nameof(reader));
+        _validation = validation ?? throw new ArgumentNullException(nameof(validation));
     }
 
     /// <summary>
@@ -60,7 +66,7 @@ public sealed class ConversationsController : ControllerBase
         RouteParams.RequireValidProjectId(pid);
 
         var created = await _conversations
-            .CreateAsync(pid, request, cancellationToken)
+            .CreateAsync(pid, _validation.Prove(request), cancellationToken)
             .ConfigureAwait(false);
 
         return CreatedAtAction(
@@ -98,7 +104,7 @@ public sealed class ConversationsController : ControllerBase
         RouteParams.RequireValidProjectId(pid);
 
         var updated = await _conversations
-            .UpdateAsync(pid, id, request, cancellationToken)
+            .UpdateAsync(pid, id, _validation.Prove(request), cancellationToken)
             .ConfigureAwait(false);
 
         return updated is null ? NotFound() : Ok(updated);
@@ -119,7 +125,7 @@ public sealed class ConversationsController : ControllerBase
         RouteParams.RequireValidProjectId(pid);
 
         var moved = await _conversations
-            .MoveAsync(pid, id, request, cancellationToken)
+            .MoveAsync(pid, id, _validation.Prove(request), cancellationToken)
             .ConfigureAwait(false);
 
         return moved is null ? NotFound() : Ok(moved);

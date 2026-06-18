@@ -1,0 +1,16 @@
+# Minimal SearXNG config for use as Gert's web_search backend.
+# The crucial bit is the JSON output format - Gert's SearXNG client calls the API,
+# which SearXNG disables by default.
+use_default_settings: true
+
+server:
+  # The searxng image's entrypoint replaces this literal placeholder with the
+  # SEARXNG_SECRET env var at startup - so no real secret is committed here.
+  secret_key: "ultrasecretkey"
+  limiter: false           # in-stack, single trusted caller (Gert) - no bot limiter
+  image_proxy: false
+
+search:
+  formats:
+    - html
+    - json                 # <- required so Gert can read results over the API

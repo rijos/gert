@@ -296,9 +296,11 @@ Validation is where untrusted user **content** first meets the system, so we tes
 **security control**, not a forms-niceties check. It complements - never replaces - the
 structural defences: isolation is the token->store derivation ([principles #2](principles.md)),
 SQL-safety is Dapper parameterization. Validation's job is to reject malformed or abusive
-*payloads* before they reach a service or the disk. Because validators sit behind
-`IValidationProvider` in the **service layer**, every caller is held to the **same**
-rules - there is no unguarded back door ([principle #6](principles.md), [tech-stack](tech-stack.md)).
+*payloads* before they reach a service or the disk. The boundary proves a DTO valid through
+`IValidationProvider`, then hands the **service layer** a `Validated<T>` proof instead of the
+raw DTO; a service cannot be called without one, so every caller is held to
+the **same** rules with no unguarded back door
+([principle #6](principles.md), [tech-stack](tech-stack.md)).
 
 Four things get tested:
 
@@ -326,10 +328,13 @@ Four things get tested:
    | Pagination / `k` | negative/absurd values | positive, bounded |
    | RAG query text | FTS5 query-syntax abuse | carried as **data, not operators** (also a query-construction concern) |
 
-3. **Fail-closed meta-test (the strongest guarantee)** - a reflection test over the assembly
-   asserts **every request DTO a service accepts has a registered `IValidator<T>`**. A new input
-   type therefore **cannot ship unvalidated** - the test goes red until a validator exists.
-   Validation can't be silently forgotten. This is the executable form of
+3. **Fail-closed meta-test (the strongest guarantee)** - a reflection test over the service
+   interfaces (`FailClosedMetaTest`) enforces the proof-type contract in two
+   parts: **(a) no service method accepts a raw request DTO** - every one crosses the boundary as
+   `Validated<T>`, so a method cannot even be *written* to skip validation; and **(b) every
+   wrapped `T` has a registered `IValidator<T>`** (else `Validated<T>.From` throws - fail-closed).
+   A new input type therefore **cannot ship unvalidated**: it must be wrapped, and wrapping
+   resolves a validator. Validation can't be silently forgotten. This is the executable form of
    [principle #6](principles.md).
 
 4. **The provider contract** - `IValidationProvider` resolves the right validator and surfaces a

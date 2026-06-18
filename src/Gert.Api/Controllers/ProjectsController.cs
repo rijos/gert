@@ -2,6 +2,7 @@ using Gert.Api.Validation;
 using Gert.Model.Dtos;
 using Gert.Model.Projects;
 using Gert.Service.Projects;
+using Gert.Service.Validation;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Gert.Api.Controllers;
@@ -19,9 +20,13 @@ public sealed class ProjectsController : ControllerBase
 {
     // Granular interface, not the IGertServices hub (dotnet-style-guide.md section 4).
     private readonly IProjectService _projects;
+    private readonly IValidationProvider _validation;
 
-    public ProjectsController(IProjectService projects) =>
+    public ProjectsController(IProjectService projects, IValidationProvider validation)
+    {
         _projects = projects ?? throw new ArgumentNullException(nameof(projects));
+        _validation = validation ?? throw new ArgumentNullException(nameof(validation));
+    }
 
     /// <summary>
     /// List the caller's projects (id, name, counts, updated_at). <c>q</c>
@@ -47,7 +52,7 @@ public sealed class ProjectsController : ControllerBase
         [FromBody] CreateProjectRequest request,
         CancellationToken cancellationToken)
     {
-        var created = await _projects.CreateAsync(request, cancellationToken).ConfigureAwait(false);
+        var created = await _projects.CreateAsync(_validation.Prove(request), cancellationToken).ConfigureAwait(false);
         return CreatedAtAction(nameof(Get), new { pid = created.Id }, created);
     }
 
@@ -70,7 +75,7 @@ public sealed class ProjectsController : ControllerBase
     {
         RouteParams.RequireValidProjectId(pid);
 
-        var updated = await _projects.UpdateAsync(pid, request, cancellationToken).ConfigureAwait(false);
+        var updated = await _projects.UpdateAsync(pid, _validation.Prove(request), cancellationToken).ConfigureAwait(false);
         return updated is null ? NotFound() : Ok(updated);
     }
 

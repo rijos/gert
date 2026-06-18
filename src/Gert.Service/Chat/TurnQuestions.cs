@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using Gert.Model.Dtos;
+using Gert.Service.Validation;
 
 namespace Gert.Service.Chat;
 
@@ -37,16 +38,17 @@ public sealed class TurnQuestions : ITurnQuestions
     }
 
     /// <inheritdoc />
-    public AnswerOutcome Answer(TurnKey key, AnswerRequest request)
+    public AnswerOutcome Answer(TurnKey key, Validated<AnswerRequest> request)
     {
         ArgumentNullException.ThrowIfNull(request);
+        var dto = request.Value;
 
         if (!_pending.TryGetValue(key, out var pending))
         {
             return AnswerOutcome.NotFound;
         }
 
-        if (!string.Equals(pending.QuestionId, request.QuestionId, StringComparison.Ordinal))
+        if (!string.Equals(pending.QuestionId, dto.QuestionId, StringComparison.Ordinal))
         {
             return AnswerOutcome.IdMismatch;
         }
@@ -54,7 +56,7 @@ public sealed class TurnQuestions : ITurnQuestions
         var payload = pending.Payload;
         if (!payload.AllowFreeText
             && payload.Options.Count > 0
-            && !payload.Options.Contains(request.Answer, StringComparer.Ordinal))
+            && !payload.Options.Contains(dto.Answer, StringComparer.Ordinal))
         {
             return AnswerOutcome.InvalidOption;
         }
@@ -62,7 +64,7 @@ public sealed class TurnQuestions : ITurnQuestions
         // TrySetResult loses to a sealed (timed-out / cancelled / disposed)
         // question - the benign race; the caller sees NotFound, never a 202
         // for an answer the tool will not read.
-        return pending.TryDeliver(request.Answer)
+        return pending.TryDeliver(dto.Answer)
             ? AnswerOutcome.Delivered
             : AnswerOutcome.NotFound;
     }

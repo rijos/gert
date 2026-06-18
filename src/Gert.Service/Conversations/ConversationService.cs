@@ -18,18 +18,15 @@ namespace Gert.Service.Conversations;
 public sealed class ConversationService : IConversationService
 {
     private readonly IChatDatabaseProvider _databases;
-    private readonly IValidationProvider _validation;
     private readonly IUserContext _user;
     private readonly TimeProvider _time;
 
     public ConversationService(
         IChatDatabaseProvider databases,
-        IValidationProvider validation,
         IUserContext user,
         TimeProvider time)
     {
         _databases = databases ?? throw new ArgumentNullException(nameof(databases));
-        _validation = validation ?? throw new ArgumentNullException(nameof(validation));
         _user = user ?? throw new ArgumentNullException(nameof(user));
         _time = time ?? throw new ArgumentNullException(nameof(time));
     }
@@ -84,30 +81,23 @@ public sealed class ConversationService : IConversationService
     /// <inheritdoc />
     public async Task<Conversation> CreateAsync(
         string pid,
-        CreateConversationRequest request,
+        Validated<CreateConversationRequest> request,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
-
-        // Validate (fail-closed at the service boundary, before any disk touch -
-        // dotnet-style-guide.md section 6: the registered validator must be invoked).
-        var validation = _validation.Validate(request);
-        if (!validation.IsValid)
-        {
-            throw new ValidationException(validation);
-        }
+        var dto = request.Value;
 
         // Injected clock (dotnet-style-guide.md section 5) so tests can pin the timestamps.
         var now = _time.GetUtcNow();
         var conversation = new Conversation
         {
             Id = Guid.NewGuid().ToString("D"),
-            Title = string.IsNullOrWhiteSpace(request.Title) ? "New conversation" : request.Title,
+            Title = string.IsNullOrWhiteSpace(dto.Title) ? "New conversation" : dto.Title,
             // TODO: resolve the model/tools cascade (conversation -> project
             // defaults -> user settings -> server). Sampling is no
             // longer a cascade level - it rides the selected provider (Gert:Chat:Providers).
-            ModelId = string.IsNullOrWhiteSpace(request.ModelId) ? ChatProviderInfo.DefaultId : request.ModelId,
-            Tools = request.Tools ?? new ToolToggles(),
+            ModelId = string.IsNullOrWhiteSpace(dto.ModelId) ? ChatProviderInfo.DefaultId : dto.ModelId,
+            Tools = dto.Tools ?? new ToolToggles(),
             CreatedAt = now,
             UpdatedAt = now,
             Archived = false,
@@ -122,18 +112,11 @@ public sealed class ConversationService : IConversationService
     public async Task<Conversation?> UpdateAsync(
         string pid,
         string conversationId,
-        UpdateConversationRequest request,
+        Validated<UpdateConversationRequest> request,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
-
-        // Validate (fail-closed at the service boundary, before any disk touch -
-        // dotnet-style-guide.md section 6: the registered validator must be invoked).
-        var validation = _validation.Validate(request);
-        if (!validation.IsValid)
-        {
-            throw new ValidationException(validation);
-        }
+        var dto = request.Value;
 
         await using var repo = await OpenAsync(pid, cancellationToken).ConfigureAwait(false);
 
@@ -147,10 +130,10 @@ public sealed class ConversationService : IConversationService
         // Apply only the supplied subset (PATCH semantics); bump updated_at.
         var updated = existing with
         {
-            Title = request.Title ?? existing.Title,
-            ModelId = request.ModelId ?? existing.ModelId,
-            Tools = request.Tools ?? existing.Tools,
-            Archived = request.Archived ?? existing.Archived,
+            Title = dto.Title ?? existing.Title,
+            ModelId = dto.ModelId ?? existing.ModelId,
+            Tools = dto.Tools ?? existing.Tools,
+            Archived = dto.Archived ?? existing.Archived,
             UpdatedAt = _time.GetUtcNow(),
         };
 
@@ -173,17 +156,11 @@ public sealed class ConversationService : IConversationService
     public async Task<Conversation?> MoveAsync(
         string pid,
         string conversationId,
-        MoveConversationRequest request,
+        Validated<MoveConversationRequest> request,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
-
-        // Validate (fail-closed at the service boundary, before any disk touch).
-        var validation = _validation.Validate(request);
-        if (!validation.IsValid)
-        {
-            throw new ValidationException(validation);
-        }
+        var dto = request.Value;
 
         await using var source = await OpenAsync(pid, cancellationToken).ConfigureAwait(false);
         var thread = await source.GetThreadAsync(conversationId, cancellationToken).ConfigureAwait(false);
@@ -193,7 +170,7 @@ public sealed class ConversationService : IConversationService
         }
 
         // Moving to itself is a no-op, not an error (an idempotent retry).
-        if (string.Equals(request.TargetPid, pid, StringComparison.Ordinal))
+        if (string.Equals(dto.TargetPid, pid, StringComparison.Ordinal))
         {
             return thread.Conversation;
         }
@@ -205,7 +182,7 @@ public sealed class ConversationService : IConversationService
             throw new Chat.TurnInProgressException(conversationId);
         }
 
-        await using var target = await OpenAsync(request.TargetPid, cancellationToken).ConfigureAwait(false);
+        await using var target = await OpenAsync(dto.TargetPid, cancellationToken).ConfigureAwait(false);
         if (await target.GetConversationAsync(conversationId, cancellationToken).ConfigureAwait(false) is not null)
         {
             throw new ValidationException(ValidationResult.Failure(

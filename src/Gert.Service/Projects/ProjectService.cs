@@ -35,7 +35,6 @@ public sealed class ProjectService : IProjectService
     private readonly IChatDatabaseProvider _chatDatabases;
     private readonly IRagIndexProvider _ragDatabases;
     private readonly IObjectStore _objects;
-    private readonly IValidationProvider _validation;
     private readonly IUserContext _user;
     private readonly TimeProvider _time;
 
@@ -44,7 +43,6 @@ public sealed class ProjectService : IProjectService
         IChatDatabaseProvider chatDatabases,
         IRagIndexProvider ragDatabases,
         IObjectStore objects,
-        IValidationProvider validation,
         IUserContext user,
         TimeProvider time)
     {
@@ -52,7 +50,6 @@ public sealed class ProjectService : IProjectService
         _chatDatabases = chatDatabases ?? throw new ArgumentNullException(nameof(chatDatabases));
         _ragDatabases = ragDatabases ?? throw new ArgumentNullException(nameof(ragDatabases));
         _objects = objects ?? throw new ArgumentNullException(nameof(objects));
-        _validation = validation ?? throw new ArgumentNullException(nameof(validation));
         _user = user ?? throw new ArgumentNullException(nameof(user));
         _time = time ?? throw new ArgumentNullException(nameof(time));
     }
@@ -117,26 +114,21 @@ public sealed class ProjectService : IProjectService
 
     /// <inheritdoc />
     public async Task<ProjectMeta> CreateAsync(
-        CreateProjectRequest request,
+        Validated<CreateProjectRequest> request,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
-
-        var validation = _validation.Validate(request);
-        if (!validation.IsValid)
-        {
-            throw new ValidationException(validation);
-        }
+        var dto = request.Value;
 
         // Injected clock (dotnet-style-guide.md section 5) so tests can pin the timestamps.
         var now = _time.GetUtcNow();
         var meta = new ProjectMeta
         {
             Id = Guid.NewGuid().ToString("D"),
-            Name = request.Name,
-            Description = request.Description,
-            Instructions = request.Instructions,
-            Defaults = request.Defaults,
+            Name = dto.Name,
+            Description = dto.Description,
+            Instructions = dto.Instructions,
+            Defaults = dto.Defaults,
             CreatedAt = now,
             UpdatedAt = now,
         };
@@ -150,16 +142,11 @@ public sealed class ProjectService : IProjectService
     /// <inheritdoc />
     public async Task<ProjectMeta?> UpdateAsync(
         string pid,
-        UpdateProjectRequest request,
+        Validated<UpdateProjectRequest> request,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
-
-        var validation = _validation.Validate(request);
-        if (!validation.IsValid)
-        {
-            throw new ValidationException(validation);
-        }
+        var dto = request.Value;
 
         await using var repo = await _userDatabases.OpenAsync(_user.Iss, _user.Sub, cancellationToken).ConfigureAwait(false);
 
@@ -172,10 +159,10 @@ public sealed class ProjectService : IProjectService
         // Partial merge: each field overrides only when present (null = unchanged).
         var merged = current with
         {
-            Name = request.Name ?? current.Name,
-            Description = request.Description ?? current.Description,
-            Instructions = request.Instructions ?? current.Instructions,
-            Defaults = request.Defaults ?? current.Defaults,
+            Name = dto.Name ?? current.Name,
+            Description = dto.Description ?? current.Description,
+            Instructions = dto.Instructions ?? current.Instructions,
+            Defaults = dto.Defaults ?? current.Defaults,
             UpdatedAt = _time.GetUtcNow(),
         };
 

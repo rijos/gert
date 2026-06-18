@@ -1,5 +1,6 @@
 using Gert.Model.Chat;
 using Gert.Model.Dtos;
+using Gert.Service.Validation;
 
 namespace Gert.Service.Conversations;
 
@@ -33,14 +34,14 @@ public interface IConversationService
     /// <summary>Create a conversation; unset fields inherit the project/user defaults.</summary>
     Task<Conversation> CreateAsync(
         string pid,
-        CreateConversationRequest request,
+        Validated<CreateConversationRequest> request,
         CancellationToken cancellationToken = default);
 
     /// <summary>Apply a partial update (rename / switch model / toggle tools / archive).</summary>
     Task<Conversation?> UpdateAsync(
         string pid,
         string conversationId,
-        UpdateConversationRequest request,
+        Validated<UpdateConversationRequest> request,
         CancellationToken cancellationToken = default);
 
     /// <summary>Delete a conversation and cascade its messages/tool calls/citations/artifacts.</summary>
@@ -57,6 +58,6 @@ public interface IConversationService
     Task<Conversation?> MoveAsync(
         string pid,
         string conversationId,
-        MoveConversationRequest request,
+        Validated<MoveConversationRequest> request,
         CancellationToken cancellationToken = default);
 }

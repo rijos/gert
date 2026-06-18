@@ -1,5 +1,6 @@
 using Gert.Model.Dtos;
 using Gert.Model.Projects;
+using Gert.Service.Validation;
 
 namespace Gert.Service.Projects;
 
@@ -29,13 +30,13 @@ public interface IProjectService
 
     /// <summary>Create a new isolated project folder.</summary>
     Task<ProjectMeta> CreateAsync(
-        CreateProjectRequest request,
+        Validated<CreateProjectRequest> request,
         CancellationToken cancellationToken = default);
 
     /// <summary>Apply a partial update (rename / edit instructions / edit defaults).</summary>
     Task<ProjectMeta?> UpdateAsync(
         string pid,
-        UpdateProjectRequest request,
+        Validated<UpdateProjectRequest> request,
         CancellationToken cancellationToken = default);
 
     /// <summary>

@@ -24,10 +24,12 @@ namespace Gert.Tools.Builtin;
 public sealed class SaveMemoryTool : ITool
 {
     private readonly IMemoryService _memory;
+    private readonly IValidationProvider _validation;
 
-    public SaveMemoryTool(IMemoryService memory)
+    public SaveMemoryTool(IMemoryService memory, IValidationProvider validation)
     {
         _memory = memory ?? throw new ArgumentNullException(nameof(memory));
+        _validation = validation ?? throw new ArgumentNullException(nameof(validation));
     }
 
     /// <inheritdoc />
@@ -92,13 +94,13 @@ public sealed class SaveMemoryTool : ITool
 
         try
         {
-            // Pinned = false always - see the class doc. The service validates
-            // fail-closed (CreateMemoryRequestValidator: SafeText ShortTextMax /
-            // LongTextMax) and embeds before persisting anything.
-            var entry = await _memory.UpsertAsync(
-                invocation.Pid,
-                new CreateMemoryRequest { Title = title, Content = content, Pinned = false },
-                cancellationToken).ConfigureAwait(false);
+            // Pinned = false always - see the class doc. The model's tool-call args are
+            // untrusted, so the tool is the boundary: Prove validates fail-closed and
+            // throws ValidationException (caught below as a model-correctable error).
+            var request = _validation.Prove(
+                new CreateMemoryRequest { Title = title, Content = content, Pinned = false });
+            var entry = await _memory.UpsertAsync(invocation.Pid, request, cancellationToken)
+                .ConfigureAwait(false);
 
             return new ToolResult
             {

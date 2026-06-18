@@ -13,6 +13,7 @@ using Gert.Service.Chat;
 using Gert.Service.Chat.Bus;
 using Gert.Service.External;
 using Gert.Service.Tools;
+using Gert.Testing;
 using Gert.Testing.Fakes;
 using Gert.Tools.Builtin;
 using Microsoft.Extensions.Logging;
@@ -770,7 +771,7 @@ public sealed class TurnRunnerTests
 
         questions.Answer(
                 new TurnKey("https://idp.example", "sub-123", Pid, Conv),
-                new AnswerRequest { QuestionId = asked.QuestionId, Answer = "blue" })
+                Proof.Of(new AnswerRequest { QuestionId = asked.QuestionId, Answer = "blue" }))
             .Should().Be(AnswerOutcome.Delivered);
 
         await turn;

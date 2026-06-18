@@ -1,6 +1,7 @@
 using Gert.Api.Contracts;
 using Gert.Api.Validation;
 using Gert.Service.Documents;
+using Gert.Service.Validation;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Gert.Api.Controllers;
@@ -21,9 +22,13 @@ public sealed class DocumentsController : ControllerBase
 {
     // Granular interface, not the IGertServices hub (dotnet-style-guide.md section 4).
     private readonly IDocumentService _documents;
+    private readonly IValidationProvider _validation;
 
-    public DocumentsController(IDocumentService documents) =>
+    public DocumentsController(IDocumentService documents, IValidationProvider validation)
+    {
         _documents = documents ?? throw new ArgumentNullException(nameof(documents));
+        _validation = validation ?? throw new ArgumentNullException(nameof(validation));
+    }
 
     /// <summary>List the project's documents (decoded name, size, chunk_count, status, error).</summary>
     [HttpGet]
@@ -80,7 +85,10 @@ public sealed class DocumentsController : ControllerBase
             OpenReadStream = file.OpenReadStream,
         };
 
-        var document = await _documents.UploadAsync(pid, upload, cancellationToken).ConfigureAwait(false);
+        // Prove at the boundary (extension allowlist + size + mime): invalid -> 400.
+        var document = await _documents
+            .UploadAsync(pid, _validation.Prove(upload), cancellationToken)
+            .ConfigureAwait(false);
 
         // 202 + the created document (status: "processing"). The client renders the
         // row immediately and polls Get for the transition; Location points at it.

@@ -40,19 +40,29 @@ builder.Services
     .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(o =>
     {
-        o.Authority = cfg["Auth:Authority"];   // Pocket ID issuer; fetches JWKS automatically
-        o.Audience  = cfg["Auth:Audience"];    // "gert-api"
+        // Fail-fast: a missing Auth:Authority/Auth:Audience throws rather than booting an
+        // auth scheme that validates nothing.
+        o.Authority           = cfg["Auth:Authority"];  // Pocket ID issuer; fetches JWKS automatically
+        o.Audience            = cfg["Auth:Audience"];   // "gert-api"
+        o.RequireHttpsMetadata = true;                  // JWKS/discovery over TLS only (pin the default)
         o.TokenValidationParameters = new TokenValidationParameters
         {
             ValidateIssuer           = true,
+            ValidIssuer              = cfg["Auth:Authority"],  // pin explicitly, not just via discovery
             ValidateAudience         = true,
+            ValidAudience            = cfg["Auth:Audience"],   // explicit, not just via PostConfigure
             ValidateLifetime         = true,
+            RequireExpirationTime    = true,        // reject tokens with no exp
+            RequireSignedTokens      = true,        // reject unsigned tokens (belt-and-suspenders with the alg pin)
             ValidateIssuerSigningKey = true,
             ValidAlgorithms          = ["RS256"],   // pin: no alg-confusion / "none" (security F11)
+            ValidTypes               = ["at+jwt", "JWT"], // access-token typ (RFC 9068); blocks ID-token replay
             NameClaimType            = "preferred_username",
             RoleClaimType            = "groups",
             ClockSkew                = TimeSpan.FromSeconds(30),
         };
+        // A failed validation is a security signal - OnAuthenticationFailed logs the cause
+        // (never the token).
     });
 
 builder.Services.AddAuthorization(o =>

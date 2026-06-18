@@ -1,0 +1,38 @@
+# Gert.Api production image. Multi-stage: SDK builds + publishes (the publish step
+# also runs the no-npm web bundler, which fetches a pinned, SHA-512-verified esbuild
+# Go binary - so the BUILD needs network access), runtime serves on :8080.
+#
+# Build context is the repo root (see docker-compose.yml). Build-context noise is
+# trimmed by Dockerfile.gert.dockerignore (BuildKit reads the per-Dockerfile ignore).
+
+# ---- build ----
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+WORKDIR /src
+
+# Restore first (better layer caching) then publish in Release so the
+# BundleWebAssets target (AfterTargets=Publish, Release-only) bundles the SPA.
+COPY . .
+RUN dotnet restore src/Gert.Api/Gert.Api.csproj
+RUN dotnet publish src/Gert.Api/Gert.Api.csproj \
+    -c Release -o /app \
+    /p:UseAppHost=false
+
+# ---- runtime ----
+FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
+WORKDIR /app
+COPY --from=build /app ./
+COPY deploy/compose/entrypoint-gert.sh /usr/local/bin/entrypoint-gert.sh
+
+# Run unprivileged. The base image ships a non-root `app` user (UID 1654).
+# A FRESH named volume inherits the ownership of the image's mountpoint, so make
+# /data app-owned here; the entrypoint also needs to rewrite wwwroot/index.html.
+RUN mkdir -p /data \
+ && chown -R app:app /data /app/wwwroot \
+ && chmod +x /usr/local/bin/entrypoint-gert.sh
+
+USER app
+EXPOSE 8080
+VOLUME ["/data"]
+
+# The entrypoint injects window.GERT_AUTH (SPA OIDC config) from env, then execs the app.
+ENTRYPOINT ["/usr/local/bin/entrypoint-gert.sh"]

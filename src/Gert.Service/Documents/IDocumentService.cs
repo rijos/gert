@@ -1,4 +1,5 @@
 using Gert.Model.Rag;
+using Gert.Service.Validation;
 
 namespace Gert.Service.Documents;
 
@@ -27,7 +28,7 @@ public interface IDocumentService
     /// </summary>
     Task<Document> UploadAsync(
         string pid,
-        DocumentUpload upload,
+        Validated<DocumentUpload> upload,
         CancellationToken cancellationToken = default);
 
     /// <summary>Delete a document, its chunks/vec/fts rows, and the original file.</summary>

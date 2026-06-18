@@ -1,4 +1,5 @@
 using Gert.Model.Dtos;
+using Gert.Service.Validation;
 
 namespace Gert.Service.Chat;
 
@@ -15,6 +16,6 @@ public interface ITurnPlanner
     Task<TurnJob> PlanAsync(
         string pid,
         string conversationId,
-        SendMessageRequest request,
+        Validated<SendMessageRequest> request,
         CancellationToken cancellationToken = default);
 }

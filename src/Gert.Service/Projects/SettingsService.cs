@@ -15,16 +15,13 @@ namespace Gert.Service.Projects;
 public sealed class SettingsService : ISettingsService
 {
     private readonly IUserDatabaseProvider _userDatabases;
-    private readonly IValidationProvider _validation;
     private readonly IUserContext _user;
 
     public SettingsService(
         IUserDatabaseProvider userDatabases,
-        IValidationProvider validation,
         IUserContext user)
     {
         _userDatabases = userDatabases ?? throw new ArgumentNullException(nameof(userDatabases));
-        _validation = validation ?? throw new ArgumentNullException(nameof(validation));
         _user = user ?? throw new ArgumentNullException(nameof(user));
     }
 
@@ -38,16 +35,11 @@ public sealed class SettingsService : ISettingsService
 
     /// <inheritdoc />
     public async Task<UserSettings> UpdateAsync(
-        UpdateSettingsRequest request,
+        Validated<UpdateSettingsRequest> request,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
-
-        var validation = _validation.Validate(request);
-        if (!validation.IsValid)
-        {
-            throw new ValidationException(validation);
-        }
+        var dto = request.Value;
 
         await using var repo = await _userDatabases
             .OpenAsync(_user.Iss, _user.Sub, cancellationToken).ConfigureAwait(false);
@@ -57,12 +49,12 @@ public sealed class SettingsService : ISettingsService
         // Merge: each request field overrides only when present (null = leave unchanged).
         var merged = current with
         {
-            Theme = request.Theme ?? current.Theme,
-            UiLanguage = request.UiLanguage ?? current.UiLanguage,
-            ReplyLanguage = request.ReplyLanguage ?? current.ReplyLanguage,
-            DefaultModelId = request.DefaultModelId ?? current.DefaultModelId,
-            DefaultTools = request.DefaultTools ?? current.DefaultTools,
-            MemoryMode = request.MemoryMode ?? current.MemoryMode,
+            Theme = dto.Theme ?? current.Theme,
+            UiLanguage = dto.UiLanguage ?? current.UiLanguage,
+            ReplyLanguage = dto.ReplyLanguage ?? current.ReplyLanguage,
+            DefaultModelId = dto.DefaultModelId ?? current.DefaultModelId,
+            DefaultTools = dto.DefaultTools ?? current.DefaultTools,
+            MemoryMode = dto.MemoryMode ?? current.MemoryMode,
         };
 
         await repo.SaveSettingsAsync(merged, cancellationToken).ConfigureAwait(false);

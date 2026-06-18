@@ -73,6 +73,12 @@ public sealed class GertApiFactory : WebApplicationFactory<Program>
     {
         builder.UseEnvironment("Testing");
 
+        // ConfigureJwtBearer now fail-fasts on missing Auth:Authority/Auth:Audience. The
+        // offline post-configure below swaps the signing key + issuer/audience for the
+        // TestTokens values, but the base configure still runs first and must find config.
+        builder.UseSetting("Auth:Authority", TestTokens.DefaultIssuer);
+        builder.UseSetting("Auth:Audience", TestTokens.DefaultAudience);
+
         builder.ConfigureServices(services =>
         {
             // Point storage at the throwaway DataRoot.
