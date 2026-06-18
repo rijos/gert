@@ -27,9 +27,9 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Gert.Api.Tests", "tests\Ger
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tools", "tools", "{C0000000-0000-0000-0000-0000000000FF}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Gert.Web.Minify", "tools\Gert.Web.Minify\Gert.Web.Minify.csproj", "{A0000008-0000-0000-0000-000000000008}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Gert.Web.Bundle", "tools\Gert.Web.Bundle\Gert.Web.Bundle.csproj", "{A0000008-0000-0000-0000-000000000008}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Gert.Web.Minify.Tests", "tests\Gert.Web.Minify.Tests\Gert.Web.Minify.Tests.csproj", "{B0000008-0000-0000-0000-000000000008}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Gert.Web.Bundle.Tests", "tests\Gert.Web.Bundle.Tests\Gert.Web.Bundle.Tests.csproj", "{B0000008-0000-0000-0000-000000000008}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Gert.Database", "src\Gert.Database\Gert.Database.csproj", "{0879C00B-2424-4B3A-826F-168727E9FD69}"
 EndProject

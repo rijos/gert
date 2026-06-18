@@ -78,8 +78,8 @@ The no-bundle ESM design already needs **no `unsafe-inline`** for scripts: every
 absolute same-origin path (e.g. `/lib/van.js`), so there are no bare specifiers and **no inline
 `<script type="importmap">`** - just external `<script type="module" src>`. `script-src 'self'`
 therefore needs **no `sha256` hash** (there is no inline script to whitelist), which is why
-`SecurityHeadersMiddleware.cs` carries no import-map-hash constant and the publish minifier (which
-only touches `.js`/`.css`) has nothing to invalidate. `connect-src` is the
+`SecurityHeadersMiddleware.cs` carries no import-map-hash constant and the publish bundler (which
+leaves `index.html` with just the one external module script) has nothing to invalidate. `connect-src` is the
 exfiltration brake - it must list the API origin and Pocket ID, nothing else. The HTML/SVG
 artifact iframe is `srcdoc` with its **own** restrictive CSP (see F3). -> [operations](operations.md#http-security-headers--csp).
 

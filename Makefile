@@ -54,7 +54,7 @@ smoke-auth: ## Boot mocks + FakeE2E host and run the API auth smoke (httpx only,
 	PYTHONPATH=. $(SMOKE_DIR)/.venv/bin/python -m tools.smoke.run --api-smoke
 
 .PHONY: serve-mock
-serve-mock: ## Boot python mocks + FakeE2E host + a dev proxy; open the printed URL in YOUR browser (no Playwright). ROLE=admin|user|limited, MINIFY=1 serves minified assets
+serve-mock: ## Boot python mocks + FakeE2E host + a dev proxy; open the printed URL in YOUR browser (no Playwright). ROLE=admin|user|limited, MINIFY=1 serves the esbuild-bundled assets
 	cd $(SMOKE_DIR) && uv sync --group monty
 	PYTHONPATH=. $(SMOKE_DIR)/.venv/bin/python -m tools.smoke.run --proxy --monty-real --role $(or $(ROLE),admin) $(if $(MINIFY),--minify,)
 

@@ -126,12 +126,12 @@ def _boot_host(*, web_root: str | None = None) -> subprocess.Popen[bytes]:
     if web_root is not None:
         # ASPNETCORE_WEBROOT overrides the served wwwroot. FakeE2E's launchSettings
         # doesn't set it, so this process-env value reaches the web host - pointing
-        # static files at a minified copy instead of the raw source (--minify).
+        # static files at a bundled copy instead of the raw source (--minify).
         env["ASPNETCORE_WEBROOT"] = web_root
         # ...but in Development the static-web-assets manifest re-maps the app's
         # assets back to the SOURCE wwwroot, shadowing ASPNETCORE_WEBROOT. Point the
         # manifest at a path that doesn't exist so StaticWebAssetsLoader resolves
-        # nothing and the plain physical WebRootFileProvider (our minified copy) wins.
+        # nothing and the plain physical WebRootFileProvider (our bundled copy) wins.
         env["ASPNETCORE_STATICWEBASSETS"] = str(Path(web_root) / ".no-swa-manifest")
     return subprocess.Popen(
         [
@@ -147,26 +147,27 @@ def _boot_host(*, web_root: str | None = None) -> subprocess.Popen[bytes]:
     )
 
 
-# --- minified web root (--minify) --------------------------------------------
-def _prepare_minified_webroot() -> str:
-    """Copy src/Gert.Api/wwwroot into a temp dir, minify it in place via the real
-    release tool (tools/Gert.Web.Minify, NUglify), and return the temp dir.
+# --- bundled web root (--minify) ---------------------------------------------
+def _prepare_bundled_webroot() -> str:
+    """Copy src/Gert.Api/wwwroot into a temp dir, bundle it via the real release tool
+    (tools/Gert.Web.Bundle, pinned esbuild), and return the temp dir.
 
-    Lets serve-mock --minify exercise the exact assets that ship on publish (same
-    minify-in-place, no-bundle path; ui-components.md section 6) without touching
-    the working tree. The caller removes the dir on shutdown.
+    Lets serve-mock --minify exercise the exact assets that ship on publish (the same
+    esbuild bundle -> app.js + app.css, index.html repointed, raw source pruned;
+    ui-components.md section 6) without touching the working tree. First run fetches the
+    pinned esbuild binary (no npm). The caller removes the dir on shutdown.
     """
     src = REPO_ROOT / "src" / "Gert.Api" / "wwwroot"
-    dest = tempfile.mkdtemp(prefix="gert-minified-www-")
-    print(f"Minify: copying wwwroot -> {dest}")
+    dest = tempfile.mkdtemp(prefix="gert-bundled-www-")
+    print(f"Bundle: copying wwwroot -> {dest}")
     shutil.copytree(src, dest, dirs_exist_ok=True)
-    print("Minify: running tools/Gert.Web.Minify (NUglify) in place...")
+    print("Bundle: running tools/Gert.Web.Bundle (esbuild)...")
     subprocess.run(
         [
             "dotnet",
             "run",
             "--project",
-            str(REPO_ROOT / "tools" / "Gert.Web.Minify"),
+            str(REPO_ROOT / "tools" / "Gert.Web.Bundle"),
             "--no-launch-profile",
             "--",
             dest,
@@ -548,9 +549,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--minify",
         action="store_true",
-        help="Serve a MINIFIED copy of wwwroot (the real release NUglify pass) instead "
-        "of raw source, so you can eyeball that the .js/.css minify in place cleanly. "
-        "Ignored with --base-url (we only minify a host we boot ourselves).",
+        help="Serve a BUNDLED copy of wwwroot (the real release esbuild pass -> app.js + "
+        "app.css) instead of raw source, so you can eyeball the bundle in a browser. "
+        "Ignored with --base-url (we only bundle a host we boot ourselves).",
     )
     args = parser.parse_args(argv)
 
@@ -563,7 +564,7 @@ def main(argv: list[str] | None = None) -> int:
     mocks: list[_ServerThread] = []
     host_proc: subprocess.Popen[bytes] | None = None
     monty_proc: subprocess.Popen[bytes] | None = None
-    minified_root: str | None = None
+    bundled_root: str | None = None
     base_url = args.base_url or DEFAULT_HOST
 
     try:
@@ -582,9 +583,9 @@ def main(argv: list[str] | None = None) -> int:
             # own, so its data is left alone.)
             shutil.rmtree(DATA_ROOT, ignore_errors=True)
             if args.minify:
-                minified_root = _prepare_minified_webroot()
+                bundled_root = _prepare_bundled_webroot()
             print("Booting FakeE2E host (dotnet run)...")
-            host_proc = _boot_host(web_root=minified_root)
+            host_proc = _boot_host(web_root=bundled_root)
 
         print(f"Waiting for {base_url}/healthz ...")
         if not _wait_healthz(base_url):
@@ -630,8 +631,8 @@ def main(argv: list[str] | None = None) -> int:
                     proc.kill()
         for s in mocks:
             s.stop()
-        if minified_root is not None:
-            shutil.rmtree(minified_root, ignore_errors=True)
+        if bundled_root is not None:
+            shutil.rmtree(bundled_root, ignore_errors=True)
 
 
 if __name__ == "__main__":

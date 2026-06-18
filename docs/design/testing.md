@@ -99,7 +99,7 @@ tests/
   Gert.Tools.Tests/             # tool adapter units - built-in tools, SSRF guard, sandbox invocation, backend selection
   Gert.Ingestion.Tests/         # extractor hardening units - XXE, zip-bomb, helper output
   Gert.Api.Tests/               # integration via GertApiFactory - controllers, SSE, auth, IDOR, admin, SPA fallback
-  Gert.Web.Minify.Tests/        # the publish-time minifier stays ESM-safe (raw-fallback per file)
+  Gert.Web.Bundle.Tests/        # publish bundler: pinned esbuild manifest + index.html repoint
   web/
     harness.html                # __mount helper - Fake host serves it at /tests/ for component units (absolute same-origin imports, no import map)
   shared/                       # ONE source of truth for both fake layers (Appendix A)

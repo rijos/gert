@@ -5,7 +5,7 @@ using Serilog.Events;
 using Serilog.Parsing;
 using Xunit;
 
-namespace Gert.Web.Minify.Tests;
+namespace Gert.Service.Tests.Observability;
 
 /// <summary>
 /// Verifies the shared NDJSON formatter (operations.md section Logging format): <c>ts</c> then

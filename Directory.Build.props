@@ -48,9 +48,9 @@
     <OpenXmlVersion>3.1.0</OpenXmlVersion>
     <!-- Patched System.IO.Packaging overriding OpenXml's vulnerable transitive 8.0.0 (NU1903). -->
     <SystemIoPackagingVersion>9.0.0</SystemIoPackagingVersion>
-    <!-- Release pipeline: NUglify minify-in-place on publish (no npm) +
+    <!-- Release pipeline: the SPA is bundled on publish by the pinned esbuild Go binary
+         (no npm, no NuGet - see tools/Gert.Web.Bundle), so nothing to pin here.
          Serilog NDJSON logging. -->
-    <NUglifyVersion>1.21.17</NUglifyVersion>
     <SerilogVersion>4.2.0</SerilogVersion>
     <SerilogExtensionsHostingVersion>9.0.0</SerilogExtensionsHostingVersion>
     <SerilogExtensionsLoggingVersion>9.0.0</SerilogExtensionsLoggingVersion>

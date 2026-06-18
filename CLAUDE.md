@@ -60,7 +60,9 @@ code comments cite docs by section, so keep both ends accurate.
   the token-derived folder ([docs/design/principles.md](docs/design/principles.md)).
 - **Validation is fail-closed.** Every request DTO needs a registered `IValidator<T>`; a
   reflection meta-test goes red if one is missing.
-- **No npm.** The SPA is no-build ESM with vendored libs; minification is .NET-only on publish.
+- **No npm.** The SPA is no-build ESM with vendored libs; on publish a .NET target drives a
+  pinned, SHA-512-verified esbuild Go binary (fetched from the npm-registry tarball - no npm,
+  no Node) to bundle it into one `app.js` + `app.css` (`tools/Gert.Web.Bundle`).
 - **No secrets in `appsettings.json`** - env vars / `dotnet user-secrets` only. Nothing under
   `.dev/` is ever committed.
 - **Security findings F1-F12** ([docs/design/security.md](docs/design/security.md)) each have

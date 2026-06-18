@@ -11,9 +11,10 @@ This expands the `Gert.Api/wwwroot` node from [Tech stack -> Solution layout](te
 removed - the tree below documents the real, shipped app.)
 
 > **One-line architecture:** `wwwroot` **is** the source. Components are plain ES
-> modules a browser loads as-is - no bundler, no transpile. In dev you debug the exact
-> files you wrote; on publish, .NET minifies them in place. VanJS is vendored locally,
-> so the SPA has **zero external runtime dependencies** - fitting for a self-hosted box.
+> modules a browser loads as-is - no transpile, and in dev no bundler. In dev you debug the
+> exact files you wrote; on publish, .NET drives esbuild to bundle + minify them. VanJS is
+> vendored locally, so the SPA has **zero external runtime dependencies** - fitting for a
+> self-hosted box.
 
 ---
 
@@ -24,7 +25,7 @@ removed - the tree below documents the real, shipped app.)
 | Framework | **VanJS** (vendored, ~1 KB) | Already the chosen SPA framework ([tech-stack](tech-stack.md)). Components are just functions returning DOM nodes - no compiler needed. |
 | Module system | **Native ES modules**, absolute same-origin paths | Every `import` is an absolute path (e.g. `/lib/van.js`) - no bare specifiers, so **no import map** and nothing inline for the CSP to hash. The browser resolves `import` directly; `wwwroot` is the source; what you debug is what you wrote. |
 | Dev build | **None.** `dotnet run` serves raw source | Real files, real line numbers in devtools, instant refresh. No Node, no watcher. |
-| Release build | **.NET-only minify on `dotnet publish`** (NUglify) - **no npm** | Minified `.js`/`.css` written into `wwwroot` with paths unchanged, so the ESM import graph still resolves. See [section 6](#6-devrelease-pipeline-no-npm). |
+| Release build | **Bundle on `dotnet publish`** via a pinned, SHA-512-verified **esbuild** Go binary - **no npm, no Node** | The ESM graph collapses into one `/app.js` + `/app.css` (stable names), `index.html` is repointed, raw source pruned. Fail-closed. See [section 6](#6-devrelease-pipeline-no-npm). |
 | CSS | **Tokens-only theming; component CSS co-located** via the `component()` factory; four global sheets (`tokens` - `base` - `layout` - `primitives`) | A component's rules live with the component (CSP-clean adopted stylesheets); only un-ownable rules stay global - [style guide section 2](spa-style-guide.md#2-theming---derive-everything-from-global-tokens). |
 | State | **VanJS reactive `state/` stores**, no DOM | Components bind to stores; stores never touch the DOM. One-way: store -> view. |
 | I/O | **`services/` only** | Components never `fetch`. All `/api` traffic goes through a service. |
@@ -35,7 +36,7 @@ removed - the tree below documents the real, shipped app.)
 ## 2. Directory layout
 
 `Gert.Api/wwwroot` is the authoring root and what is served - the same
-files are what ship (minified) on publish.
+files are what ship (bundled into `app.js` + `app.css`) on publish.
 
 ```
 wwwroot/
@@ -345,15 +346,15 @@ construction (full rationale in [security](security.md#3-findings--remediations)
 
 ## 6. Dev/release pipeline (no npm)
 
-The whole point of native ESM: **the dev build is "no build."** Minification is a
-publish-time concern handled entirely by .NET.
+The whole point of native ESM: **the dev build is "no build."** Bundling + minification is
+a publish-time concern, handled entirely by .NET driving a pinned esbuild binary.
 
 ### Development - raw source
 - `Gert.Api` serves `wwwroot/` directly in `Development` (`UseStaticFiles`,
   no-cache, `MapFallbackToFile("index.html")`).
-- The browser loads `app.js` as a module and resolves every `import` by path. Every import is
-  an **absolute same-origin path** - there are no bare specifiers, so there is **no import map**
-  and nothing inline for the CSP to allow:
+- The browser loads `app.js` as a module and resolves every `import` by path. Imports are
+  **same-origin paths** - mostly relative, plus a few absolute (e.g. `/lib/van.js`) - with no
+  bare specifiers, so there is **no import map** and nothing inline for the CSP to allow:
 
 ```html
 <script type="module" src="/app.js"></script>
@@ -365,33 +366,38 @@ publish-time concern handled entirely by .NET.
 - What you see in devtools **is** the file on disk - real names, real line numbers, no
   source maps. Edit, refresh, done.
 
-### Release - minify in place, on `dotnet publish`
-An MSBuild target runs **[NUglify](https://github.com/trullock/NUglify)** (pure .NET,
-NuGet, **no npm**) over the assets as they land in the publish output, minifying each
-`.js`/`.css` **to the same relative path** (`tools/Gert.Web.Minify`, invoked from
-`Gert.Api.csproj` after publish). Because paths don't change, the ESM import graph keeps
-resolving - we minify, we don't bundle or rename. The minifier only touches `.js`/`.css`,
-never `.html`, so there is no inline-script hash for it to invalidate.
+### Release - bundle on `dotnet publish` (esbuild, no npm)
+An MSBuild target (`BundleWebAssets`, `AfterTargets=Publish`, Release only) runs
+[esbuild](https://esbuild.github.io/) over the published `wwwroot` (`tools/Gert.Web.Bundle`,
+invoked from `Gert.Api.csproj`). esbuild is a single static **Go binary** - we fetch it from
+its npm-registry tarball over plain HTTPS and **SHA-512-verify** it (the version and a
+per-RID hash are pinned in `EsbuildManifest`), so there is **no npm and no Node** in the
+build; the binary is cached under the OS temp dir, never shipped. Offline operators pre-seed
+that cache.
 
-**ESM caveat - validated.** NUglify must parse modern module syntax; this was verified
-against the real `wwwroot` on `dotnet publish` (the published graph
-still resolves). The minify-in-place, **no-bundle** design remains the safety net: a
-file that ever trips the parser stays raw (or whitespace-minified) without breaking
-the import graph - a single file failing never cascades.
+The bundle:
+- collapses the ESM graph rooted at `app.js` into one minified **`/app.js`**, and
+- folds the four global sheets (`tokens` → `base` → `layout` → `primitives`, in cascade
+  order) into one minified **`/app.css`**, then
+- repoints `index.html` (the four `<link>`s become one `/app.css` link; the `/app.js`
+  module script is untouched) and **prunes** the now-inlined raw `.js`/`.css` source.
 
-**Previewing the minified assets:** `make serve-mock MINIFY=1` runs the same NUglify
-pass over a throwaway copy of `wwwroot` and points the dev host at it (via
-`ASPNETCORE_WEBROOT`), so you can click through the minified `.js`/`.css` in a browser
-without a publish - the working tree is untouched and the copy is removed on shutdown.
+The graph's few absolute specifiers (`/lib/van.js`, ...) resolve through a throwaway
+tsconfig that maps `/*` back to `wwwroot` - no source rewriting. `index.html` keeps just the
+one module `<script>`, so `script-src 'self'` stays hash-free.
 
-**Cache-busting:** keep filenames stable (so imports don't need rewriting) and bust via
-HTTP - ETags plus versioned query strings on the `index.html` entry tags. Content-hashed
-filenames are deliberately avoided here because they'd force rewriting every relative
-`import`.
+**Fail-closed.** Unlike the old per-file minifier, a bundle is all-or-nothing: if esbuild
+errors the tool exits non-zero and **fails the publish** rather than shipping a half-bundled
+graph, and `wwwroot` is left as the intact raw graph.
 
-**If we ever want bundling/fingerprinting** without npm: `LigerShark.WebOptimizer.Core`
-(also pure .NET / NUglify, runtime pipeline) is the drop-in upgrade - deferred, since the
-no-build ESM model is simpler and HTTP/2 multiplexing makes many small modules cheap.
+**Previewing the bundle:** `make serve-mock MINIFY=1` runs the same esbuild pass over a
+throwaway copy of `wwwroot` and points the dev host at it (via `ASPNETCORE_WEBROOT`), so you
+can click through the bundled `app.js`/`app.css` in a browser without a publish - the working
+tree is untouched and the copy is removed on shutdown.
+
+**Cache-busting:** `app.js`/`app.css` keep **stable filenames** so the `index.html` entry
+tags resolve; bust via HTTP - ETags plus versioned query strings on those tags.
+Content-hashed filenames are deliberately avoided (they'd churn `index.html` on every edit).
 
 ---
 
@@ -436,8 +442,9 @@ Every interactive piece of the app, and where it lives.
   per-item keyed rendering the opt-in upgrade
   ([style guide section 4](spa-style-guide.md#4-lists---reactive-rows-rebuild-on-membership)).
   Plain `van.state` is the tool for scalar UI state in `state/ui.js` (theme, layout flags).
-- **Minifier validation - resolved.** NUglify minifies the real ESM source cleanly;
-  verified on `dotnet publish`. The raw-fallback safety net stays in place.
+- **Bundler - decided, esbuild.** A pinned, SHA-512-verified esbuild Go binary bundles the
+  SPA on `dotnet publish` (no npm, no Node); verified against the real `wwwroot`. Bundling is
+  fail-closed - a bundle error fails the publish rather than shipping a partial graph.
 - **i18n / UI language - not built.** The settings design reserves a UI-language
   setting ([configuration section 3.2](configuration.md#32-language)); locale dictionaries
   and an i18n pass on component strings would be the additive follow-up.

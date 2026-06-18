@@ -8,10 +8,10 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- The NUglify minify tool, and Gert.Service for the NDJSON formatter +
-         uid-hash so the logging assertions live alongside the minify ones. -->
-    <ProjectReference Include="..\..\tools\Gert.Web.Minify\Gert.Web.Minify.csproj" />
-    <ProjectReference Include="..\..\src\Gert.Service\Gert.Service.csproj" />
+    <!-- The no-npm publish bundler: pinned-manifest + index.html-repoint logic under test
+         (the esbuild download/extract path is covered by the publish run, not these
+         hermetic unit tests). -->
+    <ProjectReference Include="..\..\tools\Gert.Web.Bundle\Gert.Web.Bundle.csproj" />
   </ItemGroup>
 
 </Project>

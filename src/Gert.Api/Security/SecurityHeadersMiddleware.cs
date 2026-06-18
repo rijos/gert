@@ -78,11 +78,11 @@ public sealed class SecurityHeadersMiddleware
             ? "'self'"
             : $"'self' {artifactOrigin}";
 
-        // The SPA ships NO inline scripts: every module import is an absolute
-        // same-origin path (no bare specifiers, so no inline <script type="importmap">),
+        // The SPA ships NO inline scripts: every module import is a same-origin path
+        // (relative or absolute - no bare specifiers, so no inline <script type="importmap">),
         // and the entry/bootstrap tags are external <script src>. So `script-src 'self'`
         // alone covers it - no per-build SHA-256 to keep in sync, nothing the publish
-        // minifier can invalidate.
+        // bundler can invalidate.
         return string.Join(
             "; ",
             [

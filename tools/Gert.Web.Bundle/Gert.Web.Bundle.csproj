@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>Gert.Web.Bundle</RootNamespace>
+    <!-- No-npm release bundler (ui-components.md section 6): fetches + verifies the pinned
+         esbuild Go binary and bundles the SPA on publish. BCL only (HttpClient, SHA-512,
+         System.Formats.Tar, GZipStream) - no NuGet, no npm, no Node. -->
+  </PropertyGroup>
+
+</Project>

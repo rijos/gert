@@ -178,7 +178,7 @@ Gert.sln
 │  ├─ Controllers/            # thin - Models, Conversations, Messages(SSE), Documents, Artifacts, Admin
 │  ├─ Ingestion/              # Channel queue + IngestionWorker (BackgroundService) -> IIngestionService
 │  └─ wwwroot/                # VanJS SPA source (no .NET ref, no npm) - native ES modules served
-│                             #   raw in dev, minified in place on publish (NUglify).
+│                             #   raw in dev, bundled on publish (esbuild Go binary, no npm).
 │                             #   Layout & component conventions: docs/design/ui-components.md
 │
 ├─ tests/                     # test projects - see docs/design/testing.md
@@ -190,11 +190,11 @@ Gert.sln
 │  ├─ Gert.Tools.Tests/       #   tool adapter units: built-in tools, SSRF guard, sandbox args, backend selection
 │  ├─ Gert.Ingestion.Tests/   #   extractor hardening units (XXE, zip-bomb, helper output)
 │  ├─ Gert.Api.Tests/         #   integration (WebApplicationFactory): SSE, auth, IDOR, admin, SPA fallback
-│  ├─ Gert.Web.Minify.Tests/  #   the publish-time minifier stays ESM-safe
+│  ├─ Gert.Web.Bundle.Tests/  #   publish bundler: pinned esbuild manifest + index.html repoint
 │  ├─ shared/                 #   ONE source of truth for both fake layers (testing.md Appendix A)
 │  └─ web/                    #   harness.html - browser component-unit mount point
 │
 └─ tools/
-   ├─ Gert.Web.Minify/        # NUglify minify-in-place console, run on publish (ui-components section 6)
+   ├─ Gert.Web.Bundle/        # esbuild bundler console, run on publish (ui-components section 6)
    └─ smoke/                  # Python + Playwright E2E launcher (no npm) - admin+user x Chromium+Firefox
 ```
