@@ -87,6 +87,9 @@ why**; the code in [`src/`](../../src/) implements them.
   authority + per-user encryption, scoped data credentials, process privilege-separation, and a
   network egress brake - bounding blast radius and exfiltration if the process is compromised.
   **Wishlist - not implemented.**
+- [typescript-migration.md](typescript-migration.md) - the plan to move the SPA from JavaScript to
+  TypeScript on the native Go toolchain (`tsgo` checker + the vendored esbuild), keeping the no-npm
+  rule: `.ts` source, sibling `.js` emit in dev, a fail-closed `tsgo` gate. **Plan - not executed.**
 
 ## Reading paths
 
@@ -110,6 +113,7 @@ why**; the code in [`src/`](../../src/) implements them.
 | RAG, retrieval, ingestion, embeddings | [chat-and-tools.md](chat-and-tools.md) | [storage-and-data section rag.db](storage-and-data.md#ragdb-sqlite-vec), [decisions section 1/section 5](decisions.md) |
 | Projects, settings, memory, data lifecycle | [configuration.md](configuration.md) | [storage-and-data.md](storage-and-data.md), [rest-api.md](rest-api.md) |
 | Anything in `wwwroot/` | [ui-components.md](ui-components.md) + [spa-style-guide.md](spa-style-guide.md) | [security F2-F4](security.md#3-findings--remediations) |
+| The SPA build/type toolchain (esbuild, tsgo, TS migration) | [typescript-migration.md](typescript-migration.md) | [ui-components section 6](ui-components.md#6-devrelease-pipeline-no-npm) |
 | New inputs, parsers, fetches, anything security-adjacent | [security.md](security.md) | [testing section validation](testing.md#validation---the-input-security-boundary), [principles #6](principles.md) |
 | Tests, fakes, fixtures, E2E | [testing.md](testing.md) | [tech-stack section architecture](tech-stack.md#architecture) |
 | Any C# (`src/`, `tests/`) - conventions, idioms | [dotnet-style-guide.md](dotnet-style-guide.md) | [tech-stack.md](tech-stack.md) |
