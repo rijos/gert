@@ -28,6 +28,22 @@ using Serilog.Events;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// --- Captive-dependency guard (principles.md per-user isolation) -------------------
+// Per-user isolation rests on a service resolving the caller from the request-scoped
+// IUserContext (Program.cs "IUserContext routing" below). A singleton that consumed a
+// user-scoped service would capture the FIRST caller's identity and then serve their
+// data to everyone - a cross-user leak, not just a lifetime bug. ValidateScopes makes
+// that a hard failure in EVERY environment (the framework default only validates in
+// Development), and ValidateOnBuild surfaces it at startup instead of on first request.
+// The service layer's own registrations are additionally guarded by an architecture
+// test (ArchitectureTests.Services_consuming_IUserContext_are_scoped); this is the
+// backstop for host- and adapter-registered services the test can't see.
+builder.Host.UseDefaultServiceProvider(options =>
+{
+    options.ValidateScopes = true;
+    options.ValidateOnBuild = true;
+});
+
 // --- Request body cap (testing.md section 5 upload limits) --------------------------
 // Kestrel's default MaxRequestBodySize (~28.6 MB) would 413 a legitimate upload
 // before DocumentUploadValidator ever saw it. Raise the transport cap to the

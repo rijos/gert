@@ -6,6 +6,7 @@ SLN          := Gert.sln
 CONFIG       ?= Debug
 COVERAGE_DIR := artifacts/coverage
 SMOKE_DIR    := tools/smoke
+HANG_TIMEOUT ?= 180s
 
 .DEFAULT_GOAL := help
 
@@ -22,9 +23,6 @@ restore: ## Restore NuGet packages
 build: ## Build the solution (warnings are errors)
 	dotnet build $(SLN) -c $(CONFIG)
 
-# --blame-hang-timeout turns a hung test into a fast failure (with a Sequence_*.xml that
-# names the test that stalled) instead of an indefinite pipeline run - see HANG_TIMEOUT.
-HANG_TIMEOUT ?= 180s
 
 .PHONY: test
 test: ## Run the .NET test suite (excludes the timing-coupled Category=Race set - see test-race)
@@ -32,7 +30,7 @@ test: ## Run the .NET test suite (excludes the timing-coupled Category=Race set 
 
 .PHONY: test-race
 test-race: ## Race/dead-zone integration tests (paced turns, mid-stream switching) - on demand, NOT part of CI
-	dotnet test tests/Gert.Api.Tests -c $(CONFIG) --nologo --filter "Category=Race" --blame-hang-timeout $(HANG_TIMEOUT)
+	timeout $(HANG_TIMEOUT) dotnet run --project tests/Gert.Api.Tests -c $(CONFIG) -- -explicit only -trait "Category=Race"
 
 .PHONY: lint
 lint: ## Enforce ruff (lint + format check) + mypy --strict on the Python harness
@@ -56,9 +54,9 @@ smoke-auth: ## Boot mocks + FakeE2E host and run the API auth smoke (httpx only,
 	PYTHONPATH=. $(SMOKE_DIR)/.venv/bin/python -m tools.smoke.run --api-smoke
 
 .PHONY: serve-mock
-serve-mock: ## Boot python mocks + FakeE2E host + a dev proxy; open the printed URL in YOUR browser (no Playwright). ROLE=admin|user|limited
+serve-mock: ## Boot python mocks + FakeE2E host + a dev proxy; open the printed URL in YOUR browser (no Playwright). ROLE=admin|user|limited, MINIFY=1 serves minified assets
 	cd $(SMOKE_DIR) && uv sync --group monty
-	PYTHONPATH=. $(SMOKE_DIR)/.venv/bin/python -m tools.smoke.run --proxy --monty-real --role $(or $(ROLE),admin)
+	PYTHONPATH=. $(SMOKE_DIR)/.venv/bin/python -m tools.smoke.run --proxy --monty-real --role $(or $(ROLE),admin) $(if $(MINIFY),--minify,)
 
 .PHONY: coverage
 coverage: ## Run tests with coverage + generate an HTML report (needs coverlet.collector + reportgenerator tool)

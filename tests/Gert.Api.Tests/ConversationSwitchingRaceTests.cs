@@ -26,8 +26,12 @@ namespace Gert.Api.Tests;
 /// turn streams: the breakage modes a fast user invites by submitting and
 /// switching before the model finishes. Turns are PACED with real delays (a
 /// custom <see cref="IChatModelClient"/>), so these are deliberately slow and
-/// timing-coupled - <b>not part of the CI gate</b>: `make test` filters
-/// <c>Category!=Race</c>; run them on demand with `make test-race`.
+/// timing-coupled - <b>not part of the CI gate</b>. Each test is a
+/// <see cref="RaceFactAttribute"/> (xUnit <c>Explicit</c>), so even a bare
+/// <c>dotnet test</c> skips them; they run only on demand via <c>make test-race</c>
+/// (native runner, <c>-explicit only</c>). The class-level
+/// <c>[Trait("Category", "Race")]</c> keeps <c>make test</c>'s <c>Category!=Race</c>
+/// filter excluding them as a second line of defence.
 /// </summary>
 [Trait("Category", "Race")]
 public sealed class ConversationSwitchingRaceTests : IClassFixture<GertApiFactory>, IDisposable
@@ -40,9 +44,12 @@ public sealed class ConversationSwitchingRaceTests : IClassFixture<GertApiFactor
     {
         Tokens = factory;
         // Swap the instant fixture model for a paced one - runs AFTER the
-        // parent's fake registration, so this replace wins.
+        // parent's fake registration, so this replace wins. TurnRunner resolves
+        // its client through IChatClientFactory (not IChatModelClient directly),
+        // so the paced model has to ride in on the factory seam.
         _factory = factory.WithWebHostBuilder(builder => builder.ConfigureServices(services =>
-            services.Replace(ServiceDescriptor.Singleton<IChatModelClient>(new PacedChatModel()))));
+            services.Replace(ServiceDescriptor.Singleton<IChatClientFactory>(
+                new FixedChatClientFactory(new PacedChatModel())))));
     }
 
     private GertApiFactory Tokens { get; }
@@ -150,7 +157,7 @@ public sealed class ConversationSwitchingRaceTests : IClassFixture<GertApiFactor
             .Where(f => f.Event == "delta")
             .Select(f => JsonDocument.Parse(f.Data).RootElement.GetProperty("text").GetString()));
 
-    [Fact]
+    [RaceFact]
     public async Task Switching_mid_stream_completes_both_turns_without_crossing_streams()
     {
         var client = Authed();
@@ -190,7 +197,7 @@ public sealed class ConversationSwitchingRaceTests : IClassFixture<GertApiFactor
         }
     }
 
-    [Fact]
+    [RaceFact]
     public async Task Reopening_a_streaming_thread_reports_streaming_then_resumes_to_terminal()
     {
         var client = Authed();
@@ -220,7 +227,7 @@ public sealed class ConversationSwitchingRaceTests : IClassFixture<GertApiFactor
         assistant.Text.Should().Be(AssembleDeltas(frames));
     }
 
-    [Fact]
+    [RaceFact]
     public async Task Abandoning_the_stream_and_resubscribing_loses_no_events()
     {
         var client = Authed();
@@ -259,7 +266,7 @@ public sealed class ConversationSwitchingRaceTests : IClassFixture<GertApiFactor
             .Text.Should().Be(AssembleDeltas(first.Concat(rest)));
     }
 
-    [Fact]
+    [RaceFact]
     public async Task A_second_send_into_a_streaming_conversation_409s_and_the_turn_survives()
     {
         var client = Authed();
@@ -285,7 +292,7 @@ public sealed class ConversationSwitchingRaceTests : IClassFixture<GertApiFactor
         thread!.Messages.Should().HaveCount(2);
     }
 
-    [Fact]
+    [RaceFact]
     public async Task Deleting_a_sibling_conversation_mid_stream_leaves_the_turn_alone()
     {
         var client = Authed();

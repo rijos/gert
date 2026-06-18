@@ -29,9 +29,15 @@ namespace Gert.Service;
 public static class ServiceCollectionExtensions
 {
     /// <summary>
-    /// Register the Gert service layer. Services are <b>scoped</b> - they depend
-    /// on the per-request <see cref="IUserContext"/>, so their lifetime must not
-    /// outlive a request. Uses <c>TryAdd</c> so a host may override any registration.
+    /// Register the Gert service layer. Most services are registered with
+    /// <see cref="AddUserScoped{TService,TImpl}"/> - they act on behalf of the ambient
+    /// caller, resolving identity from the per-request <see cref="IUserContext"/> and
+    /// opening the per-user store by <c>(Iss, Sub)</c>. <b>Which</b> impl backs
+    /// <see cref="IUserContext"/> is chosen by the host: a request scope gets
+    /// <c>HttpUserContext</c> (JWT claims); a worker scope (no <c>HttpContext</c>) gets
+    /// <see cref="DetachedUserContext"/> seeded from the job - see the "IUserContext
+    /// routing" registration in <c>Gert.Api/Program.cs</c>. Uses <c>TryAdd</c> so a host
+    /// may override any registration.
     /// </summary>
     public static IServiceCollection AddGertServices(this IServiceCollection services)
     {
@@ -53,8 +59,9 @@ public static class ServiceCollectionExtensions
         // registry overrides it.
         services.TryAddScoped<IProjectInstructionsReader, NullProjectInstructionsReader>();
 
-        // Granular services.
-        services.TryAddScoped<IConversationService, ConversationService>();
+        // Granular services. All caller-bound (see AddUserScoped): they read/write the
+        // requester's per-user store via IUserContext, so they must never outlive a scope.
+        services.AddUserScoped<IConversationService, ConversationService>();
 
         // Detached turn pipeline (chat-and-tools.md section detached turns): the bus is a
         // process-wide singleton (live delivery is per-process; the DB is the
@@ -67,10 +74,10 @@ public static class ServiceCollectionExtensions
         // waiting turn always lives in this process, so the answer endpoint
         // can reach it here (chat-and-tools.md section Ask the user).
         services.TryAddSingleton<ITurnQuestions, TurnQuestions>();
-        services.TryAddScoped<IConversationReader, ConversationReader>();
-        services.TryAddScoped<IConversationStreamer, ConversationStreamer>();
-        services.TryAddScoped<ITurnPlanner, TurnPlanner>();
-        services.TryAddScoped<ITurnRunner, TurnRunner>();
+        services.AddUserScoped<IConversationReader, ConversationReader>();
+        services.AddUserScoped<IConversationStreamer, ConversationStreamer>();
+        services.AddUserScoped<ITurnPlanner, TurnPlanner>();
+        services.AddUserScoped<ITurnRunner, TurnRunner>();
         // The worker-scope IUserContext: seeded from the TurnJob before anything
         // else resolves in the scope. The host's IUserContext registration picks
         // this when there is no HttpContext (the queue seam: ITurnQueue is
@@ -80,19 +87,19 @@ public static class ServiceCollectionExtensions
         // (this layer stays configuration-agnostic).
         services.AddOptions<TurnOptions>();
 
-        services.TryAddScoped<IDocumentService, DocumentService>();
-        services.TryAddScoped<IArtifactService, ArtifactService>();
-        services.TryAddScoped<IMemoryService, MemoryService>();
-        services.TryAddScoped<IProjectService, ProjectService>();
-        services.TryAddScoped<ISettingsService, SettingsService>();
+        services.AddUserScoped<IDocumentService, DocumentService>();
+        services.AddUserScoped<IArtifactService, ArtifactService>();
+        services.AddUserScoped<IMemoryService, MemoryService>();
+        services.AddUserScoped<IProjectService, ProjectService>();
+        services.AddUserScoped<ISettingsService, SettingsService>();
         // The journal-guarded eraser: one crash-consistent erase path for self-service
         // account delete, admin delete, and recovery. Singleton - its stores + journal are
         // all singletons, so the startup recovery sweep can depend on it directly.
         services.TryAddSingleton<IUserDataEraser, UserDataEraser>();
-        services.TryAddScoped<IAccountService, AccountService>();
-        services.TryAddScoped<IAdminService, AdminService>();
-        services.TryAddScoped<ISystemPromptInspector, SystemPromptInspector>();
-        services.TryAddScoped<Provisioning.IUserProvisioner, Provisioning.UserProvisioner>();
+        services.AddUserScoped<IAccountService, AccountService>();
+        services.AddUserScoped<IAdminService, AdminService>();
+        services.AddUserScoped<ISystemPromptInspector, SystemPromptInspector>();
+        services.AddUserScoped<Provisioning.IUserProvisioner, Provisioning.UserProvisioner>();
 
         // Ingestion - the extract -> chunk -> embed -> write pipeline and its
         // ports. Files are read/written ONLY via IObjectStore (host-registered) and
@@ -108,8 +115,30 @@ public static class ServiceCollectionExtensions
         // still resolves the tool instances via IEnumerable<ITool>.
 
         // Aggregate hub.
-        services.TryAddScoped<IGertServices, GertServices>();
+        services.AddUserScoped<IGertServices, GertServices>();
 
+        return services;
+    }
+
+    /// <summary>
+    /// Register a service that <b>acts on behalf of the ambient caller</b>: it resolves
+    /// the user from the request-scoped <see cref="IUserContext"/> (directly or through a
+    /// collaborator) and opens the per-user store by <c>(Iss, Sub)</c>. Such a service
+    /// <b>MUST be scoped</b> - a singleton would capture one caller's identity once and
+    /// then serve their data to every later request (a captive-dependency cross-user
+    /// leak, not just a lifetime bug). This helper is plain <c>TryAddScoped</c>; its name
+    /// is the contract. The "must be scoped" half is enforced two ways: the host enables
+    /// <c>ValidateScopes</c>/<c>ValidateOnBuild</c> (Program.cs), and
+    /// <c>ArchitectureTests.Services_consuming_IUserContext_are_scoped</c> fails if any
+    /// registration here turns singleton. Use <c>TryAddScoped</c> directly only for the
+    /// rare scoped service that is <i>not</i> caller-bound (e.g. a stateless seam or the
+    /// <see cref="DetachedUserContext"/> impl itself).
+    /// </summary>
+    private static IServiceCollection AddUserScoped<TService, TImpl>(this IServiceCollection services)
+        where TService : class
+        where TImpl : class, TService
+    {
+        services.TryAddScoped<TService, TImpl>();
         return services;
     }
 
@@ -154,7 +183,9 @@ public static class ServiceCollectionExtensions
         services.TryAddSingleton<ITextExtractor>(sp =>
             new CompositeTextExtractor(sp.GetKeyedServices<ITextExtractor>(LeafExtractorKey)));
 
-        services.TryAddScoped<IIngestionService, IngestionService>();
+        services.AddUserScoped<IIngestionService, IngestionService>();
+        // The inline queue is infrastructure, not caller-bound: it just runs the pipeline
+        // on the calling scope (the API host swaps it for a Channel-backed singleton).
         services.TryAddScoped<IIngestionQueue, InlineIngestionQueue>();
     }
 

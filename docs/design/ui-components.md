@@ -379,6 +379,11 @@ still resolves). The minify-in-place, **no-bundle** design remains the safety ne
 file that ever trips the parser stays raw (or whitespace-minified) without breaking
 the import graph - a single file failing never cascades.
 
+**Previewing the minified assets:** `make serve-mock MINIFY=1` runs the same NUglify
+pass over a throwaway copy of `wwwroot` and points the dev host at it (via
+`ASPNETCORE_WEBROOT`), so you can click through the minified `.js`/`.css` in a browser
+without a publish - the working tree is untouched and the copy is removed on shutdown.
+
 **Cache-busting:** keep filenames stable (so imports don't need rewriting) and bust via
 HTTP - ETags plus versioned query strings on the `index.html` entry tags. Content-hashed
 filenames are deliberately avoided here because they'd force rewriting every relative
