@@ -45,13 +45,19 @@ export const ProjectPicker = component({
     }
 
     .p-new {
+      display: block;
+      width: 100%;
+      text-align: left;
+      background: none;
+      border: none;
+      border-top: 1px solid var(--line);
+      font-family: inherit;
       padding: var(--sp-2) var(--sp-3);
       border-radius: var(--r-sm);
       cursor: pointer;
       transition: var(--t-fast);
       font-size: var(--fs-sm);
       font-weight: 500;
-      border-top: 1px solid var(--line);
       margin-top: 5px;
       color: var(--coral-deep);
     }
@@ -83,8 +89,8 @@ export const ProjectPicker = component({
       display: flex;
       align-items: center;
       justify-content: center;
-      width: 22px;
-      height: 22px;
+      width: 24px;
+      height: 24px;
       flex: none;
       background: none;
       border: none;
@@ -198,7 +204,7 @@ export const ProjectPicker = component({
               ),
         ),
       footer: (close: () => void) =>
-        div({ class: "p-new", onclick: () => { close(); promptNew(); } },
+        button({ class: "p-new", type: "button", onclick: () => { close(); promptNew(); } },
           t("+ New project"),
         ),
     }),

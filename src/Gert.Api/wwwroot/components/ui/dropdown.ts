@@ -39,6 +39,9 @@ interface DropdownProps {
   searchable?: boolean;
   wrapClass?: string;
   renderItem?: ((item: DropdownItem) => ChildDom) | null;
+  // Names the trigger for AT (WCAG 4.1.2) - a visible <label> can't associate with this
+  // custom widget, so the field label is passed in instead.
+  ariaLabel?: string;
 }
 
 export const Dropdown = component({
@@ -97,6 +100,7 @@ export const Dropdown = component({
     }
     .dd.open .menu {
       opacity: 1;
+      visibility: visible;
       transform: none;
       pointer-events: auto;
     }
@@ -187,6 +191,7 @@ export const Dropdown = component({
       searchable = false,
       wrapClass = "",
       renderItem = null,
+      ariaLabel,
     }: DropdownProps = {} as DropdownProps,
   ) => {
     const search = searchable
@@ -213,6 +218,9 @@ export const Dropdown = component({
       {
         class: "dd-btn",
         type: "button",
+        "aria-haspopup": "true",
+        "aria-expanded": () => String(open.val),
+        ...(ariaLabel ? { "aria-label": ariaLabel } : {}),
         onclick: (e: Event) => {
           e.stopPropagation();
           open.val = !open.val;
@@ -223,8 +231,24 @@ export const Dropdown = component({
       Icon("chevron", { size: 13, class: "chev", strokeWidth: 2.4 }),
     );
 
+    // role=button + tabindex makes the row keyboard-operable (WCAG 2.1.1); some consumers
+    // (project-picker) inject their own action buttons via renderItem, so the row stays a div
+    // rather than a <button> to keep those reachable.
     const Row = (item: DropdownItem) =>
-      div({ class: () => "dd-item" + (value.val === item.value ? " sel" : ""), onclick: () => pick(item) },
+      div(
+        {
+          class: () => "dd-item" + (value.val === item.value ? " sel" : ""),
+          role: "button",
+          tabindex: "0",
+          "aria-current": () => (value.val === item.value ? "true" : "false"),
+          onclick: () => pick(item),
+          onkeydown: (e: KeyboardEvent) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              pick(item);
+            }
+          },
+        },
         renderItem ? renderItem(item) : item.label,
       );
 

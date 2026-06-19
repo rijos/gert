@@ -17,11 +17,31 @@
 
 const injected = new Set<string>();
 
+// Conservative minifier for THIS project's own component stylesheets (not a general-purpose
+// CSS minifier): drop comments, collapse whitespace/newlines, and tighten around block and
+// declaration punctuation. It deliberately does NOT touch `,`/`:` (they appear inside selectors
+// and content:"" values), so it is safe to run blind over every component css block. The
+// release bundler runs the same shape at build time so the shipped app.js carries no verbose CSS.
+export const minifyCss = (src: string): string =>
+  src
+    .replace(/\/\*[\s\S]*?\*\//g, "") // drop comments, including /*! legal */ banners
+    .replace(/\s+/g, " ") // collapse whitespace + newlines to a single space
+    .replace(/\s*([{};])\s*/g, "$1") // tighten around braces + statement separators
+    .replace(/;}/g, "}") // a block's trailing semicolon is redundant
+    .trim();
+
+// css tagged template: authors a minified component stylesheet inline. Interpolations are
+// stringified, then the whole block is minified. The "small component that minifies css" -
+// adoptStyles also minifies as a backstop, so a plain css string works too.
+export const css = (strings: TemplateStringsArray, ...values: unknown[]): string =>
+  minifyCss(strings.reduce((acc, s, i) => acc + s + (i < values.length ? String(values[i]) : ""), ""));
+
 // Adopt a stylesheet built from a CSS string. Reusable by non-component modules that need to ship
-// CSS under a strict CSP (e.g. the imperative toast host).
-export const adoptStyles = (css: string) => {
+// CSS under a strict CSP (e.g. the imperative toast host). Minifies on the way in so injected
+// component CSS carries no comments/whitespace regardless of how the source was authored.
+export const adoptStyles = (style: string) => {
   const sheet = new CSSStyleSheet();
-  sheet.replaceSync(css);
+  sheet.replaceSync(minifyCss(style));
   document.adoptedStyleSheets = [...document.adoptedStyleSheets, sheet];
 };
 

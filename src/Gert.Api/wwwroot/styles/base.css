@@ -17,8 +17,24 @@ body{
 /* one coral focus ring for every interactive element, both themes (the coral
    pair clears 3:1 non-text contrast on either paper). Components that paint
    their own focus treatment (the composer's :focus-within ring) opt out with
-   outline:none on the inner control. */
-:focus-visible{outline:2px solid var(--coral); outline-offset:2px;}
+   outline:none on the inner control. --coral-deep is the manila-AA outline color
+   (plain --coral was 2.79:1 on coral-tinted active rows). */
+:focus-visible{outline:2px solid var(--coral-deep); outline-offset:2px;}
+
+/* skip-to-content link (index.html, first body child): off-screen until focused,
+   then slides into the top-left. Above every fixed layer so it is never covered.
+   Uses transform (not display:none) so it stays focusable; reduced-motion neutralizes
+   the slide via the @media block below. */
+.skip-link{
+  position:fixed; top:8px; left:8px; z-index:100;
+  transform:translateY(-150%);
+  padding:8px 14px; border-radius:var(--r-sm);
+  background:var(--surface); color:var(--ink);
+  border:1px solid var(--line); box-shadow:var(--lift);
+  font-size:var(--fs-md); font-weight:600; text-decoration:none;
+  transition:transform var(--t-fast) var(--ease);
+}
+.skip-link:focus{transform:none;}
 
 /* The .md-math-block scroll container is the STRUCTURAL renderer's own wrapper
    node: it boxes a display-math leaf so a too-wide formula scrolls horizontally.

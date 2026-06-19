@@ -156,6 +156,12 @@ export const ModelPicker = component({
 - **Non-obvious code cites its design doc** - a `//` comment naming the doc section or
   security finding (`F2`, `F3`, `F4`...) it implements. Code comments and docs reference
   each other; keep both ends accurate when either changes.
+- **Interactive elements are accessible by construction** - a real `<button>`/control role
+  (never a bare `<div onclick>`), an accessible name on every icon-only control, dialogs that
+  move/trap/restore focus, and `aria-live` for status. The full contract + the shared-primitive
+  fixes live in
+  [ui-components - Accessibility](ui-components.md#accessibility-wcag-22-aa-baseline);
+  guard regressions with `tools/smoke/tests/test_a11y.py`.
 
 ---
 

@@ -261,34 +261,48 @@ export const SearchOverlay = component({
     { m, items, querying, onInput, onScroll }: SearchState,
     { close }: SearchArgs = {} as SearchArgs,
   ) => {
-    return div({ class: "so" },
+    return div({ class: "so", role: "dialog", "aria-modal": "true", "aria-labelledby": "search-overlay-title" },
       div({ class: "so-head" },
-        h2(m.title),
+        h2({ id: "search-overlay-title" }, m.title),
         input({
           class: "so-input",
           placeholder: m.placeholder,
+          "aria-label": m.title,
           autofocus: true,
           oninput: onInput,
           onkeydown: (e: KeyboardEvent) => {
             if (e.key === "Escape") close();
           },
         }),
-        button({ class: "ghost", title: t("Close"), onclick: close },
+        button({ class: "ghost", title: t("Close"), "aria-label": t("Close"), onclick: close },
           Icon("close", { size: 15, strokeWidth: 2.2 }),
         ),
       ),
+      // role=status so result-state changes (Searching / Nothing found / Loading) are announced.
       div({ class: "so-list", onscroll: onScroll },
         () => {
           const list = items.val;
           if (!list.length) {
-            return div({ class: "so-state" },
+            return div({ class: "so-state", role: "status", "aria-live": "polite" },
               querying.val ? t("Searching...") : t("Nothing found."),
             );
           }
           return div(
             ...list.map((item) => {
               const r = m.row(item);
-              return div({ class: "so-row", onclick: () => m.open(item, close) },
+              return div(
+                {
+                  class: "so-row",
+                  role: "button",
+                  tabindex: "0",
+                  onclick: () => m.open(item, close),
+                  onkeydown: (e: KeyboardEvent) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      m.open(item, close);
+                    }
+                  },
+                },
                 Icon(r.icon, { size: 14, strokeWidth: 2 }),
                 span({ class: "so-label" }, r.label),
                 span({ class: "so-meta" }, r.meta),
@@ -296,7 +310,7 @@ export const SearchOverlay = component({
             }),
             () =>
               querying.val
-                ? div({ class: "so-state" }, t("Loading..."))
+                ? div({ class: "so-state", role: "status", "aria-live": "polite" }, t("Loading..."))
                 : span(),
           );
         },
@@ -305,14 +319,40 @@ export const SearchOverlay = component({
   },
 });
 
-// Open the overlay over the page; returns close(). Esc / scrim click close.
+// Open the overlay over the page; returns close(). Esc / scrim click close. Focus moves into
+// the dialog, is trapped within it, and returns to the opener on close (WCAG 2.4.3 / 2.1.2).
 export const openSearch = (mode: string) => {
+  const opener = document.activeElement as HTMLElement | null;
+  const tabbables = () =>
+    [
+      ...host.querySelectorAll<HTMLElement>(
+        'a[href],button:not([disabled]),input:not([disabled]),[tabindex]:not([tabindex="-1"])',
+      ),
+    ].filter((el) => el.offsetParent !== null);
   const onKey = (e: KeyboardEvent) => {
-    if (e.key === "Escape") close();
+    if (e.key === "Escape") {
+      close();
+      return;
+    }
+    if (e.key === "Tab") {
+      const f = tabbables();
+      if (!f.length) return;
+      const first = f[0]!;
+      const last = f[f.length - 1]!;
+      const active = document.activeElement;
+      if (e.shiftKey && (active === first || !host.contains(active))) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && (active === last || !host.contains(active))) {
+        e.preventDefault();
+        first.focus();
+      }
+    }
   };
   const close = () => {
     host.remove();
     document.removeEventListener("keydown", onKey);
+    opener?.focus?.();
   };
   const host = div(
     {
@@ -325,5 +365,6 @@ export const openSearch = (mode: string) => {
   );
   van.add(document.body, host);
   document.addEventListener("keydown", onKey);
+  (host.querySelector(".so-input") as HTMLElement | null)?.focus();
   return close;
 };

@@ -114,8 +114,8 @@ export const MemoryList = component({
       display: none;
       align-items: center;
       justify-content: center;
-      width: 20px;
-      height: 20px;
+      width: 24px;
+      height: 24px;
       flex: none;
       background: none;
       border: none;
@@ -168,18 +168,18 @@ export const MemoryList = component({
       }, "Couldn't load memories");
 
     const promptAdd = () => {
-      const titleEl = input({ placeholder: t("Title") });
-      const noteEl = textarea({ class: "mem-note", placeholder: t("What should Gert remember?") });
+      const titleEl = input({ id: "mem-title", placeholder: t("Title") });
+      const noteEl = textarea({ id: "mem-note", class: "mem-note", placeholder: t("What should Gert remember?") });
       const pinned = van.state(false);
       Modal({
         title: t("New memory"),
         body: div(
-          div({ class: "field" }, label(t("Title")), titleEl),
-          div({ class: "field" }, label(t("Note")), noteEl),
+          div({ class: "field" }, label({ for: "mem-title" }, t("Title")), titleEl),
+          div({ class: "field" }, label({ for: "mem-note" }, t("Note")), noteEl),
           div(
             { class: "field mem-pin-row" },
             label(t("Pin - include in every chat")),
-            Switch({ on: () => pinned.val, onToggle: () => (pinned.val = !pinned.val) }),
+            Switch({ on: () => pinned.val, onToggle: () => (pinned.val = !pinned.val), label: t("Pin - include in every chat") }),
           ),
         ),
         confirmLabel: t("Save"),
@@ -221,7 +221,7 @@ export const MemoryList = component({
               ...entries.map((m) =>
                 div(
                   { class: "mem-row" },
-                  span({ class: "pin", title: m.pinned ? "Pinned - rides every chat" : "" }, m.pinned ? Icon("sparkle", { size: 12, strokeWidth: 2 }) : span()),
+                  span({ class: "pin", title: m.pinned ? "Pinned - rides every chat" : "" }, m.pinned ? Icon("sparkle", { size: 12, strokeWidth: 2, label: "Pinned" }) : span()),
                   span({ class: "mt" }, m.title || "untitled"),
                   span({ class: "when" }, fmtRelative(m.updated_at ?? "")),
                   button({ class: "mem-del", title: t("Delete memory"), "aria-label": `Delete memory ${m.title}`, onclick: () => remove(m) },

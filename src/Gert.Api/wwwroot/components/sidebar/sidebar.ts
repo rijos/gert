@@ -16,14 +16,14 @@ import * as chatSvc from "../../services/chat.js";
 import * as artifacts from "../../state/artifacts.js";
 import { navigate } from "../../lib/router.js";
 
-const { aside, div, h1, button } = van.tags;
+const { nav, div, h1, button } = van.tags;
 
 // pane header. The version line lives in settings, not here.
 const Brand = () =>
   div({ class: "brand" },
     div({ class: "mark" }, BrandMark()),
     h1("Gert"),
-    button({ class: "ghost drawer-close", style: "margin-left:auto", title: t("Close"), onclick: ui.toggleNav },
+    button({ class: "ghost drawer-close", style: "margin-left:auto", title: t("Close"), "aria-label": t("Close"), onclick: ui.toggleNav },
       Icon("close", { strokeWidth: 2.2 }),
     ),
   );
@@ -157,7 +157,8 @@ export const Sidebar = component({
     }
   `,
   view: () =>
-    aside({ class: "sidebar" },
+    // Primary navigation landmark (WCAG 1.3.1): the conversation list + project/search controls.
+    nav({ class: "sidebar", "aria-label": "Sidebar" },
       Brand(),
       ProjectPicker(),
       NewChat(),

@@ -20,6 +20,18 @@ import { t } from "../../lib/i18n.js";
 
 const { div, h2, p, button } = van.tags;
 
+// Per-instance id source for aria-labelledby (the dialog's name points at its <h2>).
+let modalSeq = 0;
+
+// Tabbable descendants of an open dialog, in DOM order, skipping hidden ones - the focus trap
+// and initial-focus both read this.
+const tabbables = (root: HTMLElement): HTMLElement[] =>
+  [
+    ...root.querySelectorAll<HTMLElement>(
+      'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])',
+    ),
+  ].filter((el) => el.offsetParent !== null || el === document.activeElement);
+
 interface ModalProps {
   title?: ChildDom;
   body?: ChildDom;
@@ -111,22 +123,54 @@ export const Modal = component({
     dismissable = true,
     closable = false,
   }: ModalProps = {}) => {
+    // Restore focus to whatever opened the dialog when it closes (WCAG 2.4.3).
+    const opener = document.activeElement as HTMLElement | null;
+    const titleId = "modal-title-" + ++modalSeq;
+
     const close = () => {
       host.remove();
       document.removeEventListener("keydown", onKey);
+      opener?.focus?.();
     };
     const onKey = (e: KeyboardEvent) => {
-      if (dismissable && e.key === "Escape") close();
+      if (dismissable && e.key === "Escape") {
+        close();
+        return;
+      }
+      // Trap Tab within the dialog: wrap at the ends, and pull a stray focus back in.
+      if (e.key === "Tab") {
+        const f = tabbables(host);
+        if (!f.length) {
+          e.preventDefault();
+          return;
+        }
+        const first = f[0]!;
+        const last = f[f.length - 1]!;
+        const active = document.activeElement;
+        if (e.shiftKey && (active === first || !host.contains(active))) {
+          e.preventDefault();
+          last.focus();
+        } else if (!e.shiftKey && (active === last || !host.contains(active))) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
     };
 
     const host = div(
       { class: "modal-scrim", onclick: (e: Event) => dismissable && e.target === host && close() },
       div(
-        { class: "modal" },
+        {
+          class: "modal",
+          role: "dialog",
+          "aria-modal": "true",
+          tabindex: "-1",
+          ...(title ? { "aria-labelledby": titleId } : { "aria-label": t("Dialog") }),
+        },
         closable
-          ? button({ class: "ghost modal-close", title: t("Close"), onclick: close }, Icon("close", { size: 15, strokeWidth: 2.2 }))
+          ? button({ class: "ghost modal-close", title: t("Close"), "aria-label": t("Close"), onclick: close }, Icon("close", { size: 15, strokeWidth: 2.2 }))
           : null,
-        title ? h2(title) : null,
+        title ? h2({ id: titleId }, title) : null,
         typeof body === "string" ? p(body) : body,
         // the footer: the caller's custom actions, else the default Cancel + confirm pair
         actions
@@ -145,6 +189,9 @@ export const Modal = component({
     );
     van.add(document.body, host);
     document.addEventListener("keydown", onKey);
+    // Move focus into the dialog: the first control, else the dialog box itself (tabindex=-1).
+    const initial = tabbables(host);
+    (initial[0] ?? (host.querySelector(".modal") as HTMLElement | null))?.focus();
     return close;
   },
 });

@@ -29,6 +29,11 @@ export const Menu = component({
       box-shadow: var(--shadow-menu);
       padding: 6px;
       opacity: 0;
+      /* visibility:hidden takes a CLOSED menu's items out of the tab order (WCAG 2.4.3 -
+         pointer-events alone still left them keyboard-focusable). The open-reveal in each
+         wrapping picker flips it back to visible; visibility rides the same transition so
+         the close still fades. */
+      visibility: hidden;
       transform: translateY(-6px) scale(.98);
       transform-origin: top right;
       pointer-events: none;
@@ -56,7 +61,16 @@ export const Menu = component({
     };
 
     const wrap = div(
-      { class: () => wrapClass + (open.val ? " open" : "") },
+      {
+        class: () => wrapClass + (open.val ? " open" : ""),
+        // Escape closes the menu and returns focus to its trigger (WCAG 2.1.2 / 2.4.3).
+        onkeydown: (e: KeyboardEvent) => {
+          if (e.key === "Escape" && open.val) {
+            open.val = false;
+            (wrap.querySelector(":scope > button, :scope > [tabindex]") as HTMLElement | null)?.focus();
+          }
+        },
+      },
       trigger,
       div({ class: "menu", onclick: (e) => e.stopPropagation() },
         ...children,

@@ -143,6 +143,29 @@ def test_design_tokens_resolve_to_real_values(page: Page, base_url: str) -> None
     assert tokens["headH"].endswith("px")
 
 
+def test_minify_css_strips_comments_and_collapses_whitespace(
+    page: Page, base_url: str
+) -> None:
+    """component.js minifyCss() (and the matching build-time pass in Gert.Web.Bundle) strips
+    comments + whitespace from component stylesheets while preserving selector structure and
+    content values - so shipped CSS carries no banners/indentation."""
+    page.goto(f"{base_url}/tests/harness.html")
+    out = page.evaluate(
+        r"""async () => {
+            const { minifyCss } = await import('/lib/component.js');
+            return minifyCss(`
+                /* a comment */
+                .a .b {
+                  color: red;
+                  content: "";
+                }
+            `);
+        }"""
+    )
+    # comment + newlines gone; descendant combinator and content:"" survive intact.
+    assert out == '.a .b{color: red;content: ""}', out
+
+
 def test_theme_attribute_flips_token_values(page: Page, base_url: str) -> None:
     """Manila/Ember both come from tokens.css light-dark(): forcing the theme
     attribute must actually change the resolved paper color."""

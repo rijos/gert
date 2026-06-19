@@ -91,8 +91,10 @@ export const CanvasPanel = component({
   `,
   view: () =>
   aside(
-    { class: "panel" },
-    div({ class: "resize-handle", title: "Drag to resize", onpointerdown: startResize }),
+    { class: "panel", "aria-label": "Canvas" },
+    // Pointer-only resize affordance: hidden from AT (the panel content is fully reachable
+    // without it, and there is no content loss if it is never used).
+    div({ class: "resize-handle", title: "Drag to resize", "aria-hidden": "true", onpointerdown: startResize }),
     CanvasBar(),
     div(
       { class: "canvas-stage" },

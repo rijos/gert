@@ -57,7 +57,8 @@ export const Pill = component({
   view: ({ kind = "ready", label }: { kind?: string; label?: string } = {}) =>
     span(
       { class: "pill " + kind },
-      span({ class: "pd" }),
+      // the colored dot is decorative; the text label carries the status (not color alone).
+      span({ class: "pd", "aria-hidden": "true" }),
       label || LABELS[kind] || kind,
     ),
 });

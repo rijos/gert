@@ -18,7 +18,15 @@ const TI_LABEL: Record<string, string> = { md: "md", html: "<>", svg: "svg", py:
 const TypeIcon = (a: Artifact) => span({ class: "ti " + a.kind }, TI_LABEL[a.kind] || "?");
 
 const Tab = (a: Artifact) =>
-  div({ class: () => "ctab" + (ui.activeArtifact.val === a.id && !ui.showKnowledge.val ? " active" : ""), "data-tab": a.kind, onclick: () => ui.openArtifact(a.id) },
+  button(
+    {
+      class: () => "ctab" + (ui.activeArtifact.val === a.id && !ui.showKnowledge.val ? " active" : ""),
+      type: "button",
+      role: "tab",
+      "data-tab": a.kind,
+      "aria-selected": () => String(ui.activeArtifact.val === a.id && !ui.showKnowledge.val),
+      onclick: () => ui.openArtifact(a.id),
+    },
     TypeIcon(a),
     a.name || "untitled",
   );
@@ -55,6 +63,7 @@ export const ArtifactTabs = component({
       padding: 6px 9px;
       border-radius: 7px 7px 0 0;
       cursor: pointer;
+      background: none;
       color: var(--ink-2);
       font-family: var(--mono);
       font-size: var(--fs-xs);
@@ -142,6 +151,7 @@ export const ArtifactTabs = component({
 
     .ctabs-wrap.open .menu {
       opacity: 1;
+      visibility: visible;
       transform: none;
       pointer-events: auto;
     }
@@ -187,6 +197,8 @@ export const ArtifactTabs = component({
     const strip = div(
       {
         class: "ctabs",
+        role: "tablist",
+        "aria-label": "Open files",
         // a mouse wheel only has a vertical axis - map it onto the strip
         onwheel: (e: WheelEvent) => {
           if (!e.deltaY || e.deltaX) return;
@@ -230,9 +242,18 @@ export const ArtifactTabs = component({
                   class: () =>
                     "ca-item" +
                     (ui.activeArtifact.val === a.id && !ui.showKnowledge.val ? " sel" : ""),
+                  role: "button",
+                  tabindex: "0",
                   onclick: () => {
                     open.val = false;
                     ui.openArtifact(a.id);
+                  },
+                  onkeydown: (e: KeyboardEvent) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      open.val = false;
+                      ui.openArtifact(a.id);
+                    }
                   },
                 },
                 TypeIcon(a),

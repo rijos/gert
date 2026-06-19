@@ -301,6 +301,8 @@ export const Composer = component({
   }) => {
     const ta = textarea({
       rows: 1,
+      // The placeholder is a hint, not a name (WCAG 3.3.2): give the textarea a stable label.
+      "aria-label": t("Message Gert..."),
       // the hint tracks the configurable send chord (settings -> "Send with"):
       // Enter sends by default; mod+Enter when the user prefers Enter = newline
       placeholder: () =>
@@ -372,7 +374,7 @@ export const Composer = component({
               ...pending.map((p, i) =>
                 div({ class: "att-thumb" },
                   img({ src: p.url, alt: "pasted image" }),
-                  button({ class: "att-x", title: t("Remove image"), onclick: () => pending.splice(i, 1) }, "x"),
+                  button({ class: "att-x", title: t("Remove image"), "aria-label": t("Remove image"), onclick: () => pending.splice(i, 1) }, "x"),
                 ),
               ),
             )
@@ -388,8 +390,8 @@ export const Composer = component({
           div({ class: "cright" },
             ContextRing(),
             () => chat.streaming.val
-              ? button({ class: "stop", title: t("Stop"), onclick: chatSvc.stop }, Icon("stop", { size: 15, strokeWidth: 0 }))
-              : button({ class: "send", title: t("Send"), disabled: () => empty.val && !pending.length, onclick: submit },
+              ? button({ class: "stop", title: t("Stop"), "aria-label": t("Stop"), onclick: chatSvc.stop }, Icon("stop", { size: 15, strokeWidth: 0 }))
+              : button({ class: "send", title: t("Send"), "aria-label": t("Send"), disabled: () => empty.val && !pending.length, onclick: submit },
                   Icon("send", { size: 17, strokeWidth: 2.2 }),
                 ),
           ),

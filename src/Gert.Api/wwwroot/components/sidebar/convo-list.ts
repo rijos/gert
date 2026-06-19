@@ -54,7 +54,8 @@ export const ConvoList = component({
             div(
               div({ class: "convo-group" }, t(g)),
               // g comes from groups.keys(), so get() is present here too.
-              div({ class: "branch" }, ...groups.get(g)!.map((c) => ConvoItem(c))),
+              // role=list pairs with each ConvoItem's role=listitem (WCAG 1.3.1).
+              div({ class: "branch", role: "list", "aria-label": t(g) }, ...groups.get(g)!.map((c) => ConvoItem(c))),
             ),
           ),
         );

@@ -17,7 +17,7 @@ const { div, button, span } = van.tags;
 type ModelRow = Model & { endpoint?: string };
 
 const ModelItem = (m: ModelRow) =>
-  div({ class: () => "m-item" + (models.selectedId.val === m.id ? " sel" : ""), onclick: () => models.select(m.id) },
+  button({ class: () => "m-item" + (models.selectedId.val === m.id ? " sel" : ""), type: "button", "aria-current": () => (models.selectedId.val === m.id ? "true" : "false"), onclick: () => models.select(m.id) },
     div({ class: "m-top" },
       span({ class: "m-name" },
         m.name,
@@ -81,10 +81,18 @@ export const ModelPicker = component({
     }
     .model-picker.open .menu {
       opacity: 1;
+      visibility: visible;
       transform: none;
       pointer-events: auto;
     }
     .m-item {
+      display: block;
+      width: 100%;
+      text-align: left;
+      background: none;
+      border: none;
+      font-family: inherit;
+      color: inherit;
       padding: var(--sp-2) var(--sp-3);
       border-radius: var(--r-sm);
       cursor: pointer;
@@ -134,8 +142,8 @@ export const ModelPicker = component({
       wrapClass: "model-picker",
       open,
       trigger: button(
-        { class: "model-btn", onclick: toggle },
-        span({ class: "mdot" }),
+        { class: "model-btn", type: "button", "aria-haspopup": "true", "aria-expanded": () => String(open.val), "aria-label": "Choose model", onclick: toggle },
+        span({ class: "mdot", "aria-hidden": "true" }),
         span({ class: "mname" }, () => models.selected.val?.name || "Model"),
         Icon("chevron", { size: 13, class: "chev", strokeWidth: 2.4 }),
       ),

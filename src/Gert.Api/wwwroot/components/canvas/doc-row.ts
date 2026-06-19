@@ -83,10 +83,11 @@ export const DocRow = component({
     div(
       { class: "meta" },
       div({ class: "dname" }, () => d.name || ""),
-      div({ class: "dsub" }, () => subText(d)),
+      // Live region so the Processing -> Ready / Failed transition is announced (WCAG 4.1.3).
+      div({ class: "dsub", role: "status", "aria-live": "polite" }, () => subText(d)),
     ),
     () => Pill({ kind: (d.status ? STATUS_KIND[d.status] : undefined) || "proc" }),
-    button({ class: "trash", title: "Delete", onclick: () => attempt(() => svc.remove(d.id), "Couldn't delete this document") },
+    button({ class: "trash", title: "Delete", "aria-label": () => `Delete ${d.name || "document"}`, onclick: () => attempt(() => svc.remove(d.id), "Couldn't delete this document") },
       Icon("trash", { size: 14, strokeWidth: 2 }),
     ),
   ),

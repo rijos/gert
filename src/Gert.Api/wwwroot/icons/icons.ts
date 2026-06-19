@@ -173,6 +173,10 @@ interface IconOptions {
   size?: number;
   strokeWidth?: number;
   class?: string;
+  // A MEANINGFUL standalone icon (no adjacent text and not inside a labelled control):
+  // sets role="img" + aria-label so it has a text alternative (WCAG 1.1.1). Omit for the
+  // decorative default below.
+  label?: string;
 }
 
 export const Icon = (name: string, opts: IconOptions = {}): Element => {
@@ -181,6 +185,12 @@ export const Icon = (name: string, opts: IconOptions = {}): Element => {
   // `file` is the always-present default glyph; the `!` reflects that the `|| GLYPHS.file`
   // fallback is never undefined (noUncheckedIndexedAccess widens both sides). Type-only.
   const children = (GLYPHS[name] || GLYPHS.file!)();
+  // Decorative BY DEFAULT (WCAG 1.1.1): the vast majority of icons sit next to visible text
+  // or inside an aria-label'd button, so an exposed unlabelled <svg> is just AT noise. Hide
+  // it. `label` opts a genuinely standalone icon back in as a named image.
+  const a11y = opts.label
+    ? { role: "img", "aria-label": opts.label }
+    : { "aria-hidden": "true", focusable: "false" };
   return svg(
     {
       viewBox: "0 0 24 24",
@@ -190,6 +200,7 @@ export const Icon = (name: string, opts: IconOptions = {}): Element => {
       stroke: "currentColor",
       "stroke-width": sw,
       class: opts.class || "",
+      ...a11y,
     },
     ...children,
   );
@@ -200,7 +211,8 @@ export const Icon = (name: string, opts: IconOptions = {}): Element => {
 // attributes can't resolve var(), inline CSSOM can.
 export const BrandMark = () =>
   svg(
-    { width: 30, height: 30, viewBox: "0 0 30 30", fill: "none" },
+    // Decorative: the wordmark <h1>Gert</h1> beside it carries the name.
+    { width: 30, height: 30, viewBox: "0 0 30 30", fill: "none", "aria-hidden": "true", focusable: "false" },
     circle({ cx: "8", cy: "7", r: "3.4", style: "fill:var(--brand)" }),
     circle({ cx: "8", cy: "23", r: "3.4", style: "fill:var(--brand)" }),
     circle({

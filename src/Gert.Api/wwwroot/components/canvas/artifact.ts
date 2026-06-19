@@ -78,6 +78,7 @@ const ArtifactHead = (
         )
       : null,
     SegToggle({
+      label: t("View mode"),
       options: [
         { value: "render", label: t("Preview") },
         { value: "source", label: t("Source") },
@@ -234,7 +235,7 @@ export const Artifact = component({
     return { mode, Viewer, code, seen };
   },
   view: ({ mode, Viewer, code, seen }, { artifact, active }: { artifact: ArtifactRow; active: () => boolean }) => {
-    const el = section({ class: () => "art-doc" + (active() ? " active" : ""), "data-type": artifact.kind, "data-mode": () => mode.val },
+    const el = section({ class: () => "art-doc" + (active() ? " active" : ""), "data-type": artifact.kind, "data-mode": () => mode.val, role: "tabpanel", "aria-label": () => artifact.name || artifact.kind },
       ArtifactHead({ artifact, mode, code }),
       () => (seen.val ? Viewer({ artifact, mode }) : div({ class: "art-body" })),
     );

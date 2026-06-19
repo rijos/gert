@@ -71,6 +71,7 @@ export const openSettings = () => {
     () => {
       if (loaded.val === null) return p("Loading...");
       replyLangEl = input({
+        id: "set-reply-language",
         value: loaded.val.reply_language || "",
         placeholder: t("e.g. English"),
       });
@@ -78,18 +79,19 @@ export const openSettings = () => {
         div(
           { class: "field" },
           label(t("Theme")),
-          Dropdown({ items: THEMES, value: themeVal, onSelect: applyTheme }),
+          Dropdown({ items: THEMES, value: themeVal, onSelect: applyTheme, ariaLabel: t("Theme") }),
         ),
         div(
           { class: "field" },
           label(t("Language")),
-          Dropdown({ items: AVAILABLE, value: langVal }),
+          Dropdown({ items: AVAILABLE, value: langVal, ariaLabel: t("Language") }),
         ),
         div(
           { class: "field" },
           label(t("Send with")),
           // applies immediately (a device preference, not part of Save)
           SegToggle({
+            label: t("Send with"),
             options: [
               { value: "enter", label: "Enter" },
               { value: "mod_enter", label: "Ctrl/Cmd + Enter" },
@@ -103,13 +105,13 @@ export const openSettings = () => {
         ),
         div(
           { class: "field" },
-          label(t("Default reply language")),
+          label({ for: "set-reply-language" }, t("Default reply language")),
           replyLangEl,
         ),
         div(
           { class: "field" },
           label(t("Memories")),
-          Dropdown({ items: MEMORY_MODES, value: memoryVal }),
+          Dropdown({ items: MEMORY_MODES, value: memoryVal, ariaLabel: t("Memories") }),
         ),
         div(
           { class: "field" },
@@ -118,6 +120,7 @@ export const openSettings = () => {
             items: () => models.models.map((m) => ({ value: m.id, label: m.name })),
             value: modelVal,
             placeholder: "Model",
+            ariaLabel: t("Default model"),
             // onSelect replaces the default set - keep value.val in sync too
             onSelect: ({ value: v }: Option) => {
               modelVal.val = v;

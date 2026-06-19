@@ -4,11 +4,13 @@
 // <style> injection when the host is first created - mirroring the component()
 // factory's inject-once behaviour.
 import van from "/lib/van.js";
-import { adoptStyles } from "../../lib/component.js";
+import { adoptStyles, css } from "../../lib/component.js";
 
 const { div } = van.tags;
 
-const CSS = `
+// css tag: minified at runtime, and the release bundler minifies the literal too (so the
+// shipped app.js carries no verbose toast CSS).
+const CSS = css`
   .toast-host {
     position: fixed;
     bottom: 18px;
@@ -44,7 +46,9 @@ let host: HTMLDivElement | null = null;
 const ensureHost = () => {
   if (!host) {
     adoptStyles(CSS); // constructable stylesheet - CSP-safe under style-src 'self'
-    host = div({ class: "toast-host" });
+    // A polite live region so inserted toasts are announced by assistive tech (WCAG 4.1.3).
+    // aria-atomic=false: announce only the toast just added, not the whole stack.
+    host = div({ class: "toast-host", role: "status", "aria-live": "polite", "aria-atomic": "false" });
     van.add(document.body, host);
   }
   return host;
@@ -52,7 +56,24 @@ const ensureHost = () => {
 
 // kind: "info" | "ok" | "err"
 export const toast = (message: string, kind = "info", ms = 3200) => {
-  const el = div({ class: "toast" + (kind === "info" ? "" : " " + kind) }, message);
+  // Errors interrupt (assertive); info/ok ride the host's polite region.
+  const el = div(
+    { class: "toast" + (kind === "info" ? "" : " " + kind), ...(kind === "err" ? { role: "alert" } : {}) },
+    message,
+  );
   van.add(ensureHost(), el);
-  setTimeout(() => el.remove(), ms);
+
+  // Auto-dismiss, but pause the countdown while the pointer is over the toast so a reader has
+  // time to finish it (WCAG 2.2.1 - a timing it would otherwise impose with no way to extend).
+  let remaining = ms;
+  let startedAt = Date.now();
+  let timer = setTimeout(() => el.remove(), remaining);
+  el.addEventListener("pointerenter", () => {
+    clearTimeout(timer);
+    remaining -= Date.now() - startedAt;
+  });
+  el.addEventListener("pointerleave", () => {
+    startedAt = Date.now();
+    timer = setTimeout(() => el.remove(), Math.max(remaining, 800));
+  });
 };

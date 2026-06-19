@@ -9,7 +9,6 @@ import van from "/lib/van.js";
 import { component } from "../../lib/component.js";
 import { Icon } from "../../icons/icons.js";
 import { Menu } from "../ui/menu.js";
-import { Switch } from "../ui/switch.js";
 import * as chat from "../../state/chat.js";
 import type { ToolId } from "../../state/chat.js";
 import * as models from "../../state/models.js";
@@ -32,13 +31,18 @@ const TOOLS: ToolDef[] = [
   { id: "sub_agent", label: t("Sub-agents") },
 ];
 
-// One toggle row in the menu. Inert (greyed, no toggle) when the selected model
-// can't call tools. Closes over the shared chat/models state only - no instance
-// state - so it lives at module scope rather than per-render.
+// One toggle row in the menu, as a single <button role="switch"> so it is keyboard-operable
+// (WCAG 2.1.1) and exposes its state via aria-checked (4.1.2) - the knob is presentational.
+// Inert (greyed, no toggle) when the selected model can't call tools. Closes over the shared
+// chat/models state only - no instance state - so it lives at module scope rather than per-render.
 const ToolRow = ({ id, label }: ToolDef) =>
-  div(
+  button(
     {
       class: () => "t-row" + (models.selectedSupportsTools.val ? "" : " disabled"),
+      type: "button",
+      role: "switch",
+      "aria-checked": () => String(!!chat.tools[id]),
+      "aria-disabled": () => String(!models.selectedSupportsTools.val),
       onclick: () => models.selectedSupportsTools.val && chat.toggleTool(id),
       title: () =>
         models.selectedSupportsTools.val
@@ -46,7 +50,7 @@ const ToolRow = ({ id, label }: ToolDef) =>
           : "This model doesn't support tool calling",
     },
     span({ class: "t-label" }, label),
-    Switch({ on: () => !!chat.tools[id], onToggle: () => {} }),
+    span({ class: "t-knob", "aria-hidden": "true" }),
   );
 
 export const ToolsMenu = component({
@@ -67,6 +71,7 @@ export const ToolsMenu = component({
     }
     .tools-menu.open .menu {
       opacity: 1;
+      visibility: visible;
       transform: none;
       pointer-events: auto;
     }
@@ -89,12 +94,19 @@ export const ToolsMenu = component({
       display: grid;
       place-items: center;
     }
+    /* the row IS the switch button: reset the native chrome so it reads as a row */
     .t-row {
       display: flex;
       align-items: center;
       gap: 9px;
+      width: 100%;
       padding: var(--sp-2) var(--sp-3);
+      border: none;
       border-radius: var(--r-sm);
+      background: none;
+      color: inherit;
+      font-family: inherit;
+      text-align: left;
       cursor: pointer;
       transition: var(--t-fast);
       font-size: var(--fs-sm);
@@ -106,7 +118,34 @@ export const ToolsMenu = component({
     .t-row .t-label {
       flex: 1;
     }
-    /* inert != invisible: the label keeps AA contrast (--ink-3), the switch
+    /* presentational toggle knob (the row's aria-checked is the real state) */
+    .t-knob {
+      width: 34px;
+      height: 19px;
+      border-radius: 20px;
+      background: var(--coral-deep);
+      position: relative;
+      flex: none;
+    }
+    .t-knob::after {
+      content: "";
+      position: absolute;
+      width: 15px;
+      height: 15px;
+      border-radius: 50%;
+      background: var(--on-chip);
+      top: 2px;
+      left: 17px;
+      transition: var(--t-fast);
+      box-shadow: var(--shadow-thumb);
+    }
+    .t-row[aria-checked="false"] .t-knob {
+      background: var(--line);
+    }
+    .t-row[aria-checked="false"] .t-knob::after {
+      left: 2px;
+    }
+    /* inert != invisible: the label keeps AA contrast (--ink-3), the knob
        greys out - replaces the old opacity:.4 (2.3:1) treatment */
     .t-row.disabled {
       color: var(--ink-3);
@@ -115,7 +154,7 @@ export const ToolsMenu = component({
     .t-row.disabled:hover {
       background: none;
     }
-    .t-row.disabled .switch {
+    .t-row.disabled .t-knob {
       filter: grayscale(1);
       opacity: .6;
     }
@@ -138,7 +177,7 @@ export const ToolsMenu = component({
     return { open, toggle, active };
   },
   view: ({ open, toggle, active }) => {
-    const trigger = button({ class: () => "cbtn toggle" + (active() ? " on" : ""), type: "button", onclick: toggle },
+    const trigger = button({ class: () => "cbtn toggle" + (active() ? " on" : ""), type: "button", "aria-haspopup": "true", "aria-expanded": () => String(open.val), onclick: toggle },
       Icon("gear", { size: 14, strokeWidth: 2 }),
       t("Tools"),
       () => (active() ? span({ class: "tcount" }, String(active())) : span()),
@@ -153,9 +192,13 @@ export const ToolsMenu = component({
         div({ class: "menu-h" }, t("Tools")),
         ...TOOLS.map(ToolRow),
         // Canvas suite (make/edit/read artifact) - one switch for the trio.
-        div(
+        button(
           {
             class: () => "t-row" + (models.selectedSupportsTools.val ? "" : " disabled"),
+            type: "button",
+            role: "switch",
+            "aria-checked": () => String(chat.canvasOn()),
+            "aria-disabled": () => String(!models.selectedSupportsTools.val),
             onclick: () => models.selectedSupportsTools.val && chat.toggleCanvas(),
             title: () =>
               models.selectedSupportsTools.val
@@ -163,15 +206,15 @@ export const ToolsMenu = component({
                 : "This model doesn't support tool calling",
           },
           span({ class: "t-label" }, t("Canvas")),
-          Switch({ on: () => chat.canvasOn(), onToggle: () => {} }),
+          span({ class: "t-knob", "aria-hidden": "true" }),
         ),
         div({ class: "t-docs-wrap" },
           // "Use my docs" IS the rag tool - off removes search_documents for
           // the turn (chat-and-tools.md).
-          div({ class: () => "t-row t-docs" + (chat.tools.rag ? " on" : ""), onclick: () => chat.toggleTool("rag"), title: "Ground replies in your uploaded documents" },
+          button({ class: () => "t-row t-docs" + (chat.tools.rag ? " on" : ""), type: "button", role: "switch", "aria-checked": () => String(!!chat.tools.rag), onclick: () => chat.toggleTool("rag"), title: "Ground replies in your uploaded documents" },
             Icon("file", { size: 14, strokeWidth: 2 }),
             span({ class: "t-label" }, t("Use my docs")),
-            Switch({ on: () => !!chat.tools.rag, onToggle: () => {} }),
+            span({ class: "t-knob", "aria-hidden": "true" }),
           ),
         ),
       ],

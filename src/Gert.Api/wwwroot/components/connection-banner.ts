@@ -42,7 +42,7 @@ export const ConnectionBanner = component({
   `,
   view: () => () =>
     health.degraded.val
-      ? div({ class: "conn-banner" },
+      ? div({ class: "conn-banner", role: "alert" },
           span(t("Connection problems - some actions may fail.")),
           button({ class: "cb-refresh", onclick: () => location.reload() }, t("Refresh")),
         )

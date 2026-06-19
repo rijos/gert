@@ -53,29 +53,45 @@ export const ConvoItem = component({
       transition: var(--t-fast);
     }
 
-    /* flex:1 + min-width:0 lets the title shrink so text-overflow:ellipsis fires */
+    /* the row's open action is a real <button> (keyboard-operable, WCAG 2.1.1):
+       flex:1 + min-width:0 lets the title shrink so text-overflow:ellipsis fires.
+       Reset the button chrome so it reads as the row text it replaces. */
     .convo .t {
       flex: 1;
       min-width: 0;
+      font-family: inherit;
       font-size: var(--fs-md);
       font-weight: 500;
+      text-align: left;
+      color: inherit;
+      background: none;
+      border: none;
+      padding: 0;
+      cursor: pointer;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
     }
+    /* stretch the open-button's hit area over the whole row, so a click anywhere
+       (not only the text) opens it; move/trash sit above it via z-index. */
+    .convo .t::after { content: ""; position: absolute; inset: 0; }
 
     .convo .trash {
       margin-left: 6px;
+      position: relative;
+      z-index: 1;
     }     /* base .trash (hidden, hover-reveal) is a shared primitive */
 
     .convo .mv {
       margin-left: 6px;
       opacity: 0;
+      position: relative;
+      z-index: 1;
       display: flex;
       align-items: center;
       justify-content: center;
-      width: 22px;
-      height: 22px;
+      width: 24px;
+      height: 24px;
       flex: none;
       background: none;
       border: none;
@@ -140,12 +156,17 @@ export const ConvoItem = component({
     return { open, move, remove };
   },
   view: ({ open, move, remove }, convo: Conversation) =>
-    div({ class: () => "convo" + (chat.activeId.val === convo.id ? " active" : ""), "data-id": convo.id, onclick: open },
-      span({ class: "t" }, () => convo.title || t("Untitled")),
+    // role=listitem pairs with the convo-list's role=list (WCAG 1.3.1); the open action is a
+    // button carrying aria-current="page" for the active thread.
+    div({ class: () => "convo" + (chat.activeId.val === convo.id ? " active" : ""), "data-id": convo.id, role: "listitem" },
+      button(
+        { class: "t", onclick: open, "aria-current": () => (chat.activeId.val === convo.id ? "page" : "false") },
+        () => convo.title || t("Untitled"),
+      ),
       // hidden with a single project - there is nowhere to move to
       () => chat.projects.length > 1
-        ? button({ class: "mv", title: t("Move to project..."), onclick: move }, Icon("external", { size: 13, strokeWidth: 2 }))
+        ? button({ class: "mv", title: t("Move to project..."), "aria-label": () => `${t("Move to project...")} ${convo.title || t("Untitled")}`, onclick: move }, Icon("external", { size: 13, strokeWidth: 2 }))
         : span(),
-      button({ class: "trash", title: t("Delete chat"), onclick: remove }, Icon("trash", { size: 14, strokeWidth: 2 })),
+      button({ class: "trash", title: t("Delete chat"), "aria-label": () => `${t("Delete chat")}: ${convo.title || t("Untitled")}`, onclick: remove }, Icon("trash", { size: 14, strokeWidth: 2 })),
     ),
 });

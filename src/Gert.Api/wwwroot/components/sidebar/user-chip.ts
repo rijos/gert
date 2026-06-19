@@ -81,7 +81,7 @@ export const UserChip = component({
               Icon("shield", { strokeWidth: 2 }),
             )
           : div(),
-      button({ class: "ghost", title: t("Settings"), onclick: openSettings },
+      button({ class: "ghost", title: t("Settings"), "aria-label": t("Settings"), onclick: openSettings },
         Icon("gear", { strokeWidth: 2 }),
       ),
     ),

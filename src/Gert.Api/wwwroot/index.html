@@ -4,8 +4,17 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Gert</title>
+    <meta
+      name="description"
+      content="Gert - a privacy-first, self-hosted LLM chat server. Your conversations, documents, and memory stay in your own per-user store."
+    />
     <!-- SVG favicon from the brand mark; img-src 'self' covers it. -->
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+
+    <!-- Warm the app module in parallel with the stylesheets so it executes sooner (faster
+         first paint of real content). Same-origin, so script-src 'self' covers it; the bundler
+         leaves this tag alone (it keeps the stable /app.js name). -->
+    <link rel="modulepreload" href="/app.js" />
 
     <!-- Fonts are self-hosted only (CSP forbids external CDNs - style-src 'self');
          the tokens.css font stack falls back to system fonts. TODO: vendor fonts. -->
@@ -20,6 +29,9 @@
     <link rel="stylesheet" href="/styles/primitives.css" />
   </head>
   <body>
+    <!-- Bypass block (WCAG 2.4.1): first in tab order, off-screen until focused, jumps to the
+         <main id="main"> the SPA mounts. Stays the first body child as app.js appends the shell. -->
+    <a class="skip-link" href="#main">Skip to main content</a>
     <!-- "Gert" keeps the SPA-fallback test green before the module mounts. -->
     <noscript>Gert requires JavaScript.</noscript>
     <div id="app">Gert</div>

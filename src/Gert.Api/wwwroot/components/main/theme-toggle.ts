@@ -20,7 +20,7 @@ export const ThemeToggle = component({
   `,
   view: () =>
     button(
-      { class: "ghost theme-toggle", title: "Toggle theme", onclick: ui.toggleTheme },
+      { class: "ghost theme-toggle", title: "Toggle theme", "aria-label": "Toggle theme", onclick: ui.toggleTheme },
       ...ThemeGlyphs(),
     ),
 });

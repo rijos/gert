@@ -53,6 +53,11 @@ public sealed partial class Bundler(TextWriter log)
             var jsOut = Path.Combine(work, "app.js");
             var cssOut = Path.Combine(work, "app.css");
 
+            // esbuild's JS minifier never reaches inside a string/template literal, so the
+            // component `css:` blocks would ship verbatim. Minify them in the (disposable)
+            // published copy before esbuild inlines them - mirrors lib/component.ts minifyCss.
+            MinifyInlineCss(wwwroot);
+
             if (!BundleJs(esbuild, wwwroot, work, jsOut) || !BundleCss(esbuild, wwwroot, work, cssOut))
             {
                 return false;
@@ -97,10 +102,14 @@ public sealed partial class Bundler(TextWriter log)
             entry = Path.Combine(wwwroot, "app.js");
         }
 
+        // --legal-comments=none: esbuild preserves /*! ... */ + @license/@preserve banners by
+        // default; without this the smath.js banner (and any other legal comment) survives into
+        // the minified app.js. Nothing in the SPA needs a banner shipped, so strip them all.
         return RunEsbuild(
             esbuild,
             [entry],
-            "--bundle", "--minify", "--format=esm", $"--tsconfig={tsconfig}", $"--outfile={outFile}");
+            "--bundle", "--minify", "--legal-comments=none", "--format=esm",
+            $"--tsconfig={tsconfig}", $"--outfile={outFile}");
     }
 
     /// <summary>Bundle the four global sheets, in order, into one minified <c>app.css</c>.</summary>
@@ -112,8 +121,86 @@ public sealed partial class Bundler(TextWriter log)
             "\n", GlobalSheets.Select(s => $"@import {JsonString(Path.Combine(wwwroot, s))};"));
         File.WriteAllText(entry, imports + "\n");
 
-        return RunEsbuild(esbuild, [entry], "--bundle", "--minify", $"--outfile={outFile}");
+        return RunEsbuild(esbuild, [entry], "--bundle", "--minify", "--legal-comments=none", $"--outfile={outFile}");
     }
+
+    /// <summary>
+    /// Minify the CSS carried inline in component <c>css:</c> template literals across the
+    /// <c>.ts</c> graph, in place under <paramref name="wwwroot"/> (a disposable published copy).
+    /// esbuild's JS minifier never reaches inside a string/template literal, so without this every
+    /// component stylesheet ships verbatim (comments + indentation). The runtime
+    /// <c>adoptStyles</c> backstop keeps INJECTED css clean even where a block is authored
+    /// differently; this is the matching BUILD step so the shipped <c>app.js</c> is not bloated.
+    /// </summary>
+    private static void MinifyInlineCss(string wwwroot)
+    {
+        foreach (var path in Directory.EnumerateFiles(wwwroot, "*.ts", SearchOption.AllDirectories))
+        {
+            if (path.EndsWith(".d.ts", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var src = File.ReadAllText(path);
+            var rewritten = MinifyInlineCssText(src);
+            if (!string.Equals(rewritten, src, StringComparison.Ordinal))
+            {
+                File.WriteAllText(path, rewritten);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Rewrite each <c>css: `...`</c> template body to its minified form. Pure + static so it is
+    /// unit-testable without a filesystem. Component css blocks are static (no <c>${}</c> / no
+    /// inner backtick, per the SPA's conventions), so a backtick-delimited capture is safe.
+    /// </summary>
+    public static string MinifyInlineCssText(string source)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        // (1) component-spec `css:` PROPERTIES, anchored to line-start (preserving indentation).
+        // The anchor is the guard: a regex can't parse TS, so a `css:` token sitting inside a
+        // comment or string literal (never at line-start) is left untouched.
+        source = CssPropRegex().Replace(
+            source,
+            m => $"{m.Groups["indent"].Value}css: `{MinifyCss(m.Groups["body"].Value)}`");
+        // (2) `css` TAGGED-TEMPLATE literals (toast + any standalone adopted sheet). The negative
+        // lookbehind keeps it to the bare `css` tag, not an identifier that merely ends in "css".
+        source = CssTagRegex().Replace(source, m => $"css`{MinifyCss(m.Groups["body"].Value)}`");
+        return source;
+    }
+
+    /// <summary>
+    /// The CSS minifier (mirrors <c>lib/component.ts</c> minifyCss): drop comments, collapse
+    /// whitespace, tighten around braces + statement separators. Conservative - leaves <c>,</c>
+    /// and <c>:</c> alone so selectors and <c>content:""</c> values survive untouched.
+    /// </summary>
+    public static string MinifyCss(string css)
+    {
+        ArgumentNullException.ThrowIfNull(css);
+        css = CssCommentRegex().Replace(css, string.Empty);
+        css = CssWhitespaceRegex().Replace(css, " ");
+        css = CssTightenRegex().Replace(css, "$1");
+        return css.Replace(";}", "}", StringComparison.Ordinal).Trim();
+    }
+
+    [GeneratedRegex("""^(?<indent>[ \t]*)css:\s*`(?<body>[^`]*)`""", RegexOptions.Multiline)]
+    private static partial Regex CssPropRegex();
+
+    // Lookbehind excludes a leading word char / . / $ / BACKTICK, so neither an identifier ending
+    // in "css" nor a `css` token inside a comment/string (which sits between backticks) can match -
+    // only the bare `css` tag at a code position fires.
+    [GeneratedRegex("""(?<![\w.$`])css`(?<body>[^`]*)`""")]
+    private static partial Regex CssTagRegex();
+
+    [GeneratedRegex(@"/\*[\s\S]*?\*/")]
+    private static partial Regex CssCommentRegex();
+
+    [GeneratedRegex(@"\s+")]
+    private static partial Regex CssWhitespaceRegex();
+
+    [GeneratedRegex(@"\s*([{};])\s*")]
+    private static partial Regex CssTightenRegex();
 
     private bool RunEsbuild(string esbuild, IReadOnlyList<string> entries, params string[] args)
     {

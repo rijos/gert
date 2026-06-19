@@ -179,7 +179,12 @@ export const MessageStream = component({
             onclick: () => {
               pinned = true;
               away.val = false;
-              stream.scrollTo({ top: stream.scrollHeight, behavior: "smooth" });
+              // script-driven smooth scroll isn't caught by base.css's reduced-motion @media,
+              // so gate it here (WCAG 2.3.3).
+              stream.scrollTo({
+                top: stream.scrollHeight,
+                behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
+              });
             },
           },
           t("Jump to present"),

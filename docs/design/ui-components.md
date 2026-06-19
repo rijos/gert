@@ -219,6 +219,12 @@ The global cascade is only what no single component owns
 Everything else ships **inside the component** via the `component()` factory, which
 adopts the CSS as a Constructable Stylesheet - CSP-clean under `style-src 'self'`
 (no `unsafe-inline`), and cascading after the globals so `layout.css` keeps priority.
+Component CSS is run through `minifyCss` (`lib/component.js`) on the way in - comments
+and whitespace stripped - and the release bundler applies the **same pass** at build time
+to both component `css:` properties and `` css`...` `` tagged templates (esbuild's JS
+minifier never reaches inside a string literal), so neither the injected sheet nor the
+shipped `app.js` carries verbose CSS. Author with the `css` tagged template (the toast host
+does) or a plain string - `adoptStyles` minifies either.
 
 ### Theme
 Two themes - **Manila** (paper light) and **Ember** (refined dark). Color tokens are
@@ -231,7 +237,10 @@ the server-side setting is the cross-device truth
 
 ### Icons
 `icons/icons.js` exposes every SVG glyph once as a named factory -
-`Icon("trash", { size: 14 })` - so a glyph is defined in exactly one place.
+`Icon("trash", { size: 14 })` - so a glyph is defined in exactly one place. Icons are
+**decorative by default** (`aria-hidden` + `focusable="false"`), since they almost always
+sit next to visible text or inside a labelled control; a genuinely standalone, meaningful
+icon opts in with `Icon("shield", { label: "Admin" })` (-> `role="img"` + `aria-label`).
 
 ### State stores
 Scalar UI state uses VanJS `van.state` / `van.derive`. Keyed collections that churn -
@@ -254,6 +263,31 @@ polling**, both gap-free over the same `seq` cursor - and pushes each
 event onto `state/chat.js` (+ `state/artifacts.js`). `message.js`, `tool-card.js`, and
 the canvas bind to that state, so the typewriter effect, tool-card progress, and
 artifact tabs are just reactive renders of incoming events.
+
+### Accessibility (WCAG 2.2 AA baseline)
+Hand-rolled VanJS gets no framework a11y, so the contract is explicit and lives in the
+shared primitives - fix it once, every call site inherits it:
+- **Custom controls carry role + state.** The `Switch` is a `<button role="switch">`
+  with `aria-checked` (keyboard-operable for free); the `SegToggle` buttons expose
+  `aria-pressed`; the artifact strip is a `role="tablist"` of `role="tab"` buttons; menu
+  triggers carry `aria-haspopup` + reactive `aria-expanded`. Never a bare `<div onclick>`
+  for an interactive element - use a `<button>` (or `role` + `tabindex=0` + an
+  Enter/Space `onkeydown`) so it is in the tab order.
+- **Everything operable has an accessible name.** Icon-only buttons set `aria-label`
+  (icons themselves are hidden, above); the composer textarea and the custom dropdowns
+  take a label/`ariaLabel`; native form inputs use `<label for>`.
+- **Overlays are dialogs.** `Modal` and the search overlay set `role="dialog"` +
+  `aria-modal`, move focus inside on open, **trap** Tab within, and **restore** focus to
+  the opener on close; Escape closes.
+- **Landmarks + bypass.** `app.js` mounts the page into a `<main id="main">`; the sidebar
+  is a `<nav>`, the canvas an `<aside>`; `index.html` ships a focus-revealed skip link to
+  `#main`; `document.title` and `<html lang>` track the view/language.
+- **Status is announced.** The toast host, the connection banner, upload-status text and
+  search states are `aria-live` regions (`role="status"`/`"alert"`).
+- **Menus don't leak focus.** A closed `Menu` is `visibility:hidden`, so its items stay
+  out of the tab order until it opens.
+These are tripwired by `tools/smoke/tests/test_a11y.py` (and the global focus ring +
+reduced-motion guard live in `base.css`).
 
 ### Security: token handling & rendering
 The SPA holds a bearer token **and** renders untrusted model output, so the two are kept apart by
@@ -413,7 +447,10 @@ fetched on demand and cached under the OS temp dir; an **offline** publish must 
 it never emits, and never ships.
 
 The bundle:
-- collapses the ESM graph rooted at `app.js` into one minified **`/app.js`**, and
+- collapses the ESM graph rooted at `app.js` into one minified **`/app.js`** - with the
+  inline component CSS (`css:` properties and `` css`...` `` tags) minified first (esbuild
+  won't touch string-literal contents) and `--legal-comments=none` so banner comments (e.g.
+  smath's `/*! ... */`) don't survive into the output, and
 - folds the four global sheets (`tokens` → `base` → `layout` → `primitives`, in cascade
   order) into one minified **`/app.css`**, then
 - repoints `index.html` (the four `<link>`s become one `/app.css` link; the `/app.js`

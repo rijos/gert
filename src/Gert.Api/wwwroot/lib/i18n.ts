@@ -139,6 +139,11 @@ const resolve = () => {
 
 const current = resolve();
 
+// Reflect the resolved language on <html lang> so assistive tech uses the right speech engine
+// and pronunciation (WCAG 3.1.1). index.html ships lang="en"; this corrects it when the user's
+// language is Dutch. setLang() reloads, so this boot-time write covers every switch.
+document.documentElement.lang = current;
+
 // The active language for this page load ("en" | "nl").
 export const lang = () => current;
 

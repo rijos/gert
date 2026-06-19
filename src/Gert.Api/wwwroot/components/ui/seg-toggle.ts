@@ -13,6 +13,8 @@ interface SegToggleProps {
   options: SegOption[];
   value: () => string;
   onSelect: (value: string) => void;
+  // Names the group for assistive tech (WCAG 4.1.2) e.g. "View mode".
+  label?: string;
 }
 
 export const SegToggle = component({
@@ -49,11 +51,12 @@ export const SegToggle = component({
   `,
   // `= {} as SegToggleProps` keeps the no-arg default while typing the
   // always-passed fields as required (so `options.map` / `value()` type-check).
-  view: ({ options, value, onSelect }: SegToggleProps = {} as SegToggleProps) =>
+  view: ({ options, value, onSelect, label }: SegToggleProps = {} as SegToggleProps) =>
     div(
-      { class: "seg" },
+      { class: "seg", role: "group", ...(label ? { "aria-label": label } : {}) },
       ...options.map((o) =>
-        button({ class: () => "sgb" + (value() === o.value ? " on" : ""), onclick: () => onSelect(o.value) },
+        // aria-pressed exposes the chosen segment to AT (the .on class is visual only).
+        button({ class: () => "sgb" + (value() === o.value ? " on" : ""), "aria-pressed": () => String(value() === o.value), onclick: () => onSelect(o.value) },
           o.label,
         ),
       ),

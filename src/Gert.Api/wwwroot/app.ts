@@ -6,6 +6,7 @@ import { AppShell } from "./components/app-shell.js";
 import { ChatPage } from "./pages/chat.js";
 import { AdminUsersPage } from "./pages/admin/users.js";
 import * as ui from "./state/ui.js";
+import * as chat from "./state/chat.js";
 import * as auth from "./services/auth.js";
 import * as modelsSvc from "./services/models.js";
 import * as projectsSvc from "./services/projects.js";
@@ -18,12 +19,27 @@ const boot = async () => {
   await auth.ensureSession(); // PKCE / silent refresh (may navigate away)
 
   // the middle column the router swaps pages into; owned here, handed to AppShell.
-  const mainHost = van.tags.div({ class: "main" });
+  // The <main> landmark + #main target for the skip link (WCAG 2.4.1 / 1.3.1); tabindex=-1 so a
+  // route change can move focus here programmatically without adding it to the tab order.
+  const mainHost = van.tags.main({ class: "main", id: "main", tabindex: "-1" });
 
   // drop the SPA-fallback placeholder so its "Gert" text doesn't linger above the UI.
   document.getElementById("app")?.remove();
   van.add(document.body, AppShell(mainHost));
 
+  // Title tracks the view (WCAG 2.4.2): admin section, the active conversation, or new chat.
+  // index.html ships a static "Gert" for the pre-mount SPA-fallback; this takes over after boot.
+  van.derive(() => {
+    document.title = ui.adminRoute.val
+      ? "Users - Gert"
+      : chat.activeId.val
+        ? `${chat.title.val} - Gert`
+        : "New chat - Gert";
+  });
+
+  // After the first paint, a route change moves focus to the main region (WCAG 2.4.3) so a
+  // keyboard/SR user lands in the new view instead of being stranded in the prior page's chrome.
+  let firstRender = true;
   mountRouter({
     host: mainHost,
     render: (node) => {
@@ -31,6 +47,11 @@ const boot = async () => {
       // handler here returns a VanJS DOM Node (ChatPage/AdminUsersPage produce a
       // `div(...)`), so narrow to Node for replaceChildren.
       mainHost.replaceChildren(node as Node);
+      if (!firstRender) {
+        mainHost.focus();
+      }
+
+      firstRender = false;
     },
     routes: (route) => {
       // each handler flags whether we're on the admin route so the shell can

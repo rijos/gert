@@ -20,7 +20,8 @@
 
 /* hover-reveal trash button - shared by conversation rows and document rows.
    The contextual reveal (.convo:hover .trash, .doc:hover .trash) lives with each owner. */
-.trash{opacity:0; background:none; border:none; cursor:pointer; color:var(--ink-3); padding:4px; border-radius:var(--r-xs); transition:var(--t-fast); flex:none;}
+/* min 24x24 hit target (WCAG 2.5.8); the 14px glyph centers inside it */
+.trash{opacity:0; background:none; border:none; cursor:pointer; color:var(--ink-3); padding:4px; min-width:24px; min-height:24px; display:grid; place-items:center; border-radius:var(--r-xs); transition:var(--t-fast); flex:none;}
 .trash:hover{color:var(--brick); background:var(--fail-bg);}
 .trash svg{width:14px; height:14px;}
 /* a keyboard-focused trash must be visible even without the row hover */
