@@ -57,4 +57,29 @@ public sealed class CacheControlMetaTests : IClassFixture<GertApiFactory>
         response.Headers.CacheControl.Should().NotBeNull($"{path} must carry a Cache-Control header");
         response.Headers.CacheControl!.NoStore.Should().BeTrue($"{path} must be Cache-Control: no-store");
     }
+
+    [Fact]
+    public async Task Client_route_shell_revalidates_so_a_deploy_is_never_masked()
+    {
+        // The SPA fallback serves index.html for a client route, OUTSIDE the static-file
+        // middleware - SecurityHeadersMiddleware stamps the revalidation header on text/html.
+        using var client = _factory.CreateClient();
+
+        var response = await client.GetAsync("/some/client/route");
+
+        response.Content.Headers.ContentType!.MediaType.Should().Be("text/html");
+        response.Headers.CacheControl!.NoCache.Should().BeTrue("the shell must revalidate, not be cached stale");
+    }
+
+    [Fact]
+    public async Task Static_asset_revalidates_via_the_static_file_pipeline()
+    {
+        // favicon.svg is served directly by the static-file middleware -> OnPrepareResponse.
+        using var client = _factory.CreateClient();
+
+        var response = await client.GetAsync("/favicon.svg");
+
+        response.IsSuccessStatusCode.Should().BeTrue();
+        response.Headers.CacheControl!.NoCache.Should().BeTrue("stable-named assets revalidate via ETag");
+    }
 }
