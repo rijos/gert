@@ -144,7 +144,7 @@ public sealed class ArtifactTicketService
 
         if (_clock.GetUtcNow().ToUnixTimeSeconds() > parsed.Exp)
         {
-            return false; // expired
+            return false;
         }
 
         payload = parsed;

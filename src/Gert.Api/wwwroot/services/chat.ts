@@ -1,10 +1,8 @@
-// services/chat.js - send a message (202 + detached turn) and consume the
-// conversation's TurnEvent stream, pushing each event onto state/chat.js
-// (+ artifacts). Components bind to the state, so the typewriter, tool cards,
-// citations, and canvas tabs are all just reactive re-renders of incoming
-// events. Delivery rides the best available transport - the SSE stream endpoint
-// (the dev-proxy-compatible path), then range polling - both sharing one seq
-// cursor, so a fallback resumes without gaps or duplicates.
+// Send a message (202 + detached turn) and consume the conversation's TurnEvent
+// stream, pushing each event onto state/chat.js (+ artifacts) for reactive
+// re-render. Delivery rides the best transport - SSE stream endpoint (dev-proxy
+// compatible), then range polling - both sharing one seq cursor, so a fallback
+// resumes without gaps or duplicates.
 import * as http from "./http.js";
 import * as chat from "../state/chat.js";
 import type { Attachment, Citation, Message, ToolCard } from "../state/chat.js";
@@ -28,12 +26,10 @@ interface ToolQuestion {
   posting: boolean;
 }
 
-// The runtime tool-card shape the live stream maintains: ToolCard plus the
-// `error` line and the interactive `question` slot (both carried at runtime but
-// not in the persisted ToolCard contract). The fields the live stream mutates
-// are always present once a card is created (the tool_call push initialises
-// them), so they are narrowed to required here - the stream never writes them
-// back to undefined. Assignable back into `tools: ToolCard[]`.
+// The runtime tool-card shape: ToolCard plus the `error` line and interactive
+// `question` slot (carried at runtime, not in the persisted ToolCard contract).
+// Fields are narrowed to required since the tool_call push initialises them and
+// the stream never writes them back to undefined. Assignable into ToolCard[].
 interface LiveToolCard extends ToolCard {
   query: string;
   tag: string;
@@ -50,15 +46,13 @@ interface LiveToolCard extends ToolCard {
 // The turn ended (cancelled/error) with a question still pending: there is no
 // one left to deliver an answer to - retire the card's inputs.
 const retireQuestions = (assistant: Message) => {
-  // The cards carry the live `question` slot at runtime (LiveToolCard).
   for (const t of assistant.tools as LiveToolCard[])
     if (t.question && !t.question.answered) t.question.expired = true;
 };
 
-// Map a ChatEvent onto state. `assistant` is the reactive message object.
+// Map a ChatEvent onto the reactive `assistant` message.
 const apply = (assistant: Message, event: WireEventType, data: WireChatEvent) => {
-  // The cards carry `error`/`question` at runtime; alias as LiveToolCard once
-  // (same array reference - mutations stay reactive and byte-identical).
+  // Same array reference - mutating through the alias stays reactive.
   const tools = assistant.tools as LiveToolCard[];
   switch (event) {
     case "message_start":
@@ -278,9 +272,7 @@ export const answer = (questionId: string, text: string) =>
     { question_id: questionId, answer: text },
   );
 
-// --- the turn consumer: one cursor, three transports -------------------------
-
-// The shared seq cursor (watermark) the three transports advance in lockstep.
+// The shared seq cursor (watermark) the transports advance in lockstep.
 interface Cursor {
   seq: number;
 }

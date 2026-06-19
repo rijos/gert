@@ -6,22 +6,21 @@ namespace Gert.Service.Chat;
 
 /// <summary>
 /// The off-thread work item for one assistant turn (chat-and-tools.md section detached
-/// turns) - everything <see cref="TurnRunner"/> needs, captured at plan time, so
-/// the worker never touches the request scope (mirrors <c>IngestJob</c>):
+/// turns) - everything <see cref="TurnRunner"/> needs, captured at plan time, so the
+/// worker never touches the request scope (mirrors <c>IngestJob</c>):
 /// <list type="bullet">
-///   <item><b>Identity</b> (<see cref="Iss"/>/<see cref="Sub"/>): the database
-///   path scope. The runner opens repos with these, never with a request
+///   <item><b>Identity</b> (<see cref="Iss"/>/<see cref="Sub"/>): the database path
+///   scope. The runner opens repos with these, never with a request
 ///   <see cref="IUserContext"/> (unavailable off-thread).</item>
 ///   <item><b>Entitlement snapshot</b> (<see cref="AllowedToolIds"/>): the
-///   execution-time re-check ceiling. Snapshotted from the validated JWT at plan
-///   time - the claim is the ceiling even off-thread (auth.md).</item>
-///   <item><b>The prepared turn</b>: history, offered tools - the old
-///   <c>ChatTurn</c>, absorbed here. Sampling rides the selected provider, not the job.</item>
+///   execution-time re-check ceiling, snapshotted from the validated JWT at plan time
+///   so the claim stays the ceiling even off-thread (auth.md).</item>
+///   <item><b>The prepared turn</b>: history, offered tools. Sampling rides the
+///   selected provider, not the job.</item>
 /// </list>
 /// </summary>
 public sealed record TurnJob
 {
-    // --- identity (the folder/scope anchor) ---------------------------------
     public required string Iss { get; init; }
 
     public required string Sub { get; init; }
@@ -33,7 +32,6 @@ public sealed record TurnJob
     /// <summary>Entitlement snapshot - the hard ceiling for tool execution.</summary>
     public required IReadOnlySet<string> AllowedToolIds { get; init; }
 
-    // --- the turn ------------------------------------------------------------
     public required string Pid { get; init; }
 
     public required string ConversationId { get; init; }

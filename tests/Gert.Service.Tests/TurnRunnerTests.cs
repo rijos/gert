@@ -46,7 +46,7 @@ public sealed class TurnRunnerTests
 
     private readonly List<TurnEvent> _published = [];
     private readonly List<TurnEventRecord> _appended = [];
-    private readonly List<string> _protocol = []; // "append:N" / "publish:N"
+    private readonly List<string> _protocol = []; // ordered "append:N" / "publish:N" markers
     private readonly List<ToolCall> _toolRows = [];
     private readonly List<(string Content, MessageStatus Status, int? TokenCount)> _streamUpdates = [];
     private readonly List<(string Content, MessageStatus Status, int? TokenCount, string? Reasoning, long? DurationMs, int? ContextTokens)> _finalized = [];
@@ -181,7 +181,6 @@ public sealed class TurnRunnerTests
         Events.Last().Should().BeOfType<MessageEndEvent>();
         Events.Skip(1).SkipLast(1).Should().AllBeOfType<DeltaEvent>();
 
-        // The row finalised complete, content = the full streamed text.
         var final = _streamUpdates.Last();
         final.Status.Should().Be(MessageStatus.Complete);
         final.Content.Should().Be(string.Concat(Events.OfType<DeltaEvent>().Select(d => d.Text)));
@@ -194,12 +193,11 @@ public sealed class TurnRunnerTests
 
         _published.Should().NotBeEmpty();
 
-        // Same events in the durable log, seq-for-seq and type-for-type...
         _appended.Select(a => a.Seq).Should().Equal(_published.Select(p => p.Seq));
         _appended.Select(a => a.Type)
             .Should().Equal(_published.Select(p => p.Event.Type.ToWireName()));
 
-        // ...and the protocol is strictly persist-before-publish (the splice's
+        // The protocol is strictly persist-before-publish (the splice's
         // gap-free guarantee depends on this order).
         foreach (var evt in _published)
         {
@@ -912,8 +910,6 @@ public sealed class TurnRunnerTests
         end.ContextTokens.Should().Be(1056);
         _finalized.Single().ContextTokens.Should().Be(1056);
     }
-
-    // ---- scripted models -----------------------------------------------------
 
     /// <summary>Streams the given chunks verbatim, then stops.</summary>
     private sealed class ScriptedChunkModel(params ChatModelChunk[] chunks) : IChatModelClient

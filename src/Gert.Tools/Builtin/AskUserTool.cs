@@ -9,24 +9,21 @@ namespace Gert.Tools.Builtin;
 
 /// <summary>
 /// The ask-user tool (chat-and-tools.md section Ask the user). Model function
-/// <c>ask_user</c>: show the user ONE question mid-turn and block until they
-/// answer, the wait times out, or the turn is cancelled. The question travels
-/// as a <see cref="QuestionAskedEvent"/> through the invocation's
-/// <see cref="ToolInvocation.EmitAsync"/> seam (persisted before published, so
-/// a reconnecting client replays it); the answer arrives through the
+/// <c>ask_user</c>: show ONE question mid-turn and block until answered, timeout,
+/// or cancel. The question travels as a <see cref="QuestionAskedEvent"/> through
+/// the invocation's <see cref="ToolInvocation.EmitAsync"/> seam (persisted before
+/// published, so a reconnecting client replays it); the answer arrives through the
 /// <see cref="ITurnQuestions"/> registry from <c>POST .../answer</c>.
 /// <para>
 /// <see cref="IInteractiveTool"/> exempts the wait from the generic
-/// <c>ToolCallTimeout</c>; the budget here is
+/// <c>ToolCallTimeout</c>; the budget is
 /// min(<see cref="TurnOptions.AskUserTimeout"/>, remaining turn budget -
-/// <see cref="DeadlineGrace"/>), anchored on
-/// <see cref="ToolInvocation.Deadline"/> - so the graceful "user did not
-/// respond" result always beats the turn-budget error finalize. A timeout is a
-/// SUCCESSFUL result (<c>{"answered":false,"reason":"timeout"}</c>) the model
-/// continues from; on a detached (client-gone) turn the question simply times
-/// out and the turn goes on - the detached-turn guarantee holds. While the
-/// question pends the turn is in-flight, so the 409 rule blocks new sends in
-/// the conversation: the question card (or Stop) is the only input.
+/// <see cref="DeadlineGrace"/>) anchored on <see cref="ToolInvocation.Deadline"/>,
+/// so the graceful "user did not respond" result always beats the turn-budget
+/// error finalize. A timeout is a SUCCESSFUL result the model continues from; a
+/// detached (client-gone) turn just times out and proceeds (detached-turn
+/// guarantee). While the question pends the turn is in-flight, so the 409 rule
+/// blocks new sends: the question card (or Stop) is the only input.
 /// </para>
 /// </summary>
 public sealed class AskUserTool : ITool, IInteractiveTool
@@ -118,7 +115,7 @@ public sealed class AskUserTool : ITool, IInteractiveTool
 
         if (parsed.Error is not null)
         {
-            // Model-correctable errors (ClockTool style) - never a torn-down turn.
+            // Model-correctable error, not a torn-down turn.
             return new ToolResult { Success = false, Error = parsed.Error };
         }
 
@@ -168,8 +165,8 @@ public sealed class AskUserTool : ITool, IInteractiveTool
 
             if (answer is null)
             {
-                // Timeout is the ordinary tool_result - no extra event; the
-                // model is told to continue with its best judgement.
+                // Timeout is an ordinary tool_result, no extra event; the model
+                // is told to continue with its best judgement.
                 return new ToolResult
                 {
                     Success = true,

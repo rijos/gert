@@ -11,14 +11,14 @@ using Xunit;
 namespace Gert.Chat.Tests;
 
 /// <summary>
-/// The HTTP timeout/resilience layering registered by <c>AddGertChat</c>
-/// (dotnet-style-guide.md section 9: a streaming client's <c>HttpClient.Timeout</c> must not cap
-/// the stream, and resilience handlers are configured <b>from</b> the bound options, not stock
-/// defaults). Pins: chat = infinite client timeout (the turn budget owns the stream,
-/// turn-budgets.md section 4a) with a per-provider pre-stream pipeline - <b>one named client per
+/// The HTTP timeout/resilience layering registered by <c>AddGertChat</c>. Pins:
+/// chat = infinite client timeout (the turn budget owns the stream, turn-budgets.md section
+/// 4a; dotnet-style-guide.md section 9: a streaming client's <c>HttpClient.Timeout</c> must
+/// not cap the stream) with a per-provider pre-stream pipeline - <b>one named client per
 /// provider slug</b>, not a single shared "openai" client; embeddings = its own named client
-/// with a finite backstop just outside the pipeline total. Resilience is per item: chat reads
-/// each provider's <c>Parameters</c>, embeddings reads <c>Gert:Embeddings:Parameters</c>.
+/// with a finite backstop just outside the pipeline total. Resilience is configured <b>from</b>
+/// the bound options per item: chat reads each provider's <c>Parameters</c>, embeddings reads
+/// <c>Gert:Embeddings:Parameters</c>.
 /// </summary>
 public sealed class HttpClientWiringTests
 {
@@ -63,8 +63,7 @@ public sealed class HttpClientWiringTests
             ["Gert:Chat:Providers:slow:Parameters:RetryCount"] = "4",
         });
 
-        // Each provider slug gets its own named client + pipeline bound to that provider's
-        // Parameters - the chat transport is per-slug, never a single shared "openai" client.
+        // Each slug gets its own pipeline bound to its Parameters - never a shared "openai" client.
         Pipeline(provider, OpenAIChatModelClient.HttpClientNameFor("fast")).AttemptTimeout.Timeout
             .Should().Be(TimeSpan.FromSeconds(10));
         Pipeline(provider, OpenAIChatModelClient.HttpClientNameFor("slow")).AttemptTimeout.Timeout

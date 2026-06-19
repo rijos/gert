@@ -14,7 +14,6 @@
 // failed scan O(4096) -> the whole pass is linear. A real comment/string longer
 // than the cap simply stops tinting at the cap (text is never altered); 4096
 // mirrors inline.js's MATH_INLINE_MAX/MAX_DEST discipline.
-// Each rule is a [sticky regex, token-class] pair; a language maps to an ordered list.
 type Rule = [RegExp, string];
 type RuleSet = Rule[];
 const RULES: Record<string, RuleSet> = {

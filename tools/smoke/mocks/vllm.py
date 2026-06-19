@@ -176,7 +176,6 @@ async def chat_completions(request: Request) -> StreamingResponse:
             )
         )
 
-        # 5) Terminal sentinel.
         yield b"data: [DONE]\n\n"
 
     return StreamingResponse(stream(), media_type="text/event-stream")

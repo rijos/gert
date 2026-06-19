@@ -47,7 +47,6 @@ public sealed class InMemoryArtifactRepository : IChatRepository
 
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 
-    // ---- not needed by the artifact tools -----------------------------------
     private static T Unsupported<T>() =>
         throw new NotSupportedException("InMemoryArtifactRepository only backs artifact operations.");
 

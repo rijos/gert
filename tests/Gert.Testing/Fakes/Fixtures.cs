@@ -36,7 +36,6 @@ public sealed class Fixtures
     public IReadOnlyDictionary<string, FetchFixture> Fetch { get; init; } =
         new Dictionary<string, FetchFixture>();
 
-    /// <summary>Parse fixtures from a JSON string.</summary>
     public static Fixtures Parse(string json) =>
         JsonSerializer.Deserialize<Fixtures>(json, Options)
         ?? throw new InvalidOperationException("fixtures.json deserialized to null.");

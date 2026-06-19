@@ -86,9 +86,6 @@ export const Slider = component({
       pointer-events: none;
     }
   `,
-  // label: string; min/max/step: numbers; value: () => number;
-  // onInput: (number) => void; format: (number) => string;
-  // disabled: () => boolean (greys the dial out, e.g. behind a master switch).
   // `= {} as SliderProps` keeps the no-arg default while typing the always-passed
   // fields as required (so `value()` / arithmetic type-check).
   view: ({

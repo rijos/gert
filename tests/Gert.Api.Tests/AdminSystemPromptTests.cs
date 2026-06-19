@@ -39,8 +39,6 @@ public sealed class AdminSystemPromptTests
         snapshot!.SystemPrompt.Should().NotBeNullOrWhiteSpace("every turn carries the built-in prompt");
         snapshot.Tools.Should().NotBeEmpty();
 
-        // The snapshot mirrors the live registration set - every registered tool,
-        // each with the spec fields the request builder sends upstream.
         snapshot.Tools.Select(t => t.Name).Should().Contain(["web_search", "make_artifact", "run_python"]);
         snapshot.Tools.Should().OnlyContain(t =>
             !string.IsNullOrWhiteSpace(t.Id)

@@ -29,14 +29,12 @@ public sealed class ToolToggles : IEquatable<ToolToggles>
         _toggles = new Dictionary<string, bool>(toggles, StringComparer.Ordinal);
     }
 
-    /// <summary>The underlying <c>tool id -> enabled</c> map.</summary>
     public IReadOnlyDictionary<string, bool> Toggles => _toggles;
 
     /// <summary>The ids the user has explicitly switched on (the requested set).</summary>
     public IReadOnlySet<string> EnabledIds =>
         _toggles.Where(kv => kv.Value).Select(kv => kv.Key).ToHashSet(StringComparer.Ordinal);
 
-    /// <summary>True if <paramref name="id"/> is present and switched on.</summary>
     public bool IsEnabled(string id) => _toggles.TryGetValue(id, out var on) && on;
 
     /// <inheritdoc />

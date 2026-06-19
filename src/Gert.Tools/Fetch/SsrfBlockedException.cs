@@ -8,13 +8,11 @@ namespace Gert.Tools.Fetch;
 /// </summary>
 public sealed class SsrfBlockedException : Exception
 {
-    /// <summary>Create with a reason describing why the fetch was refused.</summary>
     public SsrfBlockedException(string message)
         : base(message)
     {
     }
 
-    /// <summary>Create with a reason and inner cause.</summary>
     public SsrfBlockedException(string message, Exception innerException)
         : base(message, innerException)
     {

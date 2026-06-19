@@ -24,8 +24,6 @@ public sealed class ToolsTests
 {
     private static readonly TestUserContext User = new();
 
-    // ---- RagTool -----------------------------------------------------------
-
     [Fact]
     public async Task RagTool_embeds_query_then_hybrid_searches_and_emits_document_citations()
     {
@@ -64,7 +62,6 @@ public sealed class ToolsTests
             5,
             Arg.Any<CancellationToken>());
 
-        // Two document citations, ordered, with labels/scores from the hits.
         result.Citations.Should().HaveCount(2);
         result.Citations[0].SourceType.Should().Be(CitationSourceType.Document);
         result.Citations[0].Label.Should().Be("qdrant-benchmarks.pdf - p.4");
@@ -151,8 +148,6 @@ public sealed class ToolsTests
             Arg.Any<CancellationToken>());
     }
 
-    // ---- WebSearchTool -----------------------------------------------------
-
     [Fact]
     public async Task WebSearchTool_returns_web_citations_from_the_search_port()
     {
@@ -183,8 +178,6 @@ public sealed class ToolsTests
         result.Success.Should().BeFalse();
         result.Error.Should().Contain("query");
     }
-
-    // ---- PythonSandboxTool -------------------------------------------------------
 
     [Fact]
     public async Task SandboxTool_success_returns_stdout_and_exit_code()
@@ -266,8 +259,6 @@ public sealed class ToolsTests
         result.Stdout.Should().Be("4\n");
     }
 
-    // ---- RagTool: memory hits ----------------------------------------------
-
     [Fact]
     public async Task RagTool_decodes_a_memory_hits_title_for_the_label_and_payload()
     {
@@ -300,8 +291,6 @@ public sealed class ToolsTests
             .And.Contain("\"kind\":\"memory\"")
             .And.NotContain(encoded);
     }
-
-    // ---- TodoTool ----------------------------------------------------------
 
     [Fact]
     public async Task TodoTool_accepts_the_full_list_and_surfaces_it_for_the_card()
@@ -400,8 +389,6 @@ public sealed class ToolsTests
         new TodoTool().BuildTailReminder(snapshot).Should().BeNull();
     }
 
-    // ---- ClockTool ---------------------------------------------------------
-
     /// <summary>The pinned instant the clock tests read through TimeProvider.</summary>
     private sealed class FixedTime(DateTimeOffset instant) : TimeProvider
     {
@@ -496,8 +483,6 @@ public sealed class ToolsTests
         result.Success.Should().BeFalse();
         result.Error.Should().Contain("Mars/Olympus_Mons");
     }
-
-    // ---- helpers -----------------------------------------------------------
 
     private static RetrievedChunk Hit(
         string docId, string filename, string? page, string content, double score) => new()

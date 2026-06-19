@@ -9,7 +9,6 @@ namespace Gert.Rag.Sqlite;
 /// </summary>
 public sealed class SqliteRagParameters
 {
-    /// <summary>The configuration section these parameters bind from.</summary>
     public const string SectionName = "Gert:Rag:Parameters";
 
     /// <summary>

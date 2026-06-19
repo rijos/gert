@@ -1,9 +1,7 @@
-// components/canvas/artifacts/code-artifact.js - linted code viewer for the
-// code kinds (py/cs/cpp/js/rs) and any unknown kind. Preview mode: numbered,
-// syntax-highlighted lines with warn/err gutter dots + a Problems panel.
-// Source mode: the raw tinted text without line numbers (clean to copy) -
-// both wrappers are always built; .art-doc[data-mode] picks one (artifact.js).
-// problems: [{ severity, message, code, line, col }].
+// Linted code viewer for the code kinds (py/cs/cpp/js/rs) and any unknown kind.
+// Preview mode: numbered, syntax-highlighted lines with warn/err gutter dots + a
+// Problems panel. Source mode: raw tinted text without line numbers (clean to copy).
+// Both wrappers are always built; .art-doc[data-mode] picks one (artifact.js).
 import van from "/lib/van.js";
 import { component } from "../../../lib/component.js";
 import { MdCode } from "./md-code.js";
@@ -15,9 +13,8 @@ import type { Artifact } from "../../../state/artifacts.js";
 
 const { div, span } = van.tags;
 
-// The code artifact's view props: the store row, but with `problems` seen as the
-// diagnostic array the viewer consumes (the store's string typing is widened to
-// the runtime shape via this intersection - no change to the store interface).
+// The store row, but with `problems` widened to the diagnostic array the viewer
+// consumes - via this intersection only, no change to the store interface.
 type CodeArtifact = Omit<Artifact, "problems"> & { problems?: Problem[] };
 
 export const CodeArtifact = component({
@@ -148,10 +145,8 @@ export const CodeArtifact = component({
       flex: none;
     }
   `,
-  // problems: [{ severity, message, code, line, col }]
-  // `artifact` is the store row (problems seen as the diagnostic array); the
-  // `= {}` default is preserved verbatim from the JS (dead defensive code -
-  // artifact.js always dispatches a real row), cast to the prop shape.
+  // The `= {}` default is dead defensive code preserved verbatim from the JS
+  // (artifact.js always dispatches a real row), cast to the prop shape.
   view: ({ artifact }: { artifact: CodeArtifact } = {} as { artifact: CodeArtifact }) =>
   div(
     { class: "art-body" },
@@ -159,7 +154,7 @@ export const CodeArtifact = component({
       { class: "render code-render" },
       div(
       { class: "code-stage" },
-      // numbered lines; re-renders as content/problems stream in.
+      // function child: re-renders as content/problems stream in.
       div({ class: "code-scroll" }, () => {
         const problems = artifact.problems || [];
         // worst severity per 1-based line (err outranks warn) for the gutter dot.
@@ -179,7 +174,7 @@ export const CodeArtifact = component({
           }),
         );
       }),
-      // problems panel - collapsed to nothing when the artifact is clean.
+      // problems panel.
       () => {
         const problems = artifact.problems || [];
         if (!problems.length) return div({ style: "display:none" });

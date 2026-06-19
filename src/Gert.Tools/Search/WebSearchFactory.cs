@@ -5,12 +5,10 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Gert.Tools.Search;
 
 /// <summary>
-/// Resolves the single <see cref="IWebSearch"/> backend the operator selected via
-/// <c>Gert:Tools:Search:Type</c> (default <c>SearXNG</c>): it looks up the registered
-/// <see cref="IWebSearchBuilder"/> plugin keyed by that Type and builds it - keyed DI, no
-/// central <c>switch</c> over Type (mirrors <c>Gert.Chat.ChatClientFactory</c>). The composition
-/// root registers the shipped plugins (e.g. <c>AddGertSearchSearXNG</c>); a selected Type with
-/// no registered plugin fails at first resolution with an actionable message.
+/// Resolves the single <see cref="IWebSearch"/> backend selected via <c>Gert:Tools:Search:Type</c>
+/// (default <c>SearXNG</c>) by building the <see cref="IWebSearchBuilder"/> plugin keyed by that
+/// Type - keyed DI, no central <c>switch</c> (mirrors <c>Gert.Chat.ChatClientFactory</c>). A
+/// selected Type with no registered plugin fails at first resolution with an actionable message.
 /// </summary>
 public sealed class WebSearchFactory
 {
@@ -24,9 +22,9 @@ public sealed class WebSearchFactory
     private readonly string _type;
 
     /// <summary>
-    /// Capture the configured Type once - configuration is fixed for the host's lifetime
-    /// (constructed over the closed-over <see cref="IConfiguration"/> in the registrar, keeping
-    /// the registration host-agnostic rather than resolving <see cref="IConfiguration"/> from DI).
+    /// Capture the configured Type once (configuration is fixed for the host's lifetime). The
+    /// registrar closes over <see cref="IConfiguration"/> rather than resolving it from DI, keeping
+    /// the registration host-agnostic.
     /// </summary>
     public WebSearchFactory(IServiceProvider services, IConfiguration configuration)
     {

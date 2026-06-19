@@ -22,7 +22,6 @@ public class ProvisioningTests
         var chat = ProviderFixture.ChatProviderFor(root);
         var paths = ProviderFixture.PathsFor(root);
 
-        // No prior provisioning: the open self-creates + migrates the file.
         await using var repo = await chat.OpenAsync(Iss, "alice", "default");
 
         File.Exists(paths.ChatDb(Iss, "alice", "default")).Should().BeTrue();

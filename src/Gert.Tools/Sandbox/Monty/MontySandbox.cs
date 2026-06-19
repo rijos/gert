@@ -35,14 +35,12 @@ namespace Gert.Tools.Sandbox.Monty;
 /// </summary>
 public sealed class MontySandbox : IPythonSandbox
 {
-    /// <summary>The named <c>HttpClient</c> for the monty sidecar.</summary>
     public const string HttpClientName = "monty";
 
     private readonly HttpClient _http;
     private readonly PythonSandboxOptions _options;
     private readonly ILogger<MontySandbox> _logger;
 
-    /// <summary>Construct over the monty typed client + the shared per-run limits.</summary>
     public MontySandbox(HttpClient http, IOptions<PythonSandboxOptions> options, ILogger<MontySandbox> logger)
     {
         _http = http ?? throw new ArgumentNullException(nameof(http));

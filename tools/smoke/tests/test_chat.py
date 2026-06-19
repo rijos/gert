@@ -22,7 +22,6 @@ def _open(page: Page, base_url: str) -> AppPage:
 def test_send_streams_assistant_message(page: Page, base_url: str) -> None:
     app = _open(page, base_url)
     app.composer.send("hello")
-    # The user bubble + an assistant bubble appear; the assistant streams content.
     expect(app.thread.user_messages.last).to_contain_text("hello")
     expect(app.thread.last_bot_body).to_contain_text("How can I help", timeout=15000)
 

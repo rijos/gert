@@ -12,23 +12,13 @@ namespace Gert.Ingestion.Subprocess;
 /// <c>RLIMIT_AS</c>/<c>CPU</c>/<c>NPROC</c> + a wall-clock kill - so a memory-corruption
 /// or resource-exhaustion bug in PdfPig/OpenXML cannot take down the host. DTD /
 /// external-entity resolution is off (<see cref="HardenedXml"/>) and the DOCX zip is
-/// bounded by <see cref="ZipBombGuard"/>. This fills the pdf/docx leaf the ingestion
-/// <c>CompositeTextExtractor</c> currently routes to "not available".
+/// bounded by <see cref="ZipBombGuard"/>.
 ///
 /// <para>
-/// A crash, OOM, or timeout fails <b>that document</b> (<see cref="ExtractionResult.Failed"/>)
-/// and <b>never throws to the host</b>. When the helper binary is absent (CI / a dev box
-/// without it), extraction also fails gracefully.
-/// </para>
-///
-/// <para>
-/// <b>Unit-tested:</b> <see cref="CanExtract"/>, the helper-output -> result mapping
-/// (<see cref="ParseHelperOutput"/>), the failure -> <see cref="ExtractionResult.Failed"/>
-/// mapping, plus <see cref="ExtractorCommandBuilder"/> / <see cref="ZipBombGuard"/> /
-/// <see cref="HardenedXml"/>. <b>Integration-only:</b> the live subprocess spawn + the
-/// real PdfPig/OpenXML parse inside it. The actual parse is currently
-/// <b>stubbed behind the subprocess boundary</b> - the helper executable (which calls
-/// PdfPig/OpenXML with the rlimits + hardening) is a separate deliverable; see TODO below.
+/// A crash, OOM, timeout, or absent helper binary fails <b>that document</b>
+/// (<see cref="ExtractionResult.Failed"/>) and <b>never throws to the host</b>. The
+/// PdfPig/OpenXML parse lives in the helper executable (a separate deliverable, currently
+/// stubbed behind the subprocess boundary; see TODO in <see cref="RunHelperAsync"/>).
 /// </para>
 /// </summary>
 public sealed class IsolatedTextExtractor : ITextExtractor
@@ -39,7 +29,6 @@ public sealed class IsolatedTextExtractor : ITextExtractor
     private readonly ExtractorParameters _options;
     private readonly ILogger<IsolatedTextExtractor> _logger;
 
-    /// <summary>Construct over the configured caps.</summary>
     public IsolatedTextExtractor(IOptions<ExtractorOptions> options, ILogger<IsolatedTextExtractor> logger)
     {
         _options = options?.Value.Parameters ?? throw new ArgumentNullException(nameof(options));
@@ -98,7 +87,7 @@ public sealed class IsolatedTextExtractor : ITextExtractor
     /// <summary>
     /// Map the helper's stdout (a JSON document of pages) to an
     /// <see cref="ExtractionResult"/>. A non-zero exit or unparseable output ->
-    /// <see cref="ExtractionResult.Failed"/>. Pure + unit-tested.
+    /// <see cref="ExtractionResult.Failed"/>.
     /// </summary>
     public static ExtractionResult ParseHelperOutput(int exitCode, string stdout, string stderr)
     {
@@ -147,7 +136,6 @@ public sealed class IsolatedTextExtractor : ITextExtractor
         }
     }
 
-    /// <summary>Detect whether the extractor helper binary is on the host.</summary>
     public static bool HelperAvailable(ExtractorParameters options)
     {
         ArgumentNullException.ThrowIfNull(options);
@@ -176,9 +164,9 @@ public sealed class IsolatedTextExtractor : ITextExtractor
 
     private async Task<ExtractionResult> RunHelperAsync(string extension, string inputPath, CancellationToken cancellationToken)
     {
-        // INTEGRATION-ONLY: spawn the unprivileged helper. The helper applies the
-        // rlimits + drops privs + sets no-network, then parses with PdfPig (pdf) or
-        // OpenXML (docx) using HardenedXml + ZipBombGuard, and emits {"pages":[...]}.
+        // The helper applies the rlimits + drops privs + sets no-network, then parses
+        // with PdfPig (pdf) or OpenXML (docx) using HardenedXml + ZipBombGuard, and emits
+        // {"pages":[...]}.
         // TODO: ship the `gert-extract` helper executable; until then the
         // PdfPig/OpenXML parse lives behind this subprocess boundary (stubbed here).
         var args = ExtractorCommandBuilder.BuildArgs(_options, extension, inputPath);

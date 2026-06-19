@@ -1,5 +1,3 @@
-/* base.css - reset, body + paper grain, focus ring, scrollbars, keyframes,
-   reduced-motion guard. */
 *{box-sizing:border-box; margin:0; padding:0;}
 html,body{height:100%;}
 body{
@@ -30,14 +28,10 @@ body{
    adopt them CSP-clean via a Constructable Stylesheet. */
 .md-math-block{margin:0 0 14px; overflow-x:auto; overflow-y:hidden;}
 
-/* themed scrollbars - one treatment for every scroll container (convo list,
-   chat stream, doc list, code/artifact panes). Full-size (browser-default
-   width) so the grab target is comfortable; the translucent thumb floats over
-   any panel background, and the transparent border + padding-box clip slims it
-   slightly until hover. Firefox doesn't do ::-webkit-scrollbar, so the
-   @supports gate hands it the standard default-width equivalent - gated so
-   Chromium (which now also parses scrollbar-color) keeps the richer styling
-   below. */
+/* themed scrollbars, one treatment for every scroll container. Firefox doesn't
+   do ::-webkit-scrollbar, so the @supports gate hands it the standard equivalent
+   - gated so Chromium (which now also parses scrollbar-color) keeps the richer
+   ::-webkit styling below. */
 ::-webkit-scrollbar{width:16px; height:16px;}
 ::-webkit-scrollbar-track{background:transparent;}
 ::-webkit-scrollbar-corner{background:transparent;}

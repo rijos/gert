@@ -2,12 +2,10 @@ namespace Gert.Chat.OpenAI;
 
 /// <summary>
 /// The embeddings connection + its HTTP resilience (the <c>Parameters</c> bag of
-/// <see cref="EmbeddingsOptions"/>, bound from <c>Gert:Embeddings:Parameters</c>). This is
-/// what changes when the embeddings <see cref="EmbeddingsOptions.Type"/> changes - the base
-/// URL, the secret bearer, the model + expected dimension, and the per-item timeout/retry the
-/// embeddings <c>HttpClient</c> uses. The <see cref="ApiKey"/> is a <b>secret</b> that comes
-/// from env / <c>dotnet user-secrets</c> / a secret store, never <c>appsettings.json</c>
-/// (security F8); <c>appsettings.json</c> carries only the non-secret defaults.
+/// <see cref="EmbeddingsOptions"/>, bound from <c>Gert:Embeddings:Parameters</c>). The
+/// <see cref="ApiKey"/> is a <b>secret</b> sourced from env / <c>dotnet user-secrets</c> / a
+/// secret store, never <c>appsettings.json</c> (security F8); <c>appsettings.json</c> carries
+/// only the non-secret defaults.
 /// </summary>
 public sealed class EmbeddingsParameters
 {
@@ -24,11 +22,10 @@ public sealed class EmbeddingsParameters
     public int Dimensions { get; set; } = 1024;
 
     /// <summary>
-    /// Max wait, per attempt, for the upstream to <b>accept</b> a request - time to
-    /// response headers, in seconds - <b>not</b> the stream duration. The buffered embeddings
-    /// body is covered by that client's finite overall timeout (which sits just outside the
-    /// resilience pipeline's total). Per item: this is the embeddings path's own resilience,
-    /// independent of any chat provider's. Default 120.
+    /// Max wait per attempt for the upstream to <b>accept</b> a request (time to response
+    /// headers, in seconds) - <b>not</b> the stream duration. The buffered body is covered by
+    /// the client's finite overall timeout, which sits just outside the resilience pipeline.
+    /// The embeddings path has its own resilience, independent of any chat provider's. Default 120.
     /// </summary>
     public int RequestTimeoutSeconds { get; set; } = 120;
 

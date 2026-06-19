@@ -33,6 +33,6 @@ public sealed class NoStoreByDefaultFilter : IResultFilter
     /// <inheritdoc />
     public void OnResultExecuted(ResultExecutedContext context)
     {
-        // Headers are committed once the result executes; nothing to do here.
+        // No-op: the header is stamped in OnResultExecuting and already committed by now.
     }
 }

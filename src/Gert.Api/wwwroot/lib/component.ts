@@ -1,13 +1,8 @@
-// lib/component.ts - the component() factory.
-// Bundles a component's three concerns - style / logic / content - into one function,
-// each in its own slot:
-//   css    : the component's stylesheet, adopted into the document exactly once per `name`,
-//            the first time the component renders.
-//   setup  : (OPTIONAL) the logic - reactive `van.state`, handlers, derived plain values -
-//            returned as a typed bag. Runs once per render, before `view`.
-//   view   : the content - the tag tree. Gets the setup bag as its first arg (when `setup`
-//            is present), then the component's own call args.
-// A leaf with no logic omits `setup`; `view` then takes the call args directly.
+// The component() factory: style / logic / content in one function, each in its own slot.
+//   css   : stylesheet, adopted once per `name` on first render.
+//   setup : (OPTIONAL) logic - `van.state`, handlers, derived plain values - as a typed bag.
+//           Runs once per render, before `view`.
+//   view  : the tag tree. Gets the setup bag first (when `setup` is present), then the call args.
 //
 // LIFETIME (spa-style-guide section 12): `setup` may hold `van.state` + handlers, but a
 // `van.derive` that must be pruned with the component MUST be created INSIDE a binding in

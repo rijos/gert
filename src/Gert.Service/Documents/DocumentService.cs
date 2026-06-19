@@ -18,12 +18,10 @@ namespace Gert.Service.Documents;
 /// Upload (chat-and-tools.md section ingestion) stores the bytes through
 /// <see cref="IObjectStore"/> under a fully server-generated <c>files/{doc-id}</c> key -
 /// the doc-id is a server UUID, so <b>nothing the caller supplies ever reaches a storage
-/// path or carries an extension</b>. It inserts a <c>processing</c> row with the
-/// <b>base64-encoded original filename</b> (extension and all) as display metadata, then
-/// enqueues an <see cref="IngestJob"/>. The blob is read/written/deleted only through the
-/// object store; the filename lives only in the database (render-sanitized by the SPA),
-/// and the file type drives extraction off the in-memory <see cref="IngestJob.Extension"/>,
-/// never the stored key.
+/// path or carries an extension</b>. The base64-encoded original filename is kept only as
+/// display metadata in the database (render-sanitized by the SPA), and the file type
+/// drives extraction off the in-memory <see cref="IngestJob.Extension"/>, never the
+/// stored key.
 /// </para>
 /// </summary>
 public sealed class DocumentService : IDocumentService
@@ -87,12 +85,10 @@ public sealed class DocumentService : IDocumentService
         var key = ObjectKey(documentId);
         var scope = ScopeFor(pid);
 
-        // 2. Store the bytes via the object store (decision: files via IObjectStore
-        //    only) under the fully server-generated files/{doc-id} key. The counting wrapper
-        //    records the true written size AND enforces the size cap mid-stream:
-        //    both shipped hosts pass a server-measured SizeBytes (already gated by
-        //    the validator above), so the streaming cap is defence-in-depth for
-        //    callers that cannot know the size up front (SizeBytes == null).
+        // The counting wrapper records the true written size AND enforces the size cap
+        // mid-stream: both shipped hosts pass a server-measured SizeBytes (already gated
+        // by the validator above), so the streaming cap is defence-in-depth for callers
+        // that cannot know the size up front (SizeBytes == null).
         long sizeBytes;
         await using (var counting = new CountingStream(dto.OpenReadStream(), UploadConstraints.MaxSizeBytes))
         {
@@ -102,12 +98,11 @@ public sealed class DocumentService : IDocumentService
             }
             catch (ValidationException)
             {
-                // The cap tripped mid-stream: compensate by removing whatever
-                // partial blob the backend persisted (DeleteAsync is idempotent;
-                // the local store's stage-and-rename usually leaves nothing, but a
-                // cloud backend may), then surface the validator-identical 400.
-                // CancellationToken.None: best-effort cleanup must still run if
-                // the request token is already cancelled.
+                // The cap tripped mid-stream: compensate by removing whatever partial blob
+                // the backend persisted (idempotent; the local store's stage-and-rename
+                // usually leaves nothing, but a cloud backend may), then surface the
+                // validator-identical 400. CancellationToken.None: best-effort cleanup must
+                // still run if the request token is already cancelled.
                 await _objects.DeleteAsync(scope, key, CancellationToken.None).ConfigureAwait(false);
                 throw;
             }
@@ -115,8 +110,8 @@ public sealed class DocumentService : IDocumentService
             sizeBytes = counting.BytesRead;
         }
 
-        // 3. Insert the processing row. filename = Base64(original) - display metadata,
-        //    never a path; the SPA decodes + render-sanitizes it (text node + bidi-isolate).
+        // filename = Base64(original) - display metadata, never a path; the SPA decodes
+        // + render-sanitizes it (text node + bidi-isolate).
         var document = new Document
         {
             Id = documentId,
@@ -134,8 +129,8 @@ public sealed class DocumentService : IDocumentService
             await repo.InsertDocumentAsync(document, cancellationToken).ConfigureAwait(false);
         }
 
-        // 4. Enqueue ingestion (extract -> chunk -> embed -> write) and return the row
-        //    immediately (the upload responds 202; the client polls GetAsync).
+        // Enqueue ingestion (extract -> chunk -> embed -> write) and return the row
+        // immediately (the upload responds 202; the client polls GetAsync).
         await _queue.EnqueueAsync(
             new IngestJob
             {
@@ -193,8 +188,6 @@ public sealed class DocumentService : IDocumentService
         await _objects.DeletePrefixAsync(ScopeFor(pid), "memory/", cancellationToken)
             .ConfigureAwait(false);
     }
-
-    // ---- helpers -----------------------------------------------------------
 
     private Task<IRagStore> OpenAsync(string pid, CancellationToken cancellationToken) =>
         _databases.OpenAsync(_user.Iss, _user.Sub, pid, cancellationToken);

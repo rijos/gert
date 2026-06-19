@@ -94,8 +94,8 @@ public sealed class ConversationService : IConversationService
             Id = Guid.NewGuid().ToString("D"),
             Title = string.IsNullOrWhiteSpace(dto.Title) ? "New conversation" : dto.Title,
             // TODO: resolve the model/tools cascade (conversation -> project
-            // defaults -> user settings -> server). Sampling is no
-            // longer a cascade level - it rides the selected provider (Gert:Chat:Providers).
+            // defaults -> user settings -> server). Sampling rides the selected
+            // provider (Gert:Chat:Providers), not a cascade level.
             ModelId = string.IsNullOrWhiteSpace(dto.ModelId) ? ChatProviderInfo.DefaultId : dto.ModelId,
             Tools = dto.Tools ?? new ToolToggles(),
             CreatedAt = now,

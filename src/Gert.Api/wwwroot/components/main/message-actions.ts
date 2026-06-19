@@ -14,7 +14,6 @@ const { div, button } = van.tags;
 export const MessageActions = component({
   name: "message-actions",
   css: `
-    /* actions row under the answer: quiet icon buttons left, stats right */
     .msg-actions {
       display: flex;
       align-items: center;

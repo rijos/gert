@@ -9,7 +9,6 @@ namespace Gert.Service.Chat;
 /// </summary>
 public readonly record struct TurnKey(string Iss, string Sub, string Pid, string ConversationId)
 {
-    /// <summary>The key for a job's turn.</summary>
     public static TurnKey From(TurnJob job)
     {
         ArgumentNullException.ThrowIfNull(job);

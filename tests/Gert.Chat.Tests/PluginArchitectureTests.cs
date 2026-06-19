@@ -159,13 +159,11 @@ public sealed class PluginArchitectureTests
             var prefix = $"AddGert{capability.Name}";
             foreach (var (method, assembly) in capability.Registrars)
             {
-                // The method exists as a public static (extension) method in its impl assembly.
                 HasPublicStaticMethod(assembly, method)
                     .Should().BeTrue(
                         $"the {capability.Name} impl registrar '{method}' must exist as a public " +
                         $"static method in '{assembly.GetName().Name}'");
 
-                // ... and is named AddGert<Capability><Impl> with a non-empty, capitalized impl suffix.
                 method.Should().StartWith(prefix, $"'{method}' must follow AddGert{capability.Name}<Impl>");
                 method.Length.Should().BeGreaterThan(prefix.Length, $"'{method}' needs an <Impl> suffix");
                 char.IsUpper(method[prefix.Length])

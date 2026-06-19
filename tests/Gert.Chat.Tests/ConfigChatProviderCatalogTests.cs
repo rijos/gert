@@ -72,7 +72,6 @@ public sealed class ConfigChatProviderCatalogTests
         {
             ["Gert:Chat:Providers:qwen36-thinking:Name"] = "Qwen36 - thinking",
             ["Gert:Chat:Providers:qwen36-thinking:Type"] = "openai",
-            ["Gert:Chat:Providers:qwen36-thinking:Default"] = "true",
             ["Gert:Chat:Providers:qwen36-thinking:Capabilities:0"] = "tools",
             // The catalog reads only the endpoint generically from Parameters:BaseUrl; the rest
             // of Parameters (Model/Temperature/Extra) is the OpenAI plugin's, not the catalog's.
@@ -89,19 +88,62 @@ public sealed class ConfigChatProviderCatalogTests
     }
 
     [Fact]
-    public void Default_resolves_the_flagged_entry_and_the_sentinel_and_unknown_ids_fall_back_to_it()
+    public void DefaultProvider_names_the_default_and_the_sentinel_and_unknown_ids_fall_back_to_it()
     {
         var catalog = Catalog(new Dictionary<string, string?>
         {
             ["Gert:Chat:Providers:a:Name"] = "A",
             ["Gert:Chat:Providers:b:Name"] = "B",
-            ["Gert:Chat:Providers:b:Default"] = "true",
+            ["Gert:Chat:DefaultProvider"] = "b",
         });
 
         catalog.Default()!.Id.Should().Be("b");
+        catalog.List().Should().ContainSingle(p => p.Id == "b" && p.Default);
+        catalog.List().Should().Contain(p => p.Id == "a" && !p.Default);
         catalog.Resolve(ChatProviderInfo.DefaultId).Id.Should().Be("b");
         catalog.Resolve("not-a-provider").Id.Should().Be("b");
         catalog.Resolve("a").Id.Should().Be("a");
+    }
+
+    [Fact]
+    public void DefaultProvider_match_is_case_insensitive()
+    {
+        var catalog = Catalog(new Dictionary<string, string?>
+        {
+            ["Gert:Chat:Providers:a:Name"] = "A",
+            ["Gert:Chat:Providers:b:Name"] = "B",
+            ["Gert:Chat:DefaultProvider"] = "B",
+        });
+
+        catalog.Default()!.Id.Should().Be("b");
+    }
+
+    [Fact]
+    public void Without_DefaultProvider_the_first_configured_entry_is_the_default()
+    {
+        var catalog = Catalog(new Dictionary<string, string?>
+        {
+            ["Gert:Chat:Providers:a:Name"] = "A",
+            ["Gert:Chat:Providers:b:Name"] = "B",
+        });
+
+        catalog.Default()!.Id.Should().Be("a");
+        catalog.List().Should().OnlyContain(p => !p.Default);
+    }
+
+    [Fact]
+    public void An_unknown_DefaultProvider_name_fails_closed_naming_the_valid_slugs()
+    {
+        var build = () => Catalog(new Dictionary<string, string?>
+        {
+            ["Gert:Chat:Providers:a:Name"] = "A",
+            ["Gert:Chat:Providers:b:Name"] = "B",
+            ["Gert:Chat:DefaultProvider"] = "typo",
+        });
+
+        build.Should().Throw<InvalidOperationException>()
+            .WithMessage("*DefaultProvider*typo*")
+            .Which.Message.Should().Contain("a, b");
     }
 
     [Fact]

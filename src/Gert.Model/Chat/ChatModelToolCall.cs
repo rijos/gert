@@ -7,6 +7,5 @@ public sealed record ChatModelToolCall
 
     public required string Name { get; init; }
 
-    /// <summary>Tool arguments as a JSON string.</summary>
     public required string ArgumentsJson { get; init; }
 }

@@ -38,7 +38,7 @@ public sealed class ChatProviderParameters
     /// </summary>
     public int RetryCount { get; set; } = 2;
 
-    // --- OpenAI REST-spec sampling (typed; null = omit) ----------------------
+    // OpenAI REST-spec sampling (typed; null = omit, upstream uses its own default).
     public double? Temperature { get; set; }
 
     public double? TopP { get; set; }

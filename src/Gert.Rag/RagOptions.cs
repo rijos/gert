@@ -13,7 +13,6 @@ namespace Gert.Rag;
 /// </summary>
 public sealed class RagOptions
 {
-    /// <summary>The configuration section these options bind from.</summary>
     public const string SectionName = "Gert:Rag";
 
     /// <summary>

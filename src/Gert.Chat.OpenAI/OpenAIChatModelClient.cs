@@ -54,9 +54,7 @@ public sealed class OpenAIChatModelClient : IChatModelClient
     /// <summary>
     /// Construct for one configured provider: its connection (<see cref="ChatProviderParameters.BaseUrl"/>
     /// + <see cref="ChatProviderParameters.ApiKey"/>) shapes the SDK client; its model + sampling shape
-    /// each request. The <paramref name="http"/> is the shared chat client (Polly pre-stream pipeline +
-    /// wire trace + infinite timeout) - the SDK sets the per-provider endpoint + bearer, so one
-    /// transport serves every provider.
+    /// each request.
     /// </summary>
     public OpenAIChatModelClient(
         HttpClient http,

@@ -5,23 +5,20 @@ using Gert.Service.Documents;
 namespace Gert.Api.Contracts;
 
 /// <summary>
-/// The wire shape of a RAG document (rest-api.md section documents). It mirrors the
-/// service <see cref="Document"/> but returns the <b>decoded original filename</b>:
-/// the service stores <c>documents.filename</c> as base64 display metadata
-/// (never a path), and the SPA wants the human-readable name (which it renders
-/// safely as a text node). Decoding here keeps that one transport concern out of
-/// the service.
+/// The wire shape of a RAG document (rest-api.md section documents). Mirrors the service
+/// <see cref="Document"/> but returns the decoded original filename: the service stores
+/// <c>documents.filename</c> as base64 display metadata (never a path), and decoding here
+/// keeps that transport concern out of the service.
 /// </summary>
 public sealed record DocumentResponse
 {
     public required string Id { get; init; }
 
-    /// <summary>The decoded original upload filename (base64 on disk, decoded here). Wire: <c>name</c>.</summary>
+    /// <summary>The decoded original upload filename. Wire: <c>name</c>.</summary>
     public required string Name { get; init; }
 
     public required string Mime { get; init; }
 
-    /// <summary>Byte size. Wire: <c>size</c>.</summary>
     public required long Size { get; init; }
 
     public required DocumentStatus Status { get; init; }
@@ -32,7 +29,6 @@ public sealed record DocumentResponse
 
     public required DateTimeOffset CreatedAt { get; init; }
 
-    /// <summary>Project a service <see cref="Document"/>, decoding the base64 filename.</summary>
     public static DocumentResponse From(Document document)
     {
         ArgumentNullException.ThrowIfNull(document);

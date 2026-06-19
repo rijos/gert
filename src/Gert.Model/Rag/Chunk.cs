@@ -8,7 +8,6 @@ namespace Gert.Model.Rag;
 /// </summary>
 public sealed record Chunk
 {
-    /// <summary>Integer rowid - also the <c>vec_chunks.chunk_id</c> and FTS rowid.</summary>
     public required long Id { get; init; }
 
     public required string DocumentId { get; init; }

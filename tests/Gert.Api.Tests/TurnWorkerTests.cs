@@ -160,8 +160,6 @@ public sealed class TurnWorkerTests : IAsyncDisposable
         worker.ExecuteTask!.IsCompletedSuccessfully.Should().BeTrue("every lane observes shutdown cleanly");
     }
 
-    // ---- harness -------------------------------------------------------------
-
     private static async Task StopAsync(TurnWorker worker)
     {
         using var cts = new CancellationTokenSource(Timeout);

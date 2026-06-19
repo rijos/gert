@@ -37,7 +37,7 @@ public sealed class SafeHttpFetcherRedirectTests
             // the port control itself is covered by SafeHttpFetcherTests + SsrfGuardTests.
             isPortAllowed: static _ => true);
 
-    // --- Test A: redirect re-vet (F5: every hop is re-checked) ----------------
+    // Redirect re-vet (F5: every hop is re-checked).
 
     [Fact]
     public async Task Redirect_into_a_private_literal_is_blocked_and_the_target_is_never_contacted()
@@ -86,7 +86,7 @@ public sealed class SafeHttpFetcherRedirectTests
         target.RequestCount.Should().Be(1);
     }
 
-    // --- Test B: connect-time DNS pin (F5: rebind-proof, no server needed) ----
+    // Connect-time DNS pin (F5: rebind-proof, no server needed).
 
     [Fact]
     public async Task Host_resolving_to_a_private_address_is_blocked_by_the_real_guard_as_a_typed_refusal()
@@ -119,7 +119,7 @@ public sealed class SafeHttpFetcherRedirectTests
         await act.Should().ThrowAsync<SsrfBlockedException>();
     }
 
-    // --- Test C: combined - allowed origin, internal redirect target ----------
+    // Combined: allowed origin, internal redirect target.
 
     [Fact]
     public async Task Allowed_origin_redirecting_to_an_internal_host_is_blocked_at_the_second_hop()
@@ -137,8 +137,6 @@ public sealed class SafeHttpFetcherRedirectTests
             .WithMessage("*Resolved address blocked*192.168.1.1*");
         origin.RequestCount.Should().Be(1, "only the vetted first hop is ever served");
     }
-
-    // --- Canned wire responses -------------------------------------------------
 
     private static string Ok(string body) =>
         "HTTP/1.1 200 OK\r\n" +

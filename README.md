@@ -62,11 +62,11 @@ Point `src/Gert.Api/appsettings.json` at your model server and IdP:
 {
   "Gert": {
     "Chat": {
+      "DefaultProvider": "qwen36",
       "Providers": {
         "qwen36": {
           "Name": "Qwen 3.6",
           "Type": "openai",
-          "Default": true,
           "Capabilities": [ "tools", "vision" ],
           "Parameters": {
             "BaseUrl": "http://openaicompatible:8000", // NO trailing /v1

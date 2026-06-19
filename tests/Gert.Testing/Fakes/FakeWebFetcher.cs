@@ -16,7 +16,6 @@ public sealed class FakeWebFetcher : IWebFetcher
 {
     private readonly Fixtures _fixtures;
 
-    /// <summary>Build over the canonical shared fixtures.</summary>
     public FakeWebFetcher()
         : this(Fixtures.Load())
     {

@@ -9,22 +9,17 @@ namespace Gert.Tools.Search.SearXNG;
 
 /// <summary>
 /// Real <see cref="IWebSearch"/> over the SearXNG JSON API (chat-and-tools.md section web
-/// search). Calls <c>/search?format=json&amp;q=...</c> via the typed <c>HttpClient</c>,
-/// parses results with the pure <see cref="SearXngResponseParser"/>, and - when
-/// <see cref="SearXngOptions.FetchPages"/> is on - pulls a few result pages through the
-/// SSRF-guarded <see cref="SafeHttpFetcher"/> (security F5) to fill snippets. A blocked
-/// fetch drops that result's snippet; it never fails the search.
+/// search). When <see cref="SearXngOptions.FetchPages"/> is on it pulls a few result pages
+/// through the SSRF-guarded <see cref="SafeHttpFetcher"/> (security F5) to fill snippets; a
+/// blocked fetch drops that result's snippet but never fails the search.
 ///
 /// <para>
-/// <b>Integration-only:</b> the live SearXNG call + real page fetch need a running
-/// instance and network (mock + staging). Unit tests cover the response parsing and
-/// the SSRF guard directly; the fetch enforcement is exercised at the socket layer in
-/// the live tiers.
+/// <b>Integration-only:</b> the live call + real page fetch need a running instance and
+/// network. Unit tests cover the response parsing and the SSRF guard directly.
 /// </para>
 /// </summary>
 public sealed class SearXngWebSearch : IWebSearch
 {
-    /// <summary>The named <c>HttpClient</c> for the SearXNG API.</summary>
     public const string HttpClientName = "searxng";
 
     private readonly HttpClient _http;
@@ -32,7 +27,6 @@ public sealed class SearXngWebSearch : IWebSearch
     private readonly SafeHttpFetcher _fetcher;
     private readonly ILogger<SearXngWebSearch> _logger;
 
-    /// <summary>Construct over the SearXNG typed client + the SSRF-guarded fetcher.</summary>
     public SearXngWebSearch(
         HttpClient http,
         IOptions<SearXngOptions> options,
@@ -70,8 +64,8 @@ public sealed class SearXngWebSearch : IWebSearch
             return results;
         }
 
-        // Summarize step: fetch a few result pages through the SSRF guard to enrich
-        // snippets. A blocked/failed fetch leaves the original snippet untouched.
+        // Fetch a few result pages through the SSRF guard to enrich snippets;
+        // a blocked/failed fetch leaves the original snippet untouched.
         var enriched = new List<WebSearchResult>(results.Count);
         var fetched = 0;
         foreach (var result in results)
@@ -104,10 +98,9 @@ public sealed class SearXngWebSearch : IWebSearch
     }
 
     /// <summary>
-    /// Trivial summary placeholder - the real summarize step (model/heuristic) is wired
-    /// later; here we just clip the fetched body. Kept simple on purpose: the security
-    /// value of this method is that the bytes already passed the SSRF guard before
-    /// reaching it.
+    /// Placeholder summarizer - clips the fetched body until a real model/heuristic step
+    /// is wired. The security-relevant fact is that these bytes already passed the SSRF
+    /// guard before reaching here.
     /// </summary>
     private static string? Summarize(string body)
     {

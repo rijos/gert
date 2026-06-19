@@ -485,7 +485,7 @@ public class SqliteChatRepositoryTests
         (await repo.GetLatestToolCallAsync(conversation.Id, "rag")).Should().BeNull();
     }
 
-    // ---- the streaming turn gate (ux_messages_streaming, decisions section 11) -----
+    // The streaming turn gate (ux_messages_streaming, decisions section 11).
 
     [Fact]
     public async Task Gate_rejects_a_second_streaming_insert_for_the_same_conversation()

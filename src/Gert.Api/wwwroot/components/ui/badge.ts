@@ -1,4 +1,3 @@
-// components/ui/badge.js - capability / meta badge.
 import van from "/lib/van.js";
 import { component } from "../../lib/component.js";
 
@@ -23,7 +22,7 @@ export const Badge = component({
       border-color: transparent;
     }
   `,
-  // cap: true -> accent capability badge; otherwise neutral meta badge.
+  // cap: accent capability badge; otherwise neutral meta badge.
   view: ({ label, cap = false }: { label?: string; cap?: boolean } = {}) =>
     span({ class: "badge" + (cap ? " cap" : "") }, label),
 });

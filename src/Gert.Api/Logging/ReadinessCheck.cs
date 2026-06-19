@@ -6,11 +6,10 @@ namespace Gert.Api.Logging;
 
 /// <summary>
 /// Best-effort readiness probe behind <c>/readyz</c> (operations.md section Observability):
-/// pings vLLM and SearXNG via their named <see cref="IHttpClientFactory"/> clients (so
-/// base URLs come from the same bound options the real adapters use) with a short
-/// timeout. A dependency is "reachable" if the GET returns any HTTP response - we are
-/// checking the socket/route, not asserting a specific status. Failures are swallowed
-/// into <c>false</c>; readiness never throws.
+/// pings vLLM and SearXNG via their named <see cref="IHttpClientFactory"/> clients (so base
+/// URLs come from the same bound options the real adapters use). Reachable means the GET
+/// returned any HTTP response - we check the socket/route, not the status. Failures are
+/// swallowed into <c>false</c>; readiness never throws.
 /// </summary>
 public static class ReadinessCheck
 {

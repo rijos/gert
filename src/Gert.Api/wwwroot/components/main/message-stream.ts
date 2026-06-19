@@ -56,7 +56,6 @@ export const MessageStream = component({
       width: 100%;
     }
 
-    /* empty-thread hero */
     .thread-empty {
       flex: 1;
       display: flex;

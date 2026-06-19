@@ -277,7 +277,6 @@ public class SqliteRagRepositoryTests
         counts.Vec.Should().Be(0);
         counts.Fts.Should().Be(0);
 
-        // And a query no longer surfaces anything.
         var hits = await repo.HybridSearchAsync(
             "deletable",
             FakeEmbeddings.Embed("deletable chunk one"),
@@ -340,8 +339,6 @@ public class SqliteRagRepositoryTests
             await act.Should().NotThrowAsync($"query '{malicious}' must be treated as data");
         }
     }
-
-    // ---- helpers -----------------------------------------------------------
 
     private static Document NewDocument(string filename, DocumentKind kind) => new()
     {

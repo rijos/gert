@@ -1,5 +1,5 @@
-// services/documents.js - upload, poll status, delete documents.
-// Project-scoped: /api/projects/{pid}/documents. Updates state/knowledge.js.
+// Document CRUD against the project-scoped /api/projects/{pid}/documents,
+// mirrored into state/knowledge.js.
 import * as http from "./http.js";
 import * as knowledge from "../state/knowledge.js";
 import type { WireDocument } from "./wire.js";
@@ -8,14 +8,12 @@ import * as chat from "../state/chat.js";
 const pid = () => chat.activeProjectId.val;
 
 export const list = async () => {
-  // GET documents returns WireDocument rows - the Document store rows.
   const items = await http.get<WireDocument[]>(`/projects/${pid()}/documents`);
   knowledge.setDocuments(items);
   return items;
 };
 
-// upload a File; insert the optimistic "processing" row, then poll to completion.
-// The created document already matches the doc contract, so it drops straight in.
+// Insert the optimistic "processing" row, then poll to completion.
 export const upload = async (file: File) => {
   const fd = new FormData();
   fd.append("file", file, file.name);
@@ -25,7 +23,6 @@ export const upload = async (file: File) => {
   return doc;
 };
 
-// poll one document until it leaves "processing".
 export const poll = async (id: string) => {
   const project = pid();
   while (true) {
@@ -35,7 +32,6 @@ export const poll = async (id: string) => {
     } catch {
       return;
     }
-    // Copy the ingest-status fields through (any may be absent), exactly as the JS original did.
     knowledge.updateDocument(id, {
       status: d.status,
       chunk_count: d.chunk_count,

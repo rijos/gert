@@ -1,5 +1,4 @@
-// services/memory.js - per-project memory entries.
-// /api/projects/{pid}/memory.
+// Per-project memory entries under /api/projects/{pid}/memory.
 import * as http from "./http.js";
 import * as chat from "../state/chat.js";
 import type { WireMemoryEntry, WireMemoryInput } from "./wire.js";

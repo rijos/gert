@@ -33,8 +33,6 @@ public sealed class ConversationEventsApiTests : IClassFixture<GertApiFactory>
         return client;
     }
 
-    // --- range --------------------------------------------------------------
-
     [Fact]
     public async Task Range_requires_authentication()
     {
@@ -58,8 +56,6 @@ public sealed class ConversationEventsApiTests : IClassFixture<GertApiFactory>
         doc.RootElement.GetProperty("has_more").GetBoolean().Should().BeFalse();
         doc.RootElement.GetProperty("next_cursor").ValueKind.Should().Be(JsonValueKind.Null);
     }
-
-    // --- SSE stream -----------------------------------------------------------
 
     [Fact]
     public async Task Stream_requires_authentication()

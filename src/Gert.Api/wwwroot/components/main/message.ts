@@ -1,16 +1,11 @@
-// components/main/message.js - one user/bot message. No role headers: the user
-// speaks from a right-aligned bubble, Gert in plain reading text - the
-// conversation itself carries who's who.
-// Bot bodies are rendered with the sanitizing markdown renderer (security F4):
-// no raw HTML is interpreted, javascript:/data: URLs are stripped, external
-// links get rel="noopener noreferrer" target="_blank". User text is a plain
-// text node (escaped by construction). The streaming caret + activity block +
-// footnotes are reactive renders of the message's van-x state.
-//
-// The streaming caret + busy pulse are trivial single-use leaves of a message,
-// so they live here rather than in their own files. The richer pieces - the
-// activity dropdown, sources card, artifact chips, citation chip, and actions
-// row - are their own component files.
+// One user/bot message. No role headers: the user speaks from a right-aligned
+// bubble, Gert in plain reading text - the conversation carries who's who.
+// Bot bodies go through the sanitizing markdown renderer (security F4): no raw
+// HTML, javascript:/data: URLs stripped, external links get
+// rel="noopener noreferrer" target="_blank". User text is a plain (escaped) text
+// node. Caret and busy pulse are trivial single-use leaves so they live here;
+// the richer pieces (activity dropdown, sources, artifact chips, citation,
+// actions) are their own files.
 import van from "/lib/van.js";
 import { component } from "../../lib/component.js";
 import { renderMarkdown } from "../../lib/markdown.js";
@@ -26,12 +21,11 @@ import type { Citation as CitationRow, Message as MessageRow } from "../../state
 
 const { div, span, button, img } = van.tags;
 
-// streaming typewriter caret
 const Caret = () => span({ class: "caret" });
 
-// "working" pulse - the busy indicator while the turn is live but no answer text
-// has begun yet: the pre-first-token wait, reasoning, and tool execution between
-// rounds. Once answer text streams, the caret takes over (see the body render).
+// Busy indicator while the turn is live but no answer text has begun: the
+// pre-first-token wait, reasoning, and tool execution between rounds. Once answer
+// text streams, the caret takes over (see the body render).
 const Working = () =>
   span(
     { class: "working", role: "status", "aria-label": "Working" },
@@ -40,14 +34,12 @@ const Working = () =>
     span({ class: "wdot" }),
   );
 
-// code-block chrome: wraps each <pre> with a header strip carrying the fence's
-// language label (data-lang, set by lib/markdown.js) and the copy button - the
-// button sits in the strip, so it neither floats over code nor scrolls with it,
-// and stays reachable on touch devices (no hover needed).
-// While the message still streams, the strip carries an empty slot instead of
-// the button: the body re-renders on every delta, so a live button is recreated
-// per token (it flickers) and would copy a half-written block anyway. The real
-// button lands on the final re-render, in the same reserved 26px slot.
+// Wraps each <pre> with a header strip (language label + copy button). The
+// button lives in the strip so it neither floats over code nor scrolls with it
+// and stays reachable on touch devices (no hover).
+// While streaming the strip carries an empty slot instead: the body re-renders
+// per delta, so a live button would flicker per token and could copy a
+// half-written block. The real button lands on the final re-render, same 26px slot.
 const decorateCodeBlocks = (body: HTMLElement, streaming: boolean) => {
   for (const pre of body.querySelectorAll("pre")) {
     const wrap = div({ class: "codewrap" });
@@ -87,11 +79,10 @@ const injectCitations = (root: HTMLElement, citations: CitationRow[]) => {
   if (!citations.length) return;
   const byOrdinal = new Map(citations.map((c) => [String(c.ordinal), c] as const));
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-  // SHOW_TEXT yields only Text nodes, so nextNode() is a Text here (or null).
   const targets: Text[] = [];
   let n: Node | null;
-  // A Text node's nodeValue is always a string (DOM); the `!` reflects the
-  // SHOW_TEXT walker invariant - type-only, runtime unchanged.
+  // SHOW_TEXT yields only Text nodes (so `as Text`), whose nodeValue is always a
+  // string (so `!`) - both type-only, runtime unchanged.
   while ((n = walker.nextNode())) if (/\[\d+\]/.test(n.nodeValue!)) targets.push(n as Text);
   for (const node of targets) {
     const parts = node.nodeValue!.split(/(\[\d+\])/);
@@ -353,8 +344,6 @@ export const Message = component({
       font-style: italic;
     }
   `,
-  // `m` is a reactive message: { role, text, streaming, tools, citations }.
-  // isBot is the one bit of (pure) logic - the view branches on it.
   setup: (m: MessageRow) => ({ isBot: m.role === "assistant" }),
   view: ({ isBot }, m: MessageRow) => {
     if (!isBot) {
@@ -395,9 +384,7 @@ export const Message = component({
 
     return div(
       { class: "msg bot" },
-      // activity: thinking + tool calls behind one summary dropdown
       Activity(m),
-      // sanitized markdown body + streaming caret
       () => {
         const body = div({ class: "body" });
         body.append(renderMarkdown(m.text));
@@ -405,19 +392,14 @@ export const Message = component({
         decorateCodeBlocks(body, m.streaming);
         // confirm before any external link leaves the app (Gert Modal, delegated)
         attachLinkConfirm(body);
-        // Live turn: the busy pulse shows whenever the model is working -
-        // thinking, running tools, or waiting between rounds - and the caret
-        // takes over only while answer text is actively streaming.
+        // pulse while working, caret only while answer text is actively streaming
         if (m.streaming) body.append(m.working ? Working() : Caret());
         return body;
       },
       // user-stopped marker (server-confirmed `cancelled` terminal)
       () => (m.cancelled ? div({ class: "stopped" }, "Stopped") : div()),
-      // clickable chips for the artifacts this message produced
       ArtifactChips(m),
-      // sources card
       Sources(m.citations),
-      // actions row: copy / retry - generation stats ("312 tok - 41 tok/s")
       MessageActions(m),
     );
   },

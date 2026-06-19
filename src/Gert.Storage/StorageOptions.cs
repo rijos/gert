@@ -8,7 +8,6 @@ namespace Gert.Storage;
 /// </summary>
 public sealed class StorageOptions
 {
-    /// <summary>Configuration section name for binding.</summary>
     public const string SectionName = "Storage";
 
     /// <summary>

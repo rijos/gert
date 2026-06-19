@@ -1,5 +1,4 @@
-// components/sidebar/convo-list.helpers.js - pure date-grouping helpers for the
-// conversation list. No van, no DOM: each returns a value. Kept beside convo-list
+// Pure date-grouping helpers for the conversation list. Kept beside convo-list
 // (its only consumer) rather than in lib/.
 
 const DAY = 86_400_000;

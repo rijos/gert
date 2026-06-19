@@ -41,7 +41,8 @@ inherits from the level above.
 
 So picking a provider in the composer overrides the project default for that one
 conversation; a project with no provider set inherits the user default; the user default
-falls back to the server's flagged-default provider.
+falls back to the server's default provider (`Gert:Chat:DefaultProvider`, else the first
+configured).
 
 **Sampling is *not* a cascade level.** Temperature, top_p, the penalties, `top_k`, the
 template kwargs - they live with the **provider** the picker selects

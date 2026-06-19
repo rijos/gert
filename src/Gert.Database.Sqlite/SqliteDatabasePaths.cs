@@ -62,8 +62,6 @@ public sealed class SqliteDatabasePaths
     /// </summary>
     public static string Key(string iss, string sub) => StorageKeys.UserKey(iss, sub);
 
-    // ---- user-level paths --------------------------------------------------
-
     /// <summary>The user folder root, <c>{DataRoot}/users/{key}</c>.</summary>
     public string Root(string iss, string sub) => Path.Combine(UsersDir, Key(iss, sub));
 
@@ -112,8 +110,6 @@ public sealed class SqliteDatabasePaths
 
         return files;
     }
-
-    // ---- project-level paths (pid validated; never escapes Root) -----------
 
     /// <summary>
     /// The project folder <c>{Root}/projects/{pid}</c>. Throws

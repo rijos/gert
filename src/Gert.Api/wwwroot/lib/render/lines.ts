@@ -1,41 +1,34 @@
 // render/lines.js - block-level line classification + the bounded block parser.
 //
-// Block classification is ONE declarative, ordered LINE_KINDS table.
-// classifyLine(line, lookahead, depth) walks the table once per line and returns
-// {kind, ...captures}; the block parser below consumes that single verdict for
-// BOTH dispatch AND the paragraph-interrupt, so a line can never be classified
-// two different ways. Each block kind's test appears EXACTLY ONCE here, which is
-// what makes the 4 documented edge cases resolve to a single, CommonMark-stricter
-// answer (pinned by the gallery's FUNCTIONAL cards).
+// classifyLine walks ONE frozen, ordered LINE_KINDS table per line; the block
+// parser consumes that single verdict for BOTH dispatch AND the paragraph-interrupt,
+// so a line can never be classified two ways. Each kind's test appears exactly once,
+// which makes the documented edge cases resolve CommonMark-stricter.
 //
 // Precedence is FROZEN/asserted below:
 //   fence > indent-code > math-$$ > math-\[ > ATX > thematic > blockquote >
 //   table-header > list-item > setext  (else: paragraph).
 //
-// No DOM here; inline parsing (parseInline) is injected through ctx so this module
-// depends only on its own block helpers. BOUNDED: container nesting (quote/list)
-// is gated by depth < MAX_NEST inside classifyLine itself, so adversarial nesting
-// degrades to literal text instead of recursing without bound.
+// No DOM here; parseInline is injected through ctx. BOUNDED: container nesting
+// (quote/list) is gated by depth < MAX_NEST inside classifyLine, so adversarial
+// nesting degrades to literal text instead of recursing without bound.
 
-// Bounded pushdown stack cap for block container nesting (quote/list). Mirrors
-// markdown.js's MAX_NEST; past the cap a would-be container is NOT classified as
-// one (classifyLine returns paragraph), so `>>>>...`x100000 can neither recurse
-// to a stack overflow nor allocate without bound.
+// Bounded container-nesting cap (quote/list); mirrors markdown.js's MAX_NEST.
+// Past the cap a would-be container is classified as paragraph instead, so
+// `>>>>...`x100000 can neither overflow the stack nor allocate without bound.
 const MAX_NEST = 32;
 
-// Bounded table dimensions. The body-row loop pads every row UP TO the header
-// column count, so a K-column header followed by M short rows allocates K*M AST
-// cells from only O(K+M) source bytes - an unbounded-amplification DoS (a few KB
-// of source -> 100k+ DOM nodes). MAX_TABLE_COLS clamps width and MAX_TABLE_CELLS
-// caps the total; past the cap we keep consuming the table region but stop
-// emitting rows (a truncated table), mirroring MAX_NEST/MAX_NODES elsewhere.
-// Generous vs any real assistant table (a 20x100 is ~2000 cells).
+// Bounded table dimensions. The body-row loop pads every row up to the header
+// column count, so a K-column header plus M short rows allocates K*M cells from
+// only O(K+M) source bytes - an amplification DoS (a few KB -> 100k+ nodes).
+// MAX_TABLE_COLS clamps width, MAX_TABLE_CELLS caps the total; past the cap rows
+// stop emitting (truncated table). Generous vs any real table (20x100 ~2000).
 const MAX_TABLE_COLS = 256;
 const MAX_TABLE_CELLS = 8192;
 
-// --- block lexical helpers (all linear, no nested-quantifier regex) ----------
-// Each regex group below is non-optional in its pattern, so a non-null match guarantees
-// the captured groups exist; the `!`s assert that (rather than hide a genuine absence).
+// Block lexical helpers: all linear, no nested-quantifier regex. Each regex group
+// below is non-optional, so a non-null match guarantees the captured groups exist;
+// the `!`s assert that rather than hide a genuine absence.
 interface FenceOpen { char: string; len: number; indent: number; info: string; }
 function matchFenceOpen(line: string): FenceOpen | null {
   const m = /^( {0,3})(`{3,}|~{3,})(.*)$/.exec(line);
@@ -96,14 +89,10 @@ function matchListMarker(line: string): ListMarker | null {
 }
 const TASK_RX = /^\[([ xX])\]\s+(.*)$/; // task-list checkbox at item start
 
-// --- the single declarative classifier --------------------------------------
-// One frozen LineKind enum (the kinds classifyLine can return) + one frozen,
-// ORDERED LINE_KINDS table. Each row's `test(line, lookahead, depth)` is the
-// STRICTER existing dispatcher regex/helper, appearing EXACTLY ONCE, returning a
-// captures object (or {} ) on a match and null otherwise. classifyLine walks the
-// table top-to-bottom (= precedence) and returns the first hit's {kind, ...caps},
-// or {kind: PARAGRAPH}. The block parser uses this for dispatch AND the
-// paragraph-interrupt, so the two can never disagree.
+// One frozen LineKind enum + one frozen, ORDERED LINE_KINDS table. Each row's
+// test returns a captures object ({} on a bare match) or null; classifyLine walks
+// the table top-to-bottom (order = precedence) and returns the first hit's
+// {kind, ...caps}, else {kind: PARAGRAPH}.
 export const LineKind = Object.freeze({
   FENCE: "fence",
   INDENT_CODE: "indent_code",
@@ -124,11 +113,9 @@ const MATH_DOLLAR_ONE_RX = /^ {0,3}\$\$(.+?)\$\$\s*$/;  // one-line `$$ ... $$`
 const MATH_BRACKET_RX = /^ {0,3}\\\[/;
 const SETEXT_RX = /^ {0,3}(=+|-+)[ \t]*$/;
 
-// Ordered precedence table. Frozen so the set/order can't be mutated at runtime;
-// classifyLine returns the FIRST matching row, so order IS precedence.
-// A line's classification captures: the superset of every test's returned fields.
-// classifyLine spreads the matching test's caps next to `kind`, so a downstream branch
-// reads only the fields its `kind` is known to carry (the others are absent/undefined).
+// Caps is the superset of every test's returned fields; classifyLine spreads the
+// matching test's caps next to `kind`, so a downstream branch reads only the fields
+// its `kind` is known to carry (the rest are absent/undefined).
 interface Caps {
   char?: string;
   len?: number;
@@ -166,8 +153,6 @@ export const LINE_KINDS = Object.freeze([
   }) as LineTest }),
 ]);
 
-// classifyLine(line, lookahead, depth) -> {kind, ...captures}. ONE pass over the
-// frozen table; first hit wins (order = precedence). No match -> a paragraph line.
 export function classifyLine(line: string, lookahead: string | undefined, depth: number): Caps & { kind: string } {
   for (const row of LINE_KINDS) {
     const caps = row.test(line, lookahead, depth);
@@ -176,9 +161,9 @@ export function classifyLine(line: string, lookahead: string | undefined, depth:
   return { kind: LineKind.PARAGRAPH };
 }
 
-// Frozen unit assertion: the LINE_KINDS table IS the dispatcher's precedence, so a
-// reorder (or a dropped/added row) is a silent behavior change. Pin the exact order
-// at module load - a mismatch throws here rather than skewing classification later.
+// The table order IS the precedence, so a reorder (or dropped/added row) is a
+// silent behavior change. Pin the exact order at module load: a mismatch throws
+// here rather than skewing classification later.
 const LINE_KINDS_ORDER = Object.freeze([
   LineKind.FENCE, LineKind.INDENT_CODE, LineKind.MATH_DOLLAR, LineKind.MATH_BRACKET,
   LineKind.ATX, LineKind.THEMATIC, LineKind.BLOCKQUOTE, LineKind.TABLE_HEADER,
@@ -191,15 +176,9 @@ const LINE_KINDS_ORDER = Object.freeze([
   if (!ok) throw new Error("render/lines.js: LINE_KINDS precedence drift: " + actual.join(">"));
 })();
 
-// --- block parser (bounded recursion = bounded container stack) -------------
-// The dispatch switch AND the paragraph-continuation loop both ask classifyLine,
-// so the paragraph break-check is never duplicated and a line can't be classified
-// two ways. `parseInline` is injected via ctx so this module owns no inline logic.
-// `depth` bounds container nesting (MAX_NEST), so adversarial `>`/list nesting
-// degrades to text.
-// The render context injected by lib/markdown.js; parseBlocks only reads parseInline,
-// which it threads back through to render/inline.js. Loose `unknown` node return - the
-// block AST itself is consumed by render/dom.js (untyped JS) where it relaxes to `any`.
+// Render context injected by lib/markdown.js; parseBlocks reads only parseInline.
+// Loose `unknown` node return: the block AST is consumed by render/dom.js (untyped
+// JS) where it relaxes to `any`.
 interface BlockCtx {
   parseInline: (text: string, ctx: BlockCtx, depth: number) => unknown;
   [k: string]: unknown;
@@ -225,7 +204,6 @@ export function parseBlocks(lines: string[], ctx: BlockCtx, depth: number): Bloc
       blocks.push({ type: "code_block", info: fo.info, literal: body.join("\n") }); continue;
     }
 
-    // indented code block (4+ leading spaces / a tab) at the top level.
     if (cls.kind === LineKind.INDENT_CODE) {
       const body: string[] = [];
       while (i < lines.length && (/^(?: {4}|\t)/.test(lines[i]!) || !lines[i]!.trim())) {
@@ -239,8 +217,7 @@ export function parseBlocks(lines: string[], ctx: BlockCtx, depth: number): Bloc
       blocks.push({ type: "code_block", info: "", literal: body.join("\n") }); continue;
     }
 
-    // display math blocks: $$ ... $$ and \[ ... \] (<=3 indent; one-liner or
-    // multi-line). An unclosed block falls through to a paragraph (streaming).
+    // An unclosed math block falls through to a paragraph (streaming partials).
     if (cls.kind === LineKind.MATH_DOLLAR) {
       if (cls.latex !== undefined) { blocks.push({ type: "math_block", latex: cls.latex }); i++; continue; }
       const body: string[] = []; i++;
@@ -299,7 +276,7 @@ export function parseBlocks(lines: string[], ctx: BlockCtx, depth: number): Bloc
           break;
         }
         while (itemLines.length && itemLines[itemLines.length - 1] === "") itemLines.pop();
-        // task-list checkbox: a leading [ ] / [x] on the first item line.
+        // task-list checkbox: [ ] / [x], the first item line only.
         let task = false, checked = false;
         const tm = TASK_RX.exec(itemLines[0] || "");
         if (tm) { task = true; checked = tm[1]!.toLowerCase() === "x"; itemLines[0] = tm[2]!; }
@@ -315,19 +292,17 @@ export function parseBlocks(lines: string[], ctx: BlockCtx, depth: number): Bloc
       blocks.push({ type: "heading", level: cls.level, children: parseInline(line.trim(), ctx, 0) }); i += 2; continue;
     }
 
-    // paragraph: a run of lines that each classify as a paragraph line. The
-    // continuation test is the SAME classifyLine the dispatch above used, so the
+    // The continuation test is the SAME classifyLine the dispatch used, so the
     // interrupt and the dispatch can never disagree (one classifier, one verdict).
     const para: string[] = [];
     while (i < lines.length) {
       const l = lines[i]!;
       if (l.trim() === "") break;
-      // A bare setext underline (===/---) ends the paragraph; it is then dispatched
-      // on its own (thematic break for ---, literal for ===). Setext headings form
-      // ONLY at dispatch, from a first line whose successor is an underline - so an
-      // INTERIOR paragraph line is never reclassified as setext text by its
-      // lookahead. (Without this guard a multi-line paragraph followed by an
-      // underline split off its last line into a heading.)
+      // A bare setext underline (===/---) ends the paragraph and is dispatched on
+      // its own. Setext headings form ONLY at dispatch (a first line whose successor
+      // is an underline), so an interior paragraph line is never reclassified as
+      // setext text by its lookahead. Without this guard, a multi-line paragraph
+      // followed by an underline split its last line off into a heading.
       if (SETEXT_RX.test(l) && para.length) break;
       const k = classifyLine(l, lines[i + 1], depth).kind;
       if (k !== LineKind.PARAGRAPH && k !== LineKind.SETEXT) break;

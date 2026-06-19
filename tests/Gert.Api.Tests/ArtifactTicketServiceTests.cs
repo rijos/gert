@@ -114,8 +114,7 @@ public sealed class ArtifactTicketServiceTests
         payload.Pid.Should().Be("default");
     }
 
-    // --- Startup secret guard (security F3) ----------------------------------
-
+    // Startup secret guard (security F3).
     private static IConfiguration ConfigWithSecret(string? secret)
     {
         var pairs = new Dictionary<string, string?>();

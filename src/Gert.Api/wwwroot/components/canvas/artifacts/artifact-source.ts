@@ -29,7 +29,6 @@ export const ArtifactSource = component({
       color: inherit;
     }
   `,
-  // `body` is the viewer's reactive child binding (typically `() => MdCode(...)`).
   view: ({ body }: { body: () => Node }) =>
     div({ class: "source" }, div({ class: "source-view" }, body)),
 });

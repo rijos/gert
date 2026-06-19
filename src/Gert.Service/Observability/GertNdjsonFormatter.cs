@@ -49,26 +49,25 @@ public sealed class GertNdjsonFormatter : ITextFormatter
         {
             writer.WriteStartObject();
 
-            // 1) ts - ISO-8601 UTC, millisecond precision.
+            // ts/level/msg/comp emitted in this fixed order: the field order is part
+            // of the shared NDJSON contract (see class doc).
             writer.WriteString(
                 "ts",
                 logEvent.Timestamp.UtcDateTime.ToString(
                     "yyyy-MM-ddTHH:mm:ss.fffZ", CultureInfo.InvariantCulture));
 
-            // 2) level - lowercase, mapped to the shared 4-value vocabulary.
             writer.WriteString("level", MapLevel(logEvent.Level));
 
-            // msg - the rendered message.
             writer.WriteString("msg", logEvent.RenderMessage(CultureInfo.InvariantCulture));
 
-            // comp - explicit `comp` property wins; else Serilog's SourceContext.
+            // explicit `comp` property wins; else Serilog's SourceContext.
             var comp = ResolveComp(logEvent);
             if (comp is not null)
             {
                 writer.WriteString("comp", comp);
             }
 
-            // Tail - every remaining contextual property in event order (req, uid, dur_ms, ...).
+            // Tail - every remaining contextual property in event order.
             foreach (var (name, value) in logEvent.Properties)
             {
                 if (Reserved.Contains(name))

@@ -1,9 +1,7 @@
-// components/main/activity.js - the activity block: everything the model DID
-// before answering - reasoning and tool calls - condensed into a single
-// collapsible chip with a past-tense summary line ("Thought - Created
-// index.html"). Open while the turn streams so the work is visible live;
-// collapses once the answer lands. A user click overrides the automatic state
-// and is never fought.
+// The activity block: reasoning + tool calls (everything the model did before
+// answering) condensed into one collapsible chip with a past-tense summary line.
+// Open while the turn streams, collapses once the answer lands; a user click
+// overrides that automatic state and is never fought.
 import van from "/lib/van.js";
 import { component } from "../../lib/component.js";
 import { Icon } from "../../icons/icons.js";
@@ -48,8 +46,6 @@ const activitySummary = (m: MessageRow) => {
 export const Activity = component({
   name: "activity",
   css: `
-    /* activity block: everything before the answer (thinking + tool calls)
-       behind one summary dropdown - open while live, a quiet chip once done */
     .activity {
       margin: 0 0 12px;
       border: 1px solid var(--line);
@@ -114,13 +110,10 @@ export const Activity = component({
       overflow-wrap: anywhere;
     }
 
-    /* toolzone: the tool-call cards inside the activity body */
     .toolzone {
       margin: 0;
     }
   `,
-  // `userOpen` (null -> follow the stream) + the pure isOpen/present readers the
-  // class bindings call. All non-reactive: van.state + plain closures over `m`.
   setup: (m: MessageRow) => {
     const userOpen = van.state<boolean | null>(null); // null -> follow the stream (open while live)
     const isOpen = () => userOpen.val ?? !!m.streaming;

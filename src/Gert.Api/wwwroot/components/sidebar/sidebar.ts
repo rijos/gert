@@ -18,7 +18,7 @@ import { navigate } from "../../lib/router.js";
 
 const { aside, div, h1, button } = van.tags;
 
-// pane header: mark + title + drawer-close. The version line lives in settings.
+// pane header. The version line lives in settings, not here.
 const Brand = () =>
   div({ class: "brand" },
     div({ class: "mark" }, BrandMark()),
@@ -28,7 +28,6 @@ const Brand = () =>
     ),
   );
 
-// start a fresh conversation and route home.
 const NewChat = () =>
   button(
     {

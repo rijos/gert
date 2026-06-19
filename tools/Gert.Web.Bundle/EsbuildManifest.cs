@@ -93,7 +93,6 @@ public static class EsbuildManifest
         throw Unsupported(RuntimeInformation.OSDescription, arch);
     }
 
-    /// <summary>Resolve the pinned platform for the current host.</summary>
     public static Platform Current() => Platforms[CurrentRid()];
 
     private static PlatformNotSupportedException Unsupported(string os, Architecture arch) =>

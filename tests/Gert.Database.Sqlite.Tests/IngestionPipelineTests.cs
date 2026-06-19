@@ -33,8 +33,6 @@ public class IngestionPipelineTests
 
     private const string Pid = "default";
 
-    // ---- ingestion pipeline -----------------------------------------------
-
     [Fact]
     public async Task Ingest_md_writes_chunks_sets_ready_and_is_retrievable()
     {
@@ -53,7 +51,6 @@ public class IngestionPipelineTests
         stored.ChunkCount.Should().BeGreaterThan(0);
         stored.Error.Should().BeNull();
 
-        // Retrievable via hybrid search on the same rag.db.
         await using var repo = await harness.Provider.OpenRagAsync(Iss, Sub, Pid);
         var hits = await repo.HybridSearchAsync("revenue widgets", FakeEmbeddings.Embed("revenue widgets"), k: 5);
         hits.Should().Contain(h => h.Document.Id == doc.Id);
@@ -137,7 +134,7 @@ public class IngestionPipelineTests
         var body = string.Join(' ', Enumerable.Range(0, 40).Select(i => $"word{i}"));
         var doc = await harness.Documents.UploadAsync(Pid, Upload("flaky.txt", "text/plain", body));
 
-        // The worker never throws; the document is failed with zero chunks.
+        // The worker swallows the mid-pipeline embed failure rather than throwing.
         var stored = await harness.Documents.GetAsync(Pid, doc.Id);
         stored!.Status.Should().Be(DocumentStatus.Failed);
         stored.ChunkCount.Should().Be(0);
@@ -154,8 +151,6 @@ public class IngestionPipelineTests
         hits = await repo.HybridSearchAsync("word0", FakeEmbeddings.Embed("word0 word1"), k: 10);
         hits.Should().BeEmpty("the failure path deletes the already-inserted chunks themselves");
     }
-
-    // ---- document upload / delete -----------------------------------------
 
     [Fact]
     public async Task Upload_streamed_over_the_cap_is_rejected_with_the_validator_error_and_leaves_nothing()
@@ -182,7 +177,6 @@ public class IngestionPipelineTests
         thrown.Which.Result.Errors.Should().ContainSingle()
             .Which.Code.Should().Be("upload.too_large", "the streamed cap surfaces the same 400 as the validator path");
 
-        // No partial blob, no document row, no ingest job.
         var scope = ObjectScope.Project(Iss, Sub, Pid);
         (await harness.Objects.ListAsync(scope, "files/")).Should().BeEmpty("the partial blob is deleted");
         (await harness.Documents.ListAsync(Pid)).Should().BeEmpty();
@@ -267,8 +261,6 @@ public class IngestionPipelineTests
         hits.Should().NotContain(h => h.Document.Id == doc.Id);
     }
 
-    // ---- memory ------------------------------------------------------------
-
     [Fact]
     public async Task Memory_upsert_stores_the_body_embeds_as_kind_memory_and_is_retrievable()
     {
@@ -286,7 +278,6 @@ public class IngestionPipelineTests
         var scope = ObjectScope.Project(Iss, Sub, Pid);
         (await harness.Objects.ExistsAsync(scope, $"memory/{entry.Id}.md")).Should().BeTrue();
 
-        // Listed as a memory entry (title round-trips; pinned preserved).
         var listed = await harness.Memory.ListAsync(Pid);
         listed.Should().ContainSingle();
         listed[0].Title.Should().Be("Preferences");
@@ -357,8 +348,6 @@ public class IngestionPipelineTests
         (await harness.Memory.ListAsync(Pid)).Should().ContainSingle().Which.Id.Should().Be(mem.Id);
     }
 
-    // ---- harness -----------------------------------------------------------
-
     private async Task<Harness> HarnessAsync(
         TempDataRoot root,
         ChunkingOptions? chunking = null,
@@ -419,11 +408,9 @@ public class IngestionPipelineTests
     }
 
     /// <summary>
-    /// A failure-injecting <see cref="IEmbeddingClient"/>: delegates the first
-    /// <paramref name="succeedCalls"/> calls to <see cref="FakeEmbeddings"/> (so any
-    /// committed batches are real, searchable vectors) and throws afterwards. A
-    /// local test double, not a second embedding fake - vector semantics still come
-    /// from the shared <see cref="FakeEmbeddings"/> spec.
+    /// Failure-injecting <see cref="IEmbeddingClient"/>: delegates the first
+    /// <paramref name="succeedCalls"/> calls to <see cref="FakeEmbeddings"/> (so committed
+    /// batches are real, searchable vectors) and throws afterwards.
     /// </summary>
     private sealed class FailingEmbeddings(int succeedCalls) : IEmbeddingClient
     {

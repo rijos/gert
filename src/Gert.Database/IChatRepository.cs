@@ -11,7 +11,6 @@ namespace Gert.Database;
 /// </summary>
 public interface IChatRepository : IAsyncDisposable
 {
-    // Conversations
     Task<IReadOnlyList<Conversation>> ListConversationsAsync(CancellationToken cancellationToken = default);
 
     Task<Conversation?> GetConversationAsync(string conversationId, CancellationToken cancellationToken = default);
@@ -24,7 +23,6 @@ public interface IChatRepository : IAsyncDisposable
 
     Task<bool> DeleteConversationAsync(string conversationId, CancellationToken cancellationToken = default);
 
-    // Messages
     Task<IReadOnlyList<Message>> ListMessagesAsync(string conversationId, CancellationToken cancellationToken = default);
 
     Task InsertMessageAsync(Message message, CancellationToken cancellationToken = default);
@@ -107,7 +105,6 @@ public interface IChatRepository : IAsyncDisposable
         int limit,
         CancellationToken cancellationToken = default);
 
-    // Tool calls
     Task InsertToolCallAsync(ToolCall toolCall, CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -121,10 +118,8 @@ public interface IChatRepository : IAsyncDisposable
         string kind,
         CancellationToken cancellationToken = default);
 
-    // Citations
     Task InsertCitationsAsync(IReadOnlyList<Citation> citations, CancellationToken cancellationToken = default);
 
-    // Artifacts
     Task<IReadOnlyList<Artifact>> ListArtifactsAsync(string conversationId, CancellationToken cancellationToken = default);
 
     Task<Artifact?> GetArtifactAsync(string artifactId, CancellationToken cancellationToken = default);

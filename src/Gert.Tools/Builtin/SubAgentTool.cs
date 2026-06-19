@@ -13,18 +13,15 @@ namespace Gert.Tools.Builtin;
 
 /// <summary>
 /// The sub-agent tool (chat-and-tools.md section sub-agent). Model function
-/// <c>run_sub_agent</c>: delegates a self-contained task to a FRESH nested
-/// conversation against the same provider and waits for its final answer. The
-/// nested rounds (searches, fetched pages, intermediate drafts) never enter the
-/// parent conversation's history - only the sub-agent's final text returns - so
-/// a context-hungry side quest costs the parent one tool result instead of the
-/// whole transcript.
+/// <c>run_sub_agent</c> delegates a self-contained task to a FRESH nested
+/// conversation against the same provider; only the sub-agent's final text
+/// returns, so the nested rounds never enter the parent history (a context-hungry
+/// side quest costs one tool result, not the whole transcript).
 ///
 /// <para>
-/// The sub-agent may use a fixed read-only subset of the built-in tools
-/// (<see cref="DelegableToolIds"/>), further intersected with the parent turn's
-/// entitlement snapshot (<see cref="ToolInvocation.AllowedToolIds"/>) - the
-/// claim stays the ceiling (auth.md) two levels deep. It never gets
+/// Tools are a read-only subset (<see cref="DelegableToolIds"/>) intersected with
+/// the parent turn's entitlement snapshot (<see cref="ToolInvocation.AllowedToolIds"/>):
+/// the claim stays the ceiling (auth.md) two levels deep. It never gets
 /// <c>run_sub_agent</c> itself, so delegation cannot recurse.
 /// </para>
 ///

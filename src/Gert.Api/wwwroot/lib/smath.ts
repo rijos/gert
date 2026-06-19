@@ -47,7 +47,6 @@ const MML_ELEMENTS = new Set([
   'mfrac', 'msqrt', 'mroot', 'mtable', 'mtr', 'mtd',
 ]);
 
-/* ===== Descriptor-tree constructors ============================================= */
 // The internal MathML descriptor tree (a pure POCO, lowered to DOM by toDom). A node is
 // either an element (children) or a text leaf (text); `limits` is a transient marker the
 // script-attacher reads and `strip`/serializers drop. Attr values are stringified on emit.
@@ -70,7 +69,6 @@ const mrow = (ch: MNode[]) => el('mrow', ch);
 // Implicit grouping: a single atom needs no <mrow>; many atoms get one.
 const row = (ch: MNode[]): MNode => (ch.length === 1 ? ch[0]! : el('mrow', ch));
 
-/* ===== Symbol tables (command -> a leaf descriptor) ============================= */
 // Greek. Lowercase render italic (variable convention); uppercase upright.
 const GREEK: Record<string, string> = {
   alpha: 'α', beta: 'β', gamma: 'γ', delta: 'δ', epsilon: 'ϵ', varepsilon: 'ε',
@@ -175,9 +173,6 @@ const SPACES: Record<string, string> = {
   negthinspace: '-0.167em', '~': '0.25em',
 };
 
-/* ===== Lexer (single linear pass) =============================================== */
-// Token kinds: {k:'char',v} | {k:'cmd',v} | {k:'^'} | {k:'_'} | {k:'{'} | {k:'}'}
-//            | {k:'&'} | {k:'rowbreak'}
 // A lexer token; `v` is set for char/cmd kinds and absent for the structural kinds.
 // `v` is widened with an explicit `| undefined` because the lexer builds tokens from
 // `src[i]` (a possibly-undefined index read) - exactOptionalPropertyTypes needs the union.
@@ -223,7 +218,6 @@ function lex(src: string): Tok[] {
   return toks;
 }
 
-/* ===== Parser (bounded recursive descent) ======================================= */
 // Mutable parser state threaded through the recursive descent (cursor + bounded counters).
 interface PState { toks: Tok[]; i: number; depth: number; count: number; over: boolean; }
 function parser(toks: Tok[]): PState {
@@ -369,10 +363,8 @@ const NOT_MAP: Record<string, string> = {
   '≅': '≇', '≈': '≉', '≤': '≰', '≥': '≱', '⊂': '⊄', '⊃': '⊅', '⊆': '⊈', '⊇': '⊉',
 };
 
-/* ===== Command dispatch ========================================================= */
 function cmdAtom(P: PState, name: string): MNode {
   bump(P);
-  // --- arity-2: fractions
   if (name === 'frac' || name === 'dfrac' || name === 'tfrac' || name === 'cfrac') {
     const a = parseArg(P), b = parseArg(P);
     const attrs = name === 'dfrac' ? { displaystyle: 'true' } : name === 'tfrac' ? { displaystyle: 'false' } : null;
@@ -382,20 +374,17 @@ function cmdAtom(P: PState, name: string): MNode {
     const a = parseArg(P), b = parseArg(P);
     return fenced('(', el('mfrac', [a, b], { linethickness: '0' }), ')');
   }
-  // --- roots
   if (name === 'sqrt') {
     const idx = parseBracketArg(P);
     const arg = parseArg(P);
     return idx ? el('mroot', [arg, idx]) : el('msqrt', [arg]);
   }
-  // --- accents
   if (ACCENTS[name]) {
     const [ch, stretchy] = ACCENTS[name];
     const arg = parseArg(P);
     const acc = mo(ch, { stretchy: stretchy ? 'true' : 'false', accent: 'true' });
     return el('mover', [arg, acc], { accent: 'true' });
   }
-  // --- under/over braces
   if (name === 'overbrace') return el('mover', [parseArg(P), mo('⏞', { stretchy: 'true' })], { accent: 'true' });
   if (name === 'underbrace') return el('munder', [parseArg(P), mo('⏟', { stretchy: 'true' })], { accent: 'true' });
   if (name === 'overset') { const top = parseArg(P), bot = parseArg(P); return el('mover', [bot, top]); }
@@ -405,16 +394,13 @@ function cmdAtom(P: PState, name: string): MNode {
   // --- boxed/cancel: MathML Core has no <menclose>, so render the CONTENT and
   // drop the decoration (far better than the literal "\boxed" the fallthrough gives).
   if (name === 'boxed' || name === 'cancel' || name === 'bcancel' || name === 'xcancel') return parseArg(P);
-  // --- extensible arrows: a label set over a stretchy arrow.
   if (name === 'xrightarrow' || name === 'xleftarrow' || name === 'xRightarrow' || name === 'xLeftarrow') {
     parseBracketArg(P);                                       // ignore the optional [under] label
     const arrow = /left/i.test(name) ? (name[1] === 'L' ? '⇐' : '←') : (name[1] === 'R' ? '⇒' : '→');
     return el('mover', [mo(arrow, { stretchy: 'true' }), parseArg(P)]);
   }
-  // --- \pmod{n} / \pod{n}
   if (name === 'pmod') return el('mrow', [txt('mspace', '', { width: '0.444em' }), mo('('), mi('mod', { mathvariant: 'normal' }), txt('mspace', '', { width: '0.333em' }), parseArg(P), mo(')')]);
   if (name === 'pod') return el('mrow', [txt('mspace', '', { width: '0.444em' }), mo('('), parseArg(P), mo(')')]);
-  // --- text / font variants
   if (name === 'text' || name === 'textnormal' || name === 'mbox') return mtext(rawText(P));
   if (name === 'operatorname' || name === 'operatorname*') {
     const s = rawText(P);
@@ -429,9 +415,7 @@ function cmdAtom(P: PState, name: string): MNode {
   if (name === 'color' || name === 'textcolor') { const c = rawText(P); return applyColor(parseArg(P), c); }
   // --- chemistry (mhchem): \ce{…}/\pu{…} lower onto the SAME MathML leaf set.
   if (name === 'ce' || name === 'pu') return parseChem(rawText(P));
-  // --- spacing
   if (SPACES[name] != null) return txt('mspace', '', { width: SPACES[name] });
-  // --- delimiters: \left … \right
   if (name === 'left') return parseLeftRight(P);
   if (name === 'right') return mrow([]);                   // unmatched \right -> nothing
   if (name === 'bigl' || name === 'bigr' || name === 'Bigl' || name === 'Bigr' ||
@@ -439,10 +423,8 @@ function cmdAtom(P: PState, name: string): MNode {
       name === 'big' || name === 'Big' || name === 'bigg' || name === 'Bigg') {
     return delimAtom(P);                                   // sized delim: take the next delimiter token
   }
-  // --- environments
   if (name === 'begin') return parseEnv(P);
   if (name === 'end') return mrow([]);
-  // --- escaped literals \{ \} \$ \% \# \& \_
   if (name === '{' || name === '}') return mo(name, { stretchy: 'false' });
   if (name === '$' || name === '%' || name === '#' || name === '&' || name === '_') return mo(name);
   if (name === ' ') return txt('mspace', '', { width: '0.25em' });
@@ -455,7 +437,6 @@ function cmdAtom(P: PState, name: string): MNode {
     if (base) return mo(base + '̸');                    // overlay AFTER the base grapheme, in ONE <mo>
     return el('mrow', [a, mo('̸')]);
   }
-  // --- symbol tables
   if (GREEK[name]) return mi(GREEK[name]);
   if (IDENTS[name]) return mi(IDENTS[name]);
   if (OPS[name]) return mo(OPS[name]);
@@ -517,17 +498,11 @@ function applyColor(node: MNode, color: string): MNode {
   return COLOR_OK.test(c) ? el('mrow', [node], { mathcolor: c }) : node;
 }
 
-/* ===== mhchem (\ce / \pu): a small chemistry sub-language ======================
- * Same stance as the math path: a linear left-to-right scan lowers the formula
- * onto the SAME closed MathML leaf set (mi/mn/mo/msub/msup/msubsup/mover/
- * munderover/mrow), so it inherits every safety property — no element or
- * attribute outside the math allow-list, no inline style, bounded by the shared
- * MAX_NODES/MAX_DEPTH caps (the whole input is already under MAX_TEX). This is a
- * PRACTICAL subset: element subscripts, parenthesised groups, leading
- * stoichiometric coefficients, charges (^ and trailing +/-), the
- * ->/<-/<=>/<-> arrows with optional [over]/[under] labels, +, states, hydrate
- * dots and $…$ math escapes. Isotope prescripts and bond ornaments degrade to
- * plain glyphs — never to a new element. */
+// mhchem (\ce / \pu): same stance as the math path. A linear left-to-right scan
+// lowers the formula onto the SAME closed MathML leaf set, so it inherits every
+// safety property -- no element/attribute outside the math allow-list, no inline
+// style, bounded by the shared MAX_NODES/MAX_DEPTH caps. A PRACTICAL subset;
+// isotope prescripts and bond ornaments degrade to plain glyphs, never a new element.
 const CHEM_ARROWS: [string, string][] = [
   ['<=>>', '⇌'], ['<<=>', '⇌'], ['<=>', '⇌'], ['<->', '↔'], ['->', '→'], ['<-', '←'],
 ];
@@ -696,7 +671,6 @@ function parseLeftRight(P: PState): MNode {
   return fenced(open, row(body), close);
 }
 
-/* ===== Environments (matrices, cases, aligned) ================================== */
 const ENV_FENCE: Record<string, [string, string]> = {
   pmatrix: ['(', ')'], bmatrix: ['[', ']'], Bmatrix: ['{', '}'],
   vmatrix: ['|', '|'], Vmatrix: ['‖', '‖'], matrix: ['', ''],
@@ -761,7 +735,6 @@ function parseEnv(P: PState): MNode {
 }
 const isEmpty = (d: MNode | undefined) => d && d.tag === 'mrow' && (!d.children || d.children.length === 0);
 
-/* ===== Public: build AST (pure, DOM-free) ======================================= */
 export function buildMathAst(tex: unknown, { display = false }: { display?: boolean } = {}): MNode {
   const src = String(tex ?? '');
   if (src.length > MAX_TEX) return { tag: 'math', attrs: { display: display ? 'block' : 'inline' }, children: [mtext(src)], over: true };
@@ -771,7 +744,7 @@ export function buildMathAst(tex: unknown, { display = false }: { display?: bool
   return el('math', [row(kids)], { display: display ? 'block' : 'inline' });
 }
 
-/* ===== Serialize to a MathML string (pure; for tests / debugging) =============== */
+// Serialize to a MathML string (pure; for tests / debugging).
 const escapeXml = (s: string) => s.replace(/[&<>]/g, (c) => (c === '&' ? '&amp;' : c === '<' ? '&lt;' : '&gt;'));
 export function toMathMLString(d: MNode): string {
   if (d.tag && !MML_ELEMENTS.has(d.tag)) throw new Error('smath: element outside allow-list: ' + d.tag);
@@ -781,7 +754,6 @@ export function toMathMLString(d: MNode): string {
   return `<${d.tag}${attrs}>${inner}</${d.tag}>`;
 }
 
-/* ===== Public: build DOM ======================================================== */
 function toDom(d: MNode, doc: Document): Element {
   if (!MML_ELEMENTS.has(d.tag)) throw new Error('smath: element outside allow-list: ' + d.tag);
   const node = doc.createElementNS(MML, d.tag);

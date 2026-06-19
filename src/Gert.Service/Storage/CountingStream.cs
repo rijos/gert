@@ -86,7 +86,6 @@ public sealed class CountingStream : Stream
     /// <inheritdoc />
     public override void Flush()
     {
-        // Read-only - nothing to flush.
     }
 
     /// <summary>

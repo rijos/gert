@@ -51,8 +51,6 @@ public sealed class SqliteRagStore : IRagStore
         _connection = connection;
     }
 
-    // ---- documents / memory ------------------------------------------------
-
     /// <inheritdoc />
     public async Task<IReadOnlyList<Document>> ListDocumentsAsync(
         DocumentKind? kind = null,
@@ -220,8 +218,6 @@ public sealed class SqliteRagStore : IRagStore
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    // ---- chunks + embeddings -----------------------------------------------
-
     /// <inheritdoc />
     public async Task InsertChunksAsync(
         IReadOnlyList<ChunkInsert> chunks,
@@ -274,8 +270,6 @@ public sealed class SqliteRagStore : IRagStore
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    // ---- hybrid retrieval (vector KNN + BM25, fused with RRF) ----------------
-
     /// <inheritdoc />
     public async Task<IReadOnlyList<RetrievedChunk>> HybridSearchAsync(
         string query,
@@ -290,7 +284,6 @@ public sealed class SqliteRagStore : IRagStore
             return Array.Empty<RetrievedChunk>();
         }
 
-        // 1) Vector KNN over vec_chunks - nearest by distance, ascending.
         const string vecSql =
             "SELECT chunk_id, distance FROM vec_chunks " +
             "WHERE embedding MATCH @qvec ORDER BY distance LIMIT @k;";
@@ -299,9 +292,9 @@ public sealed class SqliteRagStore : IRagStore
             new { qvec = PackEmbedding(queryEmbedding), k },
             cancellationToken: cancellationToken)).ConfigureAwait(false)).ToList();
 
-        // 2) Lexical BM25 over fts_chunks. The match string is carried as a single
-        //    quoted FTS5 string so operators/quotes in the user's query are data,
-        //    not syntax (avoids FTS-syntax injection). bm25() is lower = better.
+        // The match string is carried as a single quoted FTS5 string so operators/
+        // quotes in the user's query are data, not syntax (avoids FTS-syntax
+        // injection). bm25() is lower = better.
         const string ftsSql =
             "SELECT rowid AS chunk_id, bm25(fts_chunks) AS score FROM fts_chunks " +
             "WHERE fts_chunks MATCH @q ORDER BY score LIMIT @k;";
@@ -310,8 +303,8 @@ public sealed class SqliteRagStore : IRagStore
             new { q = EscapeFtsQuery(query), k },
             cancellationToken: cancellationToken)).ConfigureAwait(false)).ToList();
 
-        // 3) Reciprocal Rank Fusion. Each list contributes 1 / (RrfK + rank),
-        //    rank being the 1-based position within that already-sorted list.
+        // Reciprocal Rank Fusion: each list contributes 1 / (RrfK + rank), rank
+        // being the 1-based position within that already-sorted list.
         var fused = new Dictionary<long, double>();
         AccumulateRrf(fused, vecHits.Select(h => h.ChunkId));
         AccumulateRrf(fused, ftsHits.Select(h => h.ChunkId));
@@ -327,13 +320,11 @@ public sealed class SqliteRagStore : IRagStore
             return Array.Empty<RetrievedChunk>();
         }
 
-        // 4) Join the surviving chunk ids back to chunks + documents. Only
-        //    status='ready' documents are retrievable (the literal matches
-        //    StatusToString): a still-processing document's chunks exist
-        //    transiently (batches commit per batch) and a failed document's
-        //    chunks are deleted by the ingestion failure path - this predicate
-        //    is the read-side guarantee. The loop below already tolerates ids
-        //    dropped by the join.
+        // Only status='ready' documents are retrievable (literal matches
+        // StatusToString): a still-processing document's chunks exist transiently
+        // (batches commit per batch) and a failed document's chunks are deleted by
+        // the ingestion failure path - this predicate is the read-side guarantee.
+        // The loop below tolerates ids dropped by the join.
         const string joinSql =
             "SELECT c.id, c.document_id, c.ordinal, c.content, c.page, c.token_count, " +
             "       d.id AS d_id, d.filename, d.mime, d.size_bytes, d.status, d.chunk_count, " +
@@ -390,8 +381,6 @@ public sealed class SqliteRagStore : IRagStore
     {
         await _connection.DisposeAsync().ConfigureAwait(false);
     }
-
-    // ---- helpers -----------------------------------------------------------
 
     private static void AccumulateRrf(Dictionary<long, double> fused, IEnumerable<long> rankedIds)
     {
@@ -517,7 +506,6 @@ public sealed class SqliteRagStore : IRagStore
         _ => throw new InvalidOperationException($"Unknown document kind '{value}'."),
     };
 
-    // ---- row DTOs ----------------------------------------------------------
     // PascalCase properties; Dapper binds snake_case columns via
     // MatchNamesWithUnderscores and narrows SQLite's Int64 to each property type.
 

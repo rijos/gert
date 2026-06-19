@@ -11,13 +11,10 @@ using Xunit;
 namespace Gert.Chat.Tests;
 
 /// <summary>
-/// Unit tests for the pure port-DTO -> SDK request mapper: messages, advertised tools,
-/// <c>tool_choice:"auto"</c>, the selected provider's sampling, and the off-spec
-/// extras (<c>top_k</c>/<c>min_p</c>/... and the thinking template kwargs) land in the
-/// right OpenAI wire shape. Assertions run over the SDK-serialized JSON (via
-/// <see cref="ModelReaderWriter"/>) - i.e. the exact bytes that go on the wire. The
-/// model id and <c>stream</c>/<c>stream_options</c> are injected by the SDK client at
-/// call time and are asserted in <see cref="OpenAIChatModelClientTests"/>.
+/// Unit tests for the pure port-DTO -> SDK request mapper. Assertions run over the
+/// SDK-serialized JSON (via <see cref="ModelReaderWriter"/>) - the exact bytes that go
+/// on the wire. The model id and <c>stream</c>/<c>stream_options</c> are injected by the
+/// SDK client at call time and asserted in <see cref="OpenAIChatModelClientTests"/>.
 /// </summary>
 public sealed class OpenAIChatRequestBuilderTests
 {
@@ -109,8 +106,8 @@ public sealed class OpenAIChatRequestBuilderTests
     [Fact]
     public void Build_IncludesProviderSamplingWhenSet()
     {
-        // Typed OpenAI-spec sampling from the provider; off-spec via Extra. MaxTokens
-        // is the lone request-borne field (the runner's per-round budget cap).
+        // Typed spec sampling from the provider; off-spec via Extra. MaxTokens is the lone
+        // request-borne field (the runner's per-round budget cap).
         var sampling = new ChatProviderParameters
         {
             Temperature = 0.2,
@@ -236,8 +233,8 @@ public sealed class OpenAIChatRequestBuilderTests
         var (messages, _) = Build(request);
         var assistant = MessageJson(messages[0]).AsObject();
 
-        // Tool-call-only assistant turn: no content key, no tool_call_id, a
-        // tool_calls array in call order with `arguments` as the raw JSON string.
+        // Tool-call-only turn: no content/tool_call_id; tool_calls in call order with
+        // `arguments` as the raw JSON string.
         assistant.ContainsKey("content").Should().BeFalse();
         assistant.ContainsKey("tool_call_id").Should().BeFalse();
 
@@ -330,7 +327,6 @@ public sealed class OpenAIChatRequestBuilderTests
         var (messages, _) = Build(request);
         var parts = MessageJson(messages[0])["content"]!.AsArray();
 
-        // Text part first, then one image_url part per image as a data URL.
         parts.Should().HaveCount(3);
         parts[0]!["type"]!.GetValue<string>().Should().Be("text");
         parts[0]!["text"]!.GetValue<string>().Should().Be("what's in this picture?");

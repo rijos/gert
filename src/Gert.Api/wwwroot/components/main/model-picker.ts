@@ -121,7 +121,6 @@ export const ModelPicker = component({
       flex-wrap: wrap;
     }
   `,
-  // logic: the open/close state for the dropdown + its toggle handler.
   setup: () => {
     const open = van.state(false);
     const toggle = (e: Event) => {
@@ -130,7 +129,6 @@ export const ModelPicker = component({
     };
     return { open, toggle };
   },
-  // content: the trigger button + the Menu of models. (selected.val binds live in the label.)
   view: ({ open, toggle }) =>
     Menu({
       wrapClass: "model-picker",

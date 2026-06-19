@@ -46,8 +46,7 @@ export const SvgArtifact = component({
       f.srcdoc = artifactSrcdoc(artifact.content, { allowScripts: false });
       return f;
     }),
-    // tinted markup source via the MdCode leaf - tinted from textContent into
-    // inert tok-* spans, never interpreted.
+    // raw source via MdCode: tinted from textContent into inert tok-* spans, never interpreted.
     ArtifactSource({ body: () => MdCode({ code: artifact.content || "", lang: "svg" }) }),
   ),
 });

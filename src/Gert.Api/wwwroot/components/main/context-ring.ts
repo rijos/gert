@@ -1,11 +1,7 @@
-// components/main/context-ring.js - the composer's context-usage circle: how
-// much of the selected model's context window the conversation's last turn
-// occupied (state/chat.js contextTokens / the model's `context`). An SVG
-// stroke-dasharray ring; hidden until both numbers are known. Accent ring,
-// shifting amber past 75% and red past 90%. CLICK opens a statistics popover
-// (window, used/free, last-reply tokens + speed) - same upward Menu shell as
-// the tools dropdown. The Menu is built ONCE (its outside-click closer is a
-// document listener); every row is a reactive binding.
+// The composer's context-usage ring: how much of the selected model's context
+// window the last turn occupied (chat.contextTokens / model `context`). Hidden
+// until both numbers are known; amber past 75%, red past 90%. Click opens a
+// stats popover via the same upward Menu shell as the tools dropdown.
 import van from "/lib/van.js";
 import type { TagFunc } from "/lib/van.js";
 import { component } from "../../lib/component.js";
@@ -111,10 +107,8 @@ export const ContextRing = component({
       border-radius: 3px;
     }
   `,
-  // logic: the open/close state for the stats popover, its toggle handler, and
-  // the pure `usage()` reading (current used/max context off the live state -
-  // a plain function, not a van.derive, so it is safe in setup and the bindings
-  // that call it stay in view).
+  // usage() is a plain function, not a van.derive, so it is safe to call in
+  // setup and the bindings that read it stay in view.
   setup: () => {
     const open = van.state(false);
     const toggle = (e: Event) => {
@@ -128,7 +122,6 @@ export const ContextRing = component({
     };
     return { open, toggle, usage };
   },
-  // content: the ring button trigger + the upward stats Menu.
   view: ({ open, toggle, usage }) => {
     const trigger = button(
       {

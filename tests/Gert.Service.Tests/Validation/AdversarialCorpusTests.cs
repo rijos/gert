@@ -74,9 +74,6 @@ public sealed class AdversarialCorpusTests
         {
             Assert.False(result.IsValid, $"filename should have been rejected: {Describe(payload)}");
         }
-
-        // The filename rule must never crash on any corpus entry - the assertion above
-        // already exercised Validate without an exception.
     }
 
     /// <summary>Model id / title fields never crash across the whole corpus.</summary>

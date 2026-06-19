@@ -8,13 +8,12 @@ namespace Gert.Tools.Builtin;
 
 /// <summary>
 /// The canvas create tool. Model function <c>make_artifact</c>: the model writes a
-/// complete, self-contained file (an HTML page, a script, a Markdown doc, an SVG)
-/// as a tool argument instead of a fenced code block - so the content is opaque
-/// JSON and its own ` ``` ` fences can't truncate it (the nested-fence bug the
-/// fenced-block convention had). Create-or-overwrite by <c>name</c> within the
-/// conversation: a re-used name saves over the prior draft (same canvas tab, bumped
-/// version). The produced artifact rides back on <see cref="ToolResult.Artifacts"/>;
-/// the orchestrator emits the <c>ArtifactEvent</c> that opens/updates the tab.
+/// complete, self-contained file as a tool argument rather than a fenced code block, so
+/// the content is opaque JSON whose own ` ``` ` fences can't truncate it (the nested-fence
+/// bug the fenced-block convention had). Create-or-overwrite by <c>name</c> within the
+/// conversation - a re-used name saves over the prior draft (same canvas tab, bumped
+/// version). The artifact rides back on <see cref="ToolResult.Artifacts"/>; the
+/// orchestrator emits the <c>ArtifactEvent</c> that opens/updates the tab.
 /// </summary>
 public sealed class MakeArtifactTool : ITool
 {

@@ -6,14 +6,14 @@ namespace Gert.Database;
 
 /// <summary>
 /// One-call DI registration for the GENERIC database layer (tech-stack.md section
-/// Architecture): the bound <see cref="DatabaseOptions"/> (the <c>Gert:Database:Type</c>
-/// engine selection), the keyed-plugin <see cref="DatabaseEngineFactory"/>, and the two
-/// database provider ports resolved from the selected engine. It registers no engine - the
-/// composition root adds the engine plugin it wants available (each
-/// <c>AddGertDatabase&lt;Impl&gt;</c>, e.g. <c>AddGertDatabaseSqlite</c>), and configuration
-/// selects which engine builds the providers at runtime. The service layer keeps talking only to
-/// the ports (<see cref="IUserDatabaseProvider"/> / <see cref="IChatDatabaseProvider"/>). The RAG
-/// index is its own capability (<c>Gert.Rag</c> / <c>AddGertRag</c>), not a database concern.
+/// Architecture): the bound <see cref="DatabaseOptions"/>, the keyed-plugin
+/// <see cref="DatabaseEngineFactory"/>, and the two provider ports resolved from the selected
+/// engine. It registers no engine - the composition root adds the engine plugin it wants
+/// (each <c>AddGertDatabase&lt;Impl&gt;</c>, e.g. <c>AddGertDatabaseSqlite</c>), and
+/// <c>Gert:Database:Type</c> selects which engine builds the providers at runtime. The service
+/// layer talks only to the ports (<see cref="IUserDatabaseProvider"/> /
+/// <see cref="IChatDatabaseProvider"/>). The RAG index is its own capability
+/// (<c>Gert.Rag</c> / <c>AddGertRag</c>), not a database concern.
 /// </summary>
 public static class ServiceCollectionExtensions
 {

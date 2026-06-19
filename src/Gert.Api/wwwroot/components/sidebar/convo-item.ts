@@ -1,5 +1,4 @@
-// components/sidebar/convo-item.js - one .convo row.
-// The title ellipsises when too wide; move/trash buttons reveal on row hover.
+// One .convo row: title, plus move/trash buttons that reveal on row hover.
 import van from "/lib/van.js";
 import { component } from "../../lib/component.js";
 import { Icon } from "../../icons/icons.js";
@@ -14,8 +13,7 @@ import { t } from "../../lib/i18n.js";
 
 const { div, span, button, p } = van.tags;
 
-// "Move to project..." - a modal with a destination picker (the current project
-// excluded; nothing to do with one project).
+// "Move to project..." modal; the current project is excluded from the picker.
 const promptMove = (convo: Conversation) => {
   const target = van.state("");
   const choices = chat.projects
@@ -114,7 +112,6 @@ export const ConvoItem = component({
       font-weight: 600;
     }
   `,
-  // logic: the row's navigation + the move/delete handlers (all keyed off `convo`).
   setup: (convo: Conversation) => {
     // Navigate only - ChatPage opens the thread for its route. Calling
     // svc.open() here too would race a SECOND open from the route render

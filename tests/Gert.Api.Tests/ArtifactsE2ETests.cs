@@ -205,8 +205,6 @@ public sealed class ArtifactsE2ETests : IClassFixture<GertApiFactory>
         return listed.Should().ContainSingle().Subject.Id;
     }
 
-    // --- SSE helpers (same shape as WalkingSkeletonTests) ---------------------
-
     private static async Task<string> ReadUntilTerminalAsync(HttpResponseMessage response)
     {
         await using var body = await response.Content.ReadAsStreamAsync();

@@ -205,7 +205,6 @@ export const Dropdown = component({
       : null;
     if (search)
       van.derive(() => {
-        // focus the filter on open; clear it on close
         if (open.val) setTimeout(() => search.focus(), 0);
         else (query.val = ""), (search.value = "");
       });

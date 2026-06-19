@@ -10,8 +10,7 @@ namespace Gert.Service.Tests.Validation;
 
 /// <summary>
 /// Positive / negative / boundary tests for the project / memory / settings /
-/// conversation validators (testing.md section 5). One file keeps the related
-/// cases together; each validator is the production registration.
+/// conversation validators (testing.md section 5), against the production registration.
 /// </summary>
 public sealed class ProjectAndMemoryValidatorTests
 {

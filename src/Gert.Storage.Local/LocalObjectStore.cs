@@ -10,14 +10,12 @@ namespace Gert.Storage.Local;
 /// contract, so a reader never observes a partial object.
 ///
 /// <para>
-/// Identity is handled exactly as the database seam: the scope carries only the
-/// validated opaque user key and a validated <c>pid</c>, and every key is
-/// normalised and asserted to stay <b>under</b> the resolved scope root
-/// (<c>..</c> and rooted/absolute keys are rejected) - a key can never escape it.
-/// Destructive whole-tree deletes are pure filesystem operations: this backend owns
-/// only the artifact bytes and knows nothing about databases. When a scope's local
-/// tree also holds <c>chat.db</c>/<c>rag.db</c>, the service drives the database
-/// providers' destruction (which drop the engine's pooled handles) <b>before</b>
+/// The scope carries only the validated opaque user key and a validated <c>pid</c>,
+/// and every key is normalised and asserted to stay <b>under</b> the resolved scope
+/// root (<c>..</c> and rooted/absolute keys are rejected) so a key can never escape it.
+/// This backend owns only the artifact bytes and knows nothing about databases. When a
+/// scope's local tree also holds <c>chat.db</c>/<c>rag.db</c>, the service drives the
+/// database providers' destruction (which drop the engine's pooled handles) <b>before</b>
 /// calling a delete here, so a whole-tree wipe never races an unlinked-but-open file.
 /// </para>
 /// </summary>
@@ -25,7 +23,6 @@ public sealed class LocalObjectStore : IObjectStore
 {
     private readonly StorageOptions _options;
 
-    /// <summary>Create the backend over the configured <see cref="StorageOptions.DataRoot"/>.</summary>
     public LocalObjectStore(IOptions<StorageOptions> options)
     {
         ArgumentNullException.ThrowIfNull(options);
@@ -222,8 +219,6 @@ public sealed class LocalObjectStore : IObjectStore
 
         return Task.FromResult<IReadOnlyList<string>>(keys);
     }
-
-    // ---- path resolution + traversal guard --------------------------------
 
     /// <summary>The scope's local root: <c>users/{key}</c> or <c>users/{key}/projects/{pid}</c>.</summary>
     private string ScopeRoot(ObjectScope scope)

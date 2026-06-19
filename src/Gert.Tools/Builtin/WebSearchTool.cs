@@ -9,15 +9,14 @@ namespace Gert.Tools.Builtin;
 
 /// <summary>
 /// The web-search tool (chat-and-tools.md section web search). Model function
-/// <c>web_search</c>: forwards the query to <see cref="IWebSearch"/> (SearXNG +
-/// the SSRF-guarded fetch lives behind the port, security F5) and shapes
-/// the results worth keeping into a <see cref="ToolResult"/> - a JSON payload for
-/// the model plus web-type <see cref="Citation"/>s. The tool only calls the port;
-/// the egress hardening is the adapter's job.
+/// <c>web_search</c>: forwards the query to <see cref="IWebSearch"/> and shapes the
+/// results into a <see cref="ToolResult"/> - a JSON payload for the model plus web-type
+/// <see cref="Citation"/>s. The tool only calls the port; SSRF/egress hardening is the
+/// adapter's job (security F5).
 /// </summary>
 public sealed class WebSearchTool : ITool
 {
-    /// <summary>How many results to ask the port for (the mockup keeps a few).</summary>
+    /// <summary>How many results to ask the port for.</summary>
     private const int MaxResults = 5;
 
     private readonly IWebSearch _search;

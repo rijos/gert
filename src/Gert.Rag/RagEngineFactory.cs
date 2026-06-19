@@ -4,12 +4,10 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Gert.Rag;
 
 /// <summary>
-/// Resolves the single RAG engine the operator selected via <c>Gert:Rag:Type</c>
-/// (default <c>Sqlite</c>): it looks up the registered <see cref="IRagEngineBuilder"/>
-/// plugin keyed by that Type and delegates - keyed DI, no central <c>switch</c> over Type
-/// (mirrors <c>Gert.Database.DatabaseEngineFactory</c>). The composition root registers the
-/// shipped engine plugin (<c>AddGertRagSqlite</c>); a selected Type with no registered plugin
-/// fails at first resolution with an actionable message. The engine is resolved once and cached.
+/// Resolves the single RAG engine selected via <c>Gert:Rag:Type</c> (default <c>Sqlite</c>) by
+/// delegating to the <see cref="IRagEngineBuilder"/> plugin keyed by that Type - keyed DI, no
+/// central <c>switch</c> (mirrors <c>Gert.Database.DatabaseEngineFactory</c>). A selected Type with
+/// no registered plugin fails at first resolution with an actionable message. Resolved once and cached.
 /// </summary>
 public sealed class RagEngineFactory
 {
@@ -24,9 +22,9 @@ public sealed class RagEngineFactory
     private IRagEngineBuilder? _engine;
 
     /// <summary>
-    /// Capture the configured Type once - configuration is fixed for the host's lifetime
-    /// (constructed over the closed-over <see cref="IConfiguration"/> in the registrar, keeping
-    /// the registration host-agnostic rather than resolving <see cref="IConfiguration"/> from DI).
+    /// Capture the configured Type once (configuration is fixed for the host's lifetime). The
+    /// registrar closes over <see cref="IConfiguration"/> rather than resolving it from DI, keeping
+    /// the registration host-agnostic.
     /// </summary>
     public RagEngineFactory(IServiceProvider services, IConfiguration configuration)
     {

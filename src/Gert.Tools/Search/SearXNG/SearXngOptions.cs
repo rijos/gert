@@ -12,7 +12,6 @@ namespace Gert.Tools.Search.SearXNG;
 /// </summary>
 public sealed class SearXngOptions
 {
-    /// <summary>The configuration section these options bind from.</summary>
     public const string SectionName = "Gert:Tools:Search";
 
     /// <summary>The search implementation to use. <c>SearXNG</c> today.</summary>

@@ -1,8 +1,7 @@
 // format.js - tiny shared number formatters (no deps, no DOM).
 
-// Byte counts for doc/user size labels: KB below 1 MB, then MB / GB to one
-// decimal. The single owner - was triplicated across doc-row / knowledge-panel
-// / admin users before.
+// Byte counts for doc/user size labels. The single owner - was triplicated
+// across doc-row / knowledge-panel / admin users before.
 export const fmtBytes = (bytes: number) => {
   const n = bytes || 0;
   if (n >= 1_073_741_824) return (n / 1_073_741_824).toFixed(1) + " GB";

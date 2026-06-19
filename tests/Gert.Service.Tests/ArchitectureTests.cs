@@ -5,11 +5,9 @@ using Xunit;
 namespace Gert.Service.Tests;
 
 /// <summary>
-/// Enforces the inward-only reference direction from
-/// docs/design/tech-stack.md section Architecture: the host-agnostic service layer
-/// must never depend on a host or adapter. This is the structural guarantee
-/// that keeps the services drivable from any host - compiler- and
-/// test-enforced from day one.
+/// Enforces the inward-only reference direction from docs/design/tech-stack.md section
+/// Architecture: the host-agnostic service layer must never depend on a host or adapter, so the
+/// services stay drivable from any host.
 /// </summary>
 public class ArchitectureTests
 {

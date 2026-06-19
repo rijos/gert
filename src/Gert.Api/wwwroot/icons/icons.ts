@@ -18,7 +18,6 @@ const { svg, path, circle, rect } = van.tags("http://www.w3.org/2000/svg") as Re
 // record so Icon's tolerant `GLYPHS[name] || GLYPHS.file` lookup (callers may pass a name not
 // in the set) type-checks; the entries are SVG Elements built by the namespaced tag funcs.
 const GLYPHS: Record<string, () => Element[]> = {
-  // brand mark (custom viewBox handled separately)
   plus: () => [path({ d: "M12 5v14M5 12h14", "stroke-linecap": "round" })],
   close: () => [path({ d: "M18 6 6 18M6 6l12 12", "stroke-linecap": "round" })],
   search: () => [

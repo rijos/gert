@@ -5,22 +5,14 @@ using Gert.Service.External;
 namespace Gert.Tools.Fetch;
 
 /// <summary>
-/// The <see cref="IWebFetcher"/> adapter for the <c>web_fetch</c> tool: a thin
-/// wrapper over the singleton <see cref="SafeHttpFetcher"/> (the F5 enforcement
-/// point web search's page pulls already use), mapping its exceptions to the
-/// port's never-throws contract so the tool can surface them as readable tool
-/// errors:
-/// <list type="bullet">
-///   <item><see cref="SsrfBlockedException"/> -> "URL blocked by fetch policy" -
-///   the policy refusal stays card-visible, never a server error.</item>
-///   <item><see cref="HttpRequestException"/> (incl. non-2xx via
-///   <c>EnsureSuccessStatusCode</c>) -> "fetch failed (...)".</item>
-///   <item>The fetcher's own wall-clock cap -> "fetch timed out"; the CALLER's
-///   cancellation still throws (the turn owns that signal).</item>
-/// </list>
-/// The size/time/redirect caps are the fetcher's own <see cref="SearXngOptions"/>
-/// knobs (<c>Gert:Search</c>) - web_fetch deliberately shares them with the
-/// search summarize step rather than growing a parallel set.
+/// The <see cref="IWebFetcher"/> adapter for the <c>web_fetch</c> tool: wraps the
+/// singleton <see cref="SafeHttpFetcher"/> (the F5 enforcement point web search's
+/// page pulls already use) and maps its exceptions to the port's never-throws
+/// contract so policy refusals and failures surface as readable tool errors, never
+/// server errors. The caller's own cancellation still throws (the turn owns that
+/// signal). The size/time/redirect caps are the fetcher's <see cref="SearXngOptions"/>
+/// knobs (<c>Gert:Search</c>), shared with the search summarize step on purpose
+/// rather than growing a parallel set.
 /// </summary>
 public sealed class SafeWebFetcher : IWebFetcher
 {

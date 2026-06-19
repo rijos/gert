@@ -9,7 +9,6 @@ namespace Gert.Ingestion;
 /// </summary>
 public sealed class ExtractorOptions
 {
-    /// <summary>The configuration section these options bind from.</summary>
     public const string SectionName = "Gert:Extractor";
 
     /// <summary>The extractor implementation to use. <c>Subprocess</c> today.</summary>

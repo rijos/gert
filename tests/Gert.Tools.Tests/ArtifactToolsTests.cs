@@ -63,8 +63,6 @@ public sealed class ArtifactToolsTests
         CreatedAt = new DateTimeOffset(2026, 6, 1, 0, 0, 0, TimeSpan.Zero),
     };
 
-    // ---- make_artifact -----------------------------------------------------
-
     [Fact]
     public async Task Make_creates_a_new_artifact_when_the_name_is_free()
     {
@@ -151,8 +149,6 @@ public sealed class ArtifactToolsTests
             Arg.Is<Artifact>(a => a.Kind == ArtifactKind.Py), Arg.Any<CancellationToken>());
     }
 
-    // ---- edit_artifact -----------------------------------------------------
-
     [Fact]
     public async Task Edit_replaces_a_unique_snippet_and_bumps_version()
     {
@@ -214,8 +210,6 @@ public sealed class ArtifactToolsTests
         result.Success.Should().BeFalse();
         result.Error.Should().Contain("no artifact named 'ghost.md'");
     }
-
-    // ---- read_artifact -----------------------------------------------------
 
     [Fact]
     public async Task Read_returns_line_numbered_content()

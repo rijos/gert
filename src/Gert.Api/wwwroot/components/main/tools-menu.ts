@@ -17,7 +17,6 @@ import { t } from "../../lib/i18n.js";
 
 const { div, button, span } = van.tags;
 
-// One toggle row: a tool id (a key of chat.tools) + its translated label.
 interface ToolDef {
   id: ToolId;
   label: string;
@@ -126,9 +125,6 @@ export const ToolsMenu = component({
       padding-top: 5px;
     }
   `,
-  // logic: the open/close state, its toggle handler, and the pure `active()`
-  // count of enabled tools (a plain function - the bindings that call it stay
-  // in view).
   setup: () => {
     const open = van.state(false);
     const toggle = (e: Event) => {
@@ -141,7 +137,6 @@ export const ToolsMenu = component({
       (chat.tools.rag ? 1 : 0); // "Use my docs" - the rag row below
     return { open, toggle, active };
   },
-  // content: the count-badged trigger button + the upward Menu of tool rows.
   view: ({ open, toggle, active }) => {
     const trigger = button({ class: () => "cbtn toggle" + (active() ? " on" : ""), type: "button", onclick: toggle },
       Icon("gear", { size: 14, strokeWidth: 2 }),

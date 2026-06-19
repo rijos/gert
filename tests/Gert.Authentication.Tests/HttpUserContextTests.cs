@@ -153,7 +153,6 @@ public sealed class HttpUserContextTests
     [Fact]
     public void Sub_absent_throws()
     {
-        // Principal with no sub claim.
         var identity = new ClaimsIdentity(
             [new Claim("iss", "https://id.test.local")],
             authenticationType: "Test");

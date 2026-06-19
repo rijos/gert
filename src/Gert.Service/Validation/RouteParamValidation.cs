@@ -1,19 +1,13 @@
 namespace Gert.Service.Validation;
 
 /// <summary>
-/// Reusable validators for request-supplied <b>route parameters</b> that are not
-/// DTO bodies - the admin folder <c>{key}</c> (security F6) and the project
-/// <c>{pid}</c> (configuration.md section 2.5). These feed directly into a filesystem
-/// path, so they are validated <b>before</b> any path-join / destructive delete. Exposed
-/// as a static seam the API controllers call, sharing one rule with the body
-/// validators; they return the same <see cref="ValidationResult"/> shape the
-/// body validators do, so a failure renders an identical 400.
-/// <para>
-/// The shape predicates themselves live in <see cref="ValidationRules"/>
-/// (<see cref="ValidationRules.IsWellFormedAdminKey"/>,
-/// <see cref="ValidationRules.IsWellFormedProjectId"/>) so the same logic is unit-
-/// testable in isolation and reusable inside FluentValidation rules elsewhere.
-/// </para>
+/// Reusable validators for request-supplied <b>route parameters</b> (not DTO bodies):
+/// the admin folder <c>{key}</c> (security F6) and the project <c>{pid}</c>
+/// (configuration.md section 2.5). These feed a filesystem path, so they are validated
+/// <b>before</b> any path-join / destructive delete. Returns the same
+/// <see cref="ValidationResult"/> as the body validators, so a failure renders an
+/// identical 400. The shape predicates live in <see cref="ValidationRules"/> so the
+/// logic stays unit-testable and reusable inside FluentValidation rules elsewhere.
 /// </summary>
 public static class RouteParamValidation
 {

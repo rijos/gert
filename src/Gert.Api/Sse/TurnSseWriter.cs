@@ -16,13 +16,8 @@ namespace Gert.Api.Sse;
 /// </summary>
 public static class TurnSseWriter
 {
-    /// <summary>The SSE content type, set on the response before writing.</summary>
     public const string ContentType = "text/event-stream";
 
-    /// <summary>
-    /// Set the SSE headers and stream every event as a framed
-    /// <c>id:/event:/data:</c> block, flushing after each.
-    /// </summary>
     public static async Task WriteAsync(
         HttpResponse response,
         IAsyncEnumerable<TurnEvent> events,

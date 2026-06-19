@@ -40,7 +40,6 @@ export const ConvoList = component({
   view: () =>
     div(
       { class: "convos" },
-      // re-render the grouped structure when the list changes
       () => {
         const groups = new Map<string, Conversation[]>(); // insertion order = list order (newest first)
         for (const c of chat.conversations) {

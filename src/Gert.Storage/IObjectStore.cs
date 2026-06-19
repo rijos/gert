@@ -1,12 +1,12 @@
 namespace Gert.Storage;
 
 /// <summary>
-/// THE storage-backend seam: every byte under a user's tree that is not a
-/// database file flows through it - uploaded originals (<c>files/...</c>) and memory
-/// bodies (<c>memory/...</c>) (storage-and-data.md section layout). Structured user
-/// state is not blob territory - it lives in <c>user.db</c>. Operations are
-/// addressed by an <see cref="ObjectScope"/> (user root or one project root) plus
-/// a scope-relative <c>key</c>. Implementations <b>must</b> reject any key that
+/// THE storage-backend seam: every non-database byte under a user's tree flows
+/// through it - uploaded originals (<c>files/...</c>) and memory bodies
+/// (<c>memory/...</c>) (storage-and-data.md section layout). Structured user state
+/// is not blob territory - it lives in <c>user.db</c>. Operations are addressed by
+/// an <see cref="ObjectScope"/> (user root or one project root) plus a
+/// scope-relative <c>key</c>. Implementations <b>must</b> reject any key that
 /// escapes the scope root (<c>..</c> segments or rooted/absolute paths) so a key
 /// can never reach another user's or project's bytes.
 ///
@@ -20,8 +20,8 @@ namespace Gert.Storage;
 ///
 /// <para>
 /// The local backend is <c>Gert.Storage.Local.LocalObjectStore</c>; an S3/Azure-Blob
-/// backend is a drop-in (a new <c>Gert.Storage.*</c> project + one DI swap -
-/// nothing above this seam moves).
+/// backend is a drop-in (a new <c>Gert.Storage.*</c> project + one DI swap, nothing
+/// above this seam moves).
 /// </para>
 /// </summary>
 public interface IObjectStore

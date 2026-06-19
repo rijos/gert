@@ -56,7 +56,7 @@ public sealed class ModelsApiTests : IClassFixture<GertApiFactory>
                 // GetChildren() order is the configured document order. Endpoint is
                 // surfaced from Parameters:BaseUrl.
                 b.UseSetting("Gert:Chat:Providers:qwen3-27b-fp8-mtp:Name", "Qwen3-27B FP8");
-                b.UseSetting("Gert:Chat:Providers:qwen3-27b-fp8-mtp:Default", "true");
+                b.UseSetting("Gert:Chat:DefaultProvider", "qwen3-27b-fp8-mtp");
                 b.UseSetting("Gert:Chat:Providers:qwen3-27b-fp8-mtp:Parameters:BaseUrl", ":8001");
                 b.UseSetting("Gert:Chat:Providers:qwen3-27b-fp8-mtp:Capabilities:0", "tools");
                 b.UseSetting("Gert:Chat:Providers:qwen3-27b-fp8-mtp:Capabilities:1", "vision");

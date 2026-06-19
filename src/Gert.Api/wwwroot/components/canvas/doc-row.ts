@@ -15,10 +15,9 @@ const { div, button } = van.tags;
 const STATUS_KIND: Record<string, string> = { ready: "ready", processing: "proc", failed: "fail" };
 
 const subText = (d: Document) => {
-  // Document.progress is a bare chunk count (number) per the store contract, but richer
-  // ingest backends send a {done,total} object; the original JS read `.done`/`.total`
-  // off it and fell back via `??`. Cast at this dynamic wire boundary so that exact
-  // expression type-checks unchanged (number.done is undefined -> ?? falls through).
+  // Document.progress is a bare chunk count per the store contract, but richer ingest
+  // backends send a {done,total} object. Cast at this dynamic wire boundary so the
+  // `.done ?? .total ?? ...` reads type-check (number.done is undefined -> ?? falls through).
   const p = d.progress as undefined | (number & { done?: number; total?: number });
   if (d.status === "processing")
     return p
@@ -77,7 +76,6 @@ export const DocRow = component({
       opacity: 1;
     }
   `,
-  // `d` is one reactive document: { name, status, size, chunk_count, progress, error }
   view: (d: Document) =>
   div(
     { class: "doc" },

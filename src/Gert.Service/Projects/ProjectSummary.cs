@@ -32,7 +32,6 @@ public sealed record ProjectSummary
 
     public int MemoryCount { get; init; }
 
-    /// <summary>Build the wire summary from on-disk config + rollup counts.</summary>
     public static ProjectSummary From(
         ProjectMeta meta,
         int conversationCount,

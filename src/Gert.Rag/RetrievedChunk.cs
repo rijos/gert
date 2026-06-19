@@ -12,6 +12,6 @@ public sealed record RetrievedChunk
 
     public required Document Document { get; init; }
 
-    /// <summary>The fused RRF score (the 0.89 / 0.81 the mockup shows).</summary>
+    /// <summary>The fused RRF score.</summary>
     public required double Score { get; init; }
 }

@@ -38,7 +38,6 @@ const SourceRow = (c: CitationRow) => {
 export const Sources = component({
   name: "sources",
   css: `
-    /* sources card: collapsed header bar + expandable source list */
     .sources {
       margin-top: 14px;
       border: 1px solid var(--line);
@@ -160,8 +159,7 @@ export const Sources = component({
     const open = van.state(false);
     return { open };
   },
-  // collapsed: icon - "Sources" - count - avatar stack (unique domains) -
-  // chevron. The whole card is a binding so a late citation re-renders it.
+  // The whole card is a binding so a late citation re-renders it.
   view: ({ open }, citations: CitationRow[]) => () => {
     if (!citations.length) return div();
     const seen = new Set<string>();

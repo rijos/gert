@@ -18,9 +18,8 @@ public sealed class SqliteUserDatabaseProvider : IUserDatabaseProvider
     private readonly TimeProvider _time;
 
     /// <summary>
-    /// Create the provider over the engine's resolved <see cref="SqliteDatabasePaths"/> and
-    /// shared connection factory. The clock is injected (dotnet-style-guide.md section 5) and
-    /// handed to each repository so tests can pin row timestamps.
+    /// The clock is injected (dotnet-style-guide.md section 5) and handed to each repository so
+    /// tests can pin row timestamps.
     /// </summary>
     public SqliteUserDatabaseProvider(
         SqliteDatabasePaths paths,

@@ -29,15 +29,13 @@ public sealed class TurnOptions
 
     /// <summary>
     /// Runaway brake on tool ROUNDS per turn - NOT a work budget. A round is one
-    /// upstream completion request that comes back with tool calls - executing
-    /// them and re-prompting starts the next round, so every round costs a full
-    /// vLLM completion (one upstream POST). The todo-driven flow consumes a
-    /// round per <c>set_todos</c> update, so this is sized an order of magnitude
-    /// above legitimate work (the design rationale and survey live in
-    /// docs/design/turn-budgets.md); <see cref="MaxTurnDuration"/> is the real
-    /// budget. Past the cap the runner refuses further calls with synthetic
-    /// error results - visible on the tool cards - and winds the turn down
-    /// (see <c>TurnRunner</c>).
+    /// upstream completion request that comes back with tool calls; every round
+    /// costs a full completion (one upstream POST), and the todo-driven flow
+    /// consumes a round per <c>set_todos</c> update, so this is sized an order of
+    /// magnitude above legitimate work (rationale in docs/design/turn-budgets.md);
+    /// <see cref="MaxTurnDuration"/> is the real budget. Past the cap the runner
+    /// refuses further calls with synthetic error results (visible on the tool
+    /// cards) and winds the turn down (see <c>TurnRunner</c>).
     /// </summary>
     public int MaxToolRounds { get; set; } = 64;
 

@@ -20,7 +20,6 @@ namespace Gert.Database;
 /// </summary>
 public sealed class DatabaseOptions
 {
-    /// <summary>The configuration section these options bind from.</summary>
     public const string SectionName = "Gert:Database";
 
     /// <summary>

@@ -19,8 +19,8 @@ import { isExternal } from "./render/url.js";
 
 export const attachLinkConfirm = (host: HTMLElement) => {
   host.addEventListener("click", (e: Event) => {
-    // e.target is the clicked node; narrow to Element to use .closest (annotation-only,
-    // behavior identical: the original `e.target.closest &&` guard handled non-Element targets).
+    // Narrow e.target to Element for .closest; the original `e.target.closest &&`
+    // guard already handled non-Element targets, so this cast changes no behavior.
     const target = e.target as Element | null;
     const a = target && target.closest && target.closest("a[href]");
     if (!a || !host.contains(a)) return;

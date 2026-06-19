@@ -25,9 +25,9 @@ public sealed record ChatModelChunk
     /// <summary>Set on the final chunk (e.g. <c>stop</c>, <c>tool_calls</c>, <c>length</c>).</summary>
     public string? FinishReason { get; init; }
 
-    /// <summary>Completion tokens (usage.completion_tokens).</summary>
+    /// <summary>usage.completion_tokens.</summary>
     public int? TokenCount { get; init; }
 
-    /// <summary>Prompt tokens of the round (usage.prompt_tokens).</summary>
+    /// <summary>usage.prompt_tokens of the round.</summary>
     public int? PromptTokenCount { get; init; }
 }

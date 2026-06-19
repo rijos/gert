@@ -1,19 +1,14 @@
 // components/canvas/artifacts/md-math.js - the math leaf of the markdown
-// renderer as a VanJS component. The structural renderer (lib/render/dom.js,
-// folded into lib/markdown.js) calls MdMath for every math_block / math_inline
-// node; the returned DOM is inserted verbatim.
+// renderer. The structural renderer calls MdMath for every math_block /
+// math_inline node and inserts the returned DOM verbatim.
 //
-// MdMath wraps lib/smath.js's renderMath: TeX -> a <span class="md-math"> (or
-// "md-math md-math-display") wrapping NATIVE <math> MathML. The shape is IDENTICAL
-// to what the renderer emitted inline before - the same span/class/<math> tree -
-// so every selector, the byte-oracle, and the .md-math* CSS still hold. smath
-// keeps its closed MML allow-list (toDom) + per-formula try/catch -> literal TeX,
-// so bad math degrades PER-FORMULA, never document-wide (HARD CONTRACT 3).
-//
-// view() returns renderMath's <span> directly (built with createElement /
-// createElementNS inside smath - never van.tags, never innerHTML), so the
-// renderer's headless graph stays loader-resolvable and F4 holds via the closed
-// builders. 
+// Invariants worth keeping: MdMath wraps smath's renderMath, whose output shape
+// (span.md-math[.md-math-display] wrapping native <math> MathML) is IDENTICAL to
+// the inline tree the renderer emitted before, so every selector, the byte-oracle
+// and the .md-math* CSS still hold. smath's closed MML allow-list + per-formula
+// try/catch -> literal TeX degrade bad math PER-FORMULA, never document-wide
+// (HARD CONTRACT 3). view() returns renderMath's span directly (built via
+// createElement/createElementNS, never van.tags/innerHTML), so F4 holds.
 import { component } from "../../../lib/component.js";
 import { renderMath } from "../../../lib/smath.js";
 

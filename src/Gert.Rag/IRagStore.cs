@@ -14,7 +14,6 @@ namespace Gert.Rag;
 /// </summary>
 public interface IRagStore : IAsyncDisposable
 {
-    // Documents / memory rows
     Task<IReadOnlyList<Document>> ListDocumentsAsync(
         DocumentKind? kind = null,
         CancellationToken cancellationToken = default);
@@ -30,7 +29,6 @@ public interface IRagStore : IAsyncDisposable
     /// <summary>Wipe every document, chunk, vec and fts row (forget-documents).</summary>
     Task ClearAsync(CancellationToken cancellationToken = default);
 
-    // Chunks + embeddings (ingestion writes these in step 5)
     Task InsertChunksAsync(
         IReadOnlyList<ChunkInsert> chunks,
         CancellationToken cancellationToken = default);
@@ -44,7 +42,6 @@ public interface IRagStore : IAsyncDisposable
     /// </summary>
     Task DeleteChunksAsync(string documentId, CancellationToken cancellationToken = default);
 
-    // Retrieval - vector KNN + lexical BM25 fused with RRF
     Task<IReadOnlyList<RetrievedChunk>> HybridSearchAsync(
         string query,
         IReadOnlyList<float> queryEmbedding,

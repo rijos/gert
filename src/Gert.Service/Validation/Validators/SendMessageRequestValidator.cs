@@ -4,10 +4,9 @@ using Gert.Model.Dtos;
 namespace Gert.Service.Validation.Validators;
 
 /// <summary>
-/// Validates the chat message body (testing.md section 5: message text - max length;
-/// reject null/whitespace-only; refuse control &amp; bidi-override chars; model id
-/// - safe token; tools - registered ids). This is the hot path: the first place
-/// untrusted chat content meets the system.
+/// Validates the chat message body (testing.md section 5): text max length, no
+/// null/whitespace-only, no control or bidi-override chars; model id a safe token; tools
+/// registered ids. The hot path - the first place untrusted chat content meets the system.
 /// </summary>
 public sealed class SendMessageRequestValidator : AbstractValidator<SendMessageRequest>
 {

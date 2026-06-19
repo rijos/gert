@@ -5,8 +5,8 @@ namespace Gert.Service.Documents;
 
 /// <summary>
 /// Reads chat artifacts (the canvas tabs) from the project's <c>chat.db</c>
-/// (rest-api.md section artifacts). Read-only; artifacts are produced by the chat loop
-/// Scoped to the current user via <see cref="IUserContext"/>.
+/// (rest-api.md section artifacts). Read-only; scoped to the current user via
+/// <see cref="IUserContext"/>.
 /// </summary>
 public sealed class ArtifactService : IArtifactService
 {

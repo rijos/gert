@@ -12,9 +12,9 @@ namespace Gert.Database.Sqlite.Tests;
 /// <summary>
 /// Shared helpers to spin the split SQLite database providers (user/chat/rag), the
 /// <see cref="LocalObjectStore"/> backend, and <see cref="SqliteDatabasePaths"/> over a
-/// throwaway <see cref="TempDataRoot"/>. <see cref="ProviderFor"/> returns a small
-/// <see cref="TestDatabases"/> facade that keeps the legible open/ensure surface and
-/// replicates the request-edge provisioner (username + default project).
+/// throwaway <see cref="TempDataRoot"/>. <see cref="ProviderFor"/> returns a
+/// <see cref="TestDatabases"/> facade that replicates the request-edge provisioner
+/// (username + default project).
 /// </summary>
 internal static class ProviderFixture
 {

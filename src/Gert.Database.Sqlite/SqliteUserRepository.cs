@@ -27,7 +27,6 @@ public sealed class SqliteUserRepository : IUserRepository
 
     static SqliteUserRepository()
     {
-        // Process-wide Dapper config - one owner (DapperBootstrap), three citers.
         DapperBootstrap.EnsureConfigured();
     }
 
@@ -43,8 +42,6 @@ public sealed class SqliteUserRepository : IUserRepository
         _connection = connection ?? throw new ArgumentNullException(nameof(connection));
         _time = time ?? throw new ArgumentNullException(nameof(time));
     }
-
-    // ---- user meta ---------------------------------------------------------
 
     /// <inheritdoc />
     public async Task<string?> GetUsernameAsync(CancellationToken cancellationToken = default) =>
@@ -64,8 +61,6 @@ public sealed class SqliteUserRepository : IUserRepository
             new { username, createdAt = _time.GetUtcNow().ToString("o", CultureInfo.InvariantCulture) },
             cancellationToken: cancellationToken));
     }
-
-    // ---- settings ----------------------------------------------------------
 
     /// <inheritdoc />
     public async Task<UserSettings> GetSettingsAsync(CancellationToken cancellationToken = default)
@@ -94,8 +89,6 @@ public sealed class SqliteUserRepository : IUserRepository
             new { json = JsonSerializer.Serialize(settings, JsonOptions) },
             cancellationToken: cancellationToken));
     }
-
-    // ---- project registry --------------------------------------------------
 
     /// <inheritdoc />
     public async Task<IReadOnlyList<ProjectMeta>> ListProjectsAsync(CancellationToken cancellationToken = default)
@@ -161,8 +154,6 @@ public sealed class SqliteUserRepository : IUserRepository
 
     /// <inheritdoc />
     public ValueTask DisposeAsync() => _connection.DisposeAsync();
-
-    // ---- helpers -----------------------------------------------------------
 
     private static ProjectMeta Map(ProjectRow row) => new()
     {

@@ -7,8 +7,8 @@
 // set by the server - never readable here.
 import * as authState from "../state/auth.js";
 
-// The two dev/boot globals this module reads off `window` (both inert in prod):
-// the OIDC overrides and the E2E-injected token (see ensureSession).
+// The two dev/boot globals read off `window` (both inert in prod): the OIDC
+// overrides and the E2E-injected token (see ensureSession).
 declare global {
   interface Window {
     GERT_AUTH?: { authority?: string; clientId?: string };
@@ -16,13 +16,12 @@ declare global {
   }
 }
 
-// The OIDC token endpoint response (access_token + lifetime).
 interface TokenResponse {
   access_token: string;
   expires_in: number;
 }
 
-// The non-secret JWT claims this module reads for the display identity.
+// Non-secret JWT claims, read only for the display identity.
 interface Claims {
   preferred_username?: string;
   name?: string;
@@ -31,7 +30,7 @@ interface Claims {
   roles?: unknown;
 }
 
-// ---- in-memory token (F2) --------------------------------------------------
+// In-memory token (F2): never persisted to storage.
 let accessToken: string | null = null;
 let tokenExpiry = 0; // epoch ms
 let refreshTimer: ReturnType<typeof setTimeout> | null = null;
@@ -50,7 +49,6 @@ export const clearToken = () => {
   if (refreshTimer) clearTimeout(refreshTimer);
 };
 
-// ---- OIDC config -----------------------------------------------------------
 const CONFIG = {
   authority: window.GERT_AUTH?.authority || "/oidc",
   clientId: window.GERT_AUTH?.clientId || "gert-spa",
@@ -59,7 +57,6 @@ const CONFIG = {
 };
 const VERIFIER_KEY = "gert.pkce.verifier";
 
-// ---- PKCE helpers (Web Crypto, no deps) ------------------------------------
 const b64url = (bytes: ArrayBuffer | Uint8Array) =>
   btoa(String.fromCharCode(...new Uint8Array(bytes)))
     .replace(/\+/g, "-")
@@ -71,13 +68,11 @@ const randomVerifier = () => b64url(crypto.getRandomValues(new Uint8Array(32)));
 const challenge = async (verifier: string) =>
   b64url(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier)));
 
-// ---- claims (non-secret display identity) ----------------------------------
 const decodeClaims = (jwt: string): Claims => {
   try {
     // The middle JWT segment; noUncheckedIndexedAccess makes it possibly
     // undefined, but the throw on a malformed token is caught below (returns {}).
     const payload = jwt.split(".")[1]!.replace(/-/g, "+").replace(/_/g, "/");
-    // The decoded JWT payload is the non-secret claims object (wire boundary).
     return JSON.parse(atob(payload)) as Claims;
   } catch {
     return {};
@@ -96,7 +91,6 @@ const applyIdentity = (claims: Claims) => {
   });
 };
 
-// ---- flow ------------------------------------------------------------------
 const beginLogin = async () => {
   const verifier = randomVerifier();
   sessionStorage.setItem(VERIFIER_KEY, verifier); // verifier, NOT a token - short-lived, by design

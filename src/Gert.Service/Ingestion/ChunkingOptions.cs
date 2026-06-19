@@ -19,6 +19,5 @@ public sealed record ChunkingOptions
     /// <summary>Batch size for the embedding calls (step 4).</summary>
     public int EmbedBatchSize { get; init; } = 16;
 
-    /// <summary>The defaults.</summary>
     public static ChunkingOptions Default { get; } = new();
 }

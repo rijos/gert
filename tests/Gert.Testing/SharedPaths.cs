@@ -20,7 +20,6 @@ public static class SharedPaths
 
     private static string Resolve()
     {
-        // Start from the test binary's directory and walk up to the repo root.
         var dir = new DirectoryInfo(AppContext.BaseDirectory);
         while (dir is not null)
         {

@@ -15,7 +15,6 @@ public sealed class SqliteChatDatabaseProvider : IChatDatabaseProvider
     private readonly SqliteDatabasePaths _paths;
     private readonly SqliteConnectionFactory _factory;
 
-    /// <summary>Create the provider over the engine's resolved <see cref="SqliteDatabasePaths"/> and shared connection factory.</summary>
     public SqliteChatDatabaseProvider(SqliteDatabasePaths paths, SqliteConnectionFactory factory)
     {
         _paths = paths ?? throw new ArgumentNullException(nameof(paths));

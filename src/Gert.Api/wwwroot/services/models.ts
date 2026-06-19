@@ -7,7 +7,6 @@ import * as settings from "./settings.js";
 import { applyServerLanguage } from "../lib/i18n.js";
 
 export const load = async () => {
-  // GET /models returns the model catalog rows (WireModel); they are the Model store rows.
   const list = await http.get<WireModel[]>("/models");
   models.setModels(list);
   return list;
@@ -18,7 +17,6 @@ export const load = async () => {
 export const loadWithUserDefault = async () => {
   const [list, prefs] = await Promise.all([
     load(),
-    // settings.get() resolves the user prefs (WireSettings) or null on failure.
     settings.get().catch(() => null),
   ]);
   const id = prefs?.default_model_id;

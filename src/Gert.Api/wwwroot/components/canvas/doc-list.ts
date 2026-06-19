@@ -1,5 +1,3 @@
-// components/canvas/doc-list.js - the scrolling document list.
-// Binds to state/knowledge.documents (van-x list).
 import van from "/lib/van.js";
 import { component } from "../../lib/component.js";
 import { DocRow } from "./doc-row.js";

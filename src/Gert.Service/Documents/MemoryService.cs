@@ -192,8 +192,6 @@ public sealed class MemoryService : IMemoryService
         return removed;
     }
 
-    // ---- helpers -----------------------------------------------------------
-
     private Task<IRagStore> OpenAsync(string pid, CancellationToken cancellationToken) =>
         _databases.OpenAsync(_user.Iss, _user.Sub, pid, cancellationToken);
 

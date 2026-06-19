@@ -1,8 +1,7 @@
-// components/canvas/artifact-tabs.js - the editor-style tab list (.ctabs).
-// One tab per artifact; binds to state/artifacts (van-x) + ui.activeArtifact.
-// Long conversations overflow the strip, so three affordances keep every file
-// reachable: the strip scrolls (mouse wheel mapped to horizontal), the active
-// tab auto-scrolls into view, and a pinned "all files" dropdown lists the lot.
+// The editor-style tab list (.ctabs), one tab per artifact. Long conversations overflow
+// the strip, so three affordances keep every file reachable: the strip scrolls (mouse wheel
+// mapped to horizontal), the active tab auto-scrolls into view, and a pinned "all files"
+// dropdown lists the lot.
 import van from "/lib/van.js";
 import { component } from "../../lib/component.js";
 import type { Artifact } from "../../state/artifacts.js";
@@ -198,7 +197,6 @@ export const ArtifactTabs = component({
       () => div({ style: "display:contents" }, ...artifacts.artifacts.map((a) => Tab(a))),
     );
 
-    // -- content ---------------------------------
     const trigger = button(
       {
         class: "ctab-all",

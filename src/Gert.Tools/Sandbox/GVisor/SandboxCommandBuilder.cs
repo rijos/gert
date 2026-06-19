@@ -1,17 +1,11 @@
 namespace Gert.Tools.Sandbox.GVisor;
 
 /// <summary>
-/// Pure, side-effect-free builder for the <c>runsc</c> invocation that runs one
-/// ephemeral Python sandbox (chat-and-tools.md section sandbox; security F5). Keeping the
-/// argument + limit assembly here - with no process spawn - is what makes the security
-/// posture unit-testable: assert that egress is off, the rootfs is read-only, there is
-/// no <c>/data</c> mount, and the CPU/mem/PID/wall caps are present.
-///
-/// <para>
-/// <b>Integration-only:</b> the actual <c>runsc</c> exec is guarded by availability
-/// detection and only runs on a host with gVisor. CI tests the produced argument list,
-/// not a live container.
-/// </para>
+/// Pure builder for the <c>runsc</c> invocation that runs one ephemeral Python sandbox
+/// (chat-and-tools.md section sandbox; security F5). Assembling the args + limits here with no
+/// process spawn is what makes the security posture unit-testable (egress off, read-only rootfs,
+/// no <c>/data</c> mount, CPU/mem/PID/wall caps present): CI asserts the produced argument list,
+/// while the real <c>runsc</c> exec is availability-gated to hosts with gVisor.
 /// </summary>
 public static class SandboxCommandBuilder
 {

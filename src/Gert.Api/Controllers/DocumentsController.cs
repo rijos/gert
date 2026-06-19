@@ -90,8 +90,7 @@ public sealed class DocumentsController : ControllerBase
             .UploadAsync(pid, _validation.Prove(upload), cancellationToken)
             .ConfigureAwait(false);
 
-        // 202 + the created document (status: "processing"). The client renders the
-        // row immediately and polls Get for the transition; Location points at it.
+        // 202 + the created "processing" row; Location points at Get for the client to poll.
         return AcceptedAtAction(
             nameof(Get),
             new { pid, id = document.Id },

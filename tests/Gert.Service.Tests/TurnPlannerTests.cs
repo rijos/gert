@@ -18,11 +18,10 @@ using Xunit;
 namespace Gert.Service.Tests;
 
 /// <summary>
-/// Phase 1 in the request scope (replaces the StartTurnAsync side of the
-/// ChatService suites): validation fail-closed, conversation materialization,
-/// the seq-stamped user row + streaming assistant placeholder, the
-/// history/entitlement snapshot captured into the <see cref="TurnJob"/>, and
-/// the new 409 rule with its orphan-rule escape hatch.
+/// Phase 1 in the request scope: validation fail-closed, conversation
+/// materialization, the seq-stamped user row + streaming assistant placeholder,
+/// the history/entitlement snapshot captured into the <see cref="TurnJob"/>, and
+/// the 409 rule with its orphan-rule escape hatch.
 /// </summary>
 public sealed class TurnPlannerTests
 {

@@ -46,7 +46,6 @@ public sealed class GertApiFactory : WebApplicationFactory<Program>
     /// <summary>Chat-model fake; replace to script a different completion set.</summary>
     public FakeChatModel ChatModel { get; set; } = new();
 
-    /// <summary>Web-search fake.</summary>
     public FakeWebSearch WebSearch { get; set; } = new();
 
     /// <summary>Web-fetch fake (the real fetcher rightly blocks loopback mocks).</summary>
@@ -81,7 +80,6 @@ public sealed class GertApiFactory : WebApplicationFactory<Program>
 
         builder.ConfigureServices(services =>
         {
-            // Point storage at the throwaway DataRoot.
             services.Configure<StorageOptions>(o => o.DataRoot = _dataRoot.Path);
 
             // Validate TestTokens offline: real RS256/JWKS path, in-process key.

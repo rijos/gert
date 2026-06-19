@@ -10,8 +10,6 @@ namespace Gert.Service.Ingestion;
 /// </list>
 /// Both leaves land in the <c>Gert.Ingestion</c> adapter; hosts without it see every
 /// type return <see cref="ExtractionResult.Failed"/> and the doc marked <c>failed</c>.
-/// Keeping extraction behind this port lets the adapter swap the hardened extractor in with
-/// a single DI change and no pipeline change.
 /// </summary>
 public interface ITextExtractor
 {

@@ -42,7 +42,6 @@ export const Switch = component({
       left: 2px;
     }
   `,
-  // on: () => boolean (reactive); onToggle: () => void.
   // `= {} as SwitchProps` keeps the no-arg default (byte-identical emit) while
   // typing the always-passed fields as required so `on()` type-checks.
   view: ({ on, onToggle }: SwitchProps = {} as SwitchProps) =>

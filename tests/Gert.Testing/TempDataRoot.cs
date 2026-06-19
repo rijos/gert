@@ -1,17 +1,14 @@
 namespace Gert.Testing;
 
 /// <summary>
-/// A throwaway <c>DataRoot</c> for a test (testing.md section 4.4). Creates a unique
-/// directory under the OS temp dir, exposes its <see cref="Path"/>, and
-/// recursively deletes it on dispose. Because a user is just a folder
+/// A throwaway <c>DataRoot</c> for a test (testing.md section 4.4): a unique temp
+/// directory, recursively deleted on dispose. Because a user is just a folder
 /// (principles.md), pointing the host's <c>DataRoot</c> here gives the cleanest
-/// isolation assertion: after a two-user test, two sibling
-/// <c>sha256(iss + sub)</c> directories exist under it and neither
-/// <c>rag.db</c> contains the other's chunks.
+/// isolation assertion - after a two-user test, two sibling <c>sha256(iss + sub)</c>
+/// directories exist under it and neither <c>rag.db</c> holds the other's chunks.
 /// </summary>
 public sealed class TempDataRoot : IDisposable, IAsyncDisposable
 {
-    /// <summary>Create and materialize a fresh temp DataRoot directory.</summary>
     public TempDataRoot()
     {
         Path = System.IO.Path.Combine(
@@ -21,7 +18,6 @@ public sealed class TempDataRoot : IDisposable, IAsyncDisposable
         Directory.CreateDirectory(Path);
     }
 
-    /// <summary>The absolute path to this DataRoot - point the host's <c>DataRoot</c> here.</summary>
     public string Path { get; }
 
     /// <summary>The conventional <c>users/</c> subdirectory under this root.</summary>

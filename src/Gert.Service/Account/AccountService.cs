@@ -6,17 +6,15 @@ using Gert.Storage;
 namespace Gert.Service.Account;
 
 /// <summary>
-/// Self-service data lifecycle for the whole account (rest-api.md section account):
-/// export a single project or everything as a <c>.zip</c>, or erase all of the
-/// caller's data. Identity comes only from <see cref="IUserContext"/>; identity
-/// removal itself is the IdP's, not the API's.
+/// Self-service account data lifecycle (rest-api.md section account): export one
+/// project or everything as a <c>.zip</c>, or erase all of the caller's data.
+/// Identity comes only from <see cref="IUserContext"/>; removing the identity itself
+/// is the IdP's job, not the API's.
 ///
 /// <para>
-/// Export streams a <c>.zip</c> built from each project's conversations (one
-/// <c>conversations.json</c> per project, the full thread incl. messages) plus its
-/// original file blobs - the project list from <c>user.db</c>
+/// Export builds the <c>.zip</c> from the project list in <c>user.db</c>
 /// (<see cref="IUserDatabaseProvider"/>), conversations via
-/// <see cref="IChatDatabaseProvider"/>, files via <see cref="IObjectStore"/>
+/// <see cref="IChatDatabaseProvider"/>, and file blobs via <see cref="IObjectStore"/>
 /// (decision: user blobs only through the object store). Delete-account delegates to
 /// <see cref="IUserDataEraser"/>, which erases all three independent stores (databases +
 /// RAG index + blobs) crash-consistently under the deletion journal.
@@ -75,16 +73,13 @@ public sealed class AccountService : IAccountService
         // stores self-provision again on next open.
         _eraser.EraseAsync(StorageKeys.UserKey(_user.Iss, _user.Sub), cancellationToken);
 
-    // ---- archive build -----------------------------------------------------
-
     /// <summary>
-    /// Build a <c>.zip</c> for the given pids into a throwaway temp file, then hand
-    /// back a stream factory over it, so the service stays transport-agnostic and
-    /// leaves nothing behind. Cleanup is robust by construction: a failed/cancelled
-    /// build deletes the temp file in the catch, and the returned (already-open)
-    /// read stream carries <see cref="FileOptions.DeleteOnClose"/> - so the OS
-    /// removes the file when the host closes it after streaming, and the handle's
-    /// finalizer covers an archive whose factory is never invoked.
+    /// Build the <c>.zip</c> into a throwaway temp file, then hand back a stream
+    /// factory over it, so the service stays transport-agnostic and leaves nothing
+    /// behind. Cleanup is robust by construction: a failed/cancelled build deletes the
+    /// temp file in the catch, and the returned read stream carries
+    /// <see cref="FileOptions.DeleteOnClose"/> so the OS removes the file once the host
+    /// closes it (or the handle's finalizer fires if the factory is never invoked).
     /// </summary>
     private async Task<ExportArchive> BuildArchiveAsync(
         string fileName,

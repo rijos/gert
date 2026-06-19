@@ -7,14 +7,10 @@ namespace Gert.Api.Contracts;
 /// <summary>
 /// The wire shape of <c>GET /api/projects/{pid}/conversations/{id}</c> (rest-api.md
 /// section conversations): the conversation flattened to the top level with its messages
-/// (each carrying its own citations) and artifacts, so the SPA consumes it directly -
-/// <c>conv.id</c>, <c>conv.title</c>, <c>conv.messages[].text</c> - with no remapping.
-/// <para>
-/// Each message also carries its tool-call cards (<see cref="ThreadToolCall"/>),
-/// reconstructed from the persisted <c>tool_calls</c> rows + their citations, so a
-/// reload reproduces the same cards the live <c>tool_call</c>/<c>tool_result</c>
-/// stream drew.
-/// </para>
+/// (each carrying its own citations) and artifacts, so the SPA consumes it directly with no
+/// remapping. Each message also carries its tool-call cards (<see cref="ThreadToolCall"/>),
+/// reconstructed from the persisted <c>tool_calls</c> rows + their citations, so a reload
+/// reproduces the same cards the live <c>tool_call</c>/<c>tool_result</c> stream drew.
 /// </summary>
 public sealed record ThreadResponse
 {

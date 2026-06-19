@@ -14,7 +14,6 @@ namespace Gert.Tools.Sandbox.Monty;
 /// </summary>
 public sealed class MontyParameters
 {
-    /// <summary>The configuration section these options bind from (the sandbox Parameters bag).</summary>
     public const string SectionName = "Gert:Tools:Sandbox:Parameters";
 
     /// <summary>Base URL of the monty sidecar, e.g. <c>http://localhost:8077</c>.</summary>

@@ -43,7 +43,6 @@ LIGHT = "manila"
 DARK = "ember"
 
 
-# --- turn / chrome helpers ---------------------------------------------------
 def _send(app: AppPage, text: str) -> None:
     """Send one message and wait for the turn to fully settle (a new bot bubble
     appears, then the composer swaps its stop button back to send)."""
@@ -97,7 +96,6 @@ def _shoot(app: AppPage, name: str, theme: str) -> None:
     print(f"  wrote {name}.png ({theme})")
 
 
-# --- the scenes --------------------------------------------------------------
 def _scene_chat(app: AppPage) -> None:
     """A three-turn thread: a plain answer (names the conversation), a doc search
     with an inline citation, and a sandboxed Python run - the hero shot."""

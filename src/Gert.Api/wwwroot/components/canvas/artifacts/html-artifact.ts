@@ -1,4 +1,4 @@
-// components/canvas/artifacts/html-artifact.js - preview (render) + raw source.
+// Preview (render) + raw source.
 //
 // F3, two layers of isolation:
 //  1. PREFERRED - render from the SEPARATE artifact origin: mint a short-lived
@@ -62,8 +62,7 @@ export const HtmlArtifact = component({
       if (artifact.id) {
         artifactsSvc
           .ticket(artifact.id)
-          // ticket() resolves the typed WireArtifactTicket; a missing/blank url falls through
-          // to the in-place srcdoc.
+          // a missing/blank url falls through to the in-place srcdoc.
           .then((r) => {
             if (r.url) f.src = r.url;
             else fallback();

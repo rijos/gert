@@ -1,20 +1,18 @@
 namespace Gert.Storage;
 
 /// <summary>
-/// A durable write-ahead record of account deletions that are <b>owed</b> - the recovery
-/// journal that makes erasing a user crash-consistent across the independent stores
-/// (user.db + chat.db engine, the rag.db engine, the object store), which may even sit on
-/// separate volumes. There is no distributed transaction spanning a filesystem and a blob
-/// store; instead deletion is a <b>saga with write-ahead intent + idempotent forward
-/// recovery</b>: the eraser marks the user here <i>before</i> touching any store and clears
-/// the mark only once every store is confirmed gone. If the process dies in between, the
-/// mark survives, and a recovery sweep replays the (idempotent) erase to completion. Delete
-/// has no meaningful "undo", so recovery only ever rolls forward.
+/// A durable write-ahead record of account deletions that are <b>owed</b>, making erasure
+/// crash-consistent across the independent stores (user.db + chat.db engine, the rag.db
+/// engine, the object store), which may sit on separate volumes with no distributed
+/// transaction spanning them. Deletion is a saga with write-ahead intent + idempotent
+/// forward recovery: the eraser marks the user here <i>before</i> touching any store and
+/// clears the mark only once every store is confirmed gone, so a crash in between leaves the
+/// mark for a recovery sweep to replay. Recovery only rolls forward (delete has no undo).
 ///
 /// <para>
-/// The journal holds nothing but opaque, transient folder keys (no user data), and an entry
-/// exists only while a delete is in flight - it is operational recovery state, not a central
-/// user registry. Keyed by the <c>sha256(iss + sub)</c> folder key (security F6 shape).
+/// Holds nothing but opaque, transient folder keys - operational recovery state for in-flight
+/// deletes, not a central user registry. Keyed by the <c>sha256(iss + sub)</c> folder key
+/// (security F6 shape).
 /// </para>
 /// </summary>
 public interface IDeletionJournal

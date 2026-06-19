@@ -14,7 +14,6 @@
 // Naming: `Wire*` = a shape that crosses the network exactly as written. `null` = the field is
 // always present but may be null; `?` = the field may be absent from the JSON.
 
-// --- shared string enums (snake_case on the wire) ----------------------------------------------
 export type MessageRole = "user" | "assistant" | "system" | "tool";
 export type MessageStatus = "streaming" | "complete" | "error" | "cancelled";
 export type ToolCallStatus = "running" | "done" | "error";
@@ -56,7 +55,6 @@ export type MemoryMode = "off" | "manual" | "auto";
 // owns it), so this is an open record rather than a fixed key list.
 export type WireToolToggles = Record<string, boolean>;
 
-// --- projects ----------------------------------------------------------------------------------
 export interface WireProjectDefaults {
   model_id?: string | null;
   tools?: WireToolToggles | null;
@@ -85,7 +83,6 @@ export interface WireProjectInput {
   defaults?: WireProjectDefaults | null;
 }
 
-// --- conversations + the thread ----------------------------------------------------------------
 // The sidebar row (GET .../conversations) and the root of the thread GET share these fields.
 export interface WireConversation {
   id: string;
@@ -179,7 +176,6 @@ export interface WireConversationInput {
   archived?: boolean;
 }
 
-// --- the turn (send + stream) ------------------------------------------------------------------
 // POST .../messages request body.
 export interface WireMessageInput {
   content: string;
@@ -242,7 +238,6 @@ export interface WireChatEvent {
   message?: string;
 }
 
-// --- documents (RAG) ---------------------------------------------------------------------------
 export interface WireDocument {
   id: string;
   name: string;
@@ -256,7 +251,6 @@ export interface WireDocument {
   created_at?: string;
 }
 
-// --- memory ------------------------------------------------------------------------------------
 export interface WireMemoryEntry {
   id: string;
   title: string;
@@ -271,7 +265,6 @@ export interface WireMemoryInput {
   pinned?: boolean;
 }
 
-// --- models ------------------------------------------------------------------------------------
 export interface WireModel {
   id: string;
   name: string;
@@ -284,7 +277,6 @@ export interface WireModel {
   endpoint?: string | null;
 }
 
-// --- settings ----------------------------------------------------------------------------------
 export interface WireSettings {
   theme?: Theme;
   ui_language?: string | null;
@@ -294,12 +286,11 @@ export interface WireSettings {
   memory_mode?: MemoryMode;
 }
 
-// --- artifacts (outside the turn stream) -------------------------------------------------------
+// An artifact download ticket, served outside the turn stream.
 export interface WireArtifactTicket {
   url: string;
 }
 
-// --- admin -------------------------------------------------------------------------------------
 export interface WireUserSummary {
   key: string;
   username?: string | null;

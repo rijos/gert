@@ -14,11 +14,8 @@ import * as auth from "../../state/auth.js";
 
 const { div, h1, h2, p, a, pre, span, table, thead, tbody, tr, th, td, button } = van.tags;
 
-// The admin-only wire rows (GET /api/admin/...) come straight off the typed admin service:
-// WireSystemPrompt (system prompt + WireToolSpec[]) and WireUserSummary[].
-
-// pretty-print a tool's JSON-schema string; a malformed one shows verbatim
-// (this page exists to reveal exactly what the model gets, warts included)
+// Malformed schema shows verbatim: this page exists to reveal exactly what the
+// model gets, warts included.
 const fmtSchema = (s: string) => {
   try {
     return JSON.stringify(JSON.parse(s), null, 2);
@@ -27,7 +24,6 @@ const fmtSchema = (s: string) => {
   }
 };
 
-// the system prompt + per-tool specs, loaded once per page visit
 const PromptSection = () => {
   const snapshot = van.state<WireSystemPrompt | null>(null);
   const failed = van.state(false);

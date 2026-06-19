@@ -154,10 +154,7 @@ public static class NaughtyStrings
         .. Emptyish,
     ];
 
-    /// <summary>
-    /// xUnit <c>[MemberData]</c> source: every string in <see cref="All"/> as a
-    /// single-arg theory row.
-    /// </summary>
+    /// <summary>xUnit <c>[MemberData]</c> source: every string in <see cref="All"/> as a single-arg theory row.</summary>
     public static IEnumerable<object[]> AllTheoryData() => All.Select(s => new object[] { s });
 
     /// <summary>xUnit <c>[MemberData]</c> source over a specific category.</summary>

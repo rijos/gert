@@ -50,7 +50,6 @@ export const DropZone = component({
       margin-top: 3px;
     }
   `,
-  // logic: the drag-over state + the hidden file input (pure DOM construction).
   setup: () => {
     const over = van.state(false);
     const fileInput = van.tags.input({

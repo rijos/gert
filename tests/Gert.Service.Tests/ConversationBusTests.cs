@@ -102,7 +102,6 @@ public sealed class ConversationBusTests
         {
             bus.Publish(Topic, Evt(seq));
 
-            // The healthy consumer keeps up.
             healthy.Reader.TryRead(out _).Should().BeTrue();
         }
 

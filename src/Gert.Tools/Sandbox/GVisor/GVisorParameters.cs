@@ -11,22 +11,17 @@ namespace Gert.Tools.Sandbox.GVisor;
 /// </summary>
 public sealed class GVisorParameters
 {
-    /// <summary>The configuration section these options bind from (the sandbox Parameters bag).</summary>
     public const string SectionName = "Gert:Tools:Sandbox:Parameters";
 
-    /// <summary>CPU-time limit (seconds).</summary>
     public int CpuSeconds { get; set; } = 5;
 
-    /// <summary>Max process/thread count (PID limit).</summary>
     public int PidLimit { get; set; } = 64;
 
     /// <summary>Writable <c>/tmp</c> size (MiB); rootfs stays read-only.</summary>
     public int TmpSizeMiB { get; set; } = 32;
 
-    /// <summary>Path to the <c>runsc</c> binary.</summary>
     public string RunscPath { get; set; } = "runsc";
 
-    /// <summary>Container image / OCI bundle root with a Python runtime.</summary>
     public string Image { get; set; } = "gert-sandbox-python";
 
     /// <summary>

@@ -1,13 +1,11 @@
-// components/main/tool-card.helpers.js - pure (no-van) helpers + runtime types
-// for tool-card.ts: the tool-kind -> icon-name map, the done/total todo
-// reducer, and the live todo header label. Co-located because they are specific
-// to the tool card; they return plain values, so they carry no reactivity.
+// Pure (no-van) helpers + runtime types for tool-card.ts. They return plain
+// values, so they carry no reactivity.
 import type { ToolCard as ToolCardRow } from "../../state/chat.js";
 import type { ToolKind } from "../../services/wire.js";
 
-// QuestionCard's reactive payload (its private ToolQuestion shape, folded onto
-// an ask_user card by services/chat.js). The card mutates `posting`/`expired`
-// in place, so the fields stay writable.
+// QuestionCard's reactive payload, folded onto an ask_user card by
+// services/chat.js. The card mutates `posting`/`expired` in place, so the fields
+// stay writable.
 export interface Question {
   questionId: string;
   text: string;
@@ -19,10 +17,9 @@ export interface Question {
   posting: boolean;
 }
 
-// The runtime tool-card entry on a message: the persisted ToolCard contract
-// plus the live-stream `error` line and the interactive `question` slot
-// (services/chat.js maintains both at runtime). `question` is QuestionCard's
-// reactive payload (or null once resolved/absent).
+// The runtime tool-card entry on a message: the persisted ToolCard contract plus
+// the live-stream `error` line and interactive `question` slot, both maintained at
+// runtime by services/chat.js (`question` is null once resolved/absent).
 export interface Card extends ToolCardRow {
   error?: string;
   question?: Question | null;

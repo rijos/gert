@@ -16,13 +16,12 @@ namespace Gert.Tools.Sandbox.GVisor;
 /// stdout/stderr/exit returns.
 ///
 /// <para>
-/// The argument + limit assembly is the pure, unit-tested
-/// <see cref="SandboxCommandBuilder"/>; the failure -> graceful-<see cref="PythonSandboxResult"/>
-/// mapping in <see cref="MapFailure"/> is also unit-tested. The actual <c>runsc</c>
-/// spawn is <b>integration-only</b> (needs gVisor on the host) and guarded by
-/// <see cref="IsAvailable"/>: when <c>runsc</c> is absent the sandbox returns a clean
-/// "unavailable" result rather than throwing, so a dev box / CI without gVisor still
-/// behaves predictably.
+/// Arg/limit assembly (<see cref="SandboxCommandBuilder"/>) and the failure ->
+/// graceful-<see cref="PythonSandboxResult"/> mapping (<see cref="MapFailure"/>) are
+/// pure and unit-tested. The actual <c>runsc</c> spawn is <b>integration-only</b>
+/// (needs gVisor on the host) and guarded by <see cref="IsAvailable"/>: when
+/// <c>runsc</c> is absent the sandbox returns a clean "unavailable" result rather
+/// than throwing, so a dev box / CI without gVisor behaves predictably.
 /// </para>
 /// </summary>
 public sealed class GVisorSandbox : IPythonSandbox
@@ -31,7 +30,6 @@ public sealed class GVisorSandbox : IPythonSandbox
     private readonly GVisorParameters _parameters;
     private readonly ILogger<GVisorSandbox> _logger;
 
-    /// <summary>Construct over the cross-backend caps + the gVisor-specific parameters.</summary>
     public GVisorSandbox(
         IOptions<PythonSandboxOptions> options,
         IOptions<GVisorParameters> parameters,
@@ -56,11 +54,9 @@ public sealed class GVisorSandbox : IPythonSandbox
         var containerId = $"gert-{Guid.NewGuid():N}";
         var runtime = SandboxCommandBuilder.BuildRuntimeConfig(_options, _parameters, code);
 
-        // INTEGRATION-ONLY below. Building the OCI bundle (rootfs + config.json from
-        // `runtime`), invoking `runsc run` with SandboxCommandBuilder.BuildRunscArgs,
-        // capturing streams, enforcing the wall-clock kill, and tearing the container
-        // down is validated on a gVisor host (staging), not in CI. We keep the
-        // real Process plumbing here but it only runs when runsc is present.
+        // INTEGRATION-ONLY below: the real Process plumbing (OCI bundle, runsc run,
+        // stream capture, wall-clock kill, teardown) is validated on a gVisor host
+        // (staging), not in CI, and only runs when runsc is present.
         try
         {
             return await RunRunscAsync(containerId, runtime, cancellationToken).ConfigureAwait(false);
@@ -83,7 +79,6 @@ public sealed class GVisorSandbox : IPythonSandbox
     {
         ArgumentNullException.ThrowIfNull(parameters);
 
-        // An absolute path: probe directly. A bare name: probe PATH entries.
         if (Path.IsPathRooted(parameters.RunscPath))
         {
             return File.Exists(parameters.RunscPath);

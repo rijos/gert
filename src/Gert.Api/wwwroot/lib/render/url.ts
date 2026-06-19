@@ -3,7 +3,6 @@
 // lib/markdown-links.js (the external-link UI gate) share ONE source of truth
 // for sanitizeUrl/sanitizeImgUrl/isExternal/slugify. No DOM, no side effects.
 
-// --- URL safety -------------------------------------------------------------
 // http(s)/mailto/relative-path/anchor pass; anything carrying a foreign
 // scheme-colon (or a smuggled control-char / entity-encoded scheme) -> "#".
 const SAFE_SCHEME = /^(https?:|mailto:|\/|#)/i;
@@ -41,7 +40,6 @@ const sanitizeImgUrl = (raw: string) => {
 // get target=_blank rel="noopener noreferrer" (a single "/" path stays internal).
 const isExternal = (url: string) => /^https?:/i.test(url) || /^\/\//.test(url);
 
-// --- heading anchors --------------------------------------------------------
 // GitHub-style slug `id` on every heading so in-document links ([x](#section))
 // resolve. Slug derived from the heading's TEXT (the inline pass already reduced
 // markup to text), folded to a `[a-z0-9_-]` token, so the id is inert even via

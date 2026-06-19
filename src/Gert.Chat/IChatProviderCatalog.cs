@@ -20,9 +20,9 @@ public interface IChatProviderCatalog
     ChatProviderInfo? Get(string id);
 
     /// <summary>
-    /// The catalog's default provider (the flagged one, else the first), or null
-    /// when the catalog is empty. Resolves the <see cref="ChatProviderInfo.DefaultId"/>
-    /// sentinel a conversation may carry.
+    /// The catalog's default provider - the one named by <c>Gert:Chat:DefaultProvider</c>, else
+    /// the first entry - or null when the catalog is empty. Resolves the
+    /// <see cref="ChatProviderInfo.DefaultId"/> sentinel a conversation may carry.
     /// </summary>
     ChatProviderInfo? Default();
 

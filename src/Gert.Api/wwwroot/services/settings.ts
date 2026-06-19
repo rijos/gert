@@ -1,4 +1,4 @@
-// services/settings.js - GET/PUT /api/settings (user-level preferences).
+// GET/PUT /api/settings (user-level preferences).
 import * as http from "./http.js";
 import type { WireSettings } from "./wire.js";
 

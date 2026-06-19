@@ -6,13 +6,11 @@ using Gert.Service.Tools;
 namespace Gert.Tools.Builtin;
 
 /// <summary>
-/// The todo tool. Model function <c>set_todos</c>: the model plans multi-step
-/// work by sending its WHOLE todo list (replace-not-patch, so a call is
-/// self-contained and the latest call is the truth) and the chat window renders
-/// it as a checklist on the tool card. Stateless by design - the list lives in
-/// the conversation itself (the tool result the model reads back, plus the
-/// persisted <c>tool_calls</c> row), so there is nothing to migrate or clean up.
-/// No citations, no external world.
+/// Model function <c>set_todos</c>: the model sends its WHOLE todo list
+/// (replace-not-patch, so a call is self-contained and the latest call is the
+/// truth). Stateless by design - the list lives in the conversation itself (the
+/// tool result the model reads back, plus the persisted <c>tool_calls</c> row),
+/// so there is nothing to migrate or clean up.
 /// </summary>
 public sealed class TodoTool : ITool, ITailReminder
 {
@@ -60,19 +58,18 @@ public sealed class TodoTool : ITool, ITailReminder
     /// <inheritdoc />
     /// <remarks>
     /// The CROSS-TURN revival reminder (distinct from the within-turn "keep going"
-    /// nudge in this tool's result). The list is worth re-injecting only while it
-    /// still has unfinished (pending/active) items - a finished or empty list, or a
-    /// snapshot that fails to parse, revives nothing (no prompt tokens spent nagging
-    /// about done work). Best-effort by contract: this never throws on bad input.
+    /// nudge in this tool's result). Re-injected only while the list still has
+    /// pending/active items; a finished, empty, or unparseable snapshot revives
+    /// nothing. Best-effort by contract: never throws on bad input.
     /// </remarks>
     public string? BuildTailReminder(string? latestResultJson) =>
         HasOpenItems(latestResultJson) ? CrossTurnReminder(latestResultJson!) : null;
 
     /// <summary>
-    /// Format the revival block from a todo snapshot. The JSON is this tool's result
-    /// echo shape (snake_case statuses), so the model sees the exact payload its last
-    /// accepted call produced. Lives here, with the tool, so all todo prompt text is
-    /// in one place; <see cref="BuildTailReminder"/> gates when it is emitted.
+    /// Format the revival block from a todo snapshot (this tool's result echo shape,
+    /// snake_case statuses), so the model sees the exact payload its last accepted
+    /// call produced. Lives here so all todo prompt text is in one place;
+    /// <see cref="BuildTailReminder"/> gates when it is emitted.
     /// </summary>
     public static string CrossTurnReminder(string todosJson) =>
         "<system-reminder>\n"

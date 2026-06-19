@@ -234,8 +234,6 @@ public sealed partial class Bundler(TextWriter log)
     [GeneratedRegex("""(?<indent>[ \t]*)<link\b[^>]*href="/styles/[^"]*"[^>]*>[ \t]*\r?\n""", RegexOptions.IgnoreCase)]
     private static partial Regex StylesLinkRegex();
 
-    // --- tsgo type-check gate (ui-components.md section 6) --------------------------------------
-
     /// <summary>
     /// Run the pinned <c>tsgo</c> checker over <c>wwwroot/tsconfig.json</c> (<c>--noEmit</c>).
     /// Returns true when there are zero diagnostics (or no tsconfig yet). esbuild never type-checks;
@@ -298,8 +296,6 @@ public sealed partial class Bundler(TextWriter log)
         _log.WriteLine("typecheck: tsgo clean (0 diagnostics).");
         return true;
     }
-
-    // --- dev transpile mirror (ui-components.md section 6) --------------------------------------
 
     /// <summary>
     /// Build the served dev mirror: copy <paramref name="src"/> (assets ride along) into

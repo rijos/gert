@@ -13,7 +13,6 @@ namespace Gert.Database.Sqlite;
 /// </summary>
 internal static class DapperBootstrap
 {
-    /// <summary>Apply the global Dapper settings. Safe to call repeatedly.</summary>
     internal static void EnsureConfigured()
     {
         DefaultTypeMap.MatchNamesWithUnderscores = true;

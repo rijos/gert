@@ -70,14 +70,12 @@ BROWSERS = ["chromium", "firefox"]
 MATRIX_ROLES = ["admin", "user"]
 
 
-# --- the init script that seeds the in-memory token --------------------------
 def _init_script(token: str) -> str:
     # Runs before app.js. ensureSession() reads window.GERT_DEV_TOKEN in its
     # dev branch and installs it as the in-memory bearer.
     return f"window.GERT_DEV_TOKEN = {token!r};"
 
 
-# --- mock upstreams (in-process uvicorn servers on background threads) --------
 class _ServerThread:
     def __init__(self, app: Starlette, port: int) -> None:
         config = uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning")
@@ -120,7 +118,6 @@ def _boot_real_monty() -> subprocess.Popen[bytes]:
     )
 
 
-# --- the host ----------------------------------------------------------------
 def _boot_host(*, web_root: str | None = None) -> subprocess.Popen[bytes]:
     env = os.environ.copy()
     if web_root is not None:
@@ -147,7 +144,6 @@ def _boot_host(*, web_root: str | None = None) -> subprocess.Popen[bytes]:
     )
 
 
-# --- bundled web root (--minify) ---------------------------------------------
 def _prepare_bundled_webroot() -> str:
     """Copy src/Gert.Api/wwwroot into a temp dir, bundle it via the real release tool
     (tools/Gert.Web.Bundle, pinned esbuild), and return the temp dir.
@@ -223,7 +219,6 @@ def _wait_healthz(base_url: str, timeout: float = 90.0) -> bool:
     return False
 
 
-# --- scenarios ---------------------------------------------------------------
 # Each scenario is (name, fn(app_page, role) -> None) and asserts via Playwright.
 # Kept deliberately small here; the richer assertions live in tests/*.py which
 # this launcher can also drive. run.py is the integrated click-through.

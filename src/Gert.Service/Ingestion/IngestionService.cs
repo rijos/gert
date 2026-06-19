@@ -88,7 +88,7 @@ public sealed class IngestionService : IIngestionService
 
         var scope = ObjectScope.Project(job.Iss, job.Sub, job.Pid);
 
-        // 1. Extract (step 1) - read bytes ONLY via the object store.
+        // Read bytes ONLY via the object store, never a raw path.
         ExtractionResult extraction;
         await using (var content = await _objects.OpenReadAsync(scope, job.ObjectKey, cancellationToken).ConfigureAwait(false))
         {
@@ -97,8 +97,8 @@ public sealed class IngestionService : IIngestionService
                 .ConfigureAwait(false);
         }
 
-        // 2. No usable text -> failed (decisions section 5). Distinguish an unavailable
-        //    extractor (carries its own Error) from a text-less file.
+        // No usable text -> failed (decisions section 5). Distinguish an unavailable
+        // extractor (carries its own Error) from a text-less file.
         if (!extraction.HasText)
         {
             var error = extraction.Error ?? "no extractable text";
@@ -106,7 +106,7 @@ public sealed class IngestionService : IIngestionService
             return;
         }
 
-        // 3. Chunk (step 3) - token windows with overlap, locator carried through.
+        // Token windows with overlap, locator carried through.
         var chunks = TextChunker.Chunk(extraction.Pages, _chunking);
         if (chunks.Count == 0)
         {
@@ -117,7 +117,6 @@ public sealed class IngestionService : IIngestionService
         var total = chunks.Count;
         progress?.Report(new IngestionProgress { ChunksEmbedded = 0, ChunksTotal = total });
 
-        // 4. Embed in batches (step 4) and 5. write (step 5), reporting progress.
         var batchSize = Math.Max(1, _chunking.EmbedBatchSize);
         var embedded = 0;
         for (var offset = 0; offset < total; offset += batchSize)
@@ -156,7 +155,6 @@ public sealed class IngestionService : IIngestionService
             progress?.Report(new IngestionProgress { ChunksEmbedded = embedded, ChunksTotal = total });
         }
 
-        // 6. status='ready' + chunk_count.
         await repo.UpdateDocumentAsync(
             document with { Status = Model.Rag.DocumentStatus.Ready, ChunkCount = total, Error = null },
             cancellationToken).ConfigureAwait(false);

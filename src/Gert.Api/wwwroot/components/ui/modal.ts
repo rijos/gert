@@ -111,7 +111,6 @@ export const Modal = component({
     dismissable = true,
     closable = false,
   }: ModalProps = {}) => {
-    // -- logic -----------------------------------
     const close = () => {
       host.remove();
       document.removeEventListener("keydown", onKey);
@@ -120,7 +119,6 @@ export const Modal = component({
       if (dismissable && e.key === "Escape") close();
     };
 
-    // -- content ---------------------------------
     const host = div(
       { class: "modal-scrim", onclick: (e: Event) => dismissable && e.target === host && close() },
       div(

@@ -4,16 +4,12 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Gert.Api.Ingestion;
 
 /// <summary>
-/// Drains the <see cref="ChannelIngestionQueue"/> and runs each
-/// <see cref="IngestJob"/> through <see cref="IIngestionService"/>. It opens a
-/// <b>fresh DI scope per job</b> so the scoped ingestion service (and the scoped
-/// db/object-store seams it depends on) resolve correctly off the request thread -
-/// the job already carries <c>(iss, sub, pid)</c>, so no request <c>IUserContext</c>
-/// is needed. The ingestion service never throws out of the worker path (it records
-/// <c>status='failed'</c>), but the loop also guards each job so one bad document can
-/// never stop the worker. This makes upload -> 202 -> poll -> <c>ready/failed</c> work:
-/// the upload enqueues and returns; the worker processes; the poll endpoint reflects
-/// the transition the worker writes.
+/// Drains the <see cref="ChannelIngestionQueue"/> and runs each <see cref="IngestJob"/>
+/// through <see cref="IIngestionService"/> in a <b>fresh DI scope per job</b>, so the
+/// scoped ingestion service (and its db/object-store seams) resolve off the request
+/// thread - the job carries <c>(iss, sub, pid)</c>, so no request <c>IUserContext</c> is
+/// needed. The service fails the document on its own errors (<c>status='failed'</c>); the
+/// loop also guards each job so one bad document can never stop the worker.
 /// </summary>
 public sealed class IngestionWorker : BackgroundService
 {
@@ -44,8 +40,6 @@ public sealed class IngestionWorker : BackgroundService
     {
         try
         {
-            // Per-job scope: scoped services (IIngestionService + its db/object seams)
-            // resolve fresh, independent of any request lifetime.
             await using var scope = _scopeFactory.CreateAsyncScope();
             var ingestion = scope.ServiceProvider.GetRequiredService<IIngestionService>();
             await ingestion.IngestAsync(job, progress: null, stoppingToken).ConfigureAwait(false);

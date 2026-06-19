@@ -1,9 +1,7 @@
-// components/settings/settings-modal.js - user settings as a centered popup
-// (theme, send chord, default reply language, default model, memory mode,
-// build line). Opened from the user chip; reuses the shared Modal scaffold
-// (scrim + x + Cancel/Save actions), ui/dropdown and ui/seg-toggle. Sampling
-// rides the selected chat provider (the picker lists provider presets), not a
-// per-user dial, so there is no per-model settings modal here.
+// components/settings/settings-modal.js - user settings popup (theme, send chord,
+// reply language, default model, memory mode, build line) over the shared Modal
+// scaffold. Sampling rides the selected chat provider (the picker lists provider
+// presets), not a per-user dial, so there is no per-model settings modal here.
 import van from "/lib/van.js";
 import { Modal } from "../ui/modal.js";
 import { Dropdown } from "../ui/dropdown.js";
@@ -21,7 +19,6 @@ const { div, p, label, input } = van.tags;
 // field is optional - an unset preference is absent. `{}` (no settings yet) and a fetch failure
 // both collapse to an empty WireSettings.
 
-// A {value,label} option as handed to a Dropdown's onSelect callback.
 interface Option {
   value: string;
   label: string;
@@ -53,7 +50,6 @@ export const openSettings = () => {
   settingsSvc
     .get()
     .then((s) => {
-      // GET /settings resolves typed WireSettings (or {} when the server has none yet).
       const data = s || {};
       loaded.val = data;
       modelVal.val = data.default_model_id || models.selectedId.val || "";
@@ -153,10 +149,8 @@ export const openSettings = () => {
           memory_mode: memoryVal.val as MemoryMode,
           ui_language: langVal.val,
           // wire enum is light | dark | auto (configuration.md section 3.1), not the
-          // theme names - map back from manila/ember. Cast to a string-keyed record
-          // + `?? ""` so a null theme (follow-system) misses the map and falls to
-          // "auto", matching the JS `obj[null]` -> undefined -> "auto" behavior. The
-          // mapped result is always a wire Theme literal.
+          // theme names - map back from manila/ember. The `?? ""` makes a null theme
+          // (follow-system) miss the map and fall to "auto".
           theme: (({ manila: "light", ember: "dark" } as Record<string, string>)[
             ui.theme.val ?? ""
           ] || "auto") as Theme,

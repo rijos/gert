@@ -35,9 +35,9 @@
         "Gert__Tools__Sandbox__Parameters__BaseUrl": "http://127.0.0.1:8077",
 
         "$comment_chat": "The picker's provider catalog: one 'echo' provider named 'Echo Server' pointed at the vLLM mock (:8000), declaring tools+vision so the tool scenarios are offered. Mirrors the zero-config synthesized default with a friendly name.",
+        "Gert__Chat__DefaultProvider": "echo",
         "Gert__Chat__Providers__echo__Name": "Echo Server",
         "Gert__Chat__Providers__echo__Type": "openai",
-        "Gert__Chat__Providers__echo__Default": "true",
         "Gert__Chat__Providers__echo__Capabilities__0": "tools",
         "Gert__Chat__Providers__echo__Capabilities__1": "vision",
         "Gert__Chat__Providers__echo__Parameters__BaseUrl": "http://127.0.0.1:8000",

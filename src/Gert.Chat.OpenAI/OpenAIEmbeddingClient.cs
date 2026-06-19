@@ -10,24 +10,16 @@ namespace Gert.Chat.OpenAI;
 
 /// <summary>
 /// Real <see cref="IEmbeddingClient"/> over an OpenAI-compatible <c>/v1/embeddings</c>
-/// endpoint - vLLM serving bge-m3 in the reference deployment. Built on the official
-/// OpenAI SDK; sends the batch of input texts and reads back one vector per input,
-/// ordered by <c>index</c>, asserting the configured dimension (bge-m3 = 1024).
-///
+/// endpoint (vLLM serving bge-m3 in the reference deployment), built on the official
+/// OpenAI SDK. Reads back one vector per input ordered by <c>index</c>, asserting the
+/// configured dimension.
 /// <para>
 /// The typed <c>HttpClient</c> (base URL + secret bearer key, F8) and the Polly
-/// timeout+retry pipeline are configured by <see cref="ServiceCollectionExtensions"/>;
-/// the SDK pipeline rides it via the same transport wrapping as the chat client, with
-/// the SDK's own retry/timeout disabled. Unlike chat, this call is <b>buffered</b>, so
-/// its named client keeps a finite overall timeout sitting just outside the pipeline's
-/// total; embedding POSTs are idempotent (a pure function of the input batch), so
-/// options-bound retries are safe.
-/// </para>
-///
-/// <para>
-/// <b>Integration-only:</b> the live wire path needs a real vLLM server (mock +
-/// staging). Unit tests drive it through a stubbed <c>HttpMessageHandler</c> with a
-/// canned 1024-dim response and assert the request/response shape.
+/// timeout+retry pipeline are configured by <see cref="ServiceCollectionExtensions"/>,
+/// with the SDK's own retry/timeout disabled. Unlike streaming chat, this call is
+/// <b>buffered</b>, so its named client keeps a finite overall timeout outside the
+/// pipeline total; embedding POSTs are idempotent (pure function of the input batch),
+/// so options-bound retries are safe.
 /// </para>
 /// </summary>
 public sealed class OpenAIEmbeddingClient : IEmbeddingClient

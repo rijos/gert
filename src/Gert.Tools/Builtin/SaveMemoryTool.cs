@@ -8,17 +8,15 @@ namespace Gert.Tools.Builtin;
 
 /// <summary>
 /// The save-memory tool (chat-and-tools.md section save memory). Model function
-/// <c>save_memory</c>: write ONE durable note into this project's memory via
-/// <see cref="IMemoryService.UpsertAsync"/> - the same path the knowledge
-/// panel's POST uses, so the entry is embedded into <c>rag.db</c> and
-/// immediately retrievable by <c>search_documents</c>. The service owns user
-/// context, clock, and validation; the tool only parses arguments and maps a
+/// <c>save_memory</c> writes ONE durable note via <see cref="IMemoryService.UpsertAsync"/>
+/// - the same path the knowledge panel's POST uses, so the entry is embedded into
+/// <c>rag.db</c> and retrievable by <c>search_documents</c>. The service owns user
+/// context, clock, and validation; the tool only parses args and maps a
 /// <see cref="ValidationException"/> to a model-correctable tool error.
 /// <para>
-/// There is deliberately no <c>pinned</c> argument: pinning injects the entry
-/// into every future system prompt, and that stays a human decision in the
-/// knowledge panel. And note the no-dedup semantics the description warns
-/// about - every call creates a NEW entry (the DTO carries no id).
+/// No <c>pinned</c> argument by design: pinning injects the entry into every future
+/// system prompt, which stays a human decision in the knowledge panel. No dedup -
+/// every call creates a NEW entry (the DTO carries no id).
 /// </para>
 /// </summary>
 public sealed class SaveMemoryTool : ITool

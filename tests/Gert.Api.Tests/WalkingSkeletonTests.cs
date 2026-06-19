@@ -104,7 +104,6 @@ public sealed class WalkingSkeletonTests : IClassFixture<GertApiFactory>
     {
         var client = Authed();
 
-        // Create the conversation to post into.
         var createResponse = await client.PostAsJsonAsync(
             "/api/projects/default/conversations",
             new CreateConversationRequest { Title = "Qdrant?" },

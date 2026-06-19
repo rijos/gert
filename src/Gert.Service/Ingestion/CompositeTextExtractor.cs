@@ -49,7 +49,6 @@ public sealed class CompositeTextExtractor : ITextExtractor
             }
         }
 
-        // No extractor available for this type.
         return Task.FromResult(
             ExtractionResult.Failed($"extractor not available for '.{extension}'"));
     }

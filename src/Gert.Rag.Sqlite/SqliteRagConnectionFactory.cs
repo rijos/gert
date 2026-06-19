@@ -5,13 +5,12 @@ namespace Gert.Rag.Sqlite;
 
 /// <summary>
 /// Opens and self-provisions the per-project <c>rag.db</c> SQLite connection
-/// (storage-and-data.md section connection management / lazy provisioning): create the
-/// db file's parent directory, open with WAL + a 5s busy timeout + foreign keys ON,
-/// load the native <b>sqlite-vec</b> extension, then apply the <c>rag</c> migrations
-/// <i>on the very connection being returned</i>. Self-contained in the RAG engine leaf
-/// (deliberately duplicating the small open/unlink mechanics of
-/// <c>Gert.Database.Sqlite</c> so the RAG capability has no dependency on the SQL
-/// database engine - the two are independent stores).
+/// (storage-and-data.md section connection management / lazy provisioning): mkdir parent,
+/// open with WAL + 5s busy timeout + foreign keys ON, load the native <b>sqlite-vec</b>
+/// extension, then apply the <c>rag</c> migrations on the very connection being returned.
+/// Self-contained in the RAG engine leaf - deliberately duplicating the small open/unlink
+/// mechanics of <c>Gert.Database.Sqlite</c> so the RAG capability has no dependency on the
+/// SQL database engine (the two are independent stores).
 /// </summary>
 public sealed class SqliteRagConnectionFactory
 {
@@ -67,13 +66,12 @@ public sealed class SqliteRagConnectionFactory
     }
 
     /// <summary>
-    /// Drop the pooled connection handles <b>for these files only</b>, then unlink the given
-    /// database files (and their <c>-wal</c>/<c>-shm</c> sidecars) - the file-backed engine's
-    /// half of a delete. A pooled handle would keep a deleted file alive and resurface stale
-    /// rows after re-provisioning, so clear each file's own pool first. We clear per file -
-    /// never <c>ClearAllPools()</c> - so deleting one project never disturbs another user's
-    /// open connections (isolation, principle #2). Returns <see langword="true"/> if any
-    /// database file existed (idempotent).
+    /// Drop the pooled handles <b>for these files only</b>, then unlink the given database
+    /// files (and their <c>-wal</c>/<c>-shm</c> sidecars). A pooled handle would keep a
+    /// deleted file alive and resurface stale rows after re-provisioning, so clear each
+    /// file's own pool first - never <c>ClearAllPools()</c>, so deleting one project never
+    /// disturbs another user's open connections (isolation, principle #2). Idempotent;
+    /// returns <see langword="true"/> if any database file existed.
     /// </summary>
     public bool DeleteDatabaseFiles(IEnumerable<string> dbPaths)
     {
@@ -82,8 +80,6 @@ public sealed class SqliteRagConnectionFactory
         var removed = false;
         foreach (var dbPath in dbPaths)
         {
-            // Close just this file's pooled handles (keyed by its connection string),
-            // leaving every other database's pool untouched.
             ClearPoolFor(dbPath);
 
             if (File.Exists(dbPath))

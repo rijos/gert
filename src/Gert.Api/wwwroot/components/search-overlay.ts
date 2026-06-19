@@ -86,8 +86,7 @@ const MODES: Record<string, SearchMode> = {
 // for the value uses below without weakening that guard (runtime default is {}).
 type SearchArgs = { mode?: string; close: () => void };
 
-// setup's typed bag: the mode (resolved to a SearchMode), the snapshot list +
-// querying flag the view binds, and the two input handlers.
+// setup's typed bag; `items` is a snapshot list re-bound wholesale per page.
 interface SearchState {
   m: SearchMode;
   items: State<SearchItem[]>;

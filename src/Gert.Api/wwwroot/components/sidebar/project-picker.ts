@@ -1,7 +1,6 @@
-// components/sidebar/project-picker.js - switch/create/manage projects
-// (configuration section 8). Sits above the conversation list. A skinned ui/dropdown
-// (searchable) with a "+ New project" footer that opens the create modal;
-// each row carries hover rename/delete affordances (the API's PATCH/DELETE).
+// switch/create/manage projects (configuration section 8). A skinned, searchable
+// ui/dropdown with a "+ New project" footer; each row carries hover rename/delete
+// affordances (the API's PATCH/DELETE).
 import van from "/lib/van.js";
 import { component } from "../../lib/component.js";
 import { Dropdown } from "../ui/dropdown.js";
@@ -15,8 +14,7 @@ import { t } from "../../lib/i18n.js";
 
 const { div, input, span, button, p } = van.tags;
 
-// A dropdown row: { value, label } - the picker maps each project to one and the
-// row callbacks (rename/delete/select) read these two fields back off it.
+// A dropdown row: the row callbacks (rename/delete/select) read these fields back off it.
 interface DdItem {
   value: string;
   label: string;
@@ -111,10 +109,9 @@ export const ProjectPicker = component({
       background: var(--surface-2);
     }
   `,
-  // logic: the create / rename / delete / select handlers. Each opens a modal or
-  // routes - no reactive state of its own (the picker reads chat.* directly). The explicit
-  // return type names the view-model so the setup overload resolves unambiguously (a large
-  // view can otherwise tip overload inference into widening the bag to `any`).
+  // The explicit return type names the view-model so the setup overload resolves
+  // unambiguously (a large view can otherwise tip overload inference into widening the bag
+  // to `any`).
   setup: (): {
     promptNew: () => void;
     promptRename: (item: DdItem) => void;
@@ -131,7 +128,6 @@ export const ProjectPicker = component({
           const name = nameInput.value.trim();
           if (name)
             attempt(async () => {
-              // create() resolves to the new project's wire row (WireProject).
               const p = await svc.create({ name });
               if (p.id) await svc.select(p.id); // land in the new project right away
             }, "Couldn't create the project");

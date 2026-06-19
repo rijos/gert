@@ -25,19 +25,17 @@ public static class SecurityHeadersExtensions
         var idpOrigin = SecurityHeadersOptions.OriginOf(configuration["Auth:Authority"]);
         var artifactOrigin = SecurityHeadersOptions.OriginOf(configuration["Artifacts:Origin"]);
 
-        // Computed options (origins derived at startup, not section-bound), so
-        // Configure-with-values is the right shape; no annotations to validate
-        // (dotnet-style-guide.md section 4).
+        // Origins are derived at startup, not section-bound, so Configure-with-values
+        // is the right shape (dotnet-style-guide.md section 4).
         services.AddOptions<SecurityHeadersOptions>().Configure(o =>
         {
             o.PocketIdOrigin = idpOrigin;
             o.ArtifactOrigin = artifactOrigin;
         });
 
-        // Ticket signing for the served-artifact origin - the section 4 options idiom
-        // (dotnet-style-guide.md): bind the Artifacts section, fail at startup,
-        // not first mint. A missing secret yields a random per-process key
-        // (single-instance safe).
+        // Bind at startup, not first mint, so a bad secret fails the boot
+        // (dotnet-style-guide.md section 4). A missing secret yields a random
+        // per-process key (single-instance safe).
         services.AddOptions<ArtifactTicketOptions>()
             .Bind(configuration.GetSection(ArtifactTicketOptions.SectionName))
             .ValidateOnStart();
@@ -48,7 +46,7 @@ public static class SecurityHeadersExtensions
 
         // Fail fast on a weak explicit HMAC key (security F3): a short passphrase
         // makes minted tickets forgeable offline, so refuse to boot rather than run
-        // weakened. ValidateOnStart above runs this at host start.
+        // weakened. Run by ValidateOnStart above.
         services.AddSingleton<IValidateOptions<ArtifactTicketOptions>, ArtifactTicketSecretValidator>();
 
         services.AddSingleton<ArtifactTicketService>();

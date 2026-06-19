@@ -45,9 +45,6 @@ public sealed class FakeChatModel : IChatModelClient
         var hasToolResult = request.Messages.Any(m =>
             string.Equals(m.Role, "tool", StringComparison.OrdinalIgnoreCase));
 
-        // Reasoning rides the (provider-configured) thinking template; the fake
-        // always replays a fixture's scripted reasoning deltas when it has them.
-
         // Rough context estimate so the SPA's ring lights up under serve-mock
         // (~ chars/4, the classic token heuristic).
         var promptTokens = request.Messages.Sum(m => (m.Content?.Length ?? 0) + (m.ReasoningContent?.Length ?? 0)) / 4;
@@ -56,8 +53,6 @@ public sealed class FakeChatModel : IChatModelClient
 
         if (fixture is not null && fixture.ToolCall is not null && !hasToolResult)
         {
-            // First call: scripted reasoning (if any), then the tool call,
-            // finish_reason = tool_calls.
             foreach (var thought in fixture.ReasoningDeltas)
             {
                 cancellationToken.ThrowIfCancellationRequested();
@@ -85,7 +80,6 @@ public sealed class FakeChatModel : IChatModelClient
 
         if (fixture is not null && fixture.ToolCall is not null && hasToolResult)
         {
-            // Follow-up call: replay after_tool (reasoning first).
             var after = fixture.AfterTool;
             foreach (var thought in after?.ReasoningDeltas ?? [])
             {
@@ -111,7 +105,6 @@ public sealed class FakeChatModel : IChatModelClient
 
         if (fixture is not null)
         {
-            // Plain completion: reasoning first, then the content deltas.
             foreach (var thought in fixture.ReasoningDeltas)
             {
                 cancellationToken.ThrowIfCancellationRequested();
@@ -133,7 +126,6 @@ public sealed class FakeChatModel : IChatModelClient
             yield break;
         }
 
-        // Fallback: echo the last user message, tokenised on word boundaries.
         foreach (var chunk in EchoChunks(lastUser))
         {
             cancellationToken.ThrowIfCancellationRequested();

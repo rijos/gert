@@ -57,9 +57,8 @@ public sealed class HttpUserContext(
                 return registry.AllIds;
             }
 
-            // Canonical format: a single space/comma-delimited scope string
-            // (OAuth-scope style). Normalize splits it and intersects with the
-            // registry, dropping any id the system doesn't have.
+            // Canonical format: a space/comma-delimited scope string (OAuth-scope
+            // style); Normalize intersects with the registry, dropping unknown ids.
             return registry.Normalize(raw);
         }
     }

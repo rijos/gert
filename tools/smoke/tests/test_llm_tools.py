@@ -25,9 +25,6 @@ def _open(page: Page, base_url: str) -> AppPage:
     return app
 
 
-# ---- artifacts ---------------------------------------------------------------
-
-
 def test_make_artifact_opens_a_canvas_artifact(page: Page, base_url: str) -> None:
     app = _open(page, base_url)
     app.composer.send("make me a demo html page")
@@ -151,9 +148,6 @@ def test_artifact_persists_across_reload(page: Page, base_url: str) -> None:
     expect(app.canvas.tab("html")).to_contain_text("demo.html")
 
 
-# ---- memory ------------------------------------------------------------------
-
-
 def test_memory_entry_is_retrieved_with_decoded_title(
     page: Page, base_url: str
 ) -> None:
@@ -189,9 +183,6 @@ def test_memory_entry_is_retrieved_with_decoded_title(
         "sqlite-vec is your favorite", timeout=15000
     )
     expect(app.thread.citations.first).to_be_visible(timeout=15000)
-
-
-# ---- todos -------------------------------------------------------------------
 
 
 def test_todo_checklist_renders_with_statuses(page: Page, base_url: str) -> None:
@@ -298,9 +289,6 @@ def test_todo_tool_is_refused_without_the_entitlement(
     expect(app.thread.todo_rows).to_have_count(0)
 
 
-# ---- sandbox (run_python) ----------------------------------------------------
-
-
 def test_run_python_card_shows_stdout(page: Page, base_url: str) -> None:
     """run_python runs on the default monty backend (through the monty mock) and the
     captured stdout lands verbatim on the tool card; the turn then completes. Proves
@@ -317,9 +305,6 @@ def test_run_python_card_shows_stdout(page: Page, base_url: str) -> None:
     # loop to the card's verbatim stdout pre-block.
     expect(app.thread.tool_stdout.first).to_contain_text("4", timeout=15000)
     expect(app.thread.last_bot_body).to_contain_text("The result is 4", timeout=15000)
-
-
-# ---- clock -------------------------------------------------------------------
 
 
 def test_clock_card_shows_a_wall_clock_reading(page: Page, base_url: str) -> None:

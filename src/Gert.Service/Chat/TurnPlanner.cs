@@ -13,13 +13,12 @@ namespace Gert.Service.Chat;
 
 /// <summary>
 /// <see cref="ITurnPlanner"/> - phase 1 in the request scope (chat-and-tools.md
-/// section detached turns). Validation throws before any disk touch (principles.md #6);
-/// the concurrent-turn check throws before any write; then the user message and
-/// the <c>streaming</c> assistant placeholder are persisted with allocated seqs
-/// in one gated transaction (the <c>ux_messages_streaming</c> index is the
-/// atomic 409 protection - decisions section 11), and the identity + entitlement
-/// snapshot is captured into the <see cref="TurnJob"/>. No DB handle survives
-/// the call (open-per-use).
+/// section detached turns). Order: validation throws before any disk touch
+/// (principles.md #6); the concurrent-turn check throws before any write; then the
+/// user message and the <c>streaming</c> assistant placeholder persist with allocated
+/// seqs in one gated transaction (the <c>ux_messages_streaming</c> index is the atomic
+/// 409 protection - decisions section 11); the identity + entitlement snapshot is
+/// captured into the <see cref="TurnJob"/>. No DB handle survives the call (open-per-use).
 /// </summary>
 public sealed class TurnPlanner : ITurnPlanner
 {
@@ -88,17 +87,15 @@ public sealed class TurnPlanner : ITurnPlanner
             throw new TurnInProgressException(conversationId);
         }
 
-        // 2.5 Orphan write-back: every streaming row left at this point is one
-        // the fast path above just proved expired (it didn't throw, so
-        // MessageStatusRules.Effective maps it to error) - make that durable so
-        // the dead turn's row frees the gate index. Without this the partial
-        // unique index would turn the self-healing lazy orphan rule into a
-        // permanent lock. A false return means the runner or a racing planner
-        // finalized it first - both fine. Note the queued-job subtlety: a job
-        // that expired while still queued in a backed-up lane runs after this
-        // write-back already freed its gate; its runner sees remaining <= 0,
-        // cancels immediately, and its best-effort error finalize re-writes a
-        // row that is already error - idempotent, harmless.
+        // 2.5 Orphan write-back: every streaming row left here is one the fast path
+        // just proved expired (it didn't throw, so MessageStatusRules.Effective maps
+        // it to error) - make that durable so the dead turn's row frees the gate index.
+        // Without this the partial unique index turns the self-healing lazy orphan rule
+        // into a permanent lock. A false return means the runner or a racing planner
+        // finalized it first - both fine. Queued-job subtlety: a job that expired while
+        // still queued in a backed-up lane runs after this write-back freed its gate;
+        // its runner sees remaining <= 0, cancels, and its best-effort error finalize
+        // re-writes an already-error row - idempotent, harmless.
         foreach (var orphan in priorMessages.Where(m => m.Status == MessageStatus.Streaming))
         {
             _ = await repo.TryExpireStreamingMessageAsync(orphan.Id, cancellationToken).ConfigureAwait(false);
@@ -136,15 +133,14 @@ public sealed class TurnPlanner : ITurnPlanner
         }
 
         // 4. Persist the user message (complete) and the assistant placeholder
-        // (streaming) with allocated seqs - the placeholder is what readers,
-        // the 409 rule, and the orphan rule observe while the worker runs. The
-        // two rows go in ONE gated transaction (below): the placeholder insert
-        // hitting ux_messages_streaming is the atomic 409 protection, so a
-        // losing racer persists no message rows at all. Its two seq bumps do
-        // leave a gap in next_seq - harmless and deliberate (seq is an ordering
-        // cursor, not dense); conversation materialisation above is also fine
-        // (the winner needed it anyway, and INSERT OR IGNORE makes that race
-        // benign).
+        // (streaming) with allocated seqs - the placeholder is what readers, the 409
+        // rule, and the orphan rule observe while the worker runs. The two rows go in
+        // ONE gated transaction (below): the placeholder insert hitting
+        // ux_messages_streaming is the atomic 409 protection, so a losing racer persists
+        // no message rows at all. Its two seq bumps leave a gap in next_seq - harmless
+        // and deliberate (seq is an ordering cursor, not dense); conversation
+        // materialisation above is also fine (the winner needed it anyway, and
+        // INSERT OR IGNORE makes that race benign).
         var userMessage = new Message
         {
             Id = Guid.NewGuid().ToString("D"),

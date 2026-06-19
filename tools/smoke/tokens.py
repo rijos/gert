@@ -32,7 +32,6 @@ import jwt
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 
-# --- the dev authority -------------------------------------------------------
 # These two MUST agree with the FakeE2E launch profile (Auth:Authority /
 # Auth:Audience) and with Storage:ExpectedIssuer. The folder key is
 # sha256(iss + sub), and the provisioning gate (security F12) checks iss, so the
@@ -43,7 +42,7 @@ AUDIENCE = "gert-api"
 # Standard JWT lifetime for a dev token (matches the host's ~1h prod window).
 DEFAULT_LIFETIME_SECONDS = 3600
 
-# --- role -> distinguishing claims (mirrors .NET TestTokens) ------------------
+# role -> distinguishing claims (mirrors .NET TestTokens).
 # mint() adds iss/aud/exp/iat/nbf. Roles are data: a new privilege set is a
 # one-line edit, an ad-hoc shape is a mint(role, **overrides) call.
 ROLES: dict[str, dict[str, Any]] = {
@@ -59,7 +58,7 @@ ROLES: dict[str, dict[str, Any]] = {
     "limited": {"sub": "dev-limited", "groups": ["gert-users"], "gert_tools": "rag"},
 }
 
-# --- key locations (git-ignored: .dev/ is in .gitignore) ---------------------
+# Key locations (git-ignored: .dev/ is in .gitignore).
 # Repo root is three levels up from this file: tools/smoke/tokens.py -> repo.
 REPO_ROOT = Path(__file__).resolve().parents[2]
 JWT_DIR = REPO_ROOT / ".dev" / "jwt"

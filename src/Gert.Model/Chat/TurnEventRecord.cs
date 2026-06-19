@@ -19,7 +19,6 @@ public sealed record TurnEventRecord
     /// <summary>The ChatEvent wire name (e.g. <c>delta</c>, <c>tool_call</c>).</summary>
     public required string Type { get; init; }
 
-    /// <summary>The serialized <see cref="Events.ChatEvent"/> (wire contract).</summary>
     public required string PayloadJson { get; init; }
 
     public required DateTimeOffset CreatedAt { get; init; }

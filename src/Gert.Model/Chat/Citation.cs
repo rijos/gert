@@ -20,7 +20,7 @@ public sealed record Citation
     /// </summary>
     public string? ToolCallId { get; init; }
 
-    /// <summary>The <c>[1]</c>, <c>[2]</c> marker ordinal.</summary>
+    /// <summary>The visible <c>[1]</c>/<c>[2]</c> footnote marker number.</summary>
     public required int Ordinal { get; init; }
 
     public required CitationSourceType SourceType { get; init; }

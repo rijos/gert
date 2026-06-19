@@ -4,7 +4,6 @@
 // non-secret, displayable identity claims.
 import van from "/lib/van.js";
 
-// Non-secret, displayable identity claims for the UI.
 export interface Identity {
   username: string;
   email: string;

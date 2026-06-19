@@ -69,8 +69,7 @@ public sealed class ConversationServiceTests
         result.Title.Should().NotBeNullOrWhiteSpace();
     }
 
-    // --- Fail-closed validation (dotnet-style-guide.md section 6) -------------------
-
+    // Fail-closed validation (dotnet-style-guide.md section 6).
     [Theory]
     [InlineData("bad\u0007title")] // forbidden control char (BEL)
     [InlineData("bad\u202Etitle")] // bidi override (RLO)

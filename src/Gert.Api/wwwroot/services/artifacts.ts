@@ -8,7 +8,6 @@ import type { WireArtifactTicket } from "./wire.js";
 
 const pid = () => chat.activeProjectId.val;
 
-// Mint a preview ticket for an artifact; resolves WireArtifactTicket ({ url }) (or rejects when
-// ticketing is unavailable - callers fall back to the in-place srcdoc path).
+// Rejects when ticketing is unavailable - callers fall back to the in-place srcdoc path.
 export const ticket = (artifactId: string) =>
   http.get<WireArtifactTicket>(`/projects/${pid()}/artifacts/${artifactId}/ticket`);

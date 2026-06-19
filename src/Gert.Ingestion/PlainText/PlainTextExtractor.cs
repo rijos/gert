@@ -5,15 +5,12 @@ namespace Gert.Ingestion.PlainText;
 
 /// <summary>
 /// The md/txt <see cref="ITextExtractor"/> - reads the upload stream as UTF-8 text
-/// (chat-and-tools.md section ingestion: "md/txt -> read"). One <see cref="ExtractedPage"/>
-/// with a null locator is produced; an empty/whitespace-only file yields no usable
-/// text, so the pipeline marks the document <c>failed</c> ("no extractable text").
-///
+/// (chat-and-tools.md section ingestion: "md/txt -> read"). Produces one
+/// <see cref="ExtractedPage"/> with a null locator; an empty/whitespace-only file
+/// yields no usable text, so the pipeline marks the document <c>failed</c>.
 /// <para>
 /// pdf/docx are <b>not</b> handled here - <see cref="CanExtract"/> returns false for
-/// them and the hardened isolated-subprocess extractor (security F7) lands in
-/// <c>Gert.Ingestion</c>. Without it the composite extractor falls through to a
-/// "no extractor" failure for those types.
+/// them; the hardened isolated-subprocess extractor (security F7) handles those.
 /// </para>
 /// </summary>
 public sealed class PlainTextExtractor : ITextExtractor

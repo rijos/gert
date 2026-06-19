@@ -5,12 +5,10 @@ namespace Gert.Api.Validation;
 /// <summary>
 /// Controller-side guards for request-supplied <b>route parameters</b> that feed a
 /// filesystem path - the project <c>{pid}</c> (configuration.md section 2.5) and the admin
-/// folder <c>{key}</c> (security F6). They wrap
-/// <see cref="RouteParamValidation"/> and <b>throw</b>
-/// <see cref="ValidationException"/> on a bad shape, so the existing
-/// <c>ValidationExceptionHandler</c> renders the same branded 400 ProblemDetails the
-/// body validators do - and, crucially, the request stops <b>before</b> the value is
-/// ever passed to a service (so it never reaches a repo or a destructive delete).
+/// folder <c>{key}</c> (security F6). They wrap <see cref="RouteParamValidation"/> and
+/// <b>throw</b> <see cref="ValidationException"/> on a bad shape (same 400 ProblemDetails as
+/// body validators), so the request stops <b>before</b> the value reaches a service - never a
+/// repo or a destructive delete.
 /// </summary>
 internal static class RouteParams
 {

@@ -18,14 +18,11 @@ public sealed record ExtractionResult
     /// </summary>
     public string? Error { get; init; }
 
-    /// <summary>True when there is at least one page carrying non-whitespace text.</summary>
     public bool HasText => Pages.Any(p => !string.IsNullOrWhiteSpace(p.Text));
 
-    /// <summary>A successful extract from one or more pages.</summary>
     public static ExtractionResult FromPages(IReadOnlyList<ExtractedPage> pages) =>
         new() { Pages = pages };
 
-    /// <summary>A failed extract - the extractor could not run (no pages, an error message).</summary>
     public static ExtractionResult Failed(string error) =>
         new() { Pages = [], Error = error };
 }

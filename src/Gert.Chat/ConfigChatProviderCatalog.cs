@@ -12,6 +12,8 @@ namespace Gert.Chat;
 /// provider is synthesized from the registered <see cref="IDefaultChatProvider"/> (the OpenAI
 /// plugin points it at <c>Gert:Embeddings:Parameters:BaseUrl</c>) so the picker - and a
 /// zero-config boot - always has one real option; with no such plugin the catalog is empty.
+/// The default entry is named by <c>Gert:Chat:DefaultProvider</c> (a slug); unset falls back to
+/// the first configured entry, and a name matching no provider is a fail-closed config error.
 /// The same resolved list answers <see cref="SupportsTools"/>, so the tool gate and the picker
 /// can never disagree; <see cref="Resolve"/> hands the chat-client factory the provider's id +
 /// Type to dispatch to the right plugin.
@@ -20,7 +22,6 @@ public sealed class ConfigChatProviderCatalog : IChatProviderCatalog
 {
     private readonly IReadOnlyList<ChatProviderInfo> _infos;
 
-    /// <summary>Bind the catalog once - configuration is fixed for the host's lifetime.</summary>
     public ConfigChatProviderCatalog(IConfiguration configuration, IDefaultChatProvider? defaultProvider = null)
     {
         ArgumentNullException.ThrowIfNull(configuration);
@@ -40,7 +41,31 @@ public sealed class ConfigChatProviderCatalog : IChatProviderCatalog
             entries = [synthesized];
         }
 
-        _infos = entries;
+        _infos = ApplyDefaultSelection(entries, configuration[ChatProviderOptions.DefaultProviderKey]);
+    }
+
+    // Mark exactly one entry as the cascade default, selected by Gert:Chat:DefaultProvider (a
+    // provider slug). Unset -> the first entry (document order) wins via Default(). A name that
+    // matches no provider is an operator typo, not a silent fallback: fail closed and name the
+    // valid slugs, so a misconfigured default can never quietly resolve to the wrong provider.
+    private static IReadOnlyList<ChatProviderInfo> ApplyDefaultSelection(
+        List<ChatProviderInfo> entries, string? defaultName)
+    {
+        if (string.IsNullOrWhiteSpace(defaultName))
+        {
+            return entries;
+        }
+
+        if (!entries.Any(e => string.Equals(e.Id, defaultName, StringComparison.OrdinalIgnoreCase)))
+        {
+            throw new InvalidOperationException(
+                $"{ChatProviderOptions.DefaultProviderKey} '{defaultName}' matches no configured chat " +
+                $"provider. Set it to one of: {string.Join(", ", entries.Select(e => e.Id))}.");
+        }
+
+        return entries
+            .Select(e => e with { Default = string.Equals(e.Id, defaultName, StringComparison.OrdinalIgnoreCase) })
+            .ToList();
     }
 
     /// <inheritdoc />

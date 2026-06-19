@@ -24,7 +24,6 @@ const autogrow = (t: HTMLTextAreaElement) => {
   t.style.height = Math.min(t.scrollHeight, 160) + "px";
 };
 
-// --- pasted-image processing --------------------------------------------------
 const MAX_IMAGES = 6; // server cap (attachments.too_many)
 const MAX_DIM = 1568; // longest edge sent upstream
 const KEEP_BYTES = 512 * 1024; // small originals keep their exact bytes
@@ -278,7 +277,7 @@ export const Composer = component({
     // mirror the textarea's emptiness reactively so the send button can grey out.
     const empty = van.state(true);
     // images pasted into the textarea, pending on the next send
-    const pending = reactive<PendingImage[]>([]); // [{ mime_type, data, url }]
+    const pending = reactive<PendingImage[]>([]);
 
     // the chord hint reads Cmd+Enter only where the command key exists
     // (macOS/iOS); Ctrl+Enter elsewhere. userAgentData is a newer Navigator
@@ -366,10 +365,8 @@ export const Composer = component({
       },
     });
 
-    // -- content ---------------------------------
     const wrap = div({ class: "composer-wrap" },
       div({ class: "composer" },
-        // pending pasted images (thumbnail strip with per-image remove)
         () => pending.length
           ? div({ class: "att-strip" },
               ...pending.map((p, i) =>
@@ -388,7 +385,6 @@ export const Composer = component({
           ),
           fileInput,
           ToolsMenu(),
-          // bottom-right: context ring, then Send/Stop
           div({ class: "cright" },
             ContextRing(),
             () => chat.streaming.val

@@ -5,26 +5,21 @@ using Serilog.Context;
 namespace Gert.Api.Logging;
 
 /// <summary>
-/// Pushes request-scoped fields onto the Serilog <see cref="LogContext"/> so every log
-/// line emitted while handling a request carries them (operations.md section Logging format):
+/// Pushes request-scoped fields onto the Serilog <see cref="LogContext"/> so every log line
+/// for the request carries them (operations.md section Logging format):
 /// <list type="bullet">
 ///   <item><c>comp</c> - <c>api</c> for the HTTP host.</item>
-///   <item><c>req</c> - a correlation id for this one request
-///         (<see cref="HttpContext.TraceIdentifier"/>).</item>
+///   <item><c>req</c> - per-request correlation id (<see cref="HttpContext.TraceIdentifier"/>).</item>
 ///   <item><c>uid</c> - the short identity hash (prefix of <c>sha256(iss+sub)</c>),
 ///         <b>only when authenticated</b>. The raw <c>sub</c> is never logged.</item>
 /// </list>
-///
-/// <para>
-/// Defensive by design: anonymous requests (no validated token) get <b>no</b> <c>uid</c>,
-/// and any failure reading the user context is swallowed so logging never breaks a request.
-/// </para>
+/// Anonymous requests get no <c>uid</c>, and any failure reading the user context is swallowed
+/// so logging never breaks a request.
 /// </summary>
 public sealed class RequestLogContextMiddleware(RequestDelegate next)
 {
     private readonly RequestDelegate _next = next;
 
-    /// <summary>Enrich the log context for the lifetime of this request, then invoke the pipeline.</summary>
     public async Task InvokeAsync(HttpContext context, IUserContext userContext)
     {
         ArgumentNullException.ThrowIfNull(context);

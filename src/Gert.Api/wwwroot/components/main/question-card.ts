@@ -113,8 +113,6 @@ export const QuestionCard = component({
       font-style: italic;
     }
   `,
-  // logic: the free-text draft, the inert (answered/expired/posting) guard, and
-  // the submit handler. `q` is the reactive card.question object.
   setup: (q: Question) => {
     const draft = van.state("");
     const inert = () => q.answered || q.expired || q.posting;
@@ -136,8 +134,6 @@ export const QuestionCard = component({
 
     return { draft, inert, submit };
   },
-  // content: question text -> option buttons + optional free-text -> the
-  // answered echo / expired notice.
   view: ({ draft, inert, submit }, q: Question) =>
     div(
       { class: "qcard" },

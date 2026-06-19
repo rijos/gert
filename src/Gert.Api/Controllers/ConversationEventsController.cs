@@ -8,10 +8,9 @@ namespace Gert.Api.Controllers;
 
 /// <summary>
 /// The delivery read side of the detached turn pipeline (rest-api.md section receiving
-/// a turn): the paginated event log (catch-up / resume / poll fallback) and the
-/// SSE live stream. Both are thin views over the same core -
-/// <see cref="IConversationReader"/> (DB truth) and
-/// <see cref="IConversationStreamer"/> (the gap/dup-free splice). Covered by the
+/// a turn): the paginated event log (catch-up / resume / poll fallback) and the SSE
+/// live stream. Both are thin views over <see cref="IConversationReader"/> (DB truth)
+/// and <see cref="IConversationStreamer"/> (the gap/dup-free splice). Covered by the
 /// fallback authenticated-user policy.
 /// </summary>
 [ApiController]

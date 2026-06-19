@@ -126,8 +126,8 @@ const NL = {
   "OK": "OK",
 };
 
-// A dictionary maps a UI source string to its translation; DICTS is keyed by the
-// 2-letter language code resolved at runtime (so an arbitrary string lookup is valid).
+// DICTS is keyed by the 2-letter language code resolved at runtime; each dict maps
+// a UI source string to its translation.
 const DICTS: Record<string, Record<string, string>> = { nl: NL };
 
 const resolve = () => {

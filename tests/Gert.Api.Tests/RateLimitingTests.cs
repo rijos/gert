@@ -76,7 +76,7 @@ public sealed class RateLimitingTests
         using var problem = JsonDocument.Parse(await rejected.Content.ReadAsStringAsync());
         problem.RootElement.GetProperty("status").GetInt32().Should().Be(429);
         problem.RootElement.GetProperty("title").GetString().Should().Be("Too Many Requests");
-        // The GertProblem brand: every problem carries service=gert + a traceId.
+        // GertProblem brand: every problem carries service=gert + a traceId.
         problem.RootElement.GetProperty("service").GetString().Should().Be("gert");
         problem.RootElement.GetProperty("traceId").GetString().Should().NotBeNullOrEmpty();
     }

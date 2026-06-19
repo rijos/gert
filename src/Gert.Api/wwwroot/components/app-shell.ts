@@ -1,5 +1,5 @@
-// components/app-shell.js - the 3-column .app grid + layout state classes +
-// scrim. The middle region is a host the router swaps pages into.
+// The 3-column .app grid + layout state classes + scrim. The middle region is a
+// host the router swaps pages into.
 import van from "/lib/van.js";
 import { component } from "../lib/component.js";
 import { Sidebar } from "./sidebar/sidebar.js";
@@ -9,7 +9,6 @@ import * as ui from "../state/ui.js";
 
 const { div } = van.tags;
 
-// appClass - derives the mockup's .app state classes from ui state.
 const appClass = () => {
   const c = ["app"];
   if (ui.navCollapsed.val) c.push("nav-collapsed");

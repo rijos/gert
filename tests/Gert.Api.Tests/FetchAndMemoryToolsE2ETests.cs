@@ -141,7 +141,7 @@ public sealed class FetchAndMemoryToolsE2ETests : IClassFixture<GertApiFactory>
         entry.Pinned.Should().BeFalse("pinning stays a human action in the knowledge panel");
     }
 
-    // --- SSE helpers (same shape as WalkingSkeletonTests) ---------------------
+    // SSE helpers (same shape as WalkingSkeletonTests).
 
     private static async Task<string> ReadUntilTerminalAsync(HttpResponseMessage response)
     {

@@ -12,7 +12,6 @@ public sealed class SqliteRagIndexProvider : IRagIndexProvider
     private readonly SqliteRagPaths _paths;
     private readonly SqliteRagConnectionFactory _factory;
 
-    /// <summary>Create the provider over the engine's resolved <see cref="SqliteRagPaths"/> and the RAG connection factory.</summary>
     public SqliteRagIndexProvider(SqliteRagPaths paths, SqliteRagConnectionFactory factory)
     {
         _paths = paths ?? throw new ArgumentNullException(nameof(paths));

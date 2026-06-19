@@ -8,6 +8,5 @@ public sealed record ValidationError
 
     public required string Message { get; init; }
 
-    /// <summary>Optional machine-readable error code.</summary>
     public string? Code { get; init; }
 }

@@ -1,13 +1,6 @@
 // render/inline.js - the inline half of the markdown parser (single linear pass).
-//
-// Verbatim move out of lib/markdown.js: the inline scanner (tokenizeInline), the
-// link-tail parser (parseLinkTail), the emphasis/strike pairing (finalizeEmphasis
-// + its tokToNode helper), the inline-text flattener (flattenText), the entity
-// decoder (decodeEntities + NAMED_ENTITIES), the autolink lexemes
-// (AUTOLINK_ANGLE/URL_RX/EMAIL_RX), the PUNCT class, and the $-vs-currency
-// disambiguation (inside tokenizeInline's `$` branch). Pure: no DOM, no side
-// effects; the block parser (render/lines.js) and the renderer (lib/markdown.js)
-// import parseInline (and decodeEntities/flattenText) from here.
+// Pure: no DOM, no side effects; render/lines.js and lib/markdown.js import
+// parseInline (and decodeEntities/flattenText) from here.
 //
 // BOUNDED: the inline emphasis/bracket nesting stacks are hard-capped, and every
 // scan (math closer, link destination/title, fenced inline code) is O(cap) per
@@ -23,7 +16,6 @@ const MATH_INLINE_MAX = 1024;
 const MAX_DEST = 1024;
 const MAX_TITLE = 512;
 
-// --- inline AST shapes ------------------------------------------------------
 // The inline parser threads two loosely-typed bags through a single linear pass:
 // `Tok` is a scanner token (discriminated by `t`) that doubles as a node in the
 // emphasis-pairing doubly-linked list (prev/next), and `InlineNode` is the AST node
@@ -74,7 +66,6 @@ interface InlineCtx {
   [k: string]: unknown;
 }
 
-// --- HTML entities ----------------------------------------------------------
 // Decode the entity references CommonMark resolves in text. We never feed source
 // to the HTML parser (F4), so we decode a small named set + numeric refs by hand
 // into real characters; an unknown/malformed entity is left verbatim.
@@ -102,14 +93,12 @@ const decodeEntities = (s: string) => {
   });
 };
 
-// --- autolink patterns (GFM) ------------------------------------------------
 const AUTOLINK_ANGLE = /^<([a-z][a-z0-9+.-]*:[^<>\s]+|[^<>\s@]+@[^<>\s]+)>/i;
 const URL_RX = /^(https?:\/\/|www\.)[^\s<]+/i;
 const EMAIL_RX = /^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+/;
 
 const PUNCT = "!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~";
 
-// --- inline scanner (single linear pass; math/code lifted first) ------------
 function tokenizeInline(text: string, _ctx: InlineCtx, _depth: number): Tok[] {
   const toks: Tok[] = []; const brackets: { idx: number; image: boolean }[] = []; let i = 0, buf = "";
   const flush = () => { if (buf) { toks.push({ t: "text", v: buf }); buf = ""; } };

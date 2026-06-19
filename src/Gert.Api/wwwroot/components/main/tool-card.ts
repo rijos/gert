@@ -276,7 +276,7 @@ export const ToolCard = component({
         span({ class: "lab" }, () =>
           card.kind === "todo" ? todoLabel(card) : card.label || card.kind,
         ),
-        // done/total fraction - the at-a-glance state when collapsed.
+        // the at-a-glance progress chip shown when collapsed.
         () => {
           const { ts, done } = progress(card);
           return ts.length ? span({ class: "tcount" }, `${done}/${ts.length}`) : "";

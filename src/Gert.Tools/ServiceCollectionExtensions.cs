@@ -11,19 +11,17 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Gert.Tools;
 
 /// <summary>
-/// One-call DI registration for the GENERIC tool layer (tech-stack.md section Architecture:
-/// <c>AddGertTools(cfg)</c>): the SSRF-guarded fetch (<c>Gert:Tools:Search</c> caps) and the
-/// keyed-plugin selectors for web search (<see cref="WebSearchFactory"/>,
-/// <c>Gert:Tools:Search:Type</c>) and the <c>run_python</c> sandbox
-/// (<see cref="PythonSandboxFactory"/>, <c>Gert:Tools:Sandbox:Type</c>). It registers no search
-/// or sandbox IMPLEMENTATION - the composition root adds the plugins it wants available (each
-/// <c>AddGert&lt;Capability&gt;&lt;Impl&gt;</c>, e.g. <c>AddGertSearchSearXNG</c>,
-/// <c>AddGertSandboxMonty</c>, <c>AddGertSandboxGVisor</c>), and configuration selects which one
-/// is active at runtime. The service layer keeps talking only to the ports
-/// (<see cref="IWebSearch"/>, <see cref="IWebFetcher"/>, <see cref="IPythonSandbox"/>).
+/// One-call DI registration for the GENERIC tool layer (tech-stack.md section Architecture):
+/// the SSRF-guarded fetch plus the keyed-plugin selectors for web search
+/// (<see cref="WebSearchFactory"/>, <c>Gert:Tools:Search:Type</c>) and the <c>run_python</c>
+/// sandbox (<see cref="PythonSandboxFactory"/>, <c>Gert:Tools:Sandbox:Type</c>). It registers no
+/// search/sandbox IMPLEMENTATION - the composition root adds the plugins it wants
+/// (<c>AddGert&lt;Capability&gt;&lt;Impl&gt;</c>) and config selects which is active; the service
+/// layer talks only to the ports (<see cref="IWebSearch"/>, <see cref="IWebFetcher"/>,
+/// <see cref="IPythonSandbox"/>).
 ///
 /// <para>
-/// <b>Secrets (F8):</b> options bind from configuration sections; any secret values arrive via
+/// <b>Secrets (F8):</b> options bind from configuration sections; secret values arrive via
 /// environment variables / <c>dotnet user-secrets</c>, never <c>appsettings.json</c>.
 /// </para>
 /// </summary>
@@ -53,17 +51,13 @@ public static class ServiceCollectionExtensions
     }
 
     /// <summary>
-    /// Register the built-in tools as scoped <see cref="ITool"/>s so the
-    /// orchestrator (in Gert.Service) resolves them via <c>IEnumerable&lt;ITool&gt;</c>.
-    /// Scoped because <see cref="RagTool"/> depends on the per-request
-    /// <see cref="Gert.Service.IUserContext"/>. The external ports each tool needs
-    /// (<see cref="IEmbeddingClient"/>, <see cref="IWebSearch"/>, <see cref="IWebFetcher"/>,
-    /// <see cref="IPythonSandbox"/>), the RAG index provider
-    /// (<see cref="Gert.Rag.IRagIndexProvider"/>) and the chat database provider
-    /// (<see cref="Gert.Database.IChatDatabaseProvider"/>) are supplied by the
-    /// host/adapters. The id-only <see cref="ToolRegistry"/> and the
-    /// <c>BuiltInToolIds</c> census stay in Gert.Service (they name ids, not impls);
-    /// <c>ToolRegistrationTests</c> guards the two lists against drift.
+    /// Register the built-in tools as scoped <see cref="ITool"/>s, resolved by the orchestrator
+    /// via <c>IEnumerable&lt;ITool&gt;</c>. Scoped because <see cref="RagTool"/> depends on the
+    /// per-request <see cref="Gert.Service.IUserContext"/>. The external ports, RAG index provider
+    /// (<see cref="Gert.Rag.IRagIndexProvider"/>) and chat database provider
+    /// (<see cref="Gert.Database.IChatDatabaseProvider"/>) are supplied by the host/adapters. The
+    /// id-only <see cref="ToolRegistry"/> + <c>BuiltInToolIds</c> census stay in Gert.Service
+    /// (ids, not impls); <c>ToolRegistrationTests</c> guards the two lists against drift.
     /// </summary>
     public static IServiceCollection AddBuiltinTools(this IServiceCollection services)
     {
@@ -74,8 +68,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ITool, PythonSandboxTool>();
         services.AddScoped<ITool, TodoTool>();
         services.AddScoped<ITool, ClockTool>();
-        // The canvas artifact suite (make/edit/read) - model-driven file creation
-        // and in-place iteration; each is ctor-injected with IChatRepository.
+        // Canvas artifact suite (make/edit/read), each ctor-injected with IChatRepository.
         services.AddScoped<ITool, MakeArtifactTool>();
         services.AddScoped<ITool, EditArtifactTool>();
         services.AddScoped<ITool, ReadArtifactTool>();
@@ -108,21 +101,18 @@ public static class ServiceCollectionExtensions
         // (Gert:Tools:Search size/time/redirect knobs), which always bind.
         services.AddSingleton<IWebFetcher, SafeWebFetcher>();
 
-        // The IWebSearch backend is a keyed plugin selected by Gert:Tools:Search:Type; the
-        // generic factory resolves it (no central switch over Type). The composition root
-        // registers the shipped plugins (AddGertSearchSearXNG). The factory closes over this
-        // configuration, so the registration stays host-agnostic (no IConfiguration from DI).
+        // IWebSearch is a keyed plugin selected by Gert:Tools:Search:Type; the generic factory
+        // resolves it (no central switch). The factory closes over this configuration so the
+        // registration stays host-agnostic (no IConfiguration pulled from DI).
         services.AddSingleton(sp => new WebSearchFactory(sp, configuration));
         services.AddSingleton<IWebSearch>(sp => sp.GetRequiredService<WebSearchFactory>().Create());
     }
 
     private static void AddPythonSandbox(IServiceCollection services, IConfiguration configuration)
     {
-        // The IPythonSandbox backend is a keyed plugin selected by Gert:Tools:Sandbox:Type
-        // (default Monty - no container infra needed); the generic factory resolves it (no
-        // central switch over Type). The composition root registers the shipped plugins
-        // (AddGertSandboxMonty / AddGertSandboxGVisor). The factory closes over this
-        // configuration, so the registration stays host-agnostic (no IConfiguration from DI).
+        // IPythonSandbox is a keyed plugin selected by Gert:Tools:Sandbox:Type (default Monty -
+        // no container infra needed); the generic factory resolves it (no central switch). The
+        // factory closes over this configuration so the registration stays host-agnostic.
         services.AddSingleton(sp => new PythonSandboxFactory(sp, configuration));
         services.AddSingleton<IPythonSandbox>(sp => sp.GetRequiredService<PythonSandboxFactory>().Create());
     }

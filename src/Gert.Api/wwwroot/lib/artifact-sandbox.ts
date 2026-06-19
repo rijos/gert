@@ -24,16 +24,12 @@ const buildCsp = (allowScripts: boolean) =>
     "style-src 'unsafe-inline'", // inline <style>/style= for fidelity, no external
     "img-src data: blob:", // inline images only - no external beacons
     "font-src data:",
-    "form-action 'none'", // no fallback to default-src -> must be explicit (anti-phishing)
-    "base-uri 'none'", // no fallback to default-src -> must be explicit
+    "form-action 'none'", // no fallback to default-src, so must be explicit (anti-phishing)
+    "base-uri 'none'", // no fallback to default-src, so must be explicit
   ].join("; ");
 
-/**
- * Wrap untrusted artifact markup so it carries its own restrictive CSP.
- * @param {string} content raw artifact HTML/SVG
- * @param {{allowScripts?: boolean}} opts
- * @returns {string} a srcdoc string safe to assign to iframe.srcdoc
- */
+// Wrap untrusted artifact markup so it carries its own restrictive CSP; the
+// returned string is safe to assign to iframe.srcdoc.
 export const artifactSrcdoc = (content: string, { allowScripts = false }: { allowScripts?: boolean } = {}) => {
   const meta = `<meta http-equiv="Content-Security-Policy" content="${buildCsp(allowScripts)}">`;
   const src = content || "";

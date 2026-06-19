@@ -6,14 +6,13 @@ using Gert.Service.Tools;
 namespace Gert.Tools.Builtin;
 
 /// <summary>
-/// The canvas scratchpad tool. Model function <c>edit_artifact</c>: change part of
-/// an existing artifact by exact substring replacement - <c>old_str</c> -> <c>new_str</c>
-/// - so the model iterates without re-emitting the whole file. Mirrors Anthropic's
-/// <c>str_replace</c> contract: <c>old_str</c> must match EXACTLY (whitespace
-/// included) and EXACTLY ONCE; zero or many matches return an error the model reads
-/// and corrects next round (the feedback loop). The updated artifact rides back on
-/// <see cref="ToolResult.Artifacts"/> with its original id, so the canvas tab updates
-/// in place.
+/// The canvas scratchpad tool. Model function <c>edit_artifact</c>: change part of an
+/// existing artifact by exact substring replacement (<c>old_str</c> to <c>new_str</c>) so
+/// the model iterates without re-emitting the whole file. Mirrors Anthropic's
+/// <c>str_replace</c> contract: <c>old_str</c> must match EXACTLY (whitespace included) and
+/// EXACTLY ONCE; zero or many matches return an error the model corrects next round. The
+/// updated artifact rides back on <see cref="ToolResult.Artifacts"/> with its original id,
+/// so the canvas tab updates in place.
 /// </summary>
 public sealed class EditArtifactTool : ITool
 {

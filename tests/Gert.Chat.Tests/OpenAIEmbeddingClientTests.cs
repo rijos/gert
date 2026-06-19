@@ -76,7 +76,7 @@ public sealed class OpenAIEmbeddingClientTests
         var vectors = await client.EmbedAsync(["a", "b"]);
 
         vectors.Should().HaveCount(2);
-        vectors[0][0].Should().BeApproximately(0.5f, 1e-6f); // index 0 first
+        vectors[0][0].Should().BeApproximately(0.5f, 1e-6f);
         vectors[1][0].Should().BeApproximately(0.25f, 1e-6f);
     }
 

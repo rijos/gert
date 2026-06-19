@@ -9,7 +9,6 @@ namespace Gert.Service.Ingestion;
 /// </summary>
 public sealed record ExtractedPage
 {
-    /// <summary>The extracted text for this page/section.</summary>
     public required string Text { get; init; }
 
     /// <summary>Source locator - <c>"p.4"</c>, <c>"section 3"</c> - or null when the format has none.</summary>

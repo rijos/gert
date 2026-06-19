@@ -54,8 +54,6 @@ public sealed class ApiBreadthTests : IClassFixture<GertApiFactory>
         return client;
     }
 
-    // --- Contracts ----------------------------------------------------------
-
     [Fact]
     public async Task Settings_get_returns_defaults_then_put_round_trips()
     {
@@ -110,8 +108,6 @@ public sealed class ApiBreadthTests : IClassFixture<GertApiFactory>
         var delete = await client.DeleteAsync($"/api/projects/default/memory/{entry.Id}");
         delete.StatusCode.Should().Be(HttpStatusCode.NoContent);
     }
-
-    // --- Invalid input -> 400 ProblemDetails, never 500 ----------------------
 
     [Fact]
     public async Task Non_uuid_pid_is_400_problem_details_not_500()
@@ -180,8 +176,6 @@ public sealed class ApiBreadthTests : IClassFixture<GertApiFactory>
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
-    // --- IDOR (headline) ----------------------------------------------------
-
     [Fact]
     public async Task User_b_cannot_read_user_a_document_and_sees_none_of_a_data()
     {
@@ -208,7 +202,6 @@ public sealed class ApiBreadthTests : IClassFixture<GertApiFactory>
         var a = AuthedAs("tamper-user-a");
         var b = AuthedAs("tamper-user-b");
 
-        // A creates a project and uploads into it.
         var projectResponse = await a.PostAsJsonAsync(
             "/api/projects", new CreateProjectRequest { Name = "A-only" }, Json);
         var project = await projectResponse.Content.ReadFromJsonAsync<ProjectMeta>(Json);
@@ -224,8 +217,6 @@ public sealed class ApiBreadthTests : IClassFixture<GertApiFactory>
             $"/api/projects/{project.Id}/documents", Json);
         bList!.Should().BeEmpty("B's copy of that pid is its own empty folder, never A's data");
     }
-
-    // --- RBAC ---------------------------------------------------------------
 
     [Fact]
     public async Task Non_admin_gets_403_branded_problem_on_admin_users()
@@ -248,8 +239,6 @@ public sealed class ApiBreadthTests : IClassFixture<GertApiFactory>
 
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
-
-    // --- Security headers / CSP (F1) ----------------------------------------
 
     [Fact]
     public async Task Html_response_carries_csp_and_security_headers()
@@ -290,8 +279,6 @@ public sealed class ApiBreadthTests : IClassFixture<GertApiFactory>
         response.Headers.Contains("Content-Security-Policy").Should().BeFalse();
     }
 
-    // --- Ingestion BackgroundService ---------------------------------------
-
     [Fact]
     public async Task Upload_processes_in_background_then_polls_to_ready_with_chunks()
     {
@@ -305,8 +292,6 @@ public sealed class ApiBreadthTests : IClassFixture<GertApiFactory>
         ready.Status.Should().Be(Gert.Model.Rag.DocumentStatus.Ready);
         ready.ChunkCount.Should().BeGreaterThan(0, "the embedded chunks are retrievable");
     }
-
-    // --- Filename round-trip ------------------------------------------------
 
     [Fact]
     public async Task Document_list_returns_decoded_original_filename()
@@ -322,8 +307,6 @@ public sealed class ApiBreadthTests : IClassFixture<GertApiFactory>
 
         list!.Select(d => d.Name).Should().Contain(exotic);
     }
-
-    // --- helpers ------------------------------------------------------------
 
     private static async Task<HttpResponseMessage> UploadAsync(
         HttpClient client,

@@ -9,7 +9,6 @@ namespace Gert.Tools.Sandbox.Monty;
 /// </summary>
 public sealed record MontyRunRequest
 {
-    /// <summary>The Python source to execute.</summary>
     [JsonPropertyName("code")]
     public required string Code { get; init; }
 

@@ -41,7 +41,7 @@ public sealed class ValidationExceptionHandler : IExceptionHandler
             Detail = "One or more validation errors occurred.",
         };
 
-        // Field errors -> RFC-7807-style { property: [messages] } map.
+        // RFC-7807-style { property: [messages] } map.
         var errors = validation.Result.Errors
             .GroupBy(e => e.Property)
             .ToDictionary(

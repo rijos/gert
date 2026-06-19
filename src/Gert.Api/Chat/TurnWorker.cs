@@ -3,19 +3,15 @@ using Gert.Service.Chat;
 namespace Gert.Api.Chat;
 
 /// <summary>
-/// Drains the <see cref="ChannelTurnQueue"/>'s keyed lanes - one loop per shard,
-/// all under this ONE hosted service (decisions section 11, remedied: the gate index is
-/// the 409/seq protection; the lanes are only throughput) - and runs each
-/// <see cref="TurnJob"/> through <see cref="ITurnRunner"/> (chat-and-tools.md
-/// section detached turns; mirrors <see cref="Ingestion.IngestionWorker"/>). A
-/// conversation always hashes to one lane, so its turns never overlap; different
-/// conversations may. Opens a <b>fresh DI scope per turn</b> and seeds its
-/// <see cref="DetachedUserContext"/> from the job FIRST, so the scoped tools
-/// (rag -> per-user databases) resolve with the plan-time identity + entitlement
-/// snapshot instead of a request context that does not exist here - N lanes mean
-/// N concurrent scopes, each with its own seeded instance. The runner finalises
-/// its own failures (status=error); the per-job guard exists so a defect can
-/// never stop its lane.
+/// Drains the <see cref="ChannelTurnQueue"/>'s keyed lanes - one loop per shard, all under this
+/// ONE hosted service (decisions section 11: the gate index is the 409/seq protection; the lanes
+/// are only throughput) - and runs each <see cref="TurnJob"/> through <see cref="ITurnRunner"/>
+/// (chat-and-tools.md section detached turns; mirrors <see cref="Ingestion.IngestionWorker"/>). A
+/// conversation always hashes to one lane, so its turns never overlap; different conversations may.
+/// Opens a <b>fresh DI scope per turn</b> and seeds its <see cref="DetachedUserContext"/> from the
+/// job FIRST, so the scoped tools (rag -> per-user databases) resolve with the plan-time identity +
+/// entitlement snapshot instead of a request context that does not exist here. The runner finalises
+/// its own failures (status=error); the per-job guard exists so a defect can never stop its lane.
 /// </summary>
 public sealed class TurnWorker : BackgroundService
 {

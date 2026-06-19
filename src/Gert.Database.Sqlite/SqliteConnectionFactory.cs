@@ -79,8 +79,6 @@ public sealed class SqliteConnectionFactory
         var removed = false;
         foreach (var dbPath in dbPaths)
         {
-            // Close just this file's pooled handles (keyed by its connection string),
-            // leaving every other database's pool untouched.
             ClearPoolFor(dbPath);
 
             if (File.Exists(dbPath))

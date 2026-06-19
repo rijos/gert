@@ -13,6 +13,5 @@ public sealed record TurnEvent
     /// <summary>Per-conversation monotonic sequence of this event.</summary>
     public required long Seq { get; init; }
 
-    /// <summary>The chat event payload (the unchanged polymorphic union).</summary>
     public required ChatEvent Event { get; init; }
 }

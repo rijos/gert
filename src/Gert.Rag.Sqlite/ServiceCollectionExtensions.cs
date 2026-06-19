@@ -7,14 +7,11 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 namespace Gert.Rag.Sqlite;
 
 /// <summary>
-/// DI registration for the <c>Sqlite</c> RAG-engine IMPLEMENTATION plugin
+/// DI registration for the <c>Sqlite</c> RAG-engine implementation plugin
 /// (dotnet-style-guide.md section 4; tech-stack.md section Architecture). The composition root
-/// calls the generic <c>AddGertRag</c> (the engine selector + the index provider port) and then
-/// this method to make the sqlite-vec engine available; configuration selects it via
-/// <c>Gert:Rag:Type = Sqlite</c> (the default). This registers the bound
-/// <see cref="StorageOptions"/> / <see cref="SqliteRagParameters"/>, the
-/// <see cref="SqliteRagConnectionFactory"/>, and the keyed <see cref="SqliteRagEngineBuilder"/>;
-/// the generic <see cref="RagEngineFactory"/> dispatches to it by Type with no central switch.
+/// calls the generic <c>AddGertRag</c> then this method; configuration selects it via
+/// <c>Gert:Rag:Type = Sqlite</c> (the default), and the generic <see cref="RagEngineFactory"/>
+/// dispatches to the keyed builder by Type with no central switch.
 /// </summary>
 public static class ServiceCollectionExtensions
 {

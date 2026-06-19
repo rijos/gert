@@ -16,22 +16,18 @@ using Xunit;
 namespace Gert.Tools.Tests;
 
 /// <summary>
-/// The hand-sync guard for the tool census (auth.md section tool registry): the
-/// <c>BuiltInToolIds</c> array (which builds the id-only <see cref="ToolRegistry"/>
-/// singleton in Gert.Service) and the <c>AddBuiltinTools</c> registrations (in the
-/// Gert.Tools adapter) are two lists that MUST agree - a tool registered without its
-/// id (or vice versa) silently breaks either entitlement or execution. This resolves
-/// both from the production <c>AddGertServices</c> + <c>AddBuiltinTools</c> wiring and
-/// asserts set-equality, killing the "keep in sync" comment's risk for good.
+/// Hand-sync guard for the tool census (auth.md section tool registry): the id-only
+/// <see cref="ToolRegistry"/> (built from <c>BuiltInToolIds</c> in Gert.Service) and the
+/// <c>AddBuiltinTools</c> <see cref="ITool"/> registrations (Gert.Tools adapter) are two
+/// lists that MUST agree - a tool registered without its id (or vice versa) silently
+/// breaks entitlement or execution. Resolves both from the production wiring and asserts
+/// set-equality.
 /// </summary>
 public sealed class ToolRegistrationTests
 {
     private static ServiceProvider BuildProductionHost()
     {
         var services = new ServiceCollection();
-        // AddGertServices supplies the id-only ToolRegistry (built from
-        // BuiltInToolIds); AddBuiltinTools (Gert.Tools adapter) supplies the
-        // ITool implementations. This test guards the two lists against drift.
         services.AddGertServices();
         services.AddBuiltinTools();
 

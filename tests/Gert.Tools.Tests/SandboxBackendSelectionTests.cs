@@ -28,7 +28,6 @@ public sealed class SandboxBackendSelectionTests
         return Build(settings);
     }
 
-    // The composition root registers all shipped plugins; configuration picks the active one.
     private static ServiceProvider Build(Dictionary<string, string?> settings)
     {
         var configuration = new ConfigurationBuilder().AddInMemoryCollection(settings).Build();
@@ -69,9 +68,8 @@ public sealed class SandboxBackendSelectionTests
     [Fact]
     public void Unknown_backend_fails_with_an_actionable_message()
     {
-        // No plugin is keyed under "docker", so the generic factory throws when the port is
-        // first resolved (the keyed-plugin dispatch, mirroring the chat factory) - naming the
-        // bad value and the registrars to add.
+        // No plugin keyed under "docker", so the factory throws at first resolution, naming
+        // the bad value and the registrars to add.
         using var provider = Build(new Dictionary<string, string?> { ["Gert:Tools:Sandbox:Type"] = "docker" });
 
         provider.Invoking(p => p.GetRequiredService<IPythonSandbox>())

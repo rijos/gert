@@ -1,5 +1,5 @@
-// app.js - bootstrap: restore theme -> ensure session (PKCE / silent refresh)
-// -> mount AppShell -> wire the router -> load initial data.
+// bootstrap: restore theme -> ensure session (PKCE / silent refresh) -> mount AppShell
+// -> wire the router -> load initial data.
 import van from "/lib/van.js";
 import { mountRouter } from "./lib/router.js";
 import { AppShell } from "./components/app-shell.js";
@@ -13,20 +13,17 @@ import * as conversationsSvc from "./services/conversations.js";
 
 const boot = async () => {
   ui.restoreTheme(); // apply saved/OS theme before first paint
-  ui.restorePanelWidth(); // apply saved canvas-panel width
+  ui.restorePanelWidth();
 
   await auth.ensureSession(); // PKCE / silent refresh (may navigate away)
 
-  // the middle column the router swaps pages into. app.ts owns it (it wires the
-  // router below) and hands it to AppShell, which embeds it and styles `.main`.
+  // the middle column the router swaps pages into; owned here, handed to AppShell.
   const mainHost = van.tags.div({ class: "main" });
 
-  // mount the shell once - drop the SPA-fallback placeholder so its "Gert"
-  // text doesn't linger above the mounted UI.
+  // drop the SPA-fallback placeholder so its "Gert" text doesn't linger above the UI.
   document.getElementById("app")?.remove();
   van.add(document.body, AppShell(mainHost));
 
-  // wire the router: it renders the matched page into the main region.
   mountRouter({
     host: mainHost,
     render: (node) => {
@@ -53,12 +50,11 @@ const boot = async () => {
     },
   });
 
-  // load initial data (services update state; views react)
+  // fire-and-forget: services update state, views react
   modelsSvc.loadWithUserDefault().catch(() => {});
   projectsSvc.list().catch(() => {});
   conversationsSvc.list().catch(() => {});
 
-  // global esc closes mobile drawers
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape") ui.closeDrawers();
   });

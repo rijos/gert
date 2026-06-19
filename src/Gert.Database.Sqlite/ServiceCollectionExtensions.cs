@@ -7,22 +7,15 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 namespace Gert.Database.Sqlite;
 
 /// <summary>
-/// DI registration for the <c>Sqlite</c> database-engine IMPLEMENTATION plugin
-/// (dotnet-style-guide.md section 4; tech-stack.md section Architecture). The composition root
-/// calls the generic <c>AddGertDatabase</c> (the engine selector + the user/chat provider ports)
-/// and then this method to make the SQLite engine available; configuration selects it via
-/// <c>Gert:Database:Type = Sqlite</c> (the default). This registers the bound
-/// <see cref="StorageOptions"/> data-root + the engine's <see cref="SqliteDatabaseParameters"/>,
-/// the <see cref="SqliteConnectionFactory"/>, and the
-/// keyed <see cref="SqliteDatabaseEngineBuilder"/>; the generic <see cref="DatabaseEngineFactory"/>
-/// dispatches to it by Type with no central switch. Each provider owns destroying its own database
-/// files (drop pooled handles + unlink); the storage layer never reaches into the engine. The RAG index
-/// is a separate capability (<c>AddGertRagSqlite</c>); the <c>IObjectStore</c> backend a separate
-/// storage adapter (<c>AddGertStorageLocal</c>).
+/// DI registration for the <c>Sqlite</c> database-engine implementation plugin
+/// (dotnet-style-guide.md section 4; tech-stack.md section Architecture). The generic
+/// <c>DatabaseEngineFactory</c> dispatches to it by Type with no central switch; config selects
+/// it via <c>Gert:Database:Type = Sqlite</c> (the default). Each provider owns destroying its own
+/// database files (drop pooled handles + unlink); the storage layer never reaches into the engine.
+/// The RAG index and the <c>IObjectStore</c> backend are separate capabilities.
 /// </summary>
 public static class ServiceCollectionExtensions
 {
-    /// <summary>Register the SQLite engine plugin: bound options + the shared connection factory + the keyed builder.</summary>
     public static IServiceCollection AddGertDatabaseSqlite(
         this IServiceCollection services,
         IConfiguration configuration)
@@ -31,7 +24,7 @@ public static class ServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(configuration);
 
         // Bind the shared "Storage" data-root via the section 4 idiom (dotnet-style-guide.md):
-        // fail at startup, not first use. No data annotations, so no ValidateDataAnnotations.
+        // ValidateOnStart fails at startup, not first use. No data annotations to validate.
         services.AddOptions<StorageOptions>()
             .Bind(configuration.GetSection(StorageOptions.SectionName))
             .ValidateOnStart();

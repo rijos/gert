@@ -9,7 +9,6 @@ namespace Gert.Api.Security;
 /// </summary>
 public sealed class ArtifactTicketOptions
 {
-    /// <summary>The configuration section these options bind from.</summary>
     public const string SectionName = "Artifacts";
 
     /// <summary>

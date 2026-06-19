@@ -16,7 +16,6 @@ public sealed class FakeWebSearch : IWebSearch
 {
     private readonly Fixtures _fixtures;
 
-    /// <summary>Build over the canonical shared fixtures.</summary>
     public FakeWebSearch()
         : this(Fixtures.Load())
     {

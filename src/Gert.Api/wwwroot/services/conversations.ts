@@ -1,5 +1,5 @@
-// services/conversations.js - list / create / rename / delete conversations.
-// Project-scoped: /api/projects/{pid}/conversations. Updates state/chat.js.
+// List / create / rename / delete conversations, project-scoped under
+// /api/projects/{pid}/conversations. Updates state/chat.js.
 import * as http from "./http.js";
 import * as chat from "../state/chat.js";
 import type { ConversationSeed, MessageSeed, ToolCard } from "../state/chat.js";

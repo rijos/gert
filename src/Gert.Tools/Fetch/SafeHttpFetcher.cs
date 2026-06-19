@@ -9,32 +9,30 @@ namespace Gert.Tools.Fetch;
 
 /// <summary>
 /// The SSRF-guarded server-side fetcher (security F5) used by the web-search summarize
-/// step to pull a result page. It is the <b>enforcement point</b> for
-/// <see cref="SsrfGuard"/>:
+/// step. It is the enforcement point for <see cref="SsrfGuard"/>:
 ///
 /// <list type="bullet">
-///   <item>Scheme/shape vetting on the initial URL and on <b>every redirect target</b>
+///   <item>Scheme/shape vetting on the initial URL and on every redirect target
 ///   (redirects are followed manually so each hop is re-checked).</item>
-///   <item>Destination scoped to <b>IPv4 + ports 80/443</b>: a non-web port is refused
-///   via <see cref="SsrfGuard.IsPortAllowed"/> on every hop, and any non-IPv4 resolved
-///   address is dropped at connect time - so the fetch can't be turned into a probe of
-///   internal non-web services.</item>
-///   <item>Destination-IP vetting at <b>connect time</b> via a
-///   <c>SocketsHttpHandler.ConnectCallback</c>: the host is resolved there and each
-///   candidate address is run through <see cref="SsrfGuard.IsIpAllowed"/> before a
-///   socket is opened - so a DNS name that resolves to a private IP (or a DNS-rebind)
-///   is blocked at the TCP layer, not just at URL-parse time.</item>
+///   <item>Destination scoped to IPv4 + ports 80/443: a non-web port is refused via
+///   <see cref="SsrfGuard.IsPortAllowed"/> on every hop, and any non-IPv4 resolved
+///   address is dropped at connect time, so the fetch can't probe internal non-web
+///   services.</item>
+///   <item>Destination-IP vetting at connect time via a
+///   <c>SocketsHttpHandler.ConnectCallback</c>: each resolved address is run through
+///   <see cref="SsrfGuard.IsIpAllowed"/> before a socket opens, so a DNS name resolving
+///   to a private IP (or a DNS-rebind) is blocked at the TCP layer, not just at
+///   URL-parse time.</item>
 ///   <item>Caps on response size, wall-clock time, and redirect count.</item>
 /// </list>
 ///
 /// <para>
 /// A blocked destination throws <see cref="SsrfBlockedException"/>, which the caller
-/// treats as "skip this result", never as a server error. <see cref="SsrfGuard"/>
-/// itself is unit-tested directly; the redirect re-vet and the connect-time DNS pin
-/// are pinned by <c>SafeHttpFetcherRedirectTests</c> via the <b>internal</b>
-/// constructor's resolver / IP-check delegates - deliberately not a configuration
-/// knob, so the production wiring (real DNS + <see cref="SsrfGuard.IsIpAllowed"/>)
-/// cannot be bypassed by an operator setting.
+/// treats as "skip this result", never as a server error. The redirect re-vet and the
+/// connect-time DNS pin are pinned by <c>SafeHttpFetcherRedirectTests</c> via the
+/// internal constructor's resolver / IP-check delegates - deliberately not a
+/// configuration knob, so the production wiring cannot be bypassed by an operator
+/// setting.
 /// </para>
 /// </summary>
 public sealed class SafeHttpFetcher : IDisposable
@@ -54,11 +52,10 @@ public sealed class SafeHttpFetcher : IDisposable
 
     /// <summary>
     /// Test seam (security F5, <c>SafeHttpFetcherRedirectTests</c>): inject the DNS
-    /// resolver, per-address vet, and per-port vet so the connect-time pin and the redirect
-    /// re-vet are exercisable against loopback listeners on ephemeral ports - the public
-    /// constructor always wires the production trio
-    /// (<see cref="System.Net.Dns.GetHostAddressesAsync(string, CancellationToken)"/>
-    /// + <see cref="SsrfGuard.IsIpAllowed"/> + <see cref="SsrfGuard.IsPortAllowed"/>).
+    /// resolver and per-address/per-port vets so the connect-time pin and redirect re-vet
+    /// are exercisable against loopback listeners on ephemeral ports; the public
+    /// constructor always wires the production trio (real DNS +
+    /// <see cref="SsrfGuard.IsIpAllowed"/> + <see cref="SsrfGuard.IsPortAllowed"/>).
     /// Internal on purpose: an options-based bypass would ship an SSRF hole.
     /// </summary>
     internal SafeHttpFetcher(

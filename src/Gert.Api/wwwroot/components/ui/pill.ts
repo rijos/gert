@@ -54,7 +54,6 @@ export const Pill = component({
       background: var(--brick);
     }
   `,
-  // kind: "ready" | "proc" | "fail"; label optional override.
   view: ({ kind = "ready", label }: { kind?: string; label?: string } = {}) =>
     span(
       { class: "pill " + kind },

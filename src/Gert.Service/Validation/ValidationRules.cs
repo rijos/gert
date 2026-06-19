@@ -244,8 +244,8 @@ public static class ValidationRules
     }
 
     /// <summary>
-    /// The lowercase extension of <paramref name="filename"/> without the dot, or
-    /// the empty string if there is none. Culture-invariant lowercasing.
+    /// The lowercase (invariant) extension of <paramref name="filename"/> without the
+    /// dot, or the empty string if there is none.
     /// </summary>
     public static string ExtensionOf(string filename)
     {

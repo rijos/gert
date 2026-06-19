@@ -52,7 +52,6 @@ public sealed class ConversationStreamer : IConversationStreamer
         {
             using var subscription = _bus.Subscribe(topic);
 
-            // Replay everything past the watermark from the durable log.
             while (true)
             {
                 var page = await _reader

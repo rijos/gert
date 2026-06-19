@@ -35,8 +35,6 @@ public sealed class SqliteChatRepository(SqliteConnection connection) : IChatRep
 
     private readonly SqliteConnection _connection = connection;
 
-    // ---- conversations -----------------------------------------------------
-
     /// <inheritdoc />
     public async Task<IReadOnlyList<Conversation>> ListConversationsAsync(
         CancellationToken cancellationToken = default)
@@ -178,8 +176,6 @@ public sealed class SqliteChatRepository(SqliteConnection connection) : IChatRep
 
         return affected > 0;
     }
-
-    // ---- messages ----------------------------------------------------------
 
     /// <inheritdoc />
     public async Task<IReadOnlyList<Message>> ListMessagesAsync(
@@ -354,8 +350,6 @@ public sealed class SqliteChatRepository(SqliteConnection connection) : IChatRep
         }, cancellationToken: cancellationToken)).ConfigureAwait(false);
     }
 
-    // ---- turn sequencing + replay log ---------------------------------------
-
     /// <inheritdoc />
     public async Task<long> AllocateSeqAsync(
         string conversationId,
@@ -423,8 +417,6 @@ public sealed class SqliteChatRepository(SqliteConnection connection) : IChatRep
         return rows.Select(MapTurnEvent).ToList();
     }
 
-    // ---- tool calls --------------------------------------------------------
-
     /// <inheritdoc />
     public async Task InsertToolCallAsync(ToolCall toolCall, CancellationToken cancellationToken = default)
     {
@@ -470,8 +462,6 @@ public sealed class SqliteChatRepository(SqliteConnection connection) : IChatRep
         return row is null ? null : MapToolCall(row);
     }
 
-    // ---- citations ---------------------------------------------------------
-
     /// <inheritdoc />
     public async Task InsertCitationsAsync(
         IReadOnlyList<Citation> citations,
@@ -508,8 +498,6 @@ public sealed class SqliteChatRepository(SqliteConnection connection) : IChatRep
 
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
     }
-
-    // ---- artifacts ---------------------------------------------------------
 
     /// <inheritdoc />
     public async Task<IReadOnlyList<Artifact>> ListArtifactsAsync(
@@ -616,8 +604,6 @@ public sealed class SqliteChatRepository(SqliteConnection connection) : IChatRep
     {
         await _connection.DisposeAsync().ConfigureAwait(false);
     }
-
-    // ---- mapping -----------------------------------------------------------
 
     private static Conversation MapConversation(ConversationRow row) => new()
     {
@@ -798,7 +784,6 @@ public sealed class SqliteChatRepository(SqliteConnection connection) : IChatRep
         _ => throw new InvalidOperationException($"Unknown artifact kind '{value}'."),
     };
 
-    // ---- row DTOs ----------------------------------------------------------
     // PascalCase properties; Dapper binds snake_case columns via
     // MatchNamesWithUnderscores (DapperBootstrap, via the static ctor) and narrows SQLite's
     // Int64 to each property's declared type - no `long` widening, no casts.

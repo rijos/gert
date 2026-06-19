@@ -17,10 +17,6 @@ public sealed class SqliteRagPaths
 {
     private readonly string _dataRoot;
 
-    /// <summary>
-    /// Resolve paths under this engine's data root: <see cref="SqliteRagParameters.DataRoot"/>
-    /// when set, otherwise the shared <see cref="StorageOptions.DataRoot"/>.
-    /// </summary>
     public SqliteRagPaths(IOptions<StorageOptions> storage, IOptions<SqliteRagParameters> parameters)
     {
         ArgumentNullException.ThrowIfNull(storage);

@@ -19,23 +19,17 @@ namespace Gert.Database;
 /// </summary>
 public interface IUserRepository : IAsyncDisposable
 {
-    // ---- user meta (admin scan) -------------------------------------------
-
     /// <summary>The display username, or <see langword="null"/> if never seeded.</summary>
     Task<string?> GetUsernameAsync(CancellationToken cancellationToken = default);
 
     /// <summary>Set the display username (refreshed from the token by the provisioner).</summary>
     Task SetUsernameAsync(string username, CancellationToken cancellationToken = default);
 
-    // ---- settings ----------------------------------------------------------
-
     /// <summary>Read the user's settings, or defaults when none have been saved.</summary>
     Task<UserSettings> GetSettingsAsync(CancellationToken cancellationToken = default);
 
     /// <summary>Write the user's settings, replacing any existing row.</summary>
     Task SaveSettingsAsync(UserSettings settings, CancellationToken cancellationToken = default);
-
-    // ---- project registry --------------------------------------------------
 
     /// <summary>List the user's projects, oldest first.</summary>
     Task<IReadOnlyList<ProjectMeta>> ListProjectsAsync(CancellationToken cancellationToken = default);

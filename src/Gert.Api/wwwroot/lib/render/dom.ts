@@ -1,55 +1,41 @@
-// render/dom.js - the STRUCTURAL renderer: markdown AST -> DOM. Moved verbatim
-// out of lib/markdown.js (which is now a thin facade). math & code leaves are
-// OPAQUE: this module CALLS the VanJS components MdMath / MdCode and inserts the
+// render/dom.js - the STRUCTURAL renderer: markdown AST -> DOM. math & code leaves
+// are OPAQUE: this module CALLS the VanJS components MdMath / MdCode and inserts the
 // DOM they return - it never reaches into smath/highlight itself.
 //
-// Security F4: every markdown element this renderer emits is built through ONE
-// guarded chokepoint - createEl(ns, tag, attrs, doc) - over a CLOSED per-(ns,tag)
-// allow-list with a fail-closed throw. The allow-list pins which attributes each
-// tag may carry (href only on <a>, src only on <img>); td/th alignment is a CSSOM
-// write (el.style.textAlign), NOT an attribute. No innerHTML anywhere: nodes are
-// built with createElement / createTextNode only, so injected HTML in the source
-// renders as literal text. URLs are scrubbed at the link/image call sites through
-// sanitizeUrl / sanitizeImgUrl (sink-side, local); external links get
-// rel="noopener noreferrer" target="_blank".
+// Security F4: every markdown element is built through ONE guarded chokepoint -
+// createEl(ns, tag, attrs, doc) - over a CLOSED per-(ns,tag) allow-list with a
+// fail-closed throw pinning which attributes each tag may carry (href only on <a>,
+// src only on <img>); td/th alignment is a CSSOM write (el.style.textAlign), NOT an
+// attribute. No innerHTML anywhere: nodes are built with createElement /
+// createTextNode only, so injected HTML in the source renders as literal text. URLs
+// are scrubbed at the link/image call sites via sanitizeUrl / sanitizeImgUrl;
+// external links get rel="noopener noreferrer" target="_blank".
 //
 // renderNode has a branch per node type and a `default: throw`, so the producible
-// node set is exactly NODE_TYPES (frozen, re-exported). The math/code leaves'
-// DOM shape is whatever MdMath / MdCode return (the same span/<math> and
-// <pre data-lang><code> trees as before), so existing selectors/CSS/consumers and
-// the byte-oracle all still hold.
+// node set is exactly NODE_TYPES (frozen, re-exported).
 import { sanitizeUrl, sanitizeImgUrl, isExternal, slugify } from "./url.js";
 import { decodeEntities, flattenText } from "./inline.js";
 import { MdMath } from "/components/canvas/artifacts/md-math.js";
 import { MdCode } from "/components/canvas/artifacts/md-code.js";
 
-// --- the renderer's AST node shape ------------------------------------------
-// The producer side is split across two parsers - render/inline.js builds the
-// inline nodes, render/lines.js builds the BLOCK nodes (document/heading/list/
-// table/...) - and neither exports a node type the renderer can import (the inline
-// InlineNode bag is module-local; the block nodes are untyped Record<string,
-// unknown>). renderNode reads a `node.type` discriminated switch across BOTH, so -
-// mirroring the Stage 1 Tok/InlineNode pattern - we declare ONE wide node bag here:
+// The two producer parsers (render/inline.js for inline nodes, render/lines.js for
+// block nodes) export no importable node type, so we declare ONE wide node bag:
 // every field optional, discriminated by `type`, listing exactly the fields
-// renderNode (and its helpers) read off a node and nothing the code doesn't touch.
+// renderNode and its helpers read.
 interface Node {
   type: string;
   children?: Node[] | undefined;
-  // block fields
   level?: number | undefined;
   ordered?: boolean | undefined;
   start?: number | undefined;
   tight?: boolean | undefined;
   info?: string | undefined;
   literal?: string | undefined;
-  // list-item fields
   task?: boolean | undefined;
   checked?: boolean | undefined;
-  // table fields
   header?: string[] | undefined;
   align?: (string | null | undefined)[] | undefined;
   rows?: string[][] | undefined;
-  // inline / leaf fields (shared with InlineNode)
   value?: string | undefined;
   latex?: string | undefined;
   display?: boolean | undefined;
@@ -59,19 +45,15 @@ interface Node {
 }
 
 // The render context lib/markdown.js wires: the DOM target + the inline parser it
-// injects (render/dom.js re-enters parseInline for table cells). parseInline's
-// signature mirrors render/inline.js's export; its returned inline-node list feeds
-// renderInlineList (typed Node[] here - the same wide bag, of which an inline node
-// is a structural instance).
+// injects (the renderer re-enters parseInline for table cells).
 interface Ctx {
   doc: Document;
   parseInline: (raw: string, ctx: Ctx, depth: number) => Node[];
 }
 
-// The closed node set the parser can produce. renderNode has a branch for each
-// and throws on anything else (fail closed), so the emitted DOM is a fixed
-// allow-list. Frozen so the set can't be mutated at runtime. (Re-exported by
-// lib/markdown.js with identity preserved.)
+// The closed node set the parser can produce. renderNode has a branch for each and
+// throws on anything else (fail closed), so the emitted DOM is a fixed allow-list.
+// Frozen so the set can't be mutated at runtime. Re-exported with identity preserved.
 const NODE_TYPES = Object.freeze([
   "document", "heading", "paragraph", "blockquote", "list", "item",
   "code_block", "thematic_break", "table", "math_block",
@@ -79,23 +61,18 @@ const NODE_TYPES = Object.freeze([
   "linebreak", "softbreak",
 ]);
 
-// MAX_INLINE bounds INLINE container nesting (emph/strong/del/link) at the
-// (sink-side) renderer: past the cap a would-be emph/strong/del/link degrades to
-// its flattened text - a finite configuration space, so adversarial nesting can't
-// recurse to a stack overflow. (Block container nesting is capped by MAX_NEST
-// inside render/lines.js, where the block parser lives.)
+// MAX_INLINE bounds INLINE container nesting (emph/strong/del/link): past the cap a
+// would-be node degrades to its flattened text, so adversarial nesting can't recurse
+// to a stack overflow. (Block nesting is capped by MAX_NEST in render/lines.js.)
 const MAX_INLINE = 32;
 
-// --- the single guarded element chokepoint ----------------------------------
-// createEl(ns, tag, attrs, doc) is the ONLY way this renderer produces an
-// element. ALLOW maps each (ns, tag) the structural renderer may emit to the
-// CLOSED set of attribute names it may carry; an unknown (ns, tag) OR an
-// attribute outside that tag's set is a fail-closed throw (caught by the facade's
-// literal-source fallback). So the producible DOM is a fixed allow-list: href can
-// only appear on <a>, src only on <img>, and no element can grow an event-handler
-// or style attribute through this path. ns "" is HTML (createElement). td/th
-// alignment is a CSSOM write (el.style.textAlign) applied by the caller, NOT an
-// attribute, so it never passes through here.
+// F4: createEl is the ONLY way this renderer produces an element. ALLOW maps each
+// (ns, tag) to the CLOSED set of attribute names it may carry; an unknown (ns, tag)
+// OR an out-of-set attribute is a fail-closed throw (caught by the facade's
+// literal-source fallback). So no element can grow an event-handler or style
+// attribute through this path. ns "" is HTML (createElement). td/th alignment is a
+// CSSOM write (el.style.textAlign) by the caller, NOT an attribute, so it never
+// passes through here.
 const HTML = "";
 const ALLOW = Object.freeze({
   "": Object.freeze({
@@ -111,36 +88,29 @@ const ALLOW = Object.freeze({
 });
 
 function createEl(ns: string, tag: string, attrs: Record<string, string> | null, doc: Document): HTMLElement {
-  // ALLOW is the frozen closed allow-list (Object.freeze, identity-preserved). The
-  // (ns, tag) lookup is over dynamic strings, so index it through a narrow read-only
-  // map view; the value is still the per-tag attribute-name array (or undefined),
-  // and the existing `&&` guard + `!allowed` fail-closed throw are unchanged.
+  // Type-only: index the frozen ALLOW through a read-only map view so the dynamic
+  // (ns, tag) lookup type-checks; the `&&` guard + fail-closed throw are unchanged.
   const allowList = ALLOW as Readonly<Record<string, Readonly<Record<string, readonly string[]>> | undefined>>;
   const allowed = allowList[ns] && allowList[ns]![tag];
   if (!allowed) throw new Error("markdown: disallowed element: " + (ns || "html") + ":" + tag);
-  // ALLOW only ever holds the HTML namespace (ns === ""), so the createElement
-  // branch is the live path (returns HTMLElement); the createElementNS branch is
-  // kept for the generic chokepoint shape but unreachable here, so narrow its
-  // Element result to HTMLElement to keep the return type (and callers' .style /
-  // .classList use) unchanged. This is type-only - the runtime call is identical.
+  // ALLOW only ever holds the HTML namespace (ns === ""), so createElement is the
+  // live path; the createElementNS branch is kept for the generic chokepoint shape
+  // but unreachable, hence the type-only narrow to HTMLElement.
   const el: HTMLElement = ns ? doc.createElementNS(ns, tag) as HTMLElement : doc.createElement(tag);
   if (attrs) {
     for (const name in attrs) {
       if (!allowed.includes(name)) throw new Error("markdown: disallowed attr " + name + " on " + tag);
-      // `name` is an own enumerable key of `attrs` (for..in), so attrs[name] is a
-      // defined string under noUncheckedIndexedAccess; assert that loop invariant.
+      // for..in key, so attrs[name] is defined under noUncheckedIndexedAccess.
       el.setAttribute(name, attrs[name]!);
     }
   }
   return el;
 }
 
-// --- total renderer: node -> DOM (closed set; default throws) ----------------
-// `depth` bounds INLINE container nesting (emph/strong/del/link): past MAX_INLINE
-// the node degrades to its flattened text. Block nesting is already bounded in the
-// parser (MAX_NEST), so renderBlockList needs no counter. Without this cap a wall
-// of balanced delimiters (e.g. "*"x20000 ... "*"x20000) nests deep enough to blow
-// the call stack - renderMarkdown must stay TOTAL.
+// `depth` carries the MAX_INLINE nesting bound (renderBlockList needs no counter -
+// block nesting is bounded by MAX_NEST in the parser). Without the cap a wall of
+// balanced delimiters nests deep enough to blow the stack; renderMarkdown must stay
+// TOTAL.
 function renderInlineList(nodes: Node[], ctx: Ctx, depth = 0) { const f = ctx.doc.createDocumentFragment(); for (const n of nodes) f.appendChild(renderNode(n, ctx, depth)); return f; }
 function renderBlockList(nodes: Node[], ctx: Ctx) { const f = ctx.doc.createDocumentFragment(); for (const n of nodes) f.appendChild(renderNode(n, ctx)); return f; }
 
@@ -148,8 +118,7 @@ function renderTable(t: Node, ctx: Ctx) {
   const { doc } = ctx, table = createEl(HTML, "table", null, doc);
   const cell = (tag: string, raw: string | undefined, align: string | null | undefined) => { const el = createEl(HTML, tag, null, doc); el.appendChild(renderInlineList(ctx.parseInline(raw || "", ctx, 0), ctx)); if (align) el.style.textAlign = align; return el; };
   const thead = createEl(HTML, "thead", null, doc), htr = createEl(HTML, "tr", null, doc);
-  // `t` is a table node, so header/align/rows are present by construction in
-  // render/lines.js; assert that tag invariant (matching the parser's producer).
+  // header/align/rows present by construction on a table node (render/lines.js).
   t.header!.forEach((h, c) => htr.appendChild(cell("th", h, t.align![c]))); thead.appendChild(htr); table.appendChild(thead);
   const tbody = createEl(HTML, "tbody", null, doc);
   for (const row of t.rows!) { const tr = createEl(HTML, "tr", null, doc); row.forEach((cv, c) => tr.appendChild(cell("td", cv, t.align![c]))); tbody.appendChild(tr); }
@@ -157,38 +126,30 @@ function renderTable(t: Node, ctx: Ctx) {
 }
 
 function renderCodeBlock(node: Node, ctx: Ctx) {
-  // The code leaf is the MdCode component: it builds <pre data-lang><code>…</code></pre>
-  // (highlight() tints from textContent; data-lang guarded to a short slice). The
-  // component adopts a stylesheet on first render; in an environment lacking
-  // Constructable Stylesheets that could throw BEFORE the leaf renders, so degrade
-  // to an un-tinted <pre><code> (per-block totality) rather than failing the doc.
+  // MdCode adopts a stylesheet on first render; lacking Constructable Stylesheets
+  // that throws BEFORE the leaf renders, so degrade to an un-tinted <pre><code>
+  // (per-block totality) rather than failing the whole doc.
   const { doc } = ctx;
   const lang = (node.info || "").split(/[ \t]/, 1)[0];
   try { return MdCode({ code: node.literal, lang }); }
   catch {
     const pre = createEl(HTML, "pre", null, doc), code = createEl(HTML, "code", null, doc);
-    // a code_block node always carries `literal` (built so in render/lines.js);
-    // assert it so textContent (string | null) accepts the assignment unchanged.
+    // a code_block node always carries `literal` (render/lines.js).
     code.textContent = node.literal!; pre.appendChild(code); return pre;
   }
 }
 
-// math leaves are VanJS components with the same first-render stylesheet-adoption
-// caveat: degrade a failed formula to its literal TeX (per-formula totality - the
-// contract is that bad math degrades per-formula, never the whole document).
+// Same first-render stylesheet-adoption caveat as MdCode: degrade a failed formula
+// to its literal TeX (per-formula totality, never the whole document).
 function mathLeaf(latex: string | undefined, display: boolean, doc: Document) {
-  // a math node always carries `latex` (built so in render/lines.js / inline.js);
-  // assert it so createTextNode (string) sees a string, byte-identical to before.
+  // a math node always carries `latex` (render/lines.js / inline.js).
   try { return MdMath({ latex, display }); } catch { return doc.createTextNode(latex!); }
 }
 
 function renderNode(node: Node, ctx: Ctx, depth = 0) {
   const { doc } = ctx;
-  // Each branch reads exactly the fields its `node.type` tag guarantees (the parser
-  // in render/lines.js / inline.js builds the node so): a container always carries
-  // `children`, a heading `level`, a text node `value`, a code node `literal`, a
-  // math node `latex`. The `!`s below assert that tag invariant (the closed switch +
-  // `default: throw` keep the producible set == NODE_TYPES), never hide an absence.
+  // Each branch reads exactly the fields its `node.type` tag guarantees by
+  // construction (render/lines.js / inline.js); the `!`s assert that tag invariant.
   switch (node.type) {
     case "document": return renderBlockList(node.children!, ctx);
     case "heading": { const h = createEl(HTML, "h" + Math.min(6, Math.max(1, node.level!)), null, doc); h.appendChild(renderInlineList(node.children!, ctx)); return h; }
@@ -230,9 +191,8 @@ function renderNode(node: Node, ctx: Ctx, depth = 0) {
     case "link": {
       if (depth >= MAX_INLINE) return doc.createTextNode(flattenText(node.children!));
       const href = sanitizeUrl(node.dest!);
-      // attrs typed Record<string,string> so the title/target/rel keys are CONDITIONALLY
-      // added (never assigned undefined) - the exact same shape as before, so the closed
-      // ALLOW attribute check in createEl ("a": href/title/target/rel) is unchanged (F4).
+      // title/target/rel added conditionally (never undefined), within the closed
+      // ALLOW set for "a" (href/title/target/rel) (F4).
       const attrs: Record<string, string> = { href };
       if (node.title) attrs.title = decodeEntities(node.title);
       if (isExternal(href)) { attrs.target = "_blank"; attrs.rel = "noopener noreferrer"; }
@@ -250,17 +210,14 @@ function renderNode(node: Node, ctx: Ctx, depth = 0) {
   }
 }
 
-// --- heading anchors --------------------------------------------------------
 // GitHub-style slug `id` on every heading so in-document links ([x](#section))
-// resolve. slugify (./url.js) folds the heading TEXT to a `[a-z0-9_-]` token, so
-// the id is inert even via setAttribute. Duplicate slugs get -1/-2 (GFM), unique
-// within this fragment. Runs as a DOM post-pass (reads textContent after render),
-// so it sees the fully built tree.
+// resolve. slugify folds the heading TEXT to a `[a-z0-9_-]` token, so the id is
+// inert even via setAttribute. Duplicate slugs get -1/-2 (GFM), unique within this
+// fragment. Runs as a DOM post-pass, so it sees the fully built tree.
 const assignHeadingIds = (frag: DocumentFragment) => {
   const used = new Set<string>();
   for (const h of frag.querySelectorAll("h1,h2,h3,h4,h5,h6")) {
-    // an Element always has non-null textContent (null is only doctype/document);
-    // assert it so slugify (string) sees a string, byte-identical to the JS original.
+    // an Element always has non-null textContent (null is only doctype/document).
     const base = slugify(h.textContent!) || "section";
     let id = base, n = 0;
     while (used.has(id)) id = `${base}-${++n}`;
@@ -269,8 +226,7 @@ const assignHeadingIds = (frag: DocumentFragment) => {
   }
 };
 
-// render(ast, ctx) -> DocumentFragment for the document node. The facade wires
-// ctx { doc, parseInline } and runs assignHeadingIds afterwards.
+// The facade wires ctx { doc, parseInline } and runs assignHeadingIds afterwards.
 const render = (ast: Node, ctx: Ctx) => renderNode(ast, ctx);
 
 export { render, assignHeadingIds, NODE_TYPES };

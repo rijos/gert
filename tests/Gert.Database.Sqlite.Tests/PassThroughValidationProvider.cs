@@ -3,9 +3,9 @@ using Gert.Service.Validation;
 namespace Gert.Database.Sqlite.Tests;
 
 /// <summary>
-/// A trivial <see cref="IValidationProvider"/> that accepts everything - the ingestion
-/// integration tests exercise the storage/ingestion path, not the validation gate
-/// (the real validators have their own unit tests). Rejects only a null instance.
+/// A trivial <see cref="IValidationProvider"/> that accepts everything (only a null
+/// instance fails): the ingestion integration tests exercise the storage/ingestion
+/// path, not the validation gate, which has its own unit tests.
 /// </summary>
 internal sealed class PassThroughValidationProvider : IValidationProvider
 {

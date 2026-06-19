@@ -11,20 +11,13 @@ namespace Gert.Service.Projects;
 
 /// <summary>
 /// Manages the caller's projects (rest-api.md section projects; configuration.md section 2).
-/// The project registry (id, name, description, instructions, defaults) lives in
-/// <c>user.db</c> via <see cref="IUserDatabaseProvider"/>; per-project conversation
-/// and document counts come from each project's <c>chat.db</c>/<c>rag.db</c>
-/// (<see cref="IChatDatabaseProvider"/>/<see cref="IRagIndexProvider"/>), which
-/// self-provision on open. Delete/empty orchestrates the database half (the chat/rag
-/// providers' <c>DeleteProjectAsync</c>) and the artifact half
-/// (<see cref="IObjectStore"/>). Identity comes only from <see cref="IUserContext"/>.
-///
-/// <para>
-/// Create mints a fresh UUID pid and registers it; the project's databases
-/// materialise lazily on first open. Delete drops the project's databases + blobs and
-/// removes the registry row; the <c>default</c> project is emptied and kept
+/// The registry (id, name, description, instructions, defaults) lives in <c>user.db</c>;
+/// per-project conversation/document counts come from each project's
+/// <c>chat.db</c>/<c>rag.db</c>, which self-provision on open. Identity comes only from
+/// <see cref="IUserContext"/>. Create mints a fresh UUID pid; databases materialise
+/// lazily on first open. Delete drops the project's databases + blobs and removes the
+/// registry row, except the <c>default</c> project, which is emptied and kept
 /// (configuration.md section 5).
-/// </para>
 /// </summary>
 public sealed class ProjectService : IProjectService
 {
@@ -201,8 +194,6 @@ public sealed class ProjectService : IProjectService
         await _objects.DeleteScopeAsync(scope, cancellationToken).ConfigureAwait(false);
         return await repo.DeleteProjectAsync(pid, cancellationToken).ConfigureAwait(false);
     }
-
-    // ---- helpers -----------------------------------------------------------
 
     private async Task<ProjectSummary> SummariseAsync(ProjectMeta meta, CancellationToken cancellationToken)
     {

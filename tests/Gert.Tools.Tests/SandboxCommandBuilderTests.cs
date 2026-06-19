@@ -9,9 +9,7 @@ namespace Gert.Tools.Tests;
 /// <summary>
 /// Unit tests for the pure sandbox command/limit builders + the failure -> graceful
 /// result mapping. The security posture (egress off, read-only rootfs, no /data, caps,
-/// dropped privs) is asserted on the produced config - no real runsc. The cross-backend
-/// caps come from <see cref="PythonSandboxOptions"/>; the gVisor-specific knobs (egress,
-/// runsc path, CPU/PID/tmp) from <see cref="GVisorParameters"/>.
+/// dropped privs) is asserted on the produced config - no real runsc.
 /// </summary>
 public sealed class SandboxCommandBuilderTests
 {

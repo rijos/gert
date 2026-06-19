@@ -1,5 +1,3 @@
-// components/canvas/canvas-bar.js - artifact tab strip + bar tools
-// (KB toggle, expand, close drawer).
 import van from "/lib/van.js";
 import { component } from "../../lib/component.js";
 import { Icon } from "../../icons/icons.js";

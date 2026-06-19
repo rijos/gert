@@ -108,13 +108,11 @@ public static class ServiceCollectionExtensions
         // The API host replaces it with a Channel-backed queue + BackgroundService (responds 202).
         AddIngestion(services);
 
-        // The built-in tool IMPLEMENTATIONS now live in the Gert.Tools adapter
-        // (AddBuiltinTools, called by the host's AddGertTools). This layer keeps
-        // only the id-only ToolRegistry + BuiltInToolIds census (registered in
-        // AddValidation) - they name capability ids, not impls. The orchestrator
-        // still resolves the tool instances via IEnumerable<ITool>.
+        // The built-in tool IMPLEMENTATIONS live in the Gert.Tools adapter (AddBuiltinTools,
+        // called by the host's AddGertTools). This layer keeps only the id-only ToolRegistry +
+        // BuiltInToolIds census (registered in AddValidation): they name capability ids, not
+        // impls. The orchestrator resolves the tool instances via IEnumerable<ITool>.
 
-        // Aggregate hub.
         services.AddUserScoped<IGertServices, GertServices>();
 
         return services;
@@ -173,13 +171,10 @@ public static class ServiceCollectionExtensions
     {
         services.TryAddSingleton(ChunkingOptions.Default);
 
-        // The per-type leaf extractors live in the Gert.Ingestion adapter (md/txt +
-        // the isolated pdf/docx extractor); AddGertIngestion registers them under the
-        // "leaf" key so the composite below can enumerate them without re-entering its
+        // The per-type leaf extractors live in the Gert.Ingestion adapter; AddGertIngestion
+        // registers them under the "leaf" key so the composite (registered as the plain
+        // ITextExtractor the pipeline depends on) can enumerate them without re-entering its
         // own resolution. This layer wires only the composite + the pipeline.
-
-        // The pipeline depends on the plain ITextExtractor -> the composite, which
-        // routes to the keyed leaves.
         services.TryAddSingleton<ITextExtractor>(sp =>
             new CompositeTextExtractor(sp.GetKeyedServices<ITextExtractor>(LeafExtractorKey)));
 

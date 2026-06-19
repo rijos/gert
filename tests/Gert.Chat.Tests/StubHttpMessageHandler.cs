@@ -3,25 +3,21 @@ using System.Net;
 namespace Gert.Chat.Tests;
 
 /// <summary>
-/// A test <see cref="HttpMessageHandler"/> that captures the outgoing request and
-/// returns a canned response - lets the vLLM client be driven without a server. The
-/// captured <see cref="LastRequestBody"/> is asserted for request shaping; the
-/// response is supplied by the test (an SSE stream or an embeddings JSON body).
+/// Test <see cref="HttpMessageHandler"/> that captures the outgoing request and returns a
+/// canned response, driving the chat client without a server. <see cref="LastRequestBody"/>
+/// is asserted for request shaping; the response comes from the test's responder.
 /// </summary>
 public sealed class StubHttpMessageHandler : HttpMessageHandler
 {
     private readonly Func<HttpRequestMessage, string, HttpResponseMessage> _responder;
 
-    /// <summary>Build over a responder that sees the request + its captured body.</summary>
     public StubHttpMessageHandler(Func<HttpRequestMessage, string, HttpResponseMessage> responder)
     {
         _responder = responder ?? throw new ArgumentNullException(nameof(responder));
     }
 
-    /// <summary>The body of the most recent request, as a string.</summary>
     public string? LastRequestBody { get; private set; }
 
-    /// <summary>The most recent request URI.</summary>
     public Uri? LastRequestUri { get; private set; }
 
     /// <inheritdoc />

@@ -1,4 +1,3 @@
-// components/main/conv-title.js - editable conversation title.
 import van from "/lib/van.js";
 import { component } from "../../lib/component.js";
 import { Icon } from "../../icons/icons.js";
@@ -61,7 +60,6 @@ export const ConvTitle = component({
       box-shadow: 0 1px 0 var(--coral);
     }
   `,
-  // logic: the editing flag + the rename/commit handler.
   setup: () => {
     const editing = van.state(false);
 
@@ -78,7 +76,6 @@ export const ConvTitle = component({
 
     return { editing, commit };
   },
-  // content: the editable title - input while editing, label otherwise.
   view: ({ editing, commit }) =>
     div(
       { class: "title-wrap" },

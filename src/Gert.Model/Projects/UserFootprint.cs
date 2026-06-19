@@ -11,7 +11,6 @@ public sealed record UserFootprint
     /// <summary>Folder key - <c>sha256(iss + "\n" + sub)</c> hex.</summary>
     public required string Key { get; init; }
 
-    /// <summary>Total bytes on disk for this user's folder.</summary>
     public long Size { get; init; }
 
     public int DocumentCount { get; init; }

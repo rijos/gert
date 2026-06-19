@@ -28,7 +28,7 @@ using Serilog.Events;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// --- Captive-dependency guard (principles.md per-user isolation) -------------------
+// Captive-dependency guard (principles.md per-user isolation).
 // Per-user isolation rests on a service resolving the caller from the request-scoped
 // IUserContext (Program.cs "IUserContext routing" below). A singleton that consumed a
 // user-scoped service would capture the FIRST caller's identity and then serve their
@@ -44,7 +44,7 @@ builder.Host.UseDefaultServiceProvider(options =>
     options.ValidateOnBuild = true;
 });
 
-// --- Request body cap (testing.md section 5 upload limits) --------------------------
+// Request body cap (testing.md section 5 upload limits).
 // Kestrel's default MaxRequestBodySize (~28.6 MB) would 413 a legitimate upload
 // before DocumentUploadValidator ever saw it. Raise the transport cap to the
 // 50 MiB upload limit plus 1 MiB of headroom for multipart framing (boundaries,
@@ -54,7 +54,7 @@ builder.WebHost.ConfigureKestrel(kestrel =>
     kestrel.Limits.MaxRequestBodySize =
         Gert.Service.Validation.UploadConstraints.MaxSizeBytes + 1_048_576);
 
-// --- Bounded shutdown ---------------------------------------------------------
+// Bounded shutdown.
 // Open SSE streams end themselves on ApplicationStopping (the stream endpoint
 // links it), so this backstop only catches a request that ignores the
 // signal - Ctrl+C must stop the host in seconds, never the framework's default
@@ -62,7 +62,7 @@ builder.WebHost.ConfigureKestrel(kestrel =>
 builder.Services.Configure<HostOptions>(host =>
     host.ShutdownTimeout = TimeSpan.FromSeconds(5));
 
-// --- Shared NDJSON logging (operations.md section Logging format) -----------------
+// Shared NDJSON logging (operations.md section Logging format).
 // Serilog as the host logger, emitting the shared schema (ts/level first) via the
 // custom GertNdjsonFormatter. FromLogContext picks up the per-request comp/req/uid
 // pushed by RequestLogContextMiddleware. Never logs tokens/raw sub/email/content.
@@ -88,7 +88,6 @@ builder.Host.UseSerilog((context, loggerConfiguration) =>
     }
 });
 
-// --- Service layer (host-agnostic) -----------------------------------------
 // NoStoreByDefaultFilter stamps Cache-Control: no-store on every controller response
 // that doesn't set its own - per-user data must never be cached by an intermediary
 // (Caddy/CDN/proxy) and handed to another user (principles.md #1).
@@ -132,7 +131,7 @@ builder.Services.AddOptions<Gert.Service.Chat.TurnOptions>()
 // each tool needs (IChatModelClient / IEmbeddingClient / IWebSearch / IPythonSandbox)
 // are registered by the Gert.Chat/Tools/Ingestion adapters (or a Testing host's fakes).
 
-// --- Auth (auth.md section ASP.NET Core wiring) -----------------------------------
+// Auth (auth.md section ASP.NET Core wiring).
 // AddGertJwtAuth also registers IHttpContextAccessor + IUserContext (HttpUserContext).
 builder.Services.AddGertJwtAuth(builder.Configuration);
 builder.Services.AddGertAuthorization();
@@ -146,7 +145,7 @@ builder.Services.Replace(ServiceDescriptor.Scoped<IUserContext>(sp =>
         ? ActivatorUtilities.CreateInstance<HttpUserContext>(sp)
         : sp.GetRequiredService<DetachedUserContext>()));
 
-// --- DEV/TEST ONLY: trust a static dev JWKS file (testing.md section 4.3) -----------
+// DEV/TEST ONLY: trust a static dev JWKS file (testing.md section 4.3).
 // The E2E harness (tools/smoke) mints RS256 tokens with a git-ignored dev key and
 // writes the matching dev-jwks.json. When Gert:Dev:JwksPath is set AND we are NOT
 // in Production, point JwtBearer's signing keys at that file so python-minted
@@ -205,12 +204,12 @@ if (devJwksActive)
         });
 }
 
-// --- Security headers + CSP (security F1, operations.md section headers) -----------
+// Security headers + CSP (security F1, operations.md section headers).
 // Binds the Pocket ID origin from Auth:Authority so the CSP's connect-src lists
 // exactly 'self' + the IdP.
 builder.Services.AddGertSecurityHeaders(builder.Configuration);
 
-// --- Per-user rate limiting (security F10) -----------------------------------
+// Per-user rate limiting (security F10).
 // Partitioned by token sub (IP fallback for anonymous). Skipped under Testing so
 // the integration suite is never throttled.
 var rateLimitingEnabled = !builder.Environment.IsEnvironment("Testing");
@@ -247,7 +246,7 @@ builder.Services.PostConfigure<JwtBearerOptions>(
                 "You do not have permission to access this resource.");
     });
 
-// --- Storage seam (storage-and-data.md section lazy provisioning) -----------------
+// Storage seam (storage-and-data.md section lazy provisioning).
 // One AddGert<Capability><Impl> per adapter (dotnet-style-guide.md section 4). Database is a
 // keyed capability-plugin like chat: AddGertDatabase wires the GENERIC engine selector
 // (Gert:Database:Type) + the three provider ports; AddGertDatabaseSqlite makes the SQLite engine
@@ -271,7 +270,7 @@ builder.Services.AddGertStorageLocal(builder.Configuration);
 // run left interrupted (the deletion journal + the idempotent eraser are wired above).
 builder.Services.AddHostedService<Gert.Api.Lifecycle.DeletionRecoveryService>();
 
-// --- External-world ports ----------------------------------------------------
+// External-world ports.
 // One AddGert* per functionality (dotnet-style-guide.md section 4). Chat is split into the
 // GENERIC layer (AddGertChat: the impl-agnostic provider catalog + keyed-plugin chat-client
 // factory + IChatProviderCatalog) and the IMPLEMENTATION plugins the composition root makes
@@ -294,8 +293,8 @@ builder.Services.AddGertSandboxGVisor(builder.Configuration);
 builder.Services.AddGertIngestion(builder.Configuration);
 
 // One consistent, Gert-branded ProblemDetails contract: stamp every problem with
-// the service marker + a traceId (Change B). The customizer runs for framework-
-// produced problems and is reused by GertProblem.WriteAsync for the hand-written ones.
+// the service marker + a traceId. The customizer runs for framework-produced
+// problems and is reused by GertProblem.WriteAsync for the hand-written ones.
 builder.Services.AddProblemDetails(options =>
     options.CustomizeProblemDetails = ctx =>
         GertProblem.Stamp(ctx.ProblemDetails, ctx.HttpContext));
@@ -335,7 +334,10 @@ if (!app.Configuration.GetSection("Gert:Chat:Providers").GetChildren().Any())
         app.Environment.EnvironmentName);
 }
 
-// Map exceptions (e.g. ValidationException from chat phase 1) to branded problems.
+// Resolve the chat catalog now so a bad Gert:Chat:DefaultProvider (a name matching no configured
+// provider) fails at boot, not on the first request (configuration.md section providers).
+_ = app.Services.GetRequiredService<Gert.Chat.IChatProviderCatalog>();
+
 app.UseExceptionHandler();
 
 // HSTS in non-Development (security F9). We assume HTTPS via the TLS-terminating
@@ -366,7 +368,7 @@ app.UseStaticFiles(new StaticFileOptions
         ctx.Context.Response.Headers.CacheControl = "no-cache",
 });
 
-// --- DEV/TEST ONLY: serve the component-unit harness (testing.md section 8) ---------
+// DEV/TEST ONLY: serve the component-unit harness (testing.md section 8).
 // Maps tests/web/ at /tests/ so harness.html can import the real app modules on
 // the same origin (/components, /state, ...). Gated by Gert:Web:TestHarness AND
 // non-Production, so the dev-only test surface never ships to prod.

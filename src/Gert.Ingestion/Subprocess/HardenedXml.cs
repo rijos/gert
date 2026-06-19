@@ -20,14 +20,12 @@ public static class HardenedXml
         DtdProcessing = DtdProcessing.Prohibit,
         // No resolver -> external entities / external DTDs cannot be fetched.
         XmlResolver = null,
-        // Close the underlying input when the reader is disposed.
         CloseInput = true,
         // Belt-and-braces entity-expansion cap, should a future change ever relax
         // DtdProcessing above (0 means "no limit", so we set a concrete ceiling).
         MaxCharactersFromEntities = 1024,
     };
 
-    /// <summary>Create a hardened reader over a stream.</summary>
     public static XmlReader CreateReader(Stream input)
     {
         ArgumentNullException.ThrowIfNull(input);

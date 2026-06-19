@@ -4,14 +4,12 @@ using Gert.Service.Documents;
 namespace Gert.Service.Validation.Validators;
 
 /// <summary>
-/// Validates a <see cref="DocumentUpload"/> - the upload gate is <b>extension
-/// allowlist + size + length + non-empty + content-type</b> only (decision: the
-/// filename is display metadata, not a storage path). The blob is stored under a fully
-/// server-generated <c>files/{doc-id}</c> key (no extension) and the original name is
-/// base64'd into <c>documents.filename</c>; because the filename never reaches a storage
-/// path, this gate does <b>not</b> sanitize it for path traversal - exotic names are
-/// preserved and display safety is the SPA's job (text node + bidi-isolate). The
-/// extension allowlist is purely a file-type gate.
+/// Validates a <see cref="DocumentUpload"/>: extension allowlist + size + length +
+/// non-empty + content-type only. The filename is display metadata, not a storage path -
+/// the blob lands under a server-generated <c>files/{doc-id}</c> key (no extension) and
+/// the original name is base64'd into <c>documents.filename</c>. Because the filename
+/// never reaches a storage path, this gate does <b>not</b> sanitize it for path traversal:
+/// exotic names are preserved and display safety is the SPA's job (text node + bidi-isolate).
 /// </summary>
 public sealed class DocumentUploadValidator : AbstractValidator<DocumentUpload>
 {

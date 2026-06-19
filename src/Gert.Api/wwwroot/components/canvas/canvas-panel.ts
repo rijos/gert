@@ -96,7 +96,6 @@ export const CanvasPanel = component({
     CanvasBar(),
     div(
       { class: "canvas-stage" },
-      // one viewer per artifact; only the active (non-KB) one shows.
       () =>
         div(
           { style: "display:contents" },
@@ -108,7 +107,6 @@ export const CanvasPanel = component({
             }),
           ),
         ),
-      // empty hint when no artifacts and KB not shown
       () =>
         !artifacts.artifacts.length && !ui.showKnowledge.val
           ? div(

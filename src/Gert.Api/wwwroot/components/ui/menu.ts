@@ -45,12 +45,9 @@ export const Menu = component({
       padding: 8px 10px 6px;
     }
   `,
-  // trigger: node (the button). open: van.state(boolean). header optional.
-  // children: menu rows.
   // `= {} as MenuProps` keeps the no-arg default while typing `trigger`/`open`
   // as required (so `open.val` type-checks).
   view: ({ trigger, open, wrapClass = "model-picker", children = [] }: MenuProps = {} as MenuProps) => {
-    // -- logic -----------------------------------
     const onDoc = () => {
       open.val = false;
       // a menu unmounted while open never re-runs the pruned derive below -
@@ -58,7 +55,6 @@ export const Menu = component({
       if (!wrap.isConnected) document.removeEventListener("click", onDoc);
     };
 
-    // -- content ---------------------------------
     const wrap = div(
       { class: () => wrapClass + (open.val ? " open" : "") },
       trigger,

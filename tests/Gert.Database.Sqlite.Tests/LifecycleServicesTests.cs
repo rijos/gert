@@ -81,7 +81,6 @@ public class LifecycleServicesTests
         var updated = await h.Settings.UpdateAsync(Proof.Of(new UpdateSettingsRequest { ReplyLanguage = "nl" }));
         updated.ReplyLanguage.Should().Be("nl");
 
-        // Persisted across reads.
         (await h.Settings.GetAsync()).ReplyLanguage.Should().Be("nl");
     }
 
@@ -316,8 +315,6 @@ public class LifecycleServicesTests
         (await h.Admin.DeleteUserAsync("../alice")).Should().BeFalse();
         Directory.GetDirectories(root.UsersDir).Should().NotBeEmpty();
     }
-
-    // ---- deletion crash-consistency (the journal + forward recovery) --------
 
     [Fact]
     public async Task Delete_account_clears_the_deletion_marker()

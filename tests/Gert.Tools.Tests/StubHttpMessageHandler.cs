@@ -18,10 +18,8 @@ public sealed class StubHttpMessageHandler : HttpMessageHandler
         _responder = responder ?? throw new ArgumentNullException(nameof(responder));
     }
 
-    /// <summary>The body of the most recent request, as a string.</summary>
     public string? LastRequestBody { get; private set; }
 
-    /// <summary>The most recent request URI.</summary>
     public Uri? LastRequestUri { get; private set; }
 
     /// <inheritdoc />

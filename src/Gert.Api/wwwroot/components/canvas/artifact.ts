@@ -1,8 +1,8 @@
-// components/canvas/artifact.js - polymorphic dispatcher: picks a viewer by
-// artifact.kind, wraps it with the shared header + Preview/Source mode state.
-// Owns the shared artifact shell CSS (.art-head, .art-body, .source-view, the
-// data-mode render/source toggle). The header is a trivial single-use leaf, so
-// it lives here as ArtifactHead rather than its own file.
+// Polymorphic dispatcher: picks a viewer by artifact.kind, wraps it with the
+// shared header + Preview/Source mode state. Owns the shared artifact shell CSS
+// (.art-head, .art-body, .source-view, the data-mode render/source toggle). The
+// header is a trivial single-use leaf, so it lives here as ArtifactHead rather
+// than its own file.
 import van from "/lib/van.js";
 import type { State } from "/lib/van.js";
 import { component } from "../../lib/component.js";
@@ -17,16 +17,11 @@ import { CodeArtifact } from "./artifacts/code-artifact.js";
 
 const { section, div, span, button } = van.tags;
 
-// The dispatch is polymorphic: one of several sibling viewers is picked by kind
-// and invoked with the same { artifact, mode } shell. The viewers' own param
-// types vary (e.g. code-artifact narrows `problems` to its lint shape), so the
-// table is typed by the uniform call signature the dispatcher actually uses;
-// the `as` records that the heterogeneous viewers share this calling contract.
+// The viewers' param types vary (e.g. code-artifact narrows `problems` to its
+// lint shape), so ViewerFn is the uniform call signature the dispatcher uses;
+// the `as unknown as` double casts below assert each viewer shares that contract.
 type ViewerFn = (props: { artifact: ArtifactRow; mode: State<string> }) => Element;
 
-// `as unknown as ViewerFn`: each viewer's declared param differs (code-artifact
-// narrows `problems`), so they do not directly overlap ViewerFn; the double cast
-// asserts the shared calling contract the dispatcher relies on.
 const CodeViewer = CodeArtifact as unknown as ViewerFn;
 const VIEWERS: Record<string, ViewerFn> = {
   md: MarkdownArtifact as unknown as ViewerFn,
@@ -64,10 +59,9 @@ const downloadArtifact = (artifact: ArtifactRow) => {
   URL.revokeObjectURL(url);
 };
 
-// type badge + name + Preview/Source seg toggle (every kind has both modes,
-// so every head renders the same chrome at the same height) + download. Code
-// kinds additionally show a problem count beside the toggle. `mode` is the
-// van.state owned by Artifact below.
+// type badge + name + Preview/Source seg toggle + download; code kinds also show
+// a problem count. Every kind has both modes, so every head renders the same
+// chrome at the same height. `mode` is the van.state owned by Artifact below.
 const ArtifactHead = (
   { artifact, mode, code = false }: { artifact: ArtifactRow; mode: State<string>; code?: boolean },
 ) =>
@@ -222,13 +216,12 @@ export const Artifact = component({
       tab-size: 2;
     }
   `,
-  // logic: per-artifact mode state, the kind-dispatched Viewer + its code flag,
-  // and the lazy-mount latch. The DOM-scoped derive that flips the latch stays
-  // in `view` (it must be pruned with the element).
+  // The DOM-scoped derive that flips the lazy-mount latch stays in `view`, not
+  // here, because it must be pruned with the element.
   setup: ({ artifact }: { artifact: ArtifactRow; active: () => boolean }) => {
     const mode = van.state("render");
     const Viewer = VIEWERS[artifact.kind] || CodeViewer;
-    const code = Viewer === CodeViewer; // code kinds get the problem count
+    const code = Viewer === CodeViewer;
 
     // Lazy mount: the viewer body fetches <img> sources and loads the artifact
     // iframe, and `display:none` does NOT stop the browser doing either - so
@@ -240,7 +233,6 @@ export const Artifact = component({
 
     return { mode, Viewer, code, seen };
   },
-  // active: () => boolean - whether this artifact's tab is selected.
   view: ({ mode, Viewer, code, seen }, { artifact, active }: { artifact: ArtifactRow; active: () => boolean }) => {
     const el = section({ class: () => "art-doc" + (active() ? " active" : ""), "data-type": artifact.kind, "data-mode": () => mode.val },
       ArtifactHead({ artifact, mode, code }),

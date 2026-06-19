@@ -1,5 +1,4 @@
-// services/admin.js - admin-only surface (requires Admin policy server-side).
-// GET/DELETE /api/admin/users, GET /api/admin/system-prompt.
+// Admin-only surface under /api/admin (requires the Admin policy server-side).
 import * as http from "./http.js";
 import type { WireSystemPrompt, WireUserSummary } from "./wire.js";
 

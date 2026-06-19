@@ -47,7 +47,6 @@ export const SegToggle = component({
       color: var(--on-accent);
     }
   `,
-  // options: [{ value, label }]; value: () => current; onSelect: (value) => void.
   // `= {} as SegToggleProps` keeps the no-arg default while typing the
   // always-passed fields as required (so `options.map` / `value()` type-check).
   view: ({ options, value, onSelect }: SegToggleProps = {} as SegToggleProps) =>

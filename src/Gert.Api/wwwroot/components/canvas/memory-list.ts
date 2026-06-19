@@ -1,8 +1,6 @@
-// components/canvas/memory-list.js - the project's memory entries, under the
-// doc list in the knowledge view. Server returns them pinned-first, then
-// newest (MemoryService.ListAsync); rows offer delete, the header an add
-// modal (title + note + pin). Pinned entries ride every system prompt, so
-// they wear the coral pin.
+// The project's memory entries, under the doc list in the knowledge view. Server
+// returns them pinned-first then newest (MemoryService.ListAsync). Pinned entries
+// ride every system prompt, so they wear the coral pin.
 import van from "/lib/van.js";
 import { reactive } from "/lib/van-x.js";
 import { component } from "../../lib/component.js";
@@ -19,11 +17,8 @@ import { t } from "../../lib/i18n.js";
 
 const { div, span, button, input, textarea, label } = van.tags;
 
-// One memory row as the server returns it (WireMemoryEntry); see the reactive `entries` list
-// below. Server sends them pinned-first, then newest.
 type MemoryEntry = WireMemoryEntry;
 
-// the setup bag: the reactive store + its load/add/delete handlers.
 interface MemoryListState {
   entries: MemoryEntry[];
   refresh: () => void;
@@ -162,14 +157,11 @@ export const MemoryList = component({
       flex: 1;
     }
   `,
-  // logic: the reactive entries store + its load/add/delete handlers. The
-  // (re)load derive is DOM-scoped (pruned with the list), so it stays in `view`.
   setup: (): MemoryListState => {
-    const entries = reactive<MemoryEntry[]>([]); // [{ id, title, pinned, updated_at }]
+    const entries = reactive<MemoryEntry[]>([]);
 
     const refresh = () =>
       attempt(async () => {
-        // list() resolves the typed WireMemoryEntry rows straight off http.get<T>.
         const items = await memorySvc.list();
         entries.length = 0;
         items.forEach((m) => entries.push(m));

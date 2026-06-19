@@ -16,7 +16,6 @@ public sealed class LocalDeletionJournal : IDeletionJournal
 
     private readonly string _dir;
 
-    /// <summary>Resolve the journal directory under the shared <see cref="StorageOptions.DataRoot"/>.</summary>
     public LocalDeletionJournal(IOptions<StorageOptions> options)
     {
         ArgumentNullException.ThrowIfNull(options);

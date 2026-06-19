@@ -1,6 +1,6 @@
-// services/http.js - fetch wrapper: base URL, in-memory Bearer header, JSON,
-// error shaping, and the app's one transient-failure policy (retry + degraded
-// health) so callers never hand-roll retries. The ONLY token reader is auth.js (F2).
+// fetch wrapper: base URL, in-memory Bearer header, JSON, error shaping, and the
+// app's one transient-failure policy (retry + degraded health) so callers never
+// hand-roll retries. The ONLY token reader is auth.js (F2).
 import { getToken } from "./auth.js";
 import * as health from "../state/health.js";
 
@@ -66,7 +66,6 @@ const send = async (path: string, init: RequestInit, retry: boolean): Promise<un
     try {
       res = await fetch(BASE + path, init);
     } catch {
-      // no response - a network/connection drop
       if (retry && attempt < MAX_ATTEMPTS) {
         await sleep(backoffMs(attempt, null));
         continue;
@@ -149,7 +148,6 @@ export async function* sse(
       if (done) break;
       buf += decoder.decode(value, { stream: true });
       let sep: number;
-      // events are separated by a blank line
       while ((sep = buf.indexOf("\n\n")) >= 0) {
         const raw = buf.slice(0, sep);
         buf = buf.slice(sep + 2);

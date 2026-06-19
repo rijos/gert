@@ -17,7 +17,6 @@ const { div, span, button } = van.tags;
 export const ArtifactChips = component({
   name: "artifact-chips",
   css: `
-    /* artifact chips: the files this message produced, one click from the canvas */
     .artifact-strip {
       display: flex;
       flex-wrap: wrap;

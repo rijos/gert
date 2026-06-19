@@ -94,8 +94,6 @@ public sealed class AdminService : IAdminService
         return await _eraser.EraseAsync(key, cancellationToken).ConfigureAwait(false);
     }
 
-    // ---- helpers -----------------------------------------------------------
-
     private async Task<string?> UsernameForAsync(string key, CancellationToken cancellationToken)
     {
         await using var repo = await _userDatabases.OpenByKeyAsync(key, cancellationToken).ConfigureAwait(false);

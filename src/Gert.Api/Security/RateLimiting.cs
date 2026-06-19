@@ -9,16 +9,13 @@ namespace Gert.Api.Security;
 
 /// <summary>
 /// Per-user rate limiting (security F10) using the built-in
-/// <c>Microsoft.AspNetCore.RateLimiting</c> - no extra package. Each authenticated
-/// caller gets its own partition keyed by the token <c>(iss, sub)</c> pair (anonymous
-/// traffic falls back to the remote IP), so one client - or one stolen token -
-/// can't saturate the box, while one user's bursts never throttle another's.
-/// Limits are lenient (the deployment is ~20 trusted users), and the limiter is
-/// applied to the <c>/api/*</c> surface only. A rejected request returns a branded
-/// <c>429</c> ProblemDetails. The limits bind from <see cref="PolicyOptions"/>
-/// (<c>Gert:RateLimiting</c>) with the lenient defaults, which is what lets
-/// <c>RateLimitingTests</c> turn the cap down and prove the control without
-/// hammering the TestServer 600 times.
+/// <c>Microsoft.AspNetCore.RateLimiting</c>. Each authenticated caller gets its own
+/// partition keyed by the token <c>(iss, sub)</c> pair (anonymous traffic falls back
+/// to the remote IP), so one client - or one stolen token - can't saturate the box,
+/// while one user's bursts never throttle another's. Limits are lenient (the deployment
+/// is ~20 trusted users) and applied to the <c>/api/*</c> surface only; a rejected
+/// request returns a branded <c>429</c> ProblemDetails. Limits bind from
+/// <see cref="PolicyOptions"/> so tests can turn the cap down to prove the control.
 /// </summary>
 public static class RateLimiting
 {
@@ -26,44 +23,37 @@ public static class RateLimiting
     public const string PerUserPolicy = "per-user";
 
     /// <summary>
-    /// Operator knobs for the per-user limiter (security F10), bound from the
-    /// <c>Gert:RateLimiting</c> configuration section
-    /// (docs/installation/configuration.md). Defaults are the production posture -
-    /// a generous 600-requests / 1-minute fixed window - so leaving the section
-    /// absent changes nothing. Nested companion of <see cref="RateLimiting"/>: the
-    /// knobs exist only for this policy.
+    /// Operator knobs for the per-user limiter (security F10), bound from
+    /// <c>Gert:RateLimiting</c> (docs/installation/configuration.md). Defaults are the
+    /// production posture - a generous 600-requests / 1-minute fixed window - so
+    /// leaving the section absent changes nothing.
     /// </summary>
     public sealed class PolicyOptions
     {
-        /// <summary>The configuration section these options bind from.</summary>
         public const string SectionName = "Gert:RateLimiting";
 
         /// <summary>
         /// Max requests per partition (per user / per anonymous IP) within one
-        /// window. Default: 600 - a DoS brake, not a usage quota. Non-secret.
+        /// window. Default: 600 - a DoS brake, not a usage quota.
         /// </summary>
         [Range(1, int.MaxValue)]
         public int PermitLimit { get; set; } = 600;
 
-        /// <summary>
-        /// The fixed window length. Default: 1 minute (<c>00:01:00</c>). Non-secret.
-        /// </summary>
+        /// <summary>The fixed window length. Default: 1 minute.</summary>
         [Range(typeof(TimeSpan), "00:00:01", "1.00:00:00")]
         public TimeSpan Window { get; set; } = TimeSpan.FromMinutes(1);
     }
 
     /// <summary>
-    /// Register the per-user fixed-window limiter. Lenient by design; callers apply
-    /// it via the <see cref="PerUserPolicy"/> on the controller pipeline. Not added in
-    /// the Testing environment (the caller guards that) so the suite isn't throttled.
+    /// Register the per-user fixed-window limiter, applied via <see cref="PerUserPolicy"/>
+    /// on the controller pipeline. Not added in the Testing environment (the caller
+    /// guards that) so the suite isn't throttled.
     /// </summary>
     public static IServiceCollection AddGertRateLimiting(this IServiceCollection services)
     {
         ArgumentNullException.ThrowIfNull(services);
 
-        // Fail-fast options idiom (dotnet-style-guide section 4). BindConfiguration pulls
-        // the host's registered IConfiguration, keeping the call site signature-free
-        // (Program.cs passes nothing) while a bad knob still fails at startup.
+        // Fail-fast options idiom (dotnet-style-guide section 4): a bad knob fails at startup.
         services.AddOptions<PolicyOptions>()
             .BindConfiguration(PolicyOptions.SectionName)
             .ValidateDataAnnotations()
@@ -87,11 +77,10 @@ public static class RateLimiting
     }
 
     /// <summary>
-    /// Partition on the token <c>(iss, sub)</c> pair - the same identity anchor as
-    /// the user folder key (principles.md: the user is <c>sha256(iss + sub)</c>, so
-    /// a bare <c>sub</c> could collide across two IdPs) - falling back to the remote
-    /// IP for anonymous traffic. A generous fixed window - the cap is a DoS brake,
-    /// not a usage quota. Limits come from the bound <see cref="PolicyOptions"/>.
+    /// Partition on the token <c>(iss, sub)</c> pair - the same identity anchor as the
+    /// user folder key (principles.md: the user is <c>sha256(iss + sub)</c>, so a bare
+    /// <c>sub</c> could collide across two IdPs) - falling back to the remote IP for
+    /// anonymous traffic.
     /// </summary>
     private static RateLimitPartition<string> PartitionForRequest(HttpContext httpContext)
     {

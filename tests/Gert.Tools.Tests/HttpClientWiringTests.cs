@@ -28,8 +28,8 @@ public sealed class HttpClientWiringTests
         var configuration = new ConfigurationBuilder().AddInMemoryCollection(settings ?? []).Build();
         var services = new ServiceCollection();
         services.AddLogging();
-        // The generic layer + the shipped plugins (the SearXNG named HttpClient and the monty
-        // parameters/HttpClient + relation check live in their plugins now).
+        // Generic layer + shipped plugins: the SearXNG named HttpClient and the monty
+        // parameters/HttpClient + relation check live in their plugins.
         services.AddGertTools(configuration);
         services.AddGertSearchSearXNG();
         services.AddGertSandboxMonty(configuration);

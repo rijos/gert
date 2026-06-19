@@ -68,11 +68,11 @@ block follow in sections 3-7.
       // Provider catalog for the picker - a map keyed by provider slug (the GET /api/models
       // id). Empty -> one default "OpenAI" provider is synthesized from
       // Gert:Embeddings:Parameters:BaseUrl (single-vLLM zero-config boot). See section 4.
+      "DefaultProvider": "qwen36-thinking",  // the picker's default; a slug, unset -> first entry
       "Providers": {
         "qwen36-thinking": {
           "Name": "Qwen 3.6 - thinking",
           "Type": "openai",                 // selects the chat-client impl (only "openai" today)
-          "Default": true,                   // the cascade's server default; flag exactly one
           "Capabilities": [ "tools", "vision" ],
           "Context": 131072,
           "Parameters": {
@@ -187,6 +187,11 @@ empty, the catalog falls back to a **single default `openai` provider** built fr
 `Gert:Embeddings:Parameters:BaseUrl` (upstream model `default`), so the picker always has one
 real option; an operator who configures `Gert:Chat:Providers` takes over completely.
 
+**The picker's default** is `Gert:Chat:DefaultProvider` - a chat-level key (a sibling of
+`Providers`) naming the default provider's slug. Exactly one provider is the default *by
+construction*; **unset** falls back to the first entry in document order, and a value matching
+no configured slug is a **startup error** that names the valid slugs.
+
 The split is **catalog/capabilities on the entry, connection + sampling + per-item resilience
 under `Parameters`:**
 
@@ -194,7 +199,6 @@ under `Parameters`:**
 |-----|----------|-------|
 | `Name` | no | Display name in the picker. Defaults to the slug. |
 | `Type` | no | Selects the chat-client implementation. `"openai"` (default) is the only one implemented - an OpenAI-compatible / vLLM endpoint; the schema is open for others (`"anthropic"`, ...). |
-| `Default` | no | The server-level default of the config cascade - the picker's initial selection. Flag exactly one. |
 | `Capabilities` | no | Capability tokens, shown as badges. `"tools"` is **load-bearing**: it gates tool calling. **Unset (null) means permissive** - the provider is assumed tool-capable; an explicit list *without* `"tools"` (e.g. `["text only"]`) disables tools for that provider. Other tokens (`"vision"`, ...) are display-only today. |
 | `Context` | no | Context window in tokens - the "128K ctx" badge. vLLM reports it as `max_model_len` on `GET /v1/models`. Unset hides the badge. |
 | `Fast` | no | Display-only "- fast" marker. |
@@ -224,11 +228,11 @@ with different sampling. The canonical Qwen 3.6 pair:
 
 ```jsonc
 "Chat": {
+  "DefaultProvider": "qwen36-thinking",
   "Providers": {
     "qwen36-thinking": {
       "Name": "Qwen 3.6 - thinking",
       "Type": "openai",
-      "Default": true,
       "Capabilities": [ "tools", "vision" ],
       "Context": 131072,
       "Parameters": {

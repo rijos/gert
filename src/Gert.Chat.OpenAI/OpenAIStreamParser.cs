@@ -129,13 +129,11 @@ public sealed class OpenAIStreamParser
             }
         }
 
-        // Tool-call fragments - buffer by index.
         foreach (var fragment in update.ToolCallUpdates)
         {
             BufferToolCallFragment(fragment, chunks);
         }
 
-        // finish_reason ends the turn.
         if (update.FinishReason is { } finishReason)
         {
             _finishReason = MapFinishReason(finishReason);
