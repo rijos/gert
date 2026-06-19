@@ -127,8 +127,8 @@ tools/
       test_rbac.py              #   admin sees /admin/users; user gets 403; IDOR blocked;
                                 #   entitlement ceiling (limited) + absent-claim -> no tools
       test_chrome.py            #   theme toggle - responsive drawers - model picker
-      test_style.py             #   style invariants: uniform artifact-header height, Preview/Source
-                                #   on every kind, ask_user card states, tokens resolve, theme flips, css minify
+      test_style.py             #   style invariants: uniform artifact-header height, Preview/Source on
+                                #   render/raw kinds (code = preview only), ask_user states, tokens, theme, css minify
       test_a11y.py              #   WCAG guards: role=switch, dialog focus, decorative icons, main+skip+title, live toasts
       test_llm_tools.py         #   artifacts, memory retrieval, todos, clock through the tool loop
       test_auth_smoke.py        #   API auth smoke (httpx, no browser): invalid/missing tokens rejected

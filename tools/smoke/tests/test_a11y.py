@@ -84,7 +84,9 @@ def test_modal_is_a_dialog_with_focus_moved_in(page: Page, base_url: str) -> Non
 
 
 @pytest.mark.component
-def test_icon_is_decorative_by_default_and_named_on_demand(page: Page, base_url: str) -> None:
+def test_icon_is_decorative_by_default_and_named_on_demand(
+    page: Page, base_url: str
+) -> None:
     """WCAG 1.1.1: Icon() is the root of ~56 call sites. A bare icon must be hidden from AT
     (decorative); a genuinely standalone icon opts in via `label` and becomes a named image."""
     page.goto(f"{base_url}/tests/harness.html")

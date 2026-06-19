@@ -1,10 +1,11 @@
 """test_style.py - visual/style invariants over harness-mounted components.
 
 Pin the UI contracts that pure DOM assertions miss: every artifact kind shares
-ONE header height and the Preview/Source toggle, the code viewer grew a real
-source mode, the ask_user question card renders its option list, and the
-design tokens actually resolve (a broken tokens.css would zero them out
-silently). All deterministic harness mounts - no model round-trip.
+ONE header height; the render/raw kinds carry a Preview/Source toggle while a
+code artifact shows only its highlighted preview; the ask_user question card
+renders its option list; and the design tokens actually resolve (a broken
+tokens.css would zero them out silently). All deterministic harness mounts - no
+model round-trip.
 """
 
 from __future__ import annotations
@@ -45,9 +46,9 @@ def _mount_all_kinds(page: Page, base_url: str) -> None:
 def test_artifact_header_height_is_uniform_across_kinds(
     page: Page, base_url: str
 ) -> None:
-    """Every artifact type renders the same chrome at the same height - the
-    code kinds used to swap the seg toggle for a shorter problems line, so the
-    header jumped when switching tabs."""
+    """Every artifact type renders the same chrome at the same height. Code kinds drop the
+    Preview/Source toggle, so the head is height-anchored (artifact.js) to keep tabs from
+    jumping when switching between a code tab and a render/raw tab."""
     _mount_all_kinds(page, base_url)
     heights: dict[str, float] = {}
     for kind, _, _ in _KINDS:
@@ -60,27 +61,32 @@ def test_artifact_header_height_is_uniform_across_kinds(
     assert len(distinct) == 1, f"artifact header heights differ by kind: {heights}"
 
 
-def test_every_artifact_kind_has_a_preview_source_toggle(
+def test_only_non_code_kinds_have_a_preview_source_toggle(
     page: Page, base_url: str
 ) -> None:
+    """The render/raw kinds (md/html/svg) carry the Preview/Source toggle; a code artifact's
+    preview IS its highlighted source, so it has none."""
     _mount_all_kinds(page, base_url)
-    for kind, _, _ in _KINDS:
+    for kind in ("md", "html", "svg"):
         seg = page.locator(f".art-doc[data-type='{kind}'] .art-head .seg .sgb")
         expect(seg).to_have_count(2)
+    # the code kind shows only the preview - no toggle.
+    expect(page.locator(".art-doc[data-type='py'] .art-head .seg")).to_have_count(0)
 
 
-def test_code_artifact_source_mode_shows_raw_unnumbered_text(
+def test_code_artifact_shows_only_the_numbered_preview(
     page: Page, base_url: str
 ) -> None:
+    """Code artifacts render just the numbered, highlighted preview - no toggle, and the raw
+    source pane is never shown."""
     _mount_all_kinds(page, base_url)
     doc = page.locator(".art-doc[data-type='py']")
-    # Preview: the numbered, linted view.
+    # the numbered, linted preview is visible and carries the code...
     expect(doc.locator(".code-scroll .cline .lnum").first).to_be_visible()
-    # Source: the raw text without the gutter, clean to copy.
-    doc.locator(".art-head button", has_text="Source").click()
-    expect(doc.locator(".source-view")).to_be_visible()
-    expect(doc.locator(".source-view")).to_contain_text("print(2 + 2)")
-    expect(doc.locator(".code-scroll")).not_to_be_visible()
+    expect(doc.locator(".code-scroll")).to_contain_text("print(2 + 2)")
+    # ...with no toggle and no raw source pane shown.
+    expect(doc.locator(".art-head .seg")).to_have_count(0)
+    expect(doc.locator(".source-view")).not_to_be_visible()
 
 
 def test_ask_user_question_card_renders_options_and_answered_state(

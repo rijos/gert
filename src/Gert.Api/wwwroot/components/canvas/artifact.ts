@@ -77,15 +77,19 @@ const ArtifactHead = (
           () => (artifact.problems?.length || 0) + " problems",
         )
       : null,
-    SegToggle({
-      label: t("View mode"),
-      options: [
-        { value: "render", label: t("Preview") },
-        { value: "source", label: t("Source") },
-      ],
-      value: () => mode.val,
-      onSelect: (v: string) => (mode.val = v),
-    }),
+    // A code artifact's preview IS its highlighted source, so it needs no Preview/Source
+    // toggle - only the other kinds (rendered vs raw markup) do.
+    code
+      ? null
+      : SegToggle({
+          label: t("View mode"),
+          options: [
+            { value: "render", label: t("Preview") },
+            { value: "source", label: t("Source") },
+          ],
+          value: () => mode.val,
+          onSelect: (v: string) => (mode.val = v),
+        }),
     button({ class: "art-dl", title: t("Download"), "aria-label": "Download " + (artifact.name || "artifact"), onclick: () => downloadArtifact(artifact) },
       Icon("download", { size: 14, strokeWidth: 2 }),
     ),
@@ -98,7 +102,10 @@ export const Artifact = component({
       display: flex;
       align-items: center;
       gap: 9px;
-      padding: 11px 13px;
+      /* fixed height anchored to the download control (in every kind) so the header doesn't
+         jump when switching to a code tab, which has no Preview/Source toggle. */
+      height: 48px;
+      padding: 0 13px;
       border-bottom: 1px solid var(--line);
       flex: none;
     }
