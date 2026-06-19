@@ -89,8 +89,11 @@ builder.Host.UseSerilog((context, loggerConfiguration) =>
 });
 
 // --- Service layer (host-agnostic) -----------------------------------------
+// NoStoreByDefaultFilter stamps Cache-Control: no-store on every controller response
+// that doesn't set its own - per-user data must never be cached by an intermediary
+// (Caddy/CDN/proxy) and handed to another user (principles.md #1).
 builder.Services
-    .AddControllers()
+    .AddControllers(options => options.Filters.Add<Gert.Api.Security.NoStoreByDefaultFilter>())
     .AddJsonOptions(o => Gert.Model.Json.GertJsonOptions.Configure(o.JsonSerializerOptions));
 
 // Ingestion worker: a Channel-backed queue drained by a BackgroundService so
@@ -317,6 +320,21 @@ if (devJwksActive)
         devJwksPath);
 }
 
+// Operator-visible startup diagnostic: name the hosting environment, and warn when no chat
+// providers are configured. .NET user-secrets load ONLY in the Development environment, so a
+// host started anywhere else silently drops secret-configured providers and falls back to the
+// single synthesized default - which reads to an operator as "my test endpoints vanished".
+// Make that loud instead of a mystery (same spirit as the dev-JWKS tripwire above).
+app.Logger.LogInformation("Gert starting in {Environment} environment", app.Environment.EnvironmentName);
+if (!app.Configuration.GetSection("Gert:Chat:Providers").GetChildren().Any())
+{
+    app.Logger.LogWarning(
+        "No chat providers configured (Gert:Chat:Providers is empty) in {Environment} - serving the " +
+        "single synthesized default. If you expected configured providers: user-secrets load only in " +
+        "Development; in any other environment supply them via env vars (Gert__Chat__Providers__...).",
+        app.Environment.EnvironmentName);
+}
+
 // Map exceptions (e.g. ValidationException from chat phase 1) to branded problems.
 app.UseExceptionHandler();
 
@@ -333,7 +351,20 @@ if (!app.Environment.IsDevelopment() && !app.Environment.IsEnvironment("Testing"
 app.UseGertSecurityHeaders();
 
 app.UseDefaultFiles();
-app.UseStaticFiles();
+
+// Static-asset cache posture: the bundle keeps STABLE names (app.js/app.css) and busts via
+// ETag (Gert.Web.Bundle - never content-hashed names), so the right header is REVALIDATION,
+// not immutable. no-cache = "store but revalidate before use": the static-file middleware
+// already emits ETag/Last-Modified, so a browser/CDN sends If-None-Match and gets a cheap 304
+// when unchanged - but can never serve a stale bundle after a deploy. Without an explicit
+// header an intermediary may apply heuristic caching, which for a deploy-sensitive SPA is the
+// failure we're closing. The HTML shell served via the client-route fallback (below) is
+// covered by SecurityHeadersMiddleware, which stamps the same header on text/html.
+app.UseStaticFiles(new StaticFileOptions
+{
+    OnPrepareResponse = static ctx =>
+        ctx.Context.Response.Headers.CacheControl = "no-cache",
+});
 
 // --- DEV/TEST ONLY: serve the component-unit harness (testing.md section 8) ---------
 // Maps tests/web/ at /tests/ so harness.html can import the real app modules on

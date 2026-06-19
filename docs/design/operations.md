@@ -71,6 +71,31 @@ Permissions-Policy: (minimised - camera=(), microphone=(), geolocation=() ...)
 - The HTML/SVG artifact iframe is `srcdoc` with its **own** restrictive CSP and a `sandbox`
   attribute that omits `allow-same-origin` ([ui-components](ui-components.md#security-token-handling--rendering)).
 
+### HTTP caching
+
+Gert serves per-user data from a token-scoped store ([principle #1](principles.md)), so an
+intermediary cache (the Caddy edge, a CDN, a corporate proxy) that cached an authenticated
+response could hand one user's data to another. The cache posture is therefore fail-closed and
+set at the **origin**, so it stays correct behind any cache:
+
+- **API responses (controllers):** `Cache-Control: no-store` by default. A global MVC filter
+  (`NoStoreByDefaultFilter`) stamps it on every controller response that didn't set its own, so
+  the guarantee holds for the whole controller surface by construction (an integration meta-test
+  asserts it). An endpoint that genuinely wants caching sets its own header and the filter yields.
+- **SPA shell + static assets:** `Cache-Control: no-cache` (store-but-**revalidate**), not
+  `immutable`. The bundle keeps **stable** filenames (`app.js`/`app.css`) and busts via the
+  ETag/`Last-Modified` the static-file middleware emits
+  ([ui-components](ui-components.md#6-devrelease-pipeline-no-npm)), so a client/CDN issues a
+  conditional request and gets a cheap `304` when unchanged - but can never serve a stale bundle
+  after a deploy. The static-file `OnPrepareResponse` sets it for directly-served files;
+  `SecurityHeadersMiddleware` sets the same on any `text/html` response, covering the
+  client-route fallback that serves `index.html` outside the static-file middleware.
+
+**Compression** is the proxy's job, not the app's: the Caddy edge does `encode zstd gzip`, with
+`text/event-stream` **excluded** so the per-event flush of a chat stream is never buffered
+([deploy/compose/Caddyfile](../../deploy/compose/Caddyfile)). HTTP/3 is likewise terminated at
+the edge and forwarded to Kestrel over TCP - the app needs no in-app compression or HTTP/3.
+
 ### Logging format (shared)
 
 The **.NET app and the Python tooling/mocks** emit **one JSON object per line** (NDJSON) to

@@ -54,6 +54,16 @@ public sealed class SecurityHeadersMiddleware
                     headers["Referrer-Policy"] = "no-referrer";
                     headers["X-Frame-Options"] = "DENY";
                     headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()";
+
+                    // The SPA shell must revalidate so a deploy is never masked by a stale
+                    // cached index.html (it references the stable-named bundle, which busts via
+                    // ETag). The client-route fallback serves index.html WITHOUT the static-file
+                    // middleware's OnPrepareResponse, so this is the one choke point that covers
+                    // every HTML response; yield to a header the static path already set.
+                    if (!headers.ContainsKey("Cache-Control"))
+                    {
+                        headers["Cache-Control"] = "no-cache";
+                    }
                 }
 
                 return Task.CompletedTask;

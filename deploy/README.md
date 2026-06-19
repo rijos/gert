@@ -110,6 +110,13 @@ A few things depend on versions/upstream details this stack can't assert for you
   HTTPS isn't detected (HSTS missing, redirect loops), the app's `ForwardedHeadersOptions`
   must clear `KnownNetworks`/`KnownProxies` (or trust the Docker network) — confirm against
   a live login.
+- **Secrets come from env vars, not user-secrets, in any real deployment.** .NET
+  `dotnet user-secrets` load **only** in the `Development` environment - a deployed host
+  (Production) silently ignores them. Provider/embeddings connection + API keys must be
+  supplied as env vars (`Gert__Chat__Providers__...`, `Gert__Embeddings__Parameters__ApiKey`,
+  ...); the `.env` / ansible templates already do this. Symptom of getting it wrong: configured
+  chat providers vanish and `/api/models` shows only the single synthesized default - the app
+  logs a startup warning naming the environment when `Gert:Chat:Providers` is empty.
 - **PDF/DOCX ingestion is currently a no-op.** The `gert-extract` helper isn't shipped
   yet (`Gert:Extractor`), so md/txt ingest works but PDF/DOCX extraction returns nothing
   until the helper exists. Plain-text knowledge and everything else are unaffected.

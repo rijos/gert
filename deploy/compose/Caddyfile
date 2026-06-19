@@ -8,9 +8,22 @@
 	# acme_ca https://acme-staging-v02.api.letsencrypt.org/directory
 }
 
+# Shared compression: zstd/gzip, but NEVER text/event-stream. Compressing an SSE
+# stream makes the encoder buffer to reach a worthwhile block size, which stalls the
+# token-by-token chat stream Gert flushes per event. Excluding it keeps streaming
+# real-time; everything else (HTML/JSON/JS/CSS) still compresses. One snippet so the
+# three sites stay in sync.
+(compress) {
+	encode zstd gzip {
+		match {
+			not header Content-Type text/event-stream*
+		}
+	}
+}
+
 # The app + SPA.
 {$GERT_DOMAIN} {
-	encode zstd gzip
+	import compress
 	reverse_proxy gert:8080
 }
 
@@ -18,12 +31,12 @@
 # cross-origin isolation in the browser). Same backend - Gert serves the artifact
 # ticket route and distinguishes the origin by hostname.
 {$ARTIFACTS_DOMAIN} {
-	encode zstd gzip
+	import compress
 	reverse_proxy gert:8080
 }
 
 # Pocket ID: OIDC issuer, login UI, JWKS, discovery.
 {$ID_DOMAIN} {
-	encode zstd gzip
+	import compress
 	reverse_proxy pocket-id:1411
 }
