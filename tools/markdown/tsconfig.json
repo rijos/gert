@@ -1,0 +1,29 @@
+{
+  // tsgo CHECKER config for the markdown fuzz harness (docs/design/typescript-migration.md).
+  // This is a Node dev tool, NOT served, so it is type-checked by tsgo ONLY - never bundled or
+  // transpiled by esbuild. It RUNS via Node 24's native type-stripping (`node check.ts`), so intra
+  // imports keep their ".ts" specifiers (allowImportingTsExtensions). Node built-ins + globals are
+  // declared in node-shims.d.ts (no @types/node -> no npm). The SPA renderer it loads at runtime is
+  // the transpiled .js and is not in this program.
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "lib": ["ES2022"],
+    "types": [],
+
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
+    "noEmit": true
+  },
+  "include": ["**/*.ts"]
+}

@@ -1,0 +1,49 @@
+{
+  // The SPA's TypeScript CHECKER config (see docs/design/typescript-migration.md section 4).
+  // tsgo (TypeScript 7 native Go checker) reads this; it is a checker only - "noEmit": true.
+  // esbuild owns ALL emit: per-file transpile in dev, the app.ts bundle on release. esbuild
+  // does NOT read this file (the release bundler writes its own throwaway baseUrl+paths
+  // tsconfig - esbuild warns on options it does not understand).
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    // "Bundler" resolves both absolute same-origin specifiers ("/lib/van.js") via "paths"
+    // below and relative ones ("./x.js") - the right model for a no-Node browser target whose
+    // modules are served by URL, not run through Node resolution.
+    "moduleResolution": "Bundler",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": [],
+
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+
+    // Imports keep their ".js" specifiers (never ".ts"); the browser and the smoke suite load
+    // modules by their canonical ".js" URL. tsgo rewrites the ".js" lookup to the ".ts" source.
+    "allowImportingTsExtensions": false,
+    // verbatimModuleSyntax forces `import type` for type-only imports so esbuild's per-file type
+    // elision is correct; isolatedModules enforces what that single-file transpile assumes.
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
+
+    // tsgo is a CHECKER ONLY - esbuild emits.
+    "noEmit": true,
+
+    // allowJs lets a migrated ".ts" import a not-yet-migrated app ".js" (resolved as `any`)
+    // instead of TS7016, which is what keeps each migration stage independently green (section 7).
+    // checkJs stays off (default), so the untyped ".js" bodies are never type-checked. The
+    // vendored van.js/van-x.js resolve to their ".d.ts" sidecars, which take precedence over the
+    // ".js", so van stays fully typed even with allowJs on.
+    "allowJs": true,
+
+    // Map absolute same-origin specifiers ("/lib/van.js") under wwwroot. Resolved relative to
+    // this tsconfig's directory. NOTE: TypeScript 7 REMOVED "baseUrl" (TS5102) - do not add it;
+    // "paths" alone is the supported form (verified against tsgo 7.0.0-dev.20260618.1).
+    "paths": { "/*": ["./*"] }
+  },
+  "include": ["**/*.ts"]
+}

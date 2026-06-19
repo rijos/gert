@@ -97,5 +97,8 @@ public static class EsbuildManifest
     public static Platform Current() => Platforms[CurrentRid()];
 
     private static PlatformNotSupportedException Unsupported(string os, Architecture arch) =>
-        new($"esbuild bundling is not pinned for {os}/{arch}. Add the RID to EsbuildManifest.Platforms.");
+        // CurrentRid() now feeds BOTH the esbuild bundler and the tsgo checker, so name both
+        // manifests - a RID added to only one would KeyNotFoundException in the other.
+        new($"the web toolchain is not pinned for {os}/{arch}. Add the RID to BOTH " +
+            "EsbuildManifest.Platforms and TsgoManifest.Platforms.");
 }

@@ -23,6 +23,7 @@
 
 > [!NOTE]
 > **This entire project** is almost entirely AI made, learning how I can intergrate AI in my daily work.
+> **WARNING** I keep disagreeing with the "Global" structure and choices AI makes, consider this project still in the 'scaffolding' phase while I restructure.
 
 ## Features
 

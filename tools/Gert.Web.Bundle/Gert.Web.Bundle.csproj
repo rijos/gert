@@ -3,9 +3,16 @@
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <RootNamespace>Gert.Web.Bundle</RootNamespace>
-    <!-- No-npm release bundler (ui-components.md section 6): fetches + verifies the pinned
-         esbuild Go binary and bundles the SPA on publish. BCL only (HttpClient, SHA-512,
-         System.Formats.Tar, GZipStream) - no NuGet, no npm, no Node. -->
+    <!-- No-npm web toolchain driver (ui-components.md section 6, typescript-migration.md):
+         fetches + SHA-512-verifies the pinned esbuild + tsgo Go binaries and bundles/transpiles/
+         type-checks the SPA. BCL only (HttpClient, SHA-512, System.Formats.Tar, GZipStream) -
+         no NuGet, no npm, no Node. -->
   </PropertyGroup>
+
+  <ItemGroup>
+    <!-- The manifest/verifier tests assert the fail-closed SHA-512 reject contract on the
+         internal TarballVerifier. -->
+    <InternalsVisibleTo Include="Gert.Web.Bundle.Tests" />
+  </ItemGroup>
 
 </Project>

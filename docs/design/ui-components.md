@@ -346,34 +346,71 @@ construction (full rationale in [security](security.md#3-findings--remediations)
 
 ## 6. Dev/release pipeline (no npm)
 
-The whole point of native ESM: **the dev build is "no build."** Bundling + minification is
-a publish-time concern, handled entirely by .NET driving a pinned esbuild binary.
+The SPA source is **TypeScript** (`wwwroot/**/*.ts`, plus the two vendored van `.js` + their
+`.d.ts` sidecars); imports keep their **`.js`** specifiers throughout (`from "/lib/van.js"`), which
+is what both esbuild and tsgo resolve to the `.ts` source. Two pinned **Go** binaries do all the
+work, fetched + SHA-512-verified from their npm-registry tarballs - **no npm, no Node, no
+node_modules**: **esbuild** transpiles/bundles, **tsgo** (TypeScript 7's native checker) type-checks.
+Both live in `tools/Gert.Web.Bundle`.
 
-### Development - raw source
-- `Gert.Api` serves `wwwroot/` directly in `Development` (`UseStaticFiles`,
-  no-cache, `MapFallbackToFile("index.html")`).
-- The browser loads `app.js` as a module and resolves every `import` by path. Imports are
-  **same-origin paths** - mostly relative, plus a few absolute (e.g. `/lib/van.js`) - with no
-  bare specifiers, so there is **no import map** and nothing inline for the CSP to allow:
+### Development - transpiled mirror (esbuild)
+`wwwroot/` stays **source-only**: `.ts` modules + `.css`/`.html`/assets + the vendored van `.js`.
+What's *served* is a built mirror - esbuild transpiles each `.ts` to a sibling `.js` (inline
+sourcemaps) into a temp dir, prunes the `.ts`/`.d.ts`, and the host serves that copy via
+`ASPNETCORE_WEBROOT` (`UseStaticFiles`, no-cache, `MapFallbackToFile("index.html")`). The source
+tree is never littered with emitted `.js`.
+
+- `make run` / `make dev` / `make serve-mock` and the smoke runner (`tools/smoke/run.py`) build the
+  mirror before booting; `make run`/`dev` also start esbuild `--watch`, which re-transpiles a `.ts`
+  on save (real names + line numbers via the inline maps). Non-`.js` asset edits (`.css`/`.html`)
+  need a rebuild - the one ergonomic cost. `make transpile` builds the mirror standalone.
+- The browser loads `app.js` as a module and resolves every `import` by path - **same-origin
+  paths**, no bare specifiers, **no import map**, nothing inline for the CSP to allow:
 
 ```html
 <script type="module" src="/app.js"></script>
 ```
 
-- This is what keeps the CSP a plain `script-src 'self'` with **no `sha256` hash** to maintain:
-  with no inline `<script>` there is nothing to hash, so `SecurityHeadersMiddleware.cs` carries no
-  import-map hash constant and edits to the SPA never force a recompute.
-- What you see in devtools **is** the file on disk - real names, real line numbers, no
-  source maps. Edit, refresh, done.
+- So the CSP stays a plain `script-src 'self'` with **no `sha256` hash** to maintain (the served
+  modules are same-origin files; `SecurityHeadersMiddleware.cs` carries no import-map hash, and SPA
+  edits never force a recompute).
 
-### Release - bundle on `dotnet publish` (esbuild, no npm)
+### Type checking - tsgo (no npm)
+`make typecheck` runs the pinned **tsgo** (`@typescript/native-preview-<rid>`, fetched +
+SHA-512-verified like esbuild, extracted with its sibling `lib/*.d.ts` and invoked in place) over
+`wwwroot/tsconfig.json` with `--noEmit` - it is a **checker only**; esbuild owns all emit. Strict
+options (`strict`, `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`, `verbatimModuleSyntax`,
+`isolatedModules`, `allowJs`). It is a **fail-closed CI gate** (the `typecheck` job) and the
+publish pre-step (next section). The `tools/markdown` fuzz harness has its own (Node-flavored)
+tsgo config and is checked the same way. tsgo is a daily-dev preview, pinned EXACTLY in
+`TsgoManifest` (see [Bumping tsgo](#bumping-tsgo) below).
+
+### Bumping tsgo
+Both Go binaries are pinned EXACTLY (tsgo is a daily-dev preview) and provisioned the same no-npm
+way: `TsgoBinary`/`TsgoManifest` parallel `EsbuildBinary`/`EsbuildManifest` - download the
+npm-registry tarball over HTTPS, **SHA-512-verify** it fail-closed, then extract. tsgo extracts the
+whole `package/` subtree so the binary keeps its sibling `lib/*.d.ts` (it panics if relocated away
+from them) and is invoked in place; a `.extracted` sentinel gates the cache hit.
+
+To bump tsgo: pick a new `7.0.0-dev.YYYYMMDD.N`, fetch each RID's `dist.integrity` from
+`https://registry.npmjs.org/@typescript/native-preview-<rid>`, refresh all five SHA-512 pins in
+`TsgoManifest`, and run `make typecheck` + the full suite.
+
+### Release - bundle on `dotnet publish` (esbuild + tsgo, no npm)
 An MSBuild target (`BundleWebAssets`, `AfterTargets=Publish`, Release only) runs
 [esbuild](https://esbuild.github.io/) over the published `wwwroot` (`tools/Gert.Web.Bundle`,
 invoked from `Gert.Api.csproj`). esbuild is a single static **Go binary** - we fetch it from
 its npm-registry tarball over plain HTTPS and **SHA-512-verify** it (the version and a
 per-RID hash are pinned in `EsbuildManifest`), so there is **no npm and no Node** in the
-build; the binary is cached under the OS temp dir, never shipped. Offline operators pre-seed
-that cache.
+build; the binary is cached under the OS temp dir, never shipped.
+
+Before bundling, the same tool runs a **fail-closed `tsgo --noEmit` type-check gate** over the
+SPA (TypeScript 7's native Go checker, pinned + SHA-512-verified in `TsgoManifest` the same
+no-npm way; `wwwroot/tsconfig.json` ships into the publish output and is pruned afterwards).
+So a publish that does not type-check breaks before any bundling. **Both** Go binaries are
+fetched on demand and cached under the OS temp dir; an **offline** publish must pre-seed
+**both** caches (`gert-esbuild/<ver>/<rid>` and `gert-tsgo/<ver>/<rid>`). tsgo is checker-only -
+it never emits, and never ships.
 
 The bundle:
 - collapses the ESM graph rooted at `app.js` into one minified **`/app.js`**, and
@@ -386,9 +423,10 @@ The graph's few absolute specifiers (`/lib/van.js`, ...) resolve through a throw
 tsconfig that maps `/*` back to `wwwroot` - no source rewriting. `index.html` keeps just the
 one module `<script>`, so `script-src 'self'` stays hash-free.
 
-**Fail-closed.** Unlike the old per-file minifier, a bundle is all-or-nothing: if esbuild
-errors the tool exits non-zero and **fails the publish** rather than shipping a half-bundled
-graph, and `wwwroot` is left as the intact raw graph.
+**Fail-closed.** Unlike the old per-file minifier, a bundle is all-or-nothing: if the tsgo gate
+reports any diagnostic, or esbuild errors, the tool exits non-zero and **fails the publish**
+rather than shipping an un-type-checked or half-bundled graph, and `wwwroot` is left as the
+intact raw graph.
 
 **Previewing the bundle:** `make serve-mock MINIFY=1` runs the same esbuild pass over a
 throwaway copy of `wwwroot` and points the dev host at it (via `ASPNETCORE_WEBROOT`), so you

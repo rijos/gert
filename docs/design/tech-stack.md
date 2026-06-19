@@ -177,8 +177,10 @@ Gert.sln
 │  │                          #   gert_tools claim is the sole source - auth.md section tool entitlements.)
 │  ├─ Controllers/            # thin - Models, Conversations, Messages(SSE), Documents, Artifacts, Admin
 │  ├─ Ingestion/              # Channel queue + IngestionWorker (BackgroundService) -> IIngestionService
-│  └─ wwwroot/                # VanJS SPA source (no .NET ref, no npm) - native ES modules served
-│                             #   raw in dev, bundled on publish (esbuild Go binary, no npm).
+│  └─ wwwroot/                # VanJS + TypeScript SPA source (no .NET ref, no npm) - .ts ES modules,
+│                             #   imports keep .js specifiers. Dev: esbuild transpiles .ts->.js into a
+│                             #   served mirror + a tsgo --noEmit type-check gate; publish: esbuild
+│                             #   bundles. Both are pinned SHA-512-verified Go binaries - no npm/Node.
 │                             #   Layout & component conventions: docs/design/ui-components.md
 │
 ├─ tests/                     # test projects - see docs/design/testing.md
@@ -190,11 +192,11 @@ Gert.sln
 │  ├─ Gert.Tools.Tests/       #   tool adapter units: built-in tools, SSRF guard, sandbox args, backend selection
 │  ├─ Gert.Ingestion.Tests/   #   extractor hardening units (XXE, zip-bomb, helper output)
 │  ├─ Gert.Api.Tests/         #   integration (WebApplicationFactory): SSE, auth, IDOR, admin, SPA fallback
-│  ├─ Gert.Web.Bundle.Tests/  #   publish bundler: pinned esbuild manifest + index.html repoint
+│  ├─ Gert.Web.Bundle.Tests/  #   web toolchain: pinned esbuild + tsgo manifests, SHA-512 verifier, index.html repoint
 │  ├─ shared/                 #   ONE source of truth for both fake layers (testing.md Appendix A)
 │  └─ web/                    #   harness.html - browser component-unit mount point
 │
 └─ tools/
-   ├─ Gert.Web.Bundle/        # esbuild bundler console, run on publish (ui-components section 6)
+   ├─ Gert.Web.Bundle/        # no-npm web toolchain: esbuild (transpile/bundle) + tsgo (typecheck), pinned Go binaries (ui-components section 6)
    └─ smoke/                  # Python + Playwright E2E launcher (no npm) - admin+user x Chromium+Firefox
 ```

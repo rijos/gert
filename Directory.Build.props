@@ -19,16 +19,21 @@
 
   <!-- Centralized library package versions (valid net10.0). -->
   <PropertyGroup>
-    <MicrosoftDataSqliteVersion>9.0.0</MicrosoftDataSqliteVersion>
-    <DapperVersion>2.1.66</DapperVersion>
+    <MicrosoftDataSqliteVersion>10.0.9</MicrosoftDataSqliteVersion>
+    <!-- Override Microsoft.Data.Sqlite's transitive SQLitePCLRaw bundle to the 3.0.x line:
+         the 2.1.x bundle pins the vulnerable SQLitePCLRaw.lib.e_sqlite3 (GHSA-2m69-gcr7-jv3q,
+         NU1903). The 3.0 bundle drops that native package for SourceGear.sqlite3 (patched
+         SQLite) and brings SQLitePCLRaw.core 3.0.x, which satisfies M.D.Sqlite's core>=2.1.11. -->
+    <SQLitePCLRawBundleVersion>3.0.3</SQLitePCLRawBundleVersion>
+    <DapperVersion>2.1.79</DapperVersion>
     <MicrosoftExtensionsOptionsVersion>10.0.9</MicrosoftExtensionsOptionsVersion>
     <!-- AddGertServices DI extension + validator resolution. Abstractions only (no host coupling). -->
     <MicrosoftExtensionsDIAbstractionsVersion>10.0.9</MicrosoftExtensionsDIAbstractionsVersion>
     <!-- Fail-closed FluentValidation provider + per-DTO validators. -->
-    <FluentValidationVersion>11.11.0</FluentValidationVersion>
-    <FluentValidationDIVersion>11.11.0</FluentValidationDIVersion>
+    <FluentValidationVersion>12.1.1</FluentValidationVersion>
+    <FluentValidationDIVersion>12.1.1</FluentValidationDIVersion>
     <!-- Auth (JWT bearer). -->
-    <JwtBearerVersion>10.0.0</JwtBearerVersion>
+    <JwtBearerVersion>10.0.9</JwtBearerVersion>
     <!-- Gert.External adapters (OpenAI-compatible upstream/SearXNG over
          IHttpClientFactory + Polly, options binding, logging). -->
     <MicrosoftExtensionsHttpVersion>10.0.9</MicrosoftExtensionsHttpVersion>
@@ -44,17 +49,17 @@
          extension fields like chat_template_kwargs / reasoning_content). -->
     <OpenAIVersion>2.11.0</OpenAIVersion>
     <!-- F7 isolated PDF/DOCX parsers (run only inside the subprocess helper). -->
-    <PdfPigVersion>0.1.9</PdfPigVersion>
-    <OpenXmlVersion>3.1.0</OpenXmlVersion>
+    <PdfPigVersion>0.1.14</PdfPigVersion>
+    <OpenXmlVersion>3.5.1</OpenXmlVersion>
     <!-- Patched System.IO.Packaging overriding OpenXml's vulnerable transitive 8.0.0 (NU1903). -->
-    <SystemIoPackagingVersion>9.0.0</SystemIoPackagingVersion>
+    <SystemIoPackagingVersion>10.0.9</SystemIoPackagingVersion>
     <!-- Release pipeline: the SPA is bundled on publish by the pinned esbuild Go binary
          (no npm, no NuGet - see tools/Gert.Web.Bundle), so nothing to pin here.
          Serilog NDJSON logging. -->
-    <SerilogVersion>4.2.0</SerilogVersion>
-    <SerilogExtensionsHostingVersion>9.0.0</SerilogExtensionsHostingVersion>
-    <SerilogExtensionsLoggingVersion>9.0.0</SerilogExtensionsLoggingVersion>
-    <SerilogSinksConsoleVersion>6.0.0</SerilogSinksConsoleVersion>
+    <SerilogVersion>4.3.1</SerilogVersion>
+    <SerilogExtensionsHostingVersion>10.0.0</SerilogExtensionsHostingVersion>
+    <SerilogExtensionsLoggingVersion>10.0.0</SerilogExtensionsLoggingVersion>
+    <SerilogSinksConsoleVersion>6.1.1</SerilogSinksConsoleVersion>
   </PropertyGroup>
 
   <!-- One-type-per-file enforcement (#11). Only SA1402/SA1649 are on (see .editorconfig);

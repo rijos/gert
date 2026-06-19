@@ -48,6 +48,40 @@ jobs:
           path: "**/TestResults/**"
           if-no-files-found: ignore
 
+  typecheck:
+    name: TypeScript - tsgo type-check (gate)
+    # Fail-closed TypeScript gate (typescript-migration.md section 5): runs the pinned tsgo
+    # (TypeScript 7's native Go checker) over BOTH the SPA and the tools/markdown harness via
+    # `make typecheck`. tsgo is fetched + SHA-512-verified from the npm-registry tarball exactly
+    # like esbuild - no npm, no Node. It is a CHECKER ONLY (--noEmit); esbuild owns all emit.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: "10.0.x"
+      - name: Type-check the SPA + tools/markdown (tsgo, no npm)
+        run: make typecheck
+
+  markdown:
+    name: Markdown renderer - quick checks (gate)
+    # Runs the in-house markdown renderer's corpus regression + the harness self-test
+    # (tools/markdown) against the esbuild-transpiled renderer, proving the renderer stays
+    # total/secure/bounded. Node is used ONLY here (and only for this), via Node 24's native
+    # type-stripping of the .ts harness. The broad fuzz + super-linear probe (`make md-fuzz`)
+    # is on-demand, NOT gated (it is time-bounded, not a fixed pass/fail).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: "10.0.x"
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+      - name: Corpus regression + harness self-test
+        run: make md-test
+
   python:
     name: Python - ruff + mypy + conformance (gate)
     runs-on: ubuntu-latest

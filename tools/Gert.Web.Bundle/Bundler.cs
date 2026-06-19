@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
 
 namespace Gert.Web.Bundle;
@@ -31,6 +32,13 @@ public sealed partial class Bundler(TextWriter log)
         {
             _log.WriteLine($"bundle: target directory not found, nothing to do: {wwwroot}");
             return true;
+        }
+
+        // Fail-closed type-check gate (ui-components.md section 6): a publish must never
+        // bundle a tree that does not type-check. Trivially clean before any .ts exists.
+        if (!Typecheck(wwwroot))
+        {
+            return false;
         }
 
         var esbuild = new EsbuildBinary(_log).Ensure();
@@ -79,9 +87,19 @@ public sealed partial class Bundler(TextWriter log)
             tsconfig,
             "{\"compilerOptions\":{\"baseUrl\":" + JsonString(wwwroot) + ",\"paths\":{\"/*\":[\"./*\"]}}}");
 
+        // Entry is app.ts once the SPA is migrated, app.js before then; esbuild bundles either
+        // natively and resolves the still-".js" import specifiers to their ".ts" sources. The
+        // strict checker tsconfig is NOT used here - esbuild only needs the throwaway baseUrl+paths
+        // map above (it warns on options it does not understand); tsgo alone reads the strict one.
+        var entry = Path.Combine(wwwroot, "app.ts");
+        if (!File.Exists(entry))
+        {
+            entry = Path.Combine(wwwroot, "app.js");
+        }
+
         return RunEsbuild(
             esbuild,
-            Path.Combine(wwwroot, "app.js"),
+            [entry],
             "--bundle", "--minify", "--format=esm", $"--tsconfig={tsconfig}", $"--outfile={outFile}");
     }
 
@@ -94,10 +112,10 @@ public sealed partial class Bundler(TextWriter log)
             "\n", GlobalSheets.Select(s => $"@import {JsonString(Path.Combine(wwwroot, s))};"));
         File.WriteAllText(entry, imports + "\n");
 
-        return RunEsbuild(esbuild, entry, "--bundle", "--minify", $"--outfile={outFile}");
+        return RunEsbuild(esbuild, [entry], "--bundle", "--minify", $"--outfile={outFile}");
     }
 
-    private bool RunEsbuild(string esbuild, string entry, params string[] args)
+    private bool RunEsbuild(string esbuild, IReadOnlyList<string> entries, params string[] args)
     {
         var psi = new ProcessStartInfo(esbuild)
         {
@@ -105,7 +123,11 @@ public sealed partial class Bundler(TextWriter log)
             RedirectStandardOutput = true,
             UseShellExecute = false,
         };
-        psi.ArgumentList.Add(entry);
+        foreach (var e in entries)
+        {
+            psi.ArgumentList.Add(e);
+        }
+
         foreach (var a in args)
         {
             psi.ArgumentList.Add(a);
@@ -113,13 +135,17 @@ public sealed partial class Bundler(TextWriter log)
 
         using var proc = Process.Start(psi)
             ?? throw new InvalidOperationException($"could not start esbuild: {esbuild}");
-        var stderr = proc.StandardError.ReadToEnd();
-        proc.StandardOutput.ReadToEnd();
+        // Drain both pipes concurrently so a large diagnostic on one can't deadlock the other.
+        var outTask = proc.StandardOutput.ReadToEndAsync();
+        var errTask = proc.StandardError.ReadToEndAsync();
         proc.WaitForExit();
+        var stderr = errTask.GetAwaiter().GetResult();
+        outTask.GetAwaiter().GetResult();
 
         if (proc.ExitCode != 0)
         {
-            _log.WriteLine($"bundle: esbuild failed (exit {proc.ExitCode}) for {Path.GetFileName(entry)}:");
+            var label = entries.Count == 1 ? Path.GetFileName(entries[0]) : $"{entries.Count} entries";
+            _log.WriteLine($"bundle: esbuild failed (exit {proc.ExitCode}) for {label}:");
             _log.WriteLine(stderr);
             return false;
         }
@@ -139,7 +165,11 @@ public sealed partial class Bundler(TextWriter log)
         foreach (var path in Directory.EnumerateFiles(wwwroot, "*.*", SearchOption.AllDirectories))
         {
             var ext = Path.GetExtension(path).ToLowerInvariant();
-            if (ext is ".js" or ".css" or ".br" or ".gz")
+            // ".ts" covers BOTH migrated source and the van *.d.ts sidecars
+            // (Path.GetExtension("van.d.ts") == ".ts"); neither the source nor the checker config
+            // (tsconfig.json) should ship - the bundle inlined everything they describe.
+            if (ext is ".js" or ".css" or ".br" or ".gz" or ".ts"
+                || string.Equals(Path.GetFileName(path), "tsconfig.json", StringComparison.Ordinal))
             {
                 File.Delete(path);
             }
@@ -203,6 +233,263 @@ public sealed partial class Bundler(TextWriter log)
     /// <summary>A full-line stylesheet link whose href targets a global sheet under <c>/styles/</c>.</summary>
     [GeneratedRegex("""(?<indent>[ \t]*)<link\b[^>]*href="/styles/[^"]*"[^>]*>[ \t]*\r?\n""", RegexOptions.IgnoreCase)]
     private static partial Regex StylesLinkRegex();
+
+    // --- tsgo type-check gate (ui-components.md section 6) --------------------------------------
+
+    /// <summary>
+    /// Run the pinned <c>tsgo</c> checker over <c>wwwroot/tsconfig.json</c> (<c>--noEmit</c>).
+    /// Returns true when there are zero diagnostics (or no tsconfig yet). esbuild never type-checks;
+    /// this is the only type gate. Used both standalone (<c>--typecheck</c>) and as <see cref="Run"/>'s
+    /// fail-closed publish pre-step.
+    /// </summary>
+    public bool Typecheck(string wwwroot)
+    {
+        ArgumentNullException.ThrowIfNull(wwwroot);
+        wwwroot = Path.GetFullPath(wwwroot);
+        var tsconfig = Path.Combine(wwwroot, "tsconfig.json");
+        if (!File.Exists(tsconfig))
+        {
+            _log.WriteLine($"typecheck: no tsconfig.json under {wwwroot}, nothing to check.");
+            return true;
+        }
+
+        var tsgo = new TsgoBinary(_log).Ensure();
+        return RunTsgo(tsgo, tsconfig);
+    }
+
+    private bool RunTsgo(string tsgo, string tsconfig)
+    {
+        // tsgo loads its sibling lib.*.d.ts from its own directory, so it MUST run in place (it is
+        // already cached in place by TsgoBinary). We only pass the project + --noEmit.
+        var psi = new ProcessStartInfo(tsgo)
+        {
+            RedirectStandardError = true,
+            RedirectStandardOutput = true,
+            UseShellExecute = false,
+        };
+        psi.ArgumentList.Add("--project");
+        psi.ArgumentList.Add(tsconfig);
+        psi.ArgumentList.Add("--noEmit"); // belt-and-braces; the tsconfig already sets noEmit
+
+        using var proc = Process.Start(psi)
+            ?? throw new InvalidOperationException($"could not start tsgo: {tsgo}");
+        var outTask = proc.StandardOutput.ReadToEndAsync();
+        var errTask = proc.StandardError.ReadToEndAsync();
+        proc.WaitForExit();
+        var stdout = outTask.GetAwaiter().GetResult();
+        var stderr = errTask.GetAwaiter().GetResult();
+
+        if (proc.ExitCode != 0)
+        {
+            _log.WriteLine($"typecheck: tsgo reported diagnostics (exit {proc.ExitCode}):");
+            if (stdout.Length > 0)
+            {
+                _log.WriteLine(stdout);
+            }
+
+            if (stderr.Length > 0)
+            {
+                _log.WriteLine(stderr);
+            }
+
+            return false;
+        }
+
+        _log.WriteLine("typecheck: tsgo clean (0 diagnostics).");
+        return true;
+    }
+
+    // --- dev transpile mirror (ui-components.md section 6) --------------------------------------
+
+    /// <summary>
+    /// Build the served dev mirror: copy <paramref name="src"/> (assets ride along) into
+    /// <paramref name="outDir"/>, esbuild-transpile every <c>.ts</c> into a sibling <c>.js</c>
+    /// (linked sourcemaps - sibling <c>.js.map</c> fetched only when devtools is open), then prune
+    /// the <c>.ts</c>/<c>.d.ts</c> + checker config so only <c>.js</c>(<c>.map</c>) + assets are
+    /// served. <paramref name="src"/> (wwwroot) stays source-only and untouched. esbuild does NOT
+    /// type-check - <c>--typecheck</c> is the separate gate.
+    /// </summary>
+    public bool Transpile(string src, string outDir)
+    {
+        ArgumentNullException.ThrowIfNull(src);
+        ArgumentNullException.ThrowIfNull(outDir);
+        src = Path.GetFullPath(src);
+        outDir = Path.GetFullPath(outDir);
+        if (!Directory.Exists(src))
+        {
+            _log.WriteLine($"transpile: source not found: {src}");
+            return false;
+        }
+
+        // Guard the recursive delete below: refuse if outDir IS src or overlaps it (ancestor or
+        // descendant), so a misinvocation like `--transpile wwwroot wwwroot` can never nuke source.
+        var srcSlash = src + Path.DirectorySeparatorChar;
+        var outSlash = outDir + Path.DirectorySeparatorChar;
+        if (srcSlash.StartsWith(outSlash, StringComparison.Ordinal) ||
+            outSlash.StartsWith(srcSlash, StringComparison.Ordinal))
+        {
+            _log.WriteLine($"transpile: refusing to build into {outDir}: it overlaps the source {src}.");
+            return false;
+        }
+
+        // Fresh mirror each build so a stale prior emit never leaks (the served root is disposable).
+        if (Directory.Exists(outDir))
+        {
+            Directory.Delete(outDir, recursive: true);
+        }
+
+        CopyDirectory(src, outDir);
+        var tsconfigOut = Path.Combine(outDir, "tsconfig.json");
+        if (File.Exists(tsconfigOut))
+        {
+            File.Delete(tsconfigOut); // the checker config is never served
+        }
+
+        var entries = TsEntryPoints(src);
+        if (entries.Count == 0)
+        {
+            // Pre-migration (Stage 0): the copied raw .js graph is already servable as-is.
+            _log.WriteLine("transpile: no .ts modules; serving the copied source unchanged.");
+            DeleteByExtension(outDir, ".ts"); // remove any stray sidecar .d.ts
+            return true;
+        }
+
+        var esbuild = new EsbuildBinary(_log).Ensure();
+        if (!RunEsbuild(esbuild, entries, TranspileArgs(src, outDir)))
+        {
+            return false;
+        }
+
+        // Only .js + assets are served: drop every .ts (incl .d.ts sidecars) from the mirror.
+        DeleteByExtension(outDir, ".ts");
+        _log.WriteLine($"transpile: {entries.Count} module(s) {src} -> {outDir}");
+        return true;
+    }
+
+    /// <summary>
+    /// esbuild <c>--watch</c> over <paramref name="src"/>'s <c>.ts</c> into <paramref name="outDir"/>:
+    /// re-transpiles on save for dev hot reload (real names + lines via linked maps). Blocks until
+    /// the process is stopped. Assumes a prior <see cref="Transpile"/> already populated the mirror;
+    /// non-<c>.js</c> asset edits still need a fresh <see cref="Transpile"/>.
+    /// </summary>
+    public bool Watch(string src, string outDir)
+    {
+        ArgumentNullException.ThrowIfNull(src);
+        ArgumentNullException.ThrowIfNull(outDir);
+        src = Path.GetFullPath(src);
+        outDir = Path.GetFullPath(outDir);
+
+        var entries = TsEntryPoints(src);
+        if (entries.Count == 0)
+        {
+            _log.WriteLine("transpile: no .ts modules to watch.");
+            return true;
+        }
+
+        if (!Directory.Exists(outDir))
+        {
+            _log.WriteLine($"transpile: watch target {outDir} does not exist - run --transpile first.");
+            return false;
+        }
+
+        var esbuild = new EsbuildBinary(_log).Ensure();
+        return RunEsbuildWatch(esbuild, entries, TranspileArgs(src, outDir));
+    }
+
+    // Per-file transpile (NOT --bundle): each .ts -> a sibling .js, structure mirrored via
+    // --outbase. Imports keep their ".js" specifiers, which resolve at the served URL.
+    // --sourcemap=linked emits a sibling .js.map + a one-line sourceMappingURL comment (the
+    // browser fetches the map ONLY when devtools is open), rather than =inline which base64-
+    // embeds the whole original source into every served .js - that inflated the dev mirror
+    // ~3.7x (sourcemaps were ~73% of the bytes the browser downloaded on every load).
+    private static string[] TranspileArgs(string outbase, string outDir) =>
+        [$"--outdir={outDir}", $"--outbase={outbase}", "--format=esm", "--sourcemap=linked"];
+
+    // Every *.ts under root EXCEPT *.d.ts (declarations have no runtime emit; handing esbuild a
+    // .d.ts entry would emit an empty .js).
+    private static IReadOnlyList<string> TsEntryPoints(string root) =>
+        Directory.Exists(root)
+            ? Directory.EnumerateFiles(root, "*.ts", SearchOption.AllDirectories)
+                .Where(p => !p.EndsWith(".d.ts", StringComparison.OrdinalIgnoreCase))
+                .ToArray()
+            : [];
+
+    private bool RunEsbuildWatch(string esbuild, IReadOnlyList<string> entries, IReadOnlyList<string> args)
+    {
+        // Inherit stdio so esbuild prints each rebuild's status live to the dev console.
+        var psi = new ProcessStartInfo(esbuild) { UseShellExecute = false };
+        foreach (var e in entries)
+        {
+            psi.ArgumentList.Add(e);
+        }
+
+        foreach (var a in args)
+        {
+            psi.ArgumentList.Add(a);
+        }
+
+        psi.ArgumentList.Add("--watch");
+
+        using var proc = Process.Start(psi)
+            ?? throw new InvalidOperationException($"could not start esbuild: {esbuild}");
+
+        // `make run`/`make dev` background this process and SIGTERM it on Ctrl+C; that signal lands
+        // on us, not the grandchild esbuild. Kill the whole child tree on SIGINT/SIGTERM and on
+        // normal exit so no orphan --watch survives. (No-op for these signals on Windows.)
+        using var sigint = PosixSignalRegistration.Create(PosixSignal.SIGINT, _ => KillTree(proc));
+        using var sigterm = PosixSignalRegistration.Create(PosixSignal.SIGTERM, _ => KillTree(proc));
+        void OnExit(object? s, EventArgs e) => KillTree(proc);
+        AppDomain.CurrentDomain.ProcessExit += OnExit;
+        try
+        {
+            proc.WaitForExit();
+            return proc.ExitCode == 0;
+        }
+        finally
+        {
+            AppDomain.CurrentDomain.ProcessExit -= OnExit;
+        }
+    }
+
+    private static void KillTree(Process proc)
+    {
+        try
+        {
+            if (!proc.HasExited)
+            {
+                proc.Kill(entireProcessTree: true);
+            }
+        }
+        catch
+        {
+            // Already gone / not killable - nothing to clean up.
+        }
+    }
+
+    private static void CopyDirectory(string src, string dest)
+    {
+        Directory.CreateDirectory(dest);
+        foreach (var dir in Directory.EnumerateDirectories(src, "*", SearchOption.AllDirectories))
+        {
+            Directory.CreateDirectory(Path.Combine(dest, Path.GetRelativePath(src, dir)));
+        }
+
+        foreach (var file in Directory.EnumerateFiles(src, "*", SearchOption.AllDirectories))
+        {
+            File.Copy(file, Path.Combine(dest, Path.GetRelativePath(src, file)), overwrite: true);
+        }
+    }
+
+    private static void DeleteByExtension(string root, string ext)
+    {
+        foreach (var path in Directory.EnumerateFiles(root, "*" + ext, SearchOption.AllDirectories))
+        {
+            if (string.Equals(Path.GetExtension(path), ext, StringComparison.OrdinalIgnoreCase))
+            {
+                File.Delete(path);
+            }
+        }
+    }
 
     private static string JsonString(string value) =>
         System.Text.Json.JsonSerializer.Serialize(value);
