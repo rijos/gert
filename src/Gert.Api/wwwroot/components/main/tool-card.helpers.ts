@@ -1,0 +1,70 @@
+// components/main/tool-card.helpers.js - pure (no-van) helpers + runtime types
+// for tool-card.ts: the tool-kind -> icon-name map, the done/total todo
+// reducer, and the live todo header label. Co-located because they are specific
+// to the tool card; they return plain values, so they carry no reactivity.
+import type { ToolCard as ToolCardRow } from "../../state/chat.js";
+import type { ToolKind } from "../../services/wire.js";
+
+// QuestionCard's reactive payload (its private ToolQuestion shape, folded onto
+// an ask_user card by services/chat.js). The card mutates `posting`/`expired`
+// in place, so the fields stay writable.
+export interface Question {
+  questionId: string;
+  text: string;
+  options: string[];
+  allowFreeText: boolean;
+  answered: boolean;
+  answer: string;
+  expired: boolean;
+  posting: boolean;
+}
+
+// The runtime tool-card entry on a message: the persisted ToolCard contract
+// plus the live-stream `error` line and the interactive `question` slot
+// (services/chat.js maintains both at runtime). `question` is QuestionCard's
+// reactive payload (or null once resolved/absent).
+export interface Card extends ToolCardRow {
+  error?: string;
+  question?: Question | null;
+}
+
+// One retrieval hit row off the wire (rag/search). All fields optional - the
+// card renders whatever the tool returned.
+export interface Hit {
+  doc?: string;
+  title?: string;
+  page?: string | number;
+  score?: number;
+}
+
+export const iconFor = (kind: ToolKind): string =>
+  ({
+    rag: "search",
+    search: "globe",
+    sandbox: "file",
+    todo: "checklist",
+    clock: "clock",
+    make_artifact: "file",
+    edit_artifact: "file",
+    read_artifact: "file",
+    ask_user: "user",
+    fetch: "globe",
+    memory: "brain",
+    sub_agent: "user",
+  } satisfies Record<ToolKind, string>)[kind];
+
+// done/total over a card's todos ([] for non-todo cards).
+export const progress = (card: Card) => {
+  const ts = card.todos || [];
+  const done = ts.filter((t) => t.status === "done").length;
+  return { ts, done, all: ts.length > 0 && done === ts.length };
+};
+
+// The todo card's live header label: the current step while the list is being
+// worked, a quiet past-tense once every box is checked.
+export const todoLabel = (card: Card) => {
+  const { ts, all } = progress(card);
+  if (all) return "Updated todo list";
+  const active = ts.find((t) => t.status === "active");
+  return active ? "Now: " + active.text : card.label || card.kind;
+};

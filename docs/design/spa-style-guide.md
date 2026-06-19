@@ -13,6 +13,11 @@ absolute same-origin paths (`/lib/van.js` / `/lib/van-x.js`) - there is no impor
 no bare specifiers, so the CSP stays a plain `script-src 'self'` with nothing to keep in
 sync (no npm - [ui-components section 6](ui-components.md#6-devrelease-pipeline-no-npm)).
 
+The SPA source is **TypeScript** (`.ts`), type-checked by `tsgo` and transpiled/bundled by esbuild
+(both no-npm Go binaries; [ui-components section 6](ui-components.md#6-devrelease-pipeline-no-npm)).
+The conventions below are unchanged; the TypeScript-specific ones are collected in
+**["TypeScript conventions"](#typescript-conventions)** at the end.
+
 ---
 
 ## 1. The component shape
@@ -20,45 +25,43 @@ sync (no npm - [ui-components section 6](ui-components.md#6-devrelease-pipeline-
 Components are just functions, but we give them a consistent shape with a small
 `component()` factory (`lib/component.js`). It maps directly onto the three concerns:
 
-| Concern   | Where it lives                          |
-|-----------|------------------------------------------|
-| `style`   | the `css` string (adopted once)          |
-| `logic`   | everything before `return` in `view`     |
-| `content` | the tag tree you `return`                |
+| Concern   | Where it lives                                       |
+|-----------|------------------------------------------------------|
+| `style`   | the `css` string (adopted once)                      |
+| `logic`   | the optional `setup()` slot - state + handlers, returned as a typed bag |
+| `content` | the `view()` tag tree (receives the setup bag, then the call args) |
 
-```js
-// lib/component.js (the real implementation)
-const injected = new Set();
-
-// Adopt a stylesheet built from a CSS string. Reusable by non-component modules
-// that need to ship CSS under a strict CSP (e.g. the imperative toast host).
-// CSP: styles go through a Constructable Stylesheet (document.adoptedStyleSheets),
-// NOT an inline <style> element - CSSOM construction is exempt from `style-src`,
-// so a strict `style-src 'self'` holds with no 'unsafe-inline' / nonce / hash.
-// Adopted sheets cascade AFTER the <link>ed globals, so layout.css keeps
-// priority for responsive overrides.
-export const adoptStyles = (css) => {
-  const sheet = new CSSStyleSheet();
-  sheet.replaceSync(css);
-  document.adoptedStyleSheets = [...document.adoptedStyleSheets, sheet];
-};
-
-export const component = ({ name, css, view }) => (...args) => {
-  if (css && !injected.has(name)) {
-    injected.add(name);
-    adoptStyles(css);
-  }
-  return view(...args);
+```ts
+// lib/component.ts (shape; the real file carries the typed overloads)
+export const component = ({ name, css, setup, view }) => (...args) => {
+  if (css && !injected.has(name)) { injected.add(name); adoptStyles(css); }
+  // `setup` builds the logic bag once; `view` is the pure content tree.
+  return setup ? view(setup(...args), ...args) : view(...args);
 };
 ```
 
+`adoptStyles(css)` adopts a **Constructable Stylesheet** (`document.adoptedStyleSheets`), not an
+inline `<style>` - CSSOM construction is exempt from `style-src`, so a strict `style-src 'self'`
+holds with no `'unsafe-inline'`/nonce/hash. Adopted sheets cascade AFTER the `<link>`ed globals, so
+`layout.css` keeps priority for responsive overrides.
+
+**The `setup` slot is where logic goes** - a component with any `van.state`, handlers, or derived
+plain values puts them in `setup` and returns a typed bag that `view` destructures. A pure leaf
+with no logic (Badge, Button, Pill) omits `setup` and `view` takes the call args directly.
+
+> **Lifetime caveat (section 12):** a `van.derive` that must be pruned when the component leaves the
+> DOM has to be created **inside a binding in `view`** (or scoped via `van.derive`'s 3rd arg) -
+> **never in `setup`**, where it would register against the always-connected sentinel and leak.
+> `setup` is for `van.state` + handlers + *pure* derived values; DOM-scoped derives stay in `view`.
+
 ### Authoring a component
 
-```js
-// components/sidebar/convo-item.js - one .convo row (trimmed).
-import van from "van";
+```ts
+// components/sidebar/convo-item.ts - one .convo row (trimmed). No logic -> view-only.
+import van from "/lib/van.js";
 import { component } from "../../lib/component.js";
 import * as chat from "../../state/chat.js";
+import type { Conversation } from "../../state/chat.js";
 import { navigate } from "../../lib/router.js";
 
 const { div, span } = van.tags;
@@ -66,11 +69,27 @@ const { div, span } = van.tags;
 export const ConvoItem = component({
   name: "convo-item",
   css: `
-    .convo{position:relative; padding:8px 10px 8px 8px; border-radius:var(--r-sm); cursor:pointer; display:flex; align-items:center; color:var(--ink-2); transition:.14s;}
-    .convo:hover{background:var(--surface-2); color:var(--ink);}
-    .convo.active{background:var(--chat-on); color:var(--coral-deep); font-weight:600;}
+    .convo {
+      position: relative;
+      padding: 8px 10px 8px 8px;
+      border-radius: var(--r-sm);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      color: var(--ink-2);
+      transition: var(--t-fast);
+    }
+    .convo:hover {
+      background: var(--surface-2);
+      color: var(--ink);
+    }
+    .convo.active {
+      background: var(--chat-on);
+      color: var(--coral-deep);
+      font-weight: 600;
+    }
   `,
-  view: (convo) =>
+  view: (convo: Conversation) =>
     div(
       {
         class: () => "convo" + (chat.activeId.val === convo.id ? " active" : ""),
@@ -82,13 +101,35 @@ export const ConvoItem = component({
 });
 ```
 
+A component WITH logic splits it into `setup` (see `components/main/model-picker.ts`):
+
+```ts
+export const ModelPicker = component({
+  name: "model-picker",
+  css: `...`,
+  setup: () => {                                 // logic: state + handlers
+    const open = van.state(false);
+    const toggle = (e: Event) => { e.stopPropagation(); open.val = !open.val; };
+    return { open, toggle };
+  },
+  view: ({ open, toggle }) =>                     // content: the tree, gets the bag
+    Menu({ wrapClass: "model-picker", open, trigger: button({ onclick: toggle }, ...), children: [...] }),
+});
+```
+
 ### Rules
 
-- **One component per file.** Filename in `kebab-case.js` matching the factory `name`
-  (`convo-item.js` -> `name: "convo-item"`); the exported factory is **PascalCase**
-  (`ConvoItem`), so call sites read like JSX: `ConvoItem(convo)`. Imperative *openers*
-  - functions that mount transient UI rather than return a node - are camelCase verbs:
-  `openSettings()`, `openModelSettings(model)`, `toast(msg)` (see section 10).
+- **One EXPORTED component per file.** Filename in `kebab-case.ts` matching the factory `name`
+  (`convo-item.ts` -> `name: "convo-item"`); the exported factory is **PascalCase** (`ConvoItem`),
+  so call sites read like JSX: `ConvoItem(convo)`. Imperative *openers* - functions that mount
+  transient UI rather than return a node - are camelCase verbs: `openSettings()`,
+  `openModelSettings(model)`, `toast(msg)` (see section 10).
+  - A **reused or non-trivial sub-component gets its own file** (same factory shape; its CSS rules
+    move into its own `css` slot). A tiny, single-use private leaf (a 3-line `Caret`/`Working`) may
+    stay in the file. Bundling makes file count free at runtime, so split for clarity.
+  - **Pure helpers** (no van, return a value): shared across files -> `lib/`; specific to one
+    component -> a co-located `<name>.helpers.ts` (or private if a couple of lines). A reused helper
+    lives in exactly one place and is imported - never copy-pasted.
 - **Named exports only** - no `default`. Keeps imports greppable and the absolute-path
   import lines uniform.
 - The **root element gets one root class, unique app-wide**, declared in the component's
@@ -98,9 +139,13 @@ export const ConvoItem = component({
   The factory `name` stays the kebab-case file name regardless (it keys the
   inject-once set). Shared primitives applied by bare class string (`.btn`, `.field`)
   live in `primitives.css` instead - see section 2.
-- Keep `logic` (state + handlers) above `content`. A blank line and a comment
-  marker between them is enough; don't split into separate functions unless the
-  logic is genuinely reusable.
+- **Logic goes in `setup()`, content in `view()`.** Any `van.state`, handlers, or pure derived
+  values live in `setup`, returned as a typed bag `view` destructures; `view` is then just the tag
+  tree. A leaf with no logic omits `setup`. (DOM-scoped `van.derive`s are the exception - they stay
+  inside a returned binding in `view`; see the lifetime caveat above and section 12.)
+  - **Give `setup` an explicit return type** (a named `interface` or inline). It documents the
+    view-model AND keeps `component()`'s overload resolution robust: without it, a large `view` can
+    tip type inference into widening the bag to `any` (caught by the IDE/tsc even when tsgo passes).
 - **Components** take a **single argument** - a props object, or a plain value when
   there's only one input (`ConvoItem(convo)`, `Message(m)`). Always default the object
   itself (`view: ({ ... } = {}) =>`); default individual props where a fallback is
@@ -369,10 +414,21 @@ export const rename = async (id, title) => {
 
 The pieces:
 
-- **`services/http.js` is the only fetch.** It exposes `get / post / patch / put /
-  del / upload` (JSON in/out, snake_case wire shape), plus the live transport:
-  `sse(path)` - an async generator parsing the EventSource wire format off a fetch
-  body so the Bearer header rides along, never in the URL ([security F2](security.md#f2---token-storage)).
+- **`services/wire.ts` is the single wire contract.** Every JSON body the API sends or accepts is
+  a `Wire*` interface here, mirroring the `Gert.Model` DTOs and the one wire policy
+  (`Gert.Model/Json/GertJsonOptions.cs`: snake_case + string enums). It is pure types - no imports,
+  no runtime - so it reads like a schema and erases on build. A controller's response shape changing
+  is a `wire.ts` edit in the same change. Services consume these; the reactive **store** rows
+  (section 7) stay separate, slimmer shapes, and a service maps wire -> store at its seam.
+- **`services/http.js` is the only fetch, and it is generic.** It exposes `get<T> / post<T> /
+  patch<T> / put<T> / del<T> / upload<T>` - the caller names the `Wire*` DTO it expects and gets a
+  `Promise<T>` back; `T` defaults to `unknown` so a body-ignoring call needs no annotation. The body
+  is parsed as `unknown` and asserted to `T` in exactly one spot per verb (`... as Promise<T>`) - the
+  one sanctioned wire cast, the TS analogue of `JsonSerializer.Deserialize<T>`. A service therefore
+  never casts a response; it writes `http.get<WireProject[]>("/projects")`. Also the live transport:
+  `sse(path)` - an async generator parsing the EventSource wire format off a fetch body so the Bearer
+  header rides along, never in the URL ([security F2](security.md#f2---token-storage)). The one
+  genuinely dynamic boundary is the SSE event bag (`WireChatEvent`), applied after a `$type` switch.
 - **Failures throw `ApiError { status, message, body }`** - shaped once in `http.js`'s
   `handle()`, so callers can branch on `e.status` (`services/chat.js` turns a 409 into
   "the previous response is still finishing").
@@ -652,34 +708,60 @@ about. Everything else is yours to release:
 
 ## 13. Formatting - make it read like HTML
 
-Tag calls are nested to mirror the DOM tree.
+Tag calls are nested to mirror the DOM tree. Readability comes from the **flat structure**
+(one element per line, indentation = nesting depth) - not from narrow columns. Let the props
+ride a long line so the tree shape stays scannable.
 
-- **Props object** sits on the same line as the tag: `div({ class: "x" }, ...)`.
-- **One child per line** when an element has more than one child or any nesting.
+- **Props object stays on the tag-call line** - `div({ class: "x", "data-id": id, onclick }, ...)`.
+  **Never explode props one-per-line**; a long line is fine. The exception is a `css` string,
+  which is multi-line by its own rule below.
+- **One child per line**, at a single consistent indent under the tag. (Children are the tree;
+  props are not.)
 - **Trailing commas** on every child (clean diffs, easy reordering).
 - The **closing `)`** lines up under the column of its opening tag.
-- **Leaf elements** stay on one line: `span("test")`, `li(() => item.val)`.
+- **Leaf elements** stay on one line: `span("test")`, `li(() => item.val)`,
+  `button({ class: "trash", title: t("Delete"), onclick: remove }, Icon("trash", { size: 14 }))`.
+- **Conditional child:** `() => cond ? Tag(...) : span()` on one line when it fits. When the
+  branches are large, wrap the ternary so each branch sits on its own line (props still inline
+  within each); reach for an `if/else` block that returns nodes only when the branches are
+  genuinely big.
 - **Module-level constants** in SCREAMING_CASE, with a comment citing the server cap
   they mirror where one exists (`MAX_IMAGES`, `composer.js`).
+- **The `css` string is human-formatted**: one declaration per line, a blank line between rules
+  (esbuild minifies it into `app.css` on bundle, so source verbosity is free). Values stay tokens
+  (section 2); when a sub-component moves to its own file, its rules move with it.
 
-Prefer:
+Prefer (props inline, children flat):
 
 ```js
 div({ class: "card" },
   h2("Title"),
   p("Some body text."),
+  () => urgent.val
+    ? span({ class: "badge urgent" }, "!")
+    : span(),
   div({ class: "actions" },
-    button({ onclick: save }, "Save"),
-    button({ onclick: cancel }, "Cancel"),
+    button({ class: "btn", onclick: save }, "Save"),
+    button({ class: "btn secondary", onclick: cancel }, "Cancel"),
   ),
 )
 ```
 
-Avoid cramming siblings onto one line:
+Avoid - cramming siblings onto one line, OR exploding props into a column:
 
 ```js
-// no hard to scan, bad diffs
+// no - hard to scan, bad diffs
 div({ class: "card" }, h2("Title"), p("Some body text."), button({ onclick: save }, "Save"))
+
+// no - props exploded one-per-line buries the tree under prop noise
+button(
+  {
+    class: "trash",
+    title: t("Delete chat"),
+    onclick: remove,
+  },
+  Icon("trash", { size: 14 }),
+)
 ```
 
 ---
@@ -695,10 +777,49 @@ The one-line version: components in `components/<area>/kebab-case.js`, stores in
 
 ---
 
+## TypeScript conventions
+
+The SPA is TypeScript; the rules above are unchanged in spirit. The TS-specific habits:
+
+- **Imports keep their `.js` specifiers** - always. `import van from "/lib/van.js"`,
+  `import * as chat from "../state/chat.js"`. Never write `.ts` in an import; tsgo and esbuild both
+  resolve the `.js` specifier to the `.ts` source, and the browser/smoke suite load by the `.js`
+  URL. (`tsconfig` sets `allowImportingTsExtensions: false`.)
+- **`import type` for type-only imports** (`verbatimModuleSyntax` + `isolatedModules` require it, so
+  esbuild's per-file type-elision stays correct). Split a mixed import into a value import + a
+  `import type` line.
+- **van is typed by its sidecar `.d.ts`.** `lib/van.js` / `lib/van-x.js` stay vendored JavaScript;
+  `lib/van.d.ts` (vanjs-core) and `lib/van-x.d.ts` (vanjs-ext, `import`ing `State` from `./van.js`)
+  are the types. Default `import van from "/lib/van.js"` (`van.tags`, `van.state<T>`, `van.derive`);
+  named `import { reactive } from "/lib/van-x.js"`. van's prop/child types are intentionally loose
+  (handlers are `(e: any) => void`) - annotate handlers opportunistically as `(e: Event)` and narrow
+  at the boundary; don't fight the vendored types. (van's `derive` 3-arg scoped form is typed only as
+  1-arg in the sidecar - call it through a small local cast where used.)
+- **The factory is generic.** `component<Args, R>({ name, css, view })`; type the `view` param - a
+  props object (default it `({ x } = {})`) or a single value. Reuse the store row interfaces for
+  props that are rows (`Message(m: Message)`, `ConvoItem(convo: Conversation)`).
+- **Store row shapes are exported `interface`s** (the old top-of-file comment became the type). Type
+  the `van.state` / `vanX.reactive` containers and the `setX`/`addX` mutators against them; services
+  and components `import type` them.
+- **Wire shapes live once, in `services/wire.ts`** (snake_case `Wire*`, the API contract - section 6),
+  kept separate from the store rows. A store row that is genuinely the wire row can alias it
+  (`type Conversation = WireConversation`); a row reached by transform is a projection of it
+  (`type MessageSeed = Omit<WireMessage, "tools"> & { tools?: ToolCard[] }`) so the seam map stays
+  type-exact. Where the wire is nullable, the store field is too (`capabilities?: string[] | null`) -
+  the type stays honest rather than casting the null away.
+- **No `any`** - use `unknown` + narrowing, generics, or precise types. `// @ts-ignore` /
+  `// @ts-expect-error` are forbidden. A localized `as` cast or `!` assertion is acceptable only at a
+  hostile/dynamic boundary (a rendered AST node, `JSON.parse`, `e.target`, an index under
+  `noUncheckedIndexedAccess`) and must carry a one-line comment stating the invariant.
+- **Security files stay annotation-only** when migrated (the F4 renderer chokepoint, `sanitizeUrl`,
+  the token in `services/auth.ts`): types must never move a check or change a runtime value.
+
 ## Cheat sheet
 
+- TypeScript: imports keep `.js` specifiers; `import type` for types; van via sidecar `.d.ts`;
+  store rows are exported interfaces; no `any`/`@ts-ignore`; `!`/`as` only at a commented boundary.
 - Component = `component({ name, css, view })` -> style / logic / content; file is
-  `kebab-case.js`, export is `PascalCase`; imperative openers are camelCase verbs.
+  `kebab-case.ts`, export is `PascalCase`; imperative openers are camelCase verbs.
 - Root element = **one root class, unique app-wide** (short form fine: `.tcard`, `.dd`);
   all component CSS namespaced under it.
 - Colors (incl. shadows) = **tokens, always**; radii/rhythm (`--r*`, `--head-h`),
@@ -712,8 +833,8 @@ The one-line version: components in `components/<area>/kebab-case.js`, stores in
 - Lists = `vanX.reactive` rows + map-rebuild binding (the default); `vanX.list` is the
   opt-in for hot keyed lists; never alias reactive sub-fields.
 - Routing = the one `mountRouter` call in `app.js`; settings is a modal, not a route.
-- Services = `http.*` -> mutate store -> return; `pid()` helper; `ApiError`; no fetch
-  outside `services/`.
+- Services = `http.get<WireT>()` -> mutate store -> return; wire DTOs live once in
+  `services/wire.ts`; `pid()` helper; `ApiError`; no fetch outside `services/`.
 - Stores = `van.state` scalars + `vanX.reactive` collections; reset-style setters;
   `addX` returns the reactive node; row shapes documented in a top comment.
 - Errors = `attempt(fn, "Couldn't ...")` for user actions, bare `.catch` for background;
@@ -728,5 +849,6 @@ The one-line version: components in `components/<area>/kebab-case.js`, stores in
 - Cleanup = document/window listeners live only while needed; component derives are
   scoped (inside a returned binding, or `van.derive`'s third arg); AbortController +
   ownership for races.
-- Formatting = HTML-like; props inline, one child per line, trailing commas.
+- Formatting = HTML-like; props inline on the tag line (never a column, long lines OK),
+  one child per line, trailing commas; conditionals one-line where they fit.
 - I/O through `services/`, state through `state/`, never from a component directly.

@@ -8,6 +8,12 @@ COVERAGE_DIR := artifacts/coverage
 SMOKE_DIR    := tools/smoke
 HANG_TIMEOUT ?= 180s
 
+# The SPA source tree and the no-npm web toolchain driver (esbuild transpile/bundle + tsgo
+# checker; typescript-migration.md). WEBROOT_BUILD is the served dev mirror (gitignored).
+WEBROOT       := src/Gert.Api/wwwroot
+WEBROOT_BUILD := artifacts/webroot
+WEB_TOOL      := dotnet run --project tools/Gert.Web.Bundle --no-launch-profile -c $(CONFIG) --
+
 .DEFAULT_GOAL := help
 
 .PHONY: help
@@ -32,6 +38,27 @@ test: ## Run the .NET test suite (excludes the timing-coupled Category=Race set 
 test-race: ## Race/dead-zone integration tests (paced turns, mid-stream switching) - on demand, NOT part of CI
 	timeout $(HANG_TIMEOUT) dotnet run --project tests/Gert.Api.Tests -c $(CONFIG) -- -explicit only -trait "Category=Race"
 
+.PHONY: typecheck
+typecheck: ## Type-check the SPA + the tools/markdown harness with tsgo (TS7 native Go checker, no npm) - fail-closed gate
+	$(WEB_TOOL) --typecheck $(WEBROOT)
+	$(WEB_TOOL) --typecheck tools/markdown
+
+.PHONY: transpile
+transpile: ## Build the dev SPA mirror (esbuild .ts -> .js, linked maps) into $(WEBROOT_BUILD)
+	$(WEB_TOOL) --transpile $(WEBROOT) $(WEBROOT_BUILD)
+
+.PHONY: md-test
+md-test: ## Quick markdown-renderer gate: corpus regression + harness self-test vs the transpiled renderer (no fuzz). Needs node.
+	$(WEB_TOOL) --transpile $(WEBROOT) $(WEBROOT_BUILD)
+	GERT_WWWROOT=$(CURDIR)/$(WEBROOT_BUILD) node tools/markdown/check.ts
+	GERT_WWWROOT=$(CURDIR)/$(WEBROOT_BUILD) node tools/markdown/selftest.ts
+
+.PHONY: md-fuzz
+md-fuzz: ## On-demand markdown fuzz + super-linear/ReDoS complexity probe (NOT a CI gate). FUZZ_SECS=20 default. Needs node.
+	$(WEB_TOOL) --transpile $(WEBROOT) $(WEBROOT_BUILD)
+	GERT_WWWROOT=$(CURDIR)/$(WEBROOT_BUILD) node tools/markdown/complexity.ts
+	GERT_WWWROOT=$(CURDIR)/$(WEBROOT_BUILD) node tools/markdown/fuzz.ts --time $(or $(FUZZ_SECS),20)
+
 .PHONY: lint
 lint: ## Enforce ruff (lint + format check) + mypy --strict on the Python harness
 	cd $(SMOKE_DIR) && uv run ruff check . && uv run ruff format --check . && uv run mypy .
@@ -54,7 +81,7 @@ smoke-auth: ## Boot mocks + FakeE2E host and run the API auth smoke (httpx only,
 	PYTHONPATH=. $(SMOKE_DIR)/.venv/bin/python -m tools.smoke.run --api-smoke
 
 .PHONY: serve-mock
-serve-mock: ## Boot python mocks + FakeE2E host + a dev proxy; open the printed URL in YOUR browser (no Playwright). ROLE=admin|user|limited, MINIFY=1 serves the esbuild-bundled assets
+serve-mock: ## Boot python mocks + FakeE2E host + a dev proxy; open the printed URL in YOUR browser (no Playwright). ROLE=admin|user|limited; default serves the esbuild-transpiled .ts mirror, MINIFY=1 serves the release bundle
 	cd $(SMOKE_DIR) && uv sync --group monty
 	PYTHONPATH=. $(SMOKE_DIR)/.venv/bin/python -m tools.smoke.run --proxy --monty-real --role $(or $(ROLE),admin) $(if $(MINIFY),--minify,)
 
@@ -71,14 +98,26 @@ coverage: ## Run tests with coverage + generate an HTML report (needs coverlet.c
 	@echo "HTML report: $(COVERAGE_DIR)/report/index.html"
 
 .PHONY: run
-run: ## Run the API host (chat needs real upstreams configured, or the mocked env via `make dev`)
-	dotnet run --project src/Gert.Api -c $(CONFIG)
+run: ## Run the API host (chat needs real upstreams) serving the transpiled SPA mirror (esbuild --watch hot-reloads .ts)
+	$(WEB_TOOL) --transpile $(WEBROOT) $(WEBROOT_BUILD)
+	@$(WEB_TOOL) --watch $(WEBROOT) $(WEBROOT_BUILD) & WATCH_PID=$$!; \
+		trap "kill $$WATCH_PID 2>/dev/null || true" EXIT INT TERM; \
+		ASPNETCORE_WEBROOT=$(CURDIR)/$(WEBROOT_BUILD) \
+		ASPNETCORE_STATICWEBASSETS=$(CURDIR)/$(WEBROOT_BUILD)/.no-swa-manifest \
+		dotnet run --project src/Gert.Api -c $(CONFIG)
 
 .PHONY: dev
-dev: ## Run the host against the MOCKED world: Python mock upstreams + FakeE2E profile
+dev: ## Run the host against the MOCKED world (Python mocks + FakeE2E) serving the transpiled SPA mirror
+	# Build the mirror on its OWN recipe line so a transpile failure aborts `make dev` before
+	# anything boots (fail-closed): make checks this line's exit status before the next.
+	$(WEB_TOOL) --transpile $(WEBROOT) $(WEBROOT_BUILD)
 	@if [ -d "$(SMOKE_DIR)/mocks" ]; then \
-		echo "Booting python mock upstreams + FakeE2E host..."; \
-		uv run --directory $(SMOKE_DIR) python -m mocks & \
+		echo "Booting python mock upstreams + FakeE2E host (esbuild --watch + transpiled mirror)..."; \
+		uv run --directory $(SMOKE_DIR) python -m mocks & MOCKS_PID=$$!; \
+		$(WEB_TOOL) --watch $(WEBROOT) $(WEBROOT_BUILD) & WATCH_PID=$$!; \
+		trap "kill $$MOCKS_PID $$WATCH_PID 2>/dev/null || true" EXIT INT TERM; \
+		ASPNETCORE_WEBROOT=$(CURDIR)/$(WEBROOT_BUILD) \
+		ASPNETCORE_STATICWEBASSETS=$(CURDIR)/$(WEBROOT_BUILD)/.no-swa-manifest \
 		dotnet run --project src/Gert.Api --launch-profile FakeE2E -c $(CONFIG); \
 	else \
 		echo "make dev needs tools/smoke/mocks."; exit 1; \

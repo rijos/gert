@@ -81,7 +81,7 @@ def test_citation_chip(page: Page, base_url: str) -> None:
     page.goto(f"{base_url}/tests/harness.html")
     page.evaluate(
         """async () => {
-            const { Citation } = await import('/components/main/message.js');
+            const { Citation } = await import('/components/main/citation.js');
             window.__mount(Citation({ ordinal: 3, label: 'My doc' }));
         }"""
     )

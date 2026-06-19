@@ -178,6 +178,37 @@ def _prepare_bundled_webroot() -> str:
     return dest
 
 
+def _prepare_transpiled_webroot() -> str:
+    """Build the DEV served web root and return it: esbuild-transpiles wwwroot's .ts -> sibling
+    .js into a temp mirror (typescript-migration.md section 3), via the real tool
+    (tools/Gert.Web.Bundle, pinned esbuild). wwwroot stays source-only; the mirror carries only
+    .js + assets (the .ts/.d.ts/tsconfig are pruned). This is the DEFAULT boot path (e2e / serve /
+    proxy), so the smoke suite exercises the exact transpiled modules the dev hosts serve - URLs
+    resolve unchanged (still /lib/*.js, /components/*.js). --minify swaps in the release bundle
+    instead. The tool owns the copy; first run fetches the pinned esbuild binary (no npm). The
+    caller removes the dir on shutdown.
+    """
+    src = REPO_ROOT / "src" / "Gert.Api" / "wwwroot"
+    dest = tempfile.mkdtemp(prefix="gert-transpiled-www-")
+    print(f"Transpile: building dev mirror -> {dest}")
+    subprocess.run(
+        [
+            "dotnet",
+            "run",
+            "--project",
+            str(REPO_ROOT / "tools" / "Gert.Web.Bundle"),
+            "--no-launch-profile",
+            "--",
+            "--transpile",
+            str(src),
+            dest,
+        ],
+        cwd=str(REPO_ROOT),
+        check=True,
+    )
+    return dest
+
+
 def _wait_healthz(base_url: str, timeout: float = 90.0) -> bool:
     deadline = time.time() + timeout
     url = f"{base_url.rstrip('/')}/healthz"
@@ -564,7 +595,7 @@ def main(argv: list[str] | None = None) -> int:
     mocks: list[_ServerThread] = []
     host_proc: subprocess.Popen[bytes] | None = None
     monty_proc: subprocess.Popen[bytes] | None = None
-    bundled_root: str | None = None
+    built_root: str | None = None
     base_url = args.base_url or DEFAULT_HOST
 
     try:
@@ -582,10 +613,18 @@ def main(argv: list[str] | None = None) -> int:
             # can never leak into this one. (--base-url attaches to a host we don't
             # own, so its data is left alone.)
             shutil.rmtree(DATA_ROOT, ignore_errors=True)
-            if args.minify:
-                bundled_root = _prepare_bundled_webroot()
+            # Serve the SPA from a BUILT web root (typescript-migration.md section 3): the dev
+            # default is the esbuild transpile mirror (.ts -> .js); --minify serves the release
+            # bundle instead. The browserless --api-smoke never loads the SPA, so it skips the
+            # build entirely and serves the raw source - keeping the cheap auth gate cheap.
+            if not args.api_smoke:
+                built_root = (
+                    _prepare_bundled_webroot()
+                    if args.minify
+                    else _prepare_transpiled_webroot()
+                )
             print("Booting FakeE2E host (dotnet run)...")
-            host_proc = _boot_host(web_root=bundled_root)
+            host_proc = _boot_host(web_root=built_root)
 
         print(f"Waiting for {base_url}/healthz ...")
         if not _wait_healthz(base_url):
@@ -631,8 +670,8 @@ def main(argv: list[str] | None = None) -> int:
                     proc.kill()
         for s in mocks:
             s.stop()
-        if bundled_root is not None:
-            shutil.rmtree(bundled_root, ignore_errors=True)
+        if built_root is not None:
+            shutil.rmtree(built_root, ignore_errors=True)
 
 
 if __name__ == "__main__":

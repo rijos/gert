@@ -1,6 +1,5 @@
 using System.Formats.Tar;
 using System.IO.Compression;
-using System.Security.Cryptography;
 
 namespace Gert.Web.Bundle;
 
@@ -37,7 +36,7 @@ public sealed class EsbuildBinary(TextWriter log)
         _log.WriteLine($"esbuild: fetching {EsbuildManifest.Version} ({rid}) from {platform.TarballUrl}");
 
         var tarball = Download(platform.TarballUrl);
-        VerifySha512(tarball, platform.Sha512, platform.TarballUrl);
+        TarballVerifier.VerifySha512(tarball, platform.Sha512, $"esbuild {platform.TarballUrl}");
         ExtractTo(tarball, platform.EntryPath, exePath);
 
         _log.WriteLine($"esbuild: cached at {exePath}");
@@ -48,17 +47,6 @@ public sealed class EsbuildBinary(TextWriter log)
     {
         using var http = new HttpClient { Timeout = TimeSpan.FromMinutes(2) };
         return http.GetByteArrayAsync(url).GetAwaiter().GetResult();
-    }
-
-    private static void VerifySha512(byte[] bytes, string expectedBase64, string url)
-    {
-        var actual = Convert.ToBase64String(SHA512.HashData(bytes));
-        if (!CryptographicOperations.FixedTimeEquals(
-                Convert.FromBase64String(actual), Convert.FromBase64String(expectedBase64)))
-        {
-            throw new InvalidOperationException(
-                $"esbuild tarball SHA-512 mismatch for {url}.\n  expected: {expectedBase64}\n  actual:   {actual}");
-        }
     }
 
     /// <summary>Extract exactly the pinned binary entry (skip the rest of the npm package) and mark it executable.</summary>
