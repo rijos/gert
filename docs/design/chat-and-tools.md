@@ -437,10 +437,20 @@ questions mid-turn and block until they are all answered, the wait times out, or
 the turn is cancelled**. Each question is `{ question, header?, options?,
 allow_free_text? }`; the SPA renders them as **tabs** (one tab per question, the
 `header` as its label, falling back to "Question N"), collects one answer per
-tab, and submits them together once every question has an answer. No external
-world: the questions travel as a single `question_asked` event (the one tool
-that emits mid-execution, through the optional `ToolInvocation.EmitAsync` seam
-the runner populates with its own persist-then-publish emit), and the answers
+tab, and submits them together once every question has an answer.
+
+**Port, not impl.** The tool owns only the schema + caps and the
+answered/timeout result shape; the human-interaction machinery sits behind the
+`IToolUi` port (`host.Ui.AskAsync(InteractionRequest) -> InteractionResult`, in
+`Gert.Tools`), so `ask_user` depends on a contract, not the chat layer. The chat
+loop's `ChatToolUi` (constructed per tool call) is the impl that wires the port
+to the question registry and the wire events; an autonomous driver (sub-agent,
+headless) has no `Ui`, where the `RequiresHuman` tool is excluded at advertise
+time and fails its call closed at execution. The wire protocol below is
+unchanged - only the seam moved.
+
+No external world: `ChatToolUi` emits the questions as a single `question_asked`
+event (through the runner's own persist-then-publish emit), and the answers
 arrive through the singleton `ITurnQuestions` registry - the awaitable mirror of
 the cancel registry, keyed by the same tenant-scoped `TurnKey` - from
 [`POST .../answer`](rest-api.md#answer-a-question) as an `answers[]` in question
@@ -451,11 +461,12 @@ pairs each question with its answer (`{answered:true, answers:[{question,
 answer}, ...]}`) so the model knows which reply belongs to which prompt.
 
 **Wait budget.** The wait is exempt from the generic `ToolCallTimeout`
-backstop (the `IInteractiveTool` marker - a 60 s cap would kill every wait) and
+backstop (the `ToolType.Modal` flag - a 60 s cap would kill every wait) and
 instead runs for **min(`Gert:Turn:AskUserTimeout` (default 5 min), remaining
-turn budget - a 15 s grace)**, where the remaining budget is anchored at
-`TurnJob.PlannedAt` exactly like the runner's lifetime cap - so the graceful
-path always wins over the turn-budget error finalize. A **timeout is a
+turn budget - a 15 s grace)**, the math `ChatToolUi` does against the turn
+deadline, where the remaining budget is anchored at `TurnJob.PlannedAt` exactly
+like the runner's lifetime cap - so the graceful path always wins over the
+turn-budget error finalize. A **timeout is a
 successful tool result** (`{"answered":false,"reason":"timeout"}`, card line
 "The user did not respond."), never a turn fault: on a detached (client-gone)
 turn the question simply expires and the turn continues - the detached-turn

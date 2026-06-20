@@ -88,8 +88,8 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ITool, MakeArtifactTool>();
         services.AddScoped<ITool, EditArtifactTool>();
         services.AddScoped<ITool, ReadArtifactTool>();
-        // ask_user blocks on the ITurnQuestions singleton; scoped like the rest
-        // (it reads the per-request/worker IUserContext for its TurnKey).
+        // ask_user drives the host's IToolUi (the chat loop's ChatToolUi wires it
+        // to the question registry + wire events); the tool itself has no deps.
         services.AddScoped<ITool, AskUserTool>();
         // web_fetch only calls the IWebFetcher port - the SSRF hardening (F5)
         // is the adapter's job, mirroring WebSearchTool.

@@ -29,6 +29,13 @@ public abstract class ToolCallModal : ITool
     /// <inheritdoc />
     public ToolType Type => ToolType.Modal;
 
+    /// <summary>
+    /// Whether the tool needs a human in the loop (<c>ask_user</c>). False by default; a
+    /// derived modal tool overrides it. Re-declared as a class member (not the <see cref="ITool"/>
+    /// default) so it is virtual - the interface default isn't.
+    /// </summary>
+    public virtual bool RequiresHuman => false;
+
     /// <inheritdoc />
     public abstract Task<ToolResult> ExecuteAsync(
         ToolInvocation invocation,

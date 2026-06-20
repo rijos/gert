@@ -1,9 +1,5 @@
 using System.Text.Json;
-using Gert.Model.Events;
-using Gert.Service;
-using Gert.Service.Chat;
 using Gert.Tools;
-using Microsoft.Extensions.Options;
 
 namespace Gert.Tools.Builtin;
 
@@ -11,20 +7,16 @@ namespace Gert.Tools.Builtin;
 /// The ask-user tool (chat-and-tools.md section Ask the user). Model function
 /// <c>ask_user</c>: show up to FOUR questions mid-turn (rendered as tabs) and
 /// block until they are all answered, the wait times out, or the turn is
-/// cancelled. The questions travel as a <see cref="QuestionAskedEvent"/> through
-/// the invocation's <see cref="ToolInvocation.EmitAsync"/> seam (persisted before
-/// published, so a reconnecting client replays them); the answers arrive through
-/// the <see cref="ITurnQuestions"/> registry from <c>POST .../answer</c>.
+/// cancelled. The tool owns only the schema + caps and the answered/timeout
+/// result shape; the human-interaction machinery (the question registry, the
+/// wire events, the deadline budget) lives behind <see cref="IToolHost.Ui"/>
+/// (the chat loop's <c>ChatToolUi</c>), so the tool depends on the
+/// <see cref="IToolUi"/> contract, not the chat impl.
 /// <para>
 /// <see cref="ToolType.Modal"/> (via <see cref="ToolCallModal"/>) exempts the wait from the
-/// generic <c>ToolCallTimeout</c>; the budget is
-/// min(<see cref="TurnOptions.AskUserTimeout"/>, remaining turn budget -
-/// <see cref="DeadlineGrace"/>) anchored on <see cref="ToolInvocation.Deadline"/>,
-/// so the graceful "user did not respond" result always beats the turn-budget
-/// error finalize. A timeout is a SUCCESSFUL result the model continues from; a
-/// detached (client-gone) turn just times out and proceeds (detached-turn
-/// guarantee). While the question pends the turn is in-flight, so the 409 rule
-/// blocks new sends: the question card (or Stop) is the only input.
+/// generic <c>ToolCallTimeout</c>. A timeout is a SUCCESSFUL result the model continues from; a
+/// host with no Ui (autonomous driver) fails the call closed. <see cref="RequiresHuman"/> keeps
+/// the tool off an autonomous driver's advertised set.
 /// </para>
 /// </summary>
 public sealed class AskUserTool : ToolCallModal
@@ -44,34 +36,14 @@ public sealed class AskUserTool : ToolCallModal
     /// <summary>Cap on one option's text.</summary>
     public const int MaxOptionChars = 200;
 
-    /// <summary>
-    /// Slice reserved off the turn deadline so the timeout result (emit + row +
-    /// final round) lands before the runner's lifetime token fires.
-    /// </summary>
-    public static readonly TimeSpan DeadlineGrace = TimeSpan.FromSeconds(15);
-
-    private readonly ITurnQuestions _questions;
-    private readonly IUserContext _user;
-    private readonly TimeProvider _time;
-    private readonly TurnOptions _options;
-
-    public AskUserTool(
-        ITurnQuestions questions,
-        IUserContext user,
-        TimeProvider time,
-        IOptions<TurnOptions> options)
-    {
-        _questions = questions ?? throw new ArgumentNullException(nameof(questions));
-        _user = user ?? throw new ArgumentNullException(nameof(user));
-        _time = time ?? throw new ArgumentNullException(nameof(time));
-        _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
-    }
-
     /// <inheritdoc />
     public override string Id => "ask_user";
 
     /// <inheritdoc />
     public override string Name => "ask_user";
+
+    /// <inheritdoc />
+    public override bool RequiresHuman => true;
 
     /// <inheritdoc />
     public override string Description =>
@@ -114,17 +86,14 @@ public sealed class AskUserTool : ToolCallModal
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(invocation);
+        ArgumentNullException.ThrowIfNull(host);
 
-        if (string.IsNullOrEmpty(invocation.ConversationId))
+        // No human-interaction surface (autonomous driver): fail closed and
+        // readable. RequiresHuman also keeps the tool off such a driver's
+        // advertised set; this is the execution-time backstop.
+        if (host.Ui is null)
         {
-            return new ToolResult { Success = false, Error = "ask_user needs a conversation context" };
-        }
-
-        // Without the emit seam the question could never reach the user - wait
-        // would block invisibly. A non-streaming host gets a readable error.
-        if (invocation.EmitAsync is null || string.IsNullOrEmpty(invocation.ToolCallId))
-        {
-            return new ToolResult { Success = false, Error = "ask_user needs a streaming host" };
+            return new ToolResult { Success = false, Error = "ask_user is not available in this context" };
         }
 
         if (ParseArguments(invocation.ArgumentsJson) is not { } parsed)
@@ -138,86 +107,43 @@ public sealed class AskUserTool : ToolCallModal
             return new ToolResult { Success = false, Error = parsed.Error };
         }
 
-        var payload = parsed.Payload!;
-        var key = new TurnKey(_user.Iss, _user.Sub, invocation.Pid, invocation.ConversationId);
+        var prompts = parsed.Prompts!;
+        var result = await host.Ui.AskAsync(new InteractionRequest(prompts), cancellationToken)
+            .ConfigureAwait(false);
 
-        IPendingQuestion pending;
-        try
+        if (result.Error is not null)
         {
-            pending = _questions.Open(key, payload);
-        }
-        catch (QuestionAlreadyPendingException ex)
-        {
-            return new ToolResult { Success = false, Error = ex.Message };
+            // The Ui rejected the request (e.g. a question already pends) - a
+            // model-correctable tool error, not a torn turn.
+            return new ToolResult { Success = false, Error = result.Error };
         }
 
-        // The using guarantees the registry never leaks the key - answer,
-        // timeout, cancel, or a fault below all release it.
-        using (pending)
+        if (!result.Answered)
         {
-            await invocation.EmitAsync(
-                new QuestionAskedEvent
-                {
-                    Id = invocation.ToolCallId,
-                    QuestionId = pending.QuestionId,
-                    Questions = payload.Questions
-                        .Select(q => new AskedQuestion(q.Question, q.Header, q.Options, q.AllowFreeText))
-                        .ToList(),
-                },
-                cancellationToken).ConfigureAwait(false);
-
-            // Effective wait: the knob, capped by what remains of the turn
-            // budget minus the grace slice (floor zero -> immediate timeout).
-            var wait = _options.AskUserTimeout;
-            if (invocation.Deadline is { } deadline)
-            {
-                var remaining = deadline - _time.GetUtcNow() - DeadlineGrace;
-                if (remaining < wait)
-                {
-                    wait = remaining;
-                }
-            }
-
-            // A user cancel (or shutdown/turn budget) cancels the wait -> OCE ->
-            // the runner's cancel/error finalize; the using above releases the key.
-            var answers = await pending.WaitAsync(wait, cancellationToken).ConfigureAwait(false);
-
-            if (answers is null)
-            {
-                // Timeout is an ordinary tool_result, no extra event; the model
-                // is told to continue with its best judgement.
-                return new ToolResult
-                {
-                    Success = true,
-                    ResultJson = JsonSerializer.Serialize(new { answered = false, reason = "timeout" }),
-                    Stdout = "The user did not respond.",
-                };
-            }
-
-            await invocation.EmitAsync(
-                new QuestionAnsweredEvent
-                {
-                    Id = invocation.ToolCallId,
-                    QuestionId = pending.QuestionId,
-                    Answers = answers,
-                },
-                cancellationToken).ConfigureAwait(false);
-
-            // Pair each question with its answer so the model has context for
-            // which prompt each reply belongs to.
-            var pairs = payload.Questions
-                .Select((q, i) => new { question = q.Question, answer = answers[i] })
-                .ToList();
-
+            // Timeout is an ordinary tool_result, no extra event; the model is
+            // told to continue with its best judgement.
             return new ToolResult
             {
                 Success = true,
-                ResultJson = JsonSerializer.Serialize(new { answered = true, answers = pairs }),
-                Stdout = string.Join(
-                    "\n",
-                    pairs.Select(p => $"{p.question} {p.answer}")),
+                ResultJson = JsonSerializer.Serialize(new { answered = false, reason = "timeout" }),
+                Stdout = "The user did not respond.",
             };
         }
+
+        // Pair each prompt with its answer so the model has context for which
+        // prompt each reply belongs to.
+        var pairs = prompts
+            .Select((p, i) => new { question = p.Text, answer = result.Answers[i] })
+            .ToList();
+
+        return new ToolResult
+        {
+            Success = true,
+            ResultJson = JsonSerializer.Serialize(new { answered = true, answers = pairs }),
+            Stdout = string.Join(
+                "\n",
+                pairs.Select(p => $"{p.question} {p.answer}")),
+        };
     }
 
     private static ParsedArguments? ParseArguments(string argumentsJson)
@@ -236,7 +162,7 @@ public sealed class AskUserTool : ToolCallModal
                 return ParsedArguments.Invalid("questions must be an array of question objects");
             }
 
-            var parsed = new List<QuestionItem>();
+            var parsed = new List<InteractionPrompt>();
             foreach (var item in arr.EnumerateArray())
             {
                 if (ParseQuestion(item) is not { } outcome)
@@ -249,7 +175,7 @@ public sealed class AskUserTool : ToolCallModal
                     return ParsedArguments.Invalid(outcome.Error);
                 }
 
-                parsed.Add(outcome.Item!);
+                parsed.Add(outcome.Prompt!);
             }
 
             if (parsed.Count == 0)
@@ -262,7 +188,7 @@ public sealed class AskUserTool : ToolCallModal
                 return ParsedArguments.Invalid($"too many questions (max {MaxQuestions})");
             }
 
-            return ParsedArguments.Valid(new QuestionPayload(parsed));
+            return ParsedArguments.Valid(parsed);
         }
         catch (JsonException ex)
         {
@@ -344,19 +270,19 @@ public sealed class AskUserTool : ToolCallModal
             return ParsedQuestion.Invalid("allow_free_text=false requires options");
         }
 
-        return ParsedQuestion.Valid(new QuestionItem(question.Trim(), header, options, freeText));
+        return ParsedQuestion.Valid(new InteractionPrompt(question.Trim(), header, options, freeText));
     }
 
-    private sealed record ParsedArguments(QuestionPayload? Payload, string? Error)
+    private sealed record ParsedArguments(IReadOnlyList<InteractionPrompt>? Prompts, string? Error)
     {
-        public static ParsedArguments Valid(QuestionPayload payload) => new(payload, null);
+        public static ParsedArguments Valid(IReadOnlyList<InteractionPrompt> prompts) => new(prompts, null);
 
         public static ParsedArguments Invalid(string error) => new(null, error);
     }
 
-    private sealed record ParsedQuestion(QuestionItem? Item, string? Error)
+    private sealed record ParsedQuestion(InteractionPrompt? Prompt, string? Error)
     {
-        public static ParsedQuestion Valid(QuestionItem item) => new(item, null);
+        public static ParsedQuestion Valid(InteractionPrompt prompt) => new(prompt, null);
 
         public static ParsedQuestion Invalid(string error) => new(null, error);
     }

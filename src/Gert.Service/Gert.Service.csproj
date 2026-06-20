@@ -24,6 +24,12 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Test seam: ChatToolUiTests drives the internal ChatToolUi directly (the
+         human-interaction port impl behind IToolHost.Ui). The assembly name MUST match. -->
+    <InternalsVisibleTo Include="Gert.Service.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- Abstractions only: lets AddGertServices register the services + resolve
          IValidator<T> from the container, without coupling the service layer to a host. -->
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions"

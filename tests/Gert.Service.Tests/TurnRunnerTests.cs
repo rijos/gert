@@ -132,6 +132,10 @@ public sealed class TurnRunnerTests
 
     private IReadOnlyList<ChatEvent> Events => _published.Select(p => p.Event).ToList();
 
+    // The ask_user registry the runner wires into its ChatToolUi; the round-trip
+    // test answers through this same instance.
+    private readonly TurnQuestions _questions = new();
+
     private TurnRunner NewRunner(
         IChatModelClient model,
         IEnumerable<ITool>? tools = null,
@@ -143,6 +147,7 @@ public sealed class TurnRunnerTests
             clock ?? TimeProvider.System,
             cancellation ?? new TurnCancellation(
                 Options.Create(options ?? new TurnOptions()), clock ?? TimeProvider.System),
+            _questions,
             logger ?? NullLogger<TurnRunner>.Instance);
 
     private static TurnJob NewJob(
@@ -742,17 +747,11 @@ public sealed class TurnRunnerTests
     public async Task Ask_user_turn_round_trips_question_answer_and_final_reply()
     {
         // End to end over the shared fixture ("ask me which color"): the REAL
-        // AskUserTool through the runner - question_asked emitted and durable,
-        // the registry answer resolving the wait, question_answered + the
-        // after_tool reply, and the persisted row carrying {answered, answer}
-        // for the thread GET rebuild.
-        var questions = new TurnQuestions();
-        var user = new TestUserContext
-        {
-            AllowedTools = new HashSet<string>(["ask_user"], StringComparer.Ordinal),
-        };
-        var tool = new AskUserTool(
-            questions, user, TimeProvider.System, Options.Create(new TurnOptions()));
+        // AskUserTool through the runner - it drives the runner's ChatToolUi,
+        // so question_asked is emitted and durable, the registry answer resolves
+        // the wait, question_answered + the after_tool reply land, and the
+        // persisted row carries {answered, answer} for the thread GET rebuild.
+        var tool = new AskUserTool();
 
         var turn = NewRunner(new FakeChatModel(), [tool])
             .RunAsync(NewJob("ask me which color", [tool]));
@@ -769,7 +768,7 @@ public sealed class TurnRunnerTests
         asked.Questions.Single().Question.Should().Be("Which color?");
         asked.Questions.Single().Options.Should().Equal("red", "blue");
 
-        questions.Answer(
+        _questions.Answer(
                 new TurnKey("https://idp.example", "sub-123", Pid, Conv),
                 Proof.Of(new AnswerRequest { QuestionId = asked.QuestionId, Answers = ["blue"] }))
             .Should().Be(AnswerOutcome.Delivered);

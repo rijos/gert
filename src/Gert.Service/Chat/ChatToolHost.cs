@@ -4,22 +4,24 @@ namespace Gert.Service.Chat;
 
 /// <summary>
 /// The chat loop's <see cref="IToolHost"/> (chat-and-tools.md section tool host): pre-scoped to the
-/// active conversation's object store and carrying the turn's <see cref="ToolLimits.Deadline"/>.
-/// The RAG resource, <see cref="Ui"/>, and <see cref="Delegate"/> are wired in later phases - until
-/// then Rag throws (any premature use fails loudly), Ui is null (autonomous), and Delegate is a no-op.
+/// active conversation's object store, carrying the turn's <see cref="ToolLimits.Deadline"/>, and
+/// (for an interactive turn) a <see cref="ChatToolUi"/> wired to the question registry. The RAG
+/// resource and <see cref="Delegate"/> are wired in later phases - until then Rag throws (any
+/// premature use fails loudly) and Delegate is a no-op.
 /// </summary>
 internal sealed class ChatToolHost : IToolHost
 {
-    public ChatToolHost(IObjectResource objects, DateTimeOffset? deadline)
+    public ChatToolHost(IObjectResource objects, IToolUi? ui, DateTimeOffset? deadline)
     {
         ArgumentNullException.ThrowIfNull(objects);
         Resources = new ChatResources(objects);
+        Ui = ui;
         Limits = new ToolLimits(deadline, null);
     }
 
     public IToolResources Resources { get; }
 
-    public IToolUi? Ui => null;
+    public IToolUi? Ui { get; }
 
     public IToolDelegate Delegate { get; } = new NoOpDelegate();
 

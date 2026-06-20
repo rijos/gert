@@ -56,6 +56,7 @@ public sealed class TurnRunner : ITurnRunner
     private readonly TurnOptions _options;
     private readonly TimeProvider _clock;
     private readonly ITurnCancellation _cancellation;
+    private readonly ITurnQuestions _questions;
     private readonly ILogger<TurnRunner> _logger;
 
     public TurnRunner(
@@ -66,6 +67,7 @@ public sealed class TurnRunner : ITurnRunner
         IOptions<TurnOptions> options,
         TimeProvider clock,
         ITurnCancellation cancellation,
+        ITurnQuestions questions,
         ILogger<TurnRunner> logger)
     {
         _databases = databases ?? throw new ArgumentNullException(nameof(databases));
@@ -76,6 +78,7 @@ public sealed class TurnRunner : ITurnRunner
         _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
         _clock = clock ?? throw new ArgumentNullException(nameof(clock));
         _cancellation = cancellation ?? throw new ArgumentNullException(nameof(cancellation));
+        _questions = questions ?? throw new ArgumentNullException(nameof(questions));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -757,10 +760,19 @@ public sealed class TurnRunner : ITurnRunner
         }
 
         // The capability surface handed to the tool: pre-scoped to this conversation's object
-        // store (the canvas artifact tools) and carrying the turn deadline. RAG, Ui, and
-        // delegation are wired in later phases and throw/no-op until then.
+        // store (the canvas artifact tools), carrying the turn deadline, and a ChatToolUi for the
+        // human-interaction port (ask_user) wired to the question registry + the runner's own
+        // persist-then-publish emit. RAG and delegation are wired in later phases.
         var objects = new ChatObjectResource(repo, job.ConversationId, _clock);
-        var host = new ChatToolHost(objects, deadline);
+        var ui = new ChatToolUi(
+            _questions,
+            (ev, ct) => EmitAsync(repo, topic, ev, ct),
+            new TurnKey(job.Iss, job.Sub, job.Pid, job.ConversationId),
+            call.Id,
+            _clock,
+            _options.AskUserTimeout,
+            deadline);
+        var host = new ChatToolHost(objects, ui, deadline);
 
         var stopwatch = Stopwatch.StartNew();
         ToolResult result;
