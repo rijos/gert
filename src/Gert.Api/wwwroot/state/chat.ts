@@ -89,7 +89,6 @@ export const tools = reactive<Record<ToolKind, boolean>>({
   // On by default: low blast radius, the JWT entitlement is the real gate.
   ask_user: true,
   fetch: true,
-  memory: true,
   sub_agent: true,
 });
 

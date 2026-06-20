@@ -57,7 +57,7 @@ public static class ServiceCollectionExtensions
     /// set-equality guard fails if they drift.
     /// </summary>
     private static readonly string[] BuiltInToolIds =
-        ["rag", "search", "sandbox", "todo", "clock", "make_artifact", "edit_artifact", "read_artifact", "ask_user", "fetch", "memory", "sub_agent"];
+        ["rag", "search", "sandbox", "todo", "clock", "make_artifact", "edit_artifact", "read_artifact", "ask_user", "fetch", "sub_agent"];
 
     /// <summary>
     /// Register the built-in tools as scoped <see cref="ITool"/>s, resolved by the orchestrator
@@ -94,9 +94,6 @@ public static class ServiceCollectionExtensions
         // web_fetch only calls the IWebFetcher port - the SSRF hardening (F5)
         // is the adapter's job, mirroring WebSearchTool.
         services.AddScoped<ITool, WebFetchTool>();
-        // save_memory wraps the scoped IMemoryService (which owns user context,
-        // clock, and fail-closed validation).
-        services.AddScoped<ITool, SaveMemoryTool>();
         // run_sub_agent delegates a task to a fresh nested model loop. It takes
         // IServiceProvider (not IEnumerable<ITool> - that would recurse its own
         // resolution) and re-resolves the delegable tools per execution.

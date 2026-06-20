@@ -15,7 +15,7 @@ public sealed record StoredObject
     /// <summary>The monotonically increasing version, bumped on every overwrite.</summary>
     public required int Version { get; init; }
 
-    /// <summary>The object's kind tag (e.g. <c>markdown</c>, <c>memory</c>) - tool-defined.</summary>
+    /// <summary>The object's kind tag (e.g. <c>markdown</c>) - tool-defined.</summary>
     public required string Kind { get; init; }
 
     /// <summary>When the object was first created.</summary>

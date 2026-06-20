@@ -12,13 +12,6 @@ namespace Gert.Service.Chat;
 /// reader yet can leave it unregistered - <see cref="TurnPlanner"/> treats a
 /// missing reader as "no instructions" rather than failing the turn.
 /// </para>
-/// <para>
-/// // TODO: extend with pinned-memory retrieval
-/// (<c>documents.kind='memory' AND pinned=1</c>) once the markdown body of a
-/// memory entry is reachable through a service-layer port - the
-/// <c>rag.db documents</c> row exposes <c>Pinned</c> but not the note text, which
-/// lives under <c>projects/{pid}/memory/</c>.
-/// </para>
 /// </summary>
 public interface IProjectInstructionsReader
 {

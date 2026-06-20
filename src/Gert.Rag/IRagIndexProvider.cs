@@ -25,7 +25,7 @@ public interface IRagIndexProvider
     /// Destroy one project's RAG index - the RAG half of a project delete/empty, and
     /// the "forget my documents" path. The engine owns it: a file-backed engine drops
     /// its pooled handles and removes <c>rag.db</c>; a server-backed store drops the
-    /// project's collection/rows. The artifact half (file/memory blobs) is the
+    /// project's collection/rows. The artifact half (file blobs) is the
     /// <c>IObjectStore</c>'s; the service orchestrates both and calls this <b>before</b>
     /// the blob delete so a local whole-tree wipe never races an open handle. Returns
     /// <see langword="true"/> if any state existed (idempotent). Identity is validated at

@@ -61,7 +61,7 @@ def test_switch_is_a_keyboard_operable_role_switch(page: Page, base_url: str) ->
 def test_modal_is_a_dialog_with_focus_moved_in(page: Page, base_url: str) -> None:
     """WCAG 4.1.2 / 2.4.3: a Modal must announce as a named dialog, move focus inside on open,
     and close (restoring focus) on Escape. Covers every modal flow (settings, project CRUD,
-    move-chat, new-memory) through the one shared primitive."""
+    move-chat) through the one shared primitive."""
     page.goto(f"{base_url}/tests/harness.html")
     page.evaluate(
         """async () => {

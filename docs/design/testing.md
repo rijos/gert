@@ -130,7 +130,7 @@ tools/
       test_style.py             #   style invariants: uniform artifact-header height, Preview/Source on
                                 #   render/raw kinds (code = preview only), ask_user states, tokens, theme, css minify
       test_a11y.py              #   WCAG guards: role=switch, dialog focus, decorative icons, main+skip+title, live toasts
-      test_llm_tools.py         #   artifacts, memory retrieval, todos, clock through the tool loop
+      test_llm_tools.py         #   artifacts, document retrieval, todos, clock through the tool loop
       test_auth_smoke.py        #   API auth smoke (httpx, no browser): invalid/missing tokens rejected
       test_embeddings_conformance.py  # Python embed(t) matches embeddings_golden.json (Appendix A.2)
 

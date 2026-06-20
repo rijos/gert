@@ -88,8 +88,6 @@ public sealed class AdversarialCorpusTests
             .Validate(new CreateConversationRequest { Title = payload });
         _ = _sp.Validator<CreateProjectRequest>()
             .Validate(new CreateProjectRequest { Name = payload });
-        _ = _sp.Validator<CreateMemoryRequest>()
-            .Validate(new CreateMemoryRequest { Title = payload, Content = payload });
     }
 
     public static IEnumerable<object[]> All() => NaughtyStrings.AllTheoryData();

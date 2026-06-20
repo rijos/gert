@@ -14,11 +14,8 @@ namespace Gert.Rag.Sqlite;
 /// path is the scope, so a query cannot reach another project's rows.
 ///
 /// <para>
-/// Memory and documents share the <c>documents</c> table, distinguished by
-/// <c>kind</c>; both are retrieved together by <see cref="HybridSearchAsync"/>
-/// (chat-and-tools.md section "memory rides the same query"). The three indexes share an
-/// integer rowid: <c>chunks.id</c> == <c>vec_chunks.chunk_id</c> == the
-/// <c>fts_chunks</c> rowid, so they join cheaply.
+/// The three indexes share an integer rowid: <c>chunks.id</c> ==
+/// <c>vec_chunks.chunk_id</c> == the <c>fts_chunks</c> rowid, so they join cheaply.
 /// </para>
 ///
 /// <para>
@@ -53,20 +50,14 @@ public sealed class SqliteRagStore : IRagStore
 
     /// <inheritdoc />
     public async Task<IReadOnlyList<Document>> ListDocumentsAsync(
-        DocumentKind? kind = null,
         CancellationToken cancellationToken = default)
     {
-        var sql =
-            "SELECT id, filename, mime, size_bytes, status, chunk_count, error, kind, pinned, created_at " +
-            "FROM documents" +
-            (kind is null ? string.Empty : " WHERE kind = @kind") +
-            " ORDER BY created_at DESC, id ASC;";
+        const string sql =
+            "SELECT id, filename, mime, size_bytes, status, chunk_count, error, created_at " +
+            "FROM documents ORDER BY created_at DESC, id ASC;";
 
         var rows = await _connection.QueryAsync<DocumentRow>(
-            new CommandDefinition(
-                sql,
-                kind is null ? null : new { kind = KindToString(kind.Value) },
-                cancellationToken: cancellationToken)).ConfigureAwait(false);
+            new CommandDefinition(sql, cancellationToken: cancellationToken)).ConfigureAwait(false);
 
         return rows.Select(MapDocument).ToList();
     }
@@ -77,7 +68,7 @@ public sealed class SqliteRagStore : IRagStore
         ArgumentNullException.ThrowIfNull(documentId);
 
         const string sql =
-            "SELECT id, filename, mime, size_bytes, status, chunk_count, error, kind, pinned, created_at " +
+            "SELECT id, filename, mime, size_bytes, status, chunk_count, error, created_at " +
             "FROM documents WHERE id = @id;";
 
         var row = await _connection.QuerySingleOrDefaultAsync<DocumentRow>(
@@ -93,8 +84,8 @@ public sealed class SqliteRagStore : IRagStore
         ArgumentNullException.ThrowIfNull(document);
 
         const string sql =
-            "INSERT INTO documents (id, filename, mime, size_bytes, status, chunk_count, error, kind, pinned, created_at) " +
-            "VALUES (@Id, @Filename, @Mime, @SizeBytes, @Status, @ChunkCount, @Error, @Kind, @Pinned, @CreatedAt);";
+            "INSERT INTO documents (id, filename, mime, size_bytes, status, chunk_count, error, created_at) " +
+            "VALUES (@Id, @Filename, @Mime, @SizeBytes, @Status, @ChunkCount, @Error, @CreatedAt);";
 
         await _connection.ExecuteAsync(new CommandDefinition(sql, new
         {
@@ -105,8 +96,6 @@ public sealed class SqliteRagStore : IRagStore
             Status = StatusToString(document.Status),
             document.ChunkCount,
             document.Error,
-            Kind = KindToString(document.Kind),
-            Pinned = document.Pinned ? 1 : 0,
             CreatedAt = FormatTime(document.CreatedAt),
         }, cancellationToken: cancellationToken)).ConfigureAwait(false);
     }
@@ -118,7 +107,7 @@ public sealed class SqliteRagStore : IRagStore
 
         const string sql =
             "UPDATE documents SET filename = @Filename, mime = @Mime, size_bytes = @SizeBytes, " +
-            "status = @Status, chunk_count = @ChunkCount, error = @Error, kind = @Kind, pinned = @Pinned " +
+            "status = @Status, chunk_count = @ChunkCount, error = @Error " +
             "WHERE id = @Id;";
 
         await _connection.ExecuteAsync(new CommandDefinition(sql, new
@@ -130,8 +119,6 @@ public sealed class SqliteRagStore : IRagStore
             Status = StatusToString(document.Status),
             document.ChunkCount,
             document.Error,
-            Kind = KindToString(document.Kind),
-            Pinned = document.Pinned ? 1 : 0,
         }, cancellationToken: cancellationToken)).ConfigureAwait(false);
     }
 
@@ -328,7 +315,7 @@ public sealed class SqliteRagStore : IRagStore
         const string joinSql =
             "SELECT c.id, c.document_id, c.ordinal, c.content, c.page, c.token_count, " +
             "       d.id AS d_id, d.filename, d.mime, d.size_bytes, d.status, d.chunk_count, " +
-            "       d.error, d.kind, d.pinned, d.created_at " +
+            "       d.error, d.created_at " +
             "FROM chunks c JOIN documents d ON d.id = c.document_id " +
             "WHERE c.id IN @ids AND d.status = 'ready';";
         var rows = await _connection.QueryAsync<RetrievedRow>(new CommandDefinition(
@@ -365,8 +352,6 @@ public sealed class SqliteRagStore : IRagStore
                     Status = StatusFromString(row.Status),
                     ChunkCount = row.ChunkCount,
                     Error = row.Error,
-                    Kind = KindFromString(row.Kind),
-                    Pinned = row.Pinned != 0,
                     CreatedAt = ParseTime(row.CreatedAt),
                 },
                 Score = score,
@@ -465,8 +450,6 @@ public sealed class SqliteRagStore : IRagStore
         Status = StatusFromString(row.Status),
         ChunkCount = row.ChunkCount,
         Error = row.Error,
-        Kind = KindFromString(row.Kind),
-        Pinned = row.Pinned != 0,
         CreatedAt = ParseTime(row.CreatedAt),
     };
 
@@ -492,20 +475,6 @@ public sealed class SqliteRagStore : IRagStore
         _ => throw new InvalidOperationException($"Unknown document status '{value}'."),
     };
 
-    private static string KindToString(DocumentKind kind) => kind switch
-    {
-        DocumentKind.Document => "document",
-        DocumentKind.Memory => "memory",
-        _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, null),
-    };
-
-    private static DocumentKind KindFromString(string value) => value switch
-    {
-        "document" => DocumentKind.Document,
-        "memory" => DocumentKind.Memory,
-        _ => throw new InvalidOperationException($"Unknown document kind '{value}'."),
-    };
-
     // PascalCase properties; Dapper binds snake_case columns via
     // MatchNamesWithUnderscores and narrows SQLite's Int64 to each property type.
 
@@ -518,8 +487,6 @@ public sealed class SqliteRagStore : IRagStore
         public required string Status { get; init; }
         public int ChunkCount { get; init; }
         public string? Error { get; init; }
-        public required string Kind { get; init; }
-        public int Pinned { get; init; }
         public required string CreatedAt { get; init; }
     }
 
@@ -550,8 +517,6 @@ public sealed class SqliteRagStore : IRagStore
         public required string Status { get; init; }
         public int ChunkCount { get; init; }
         public string? Error { get; init; }
-        public required string Kind { get; init; }
-        public int Pinned { get; init; }
         public required string CreatedAt { get; init; }
     }
 }

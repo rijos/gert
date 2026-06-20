@@ -54,7 +54,6 @@ public sealed class SettingsService : ISettingsService
             ReplyLanguage = dto.ReplyLanguage ?? current.ReplyLanguage,
             DefaultModelId = dto.DefaultModelId ?? current.DefaultModelId,
             DefaultTools = dto.DefaultTools ?? current.DefaultTools,
-            MemoryMode = dto.MemoryMode ?? current.MemoryMode,
         };
 
         await repo.SaveSettingsAsync(merged, cancellationToken).ConfigureAwait(false);

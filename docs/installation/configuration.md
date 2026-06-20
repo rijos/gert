@@ -388,7 +388,7 @@ SQLite engine sets its own `Parameters:DataRoot`, the object store still needs `
 
 > **Database, RAG, and storage are independent stores.** `Gert:Database:Type` picks the engine
 > for the structured data (`user.db`/`chat.db`), `Gert:Rag:Type` the vector/RAG index
-> (`rag.db`), and the object store (uploads, memory bodies) is selected by which `AddGertStorage*`
+> (`rag.db`), and the object store (uploads) is selected by which `AddGertStorage*`
 > the build ships. By default all three sit under `Storage:DataRoot`; a SQLite engine can take its
 > own root via `Gert:Database:Parameters:DataRoot` / `Gert:Rag:Parameters:DataRoot` (e.g. the
 > vector index on a bigger disk). Deleting a user/project drops all three - each engine removing

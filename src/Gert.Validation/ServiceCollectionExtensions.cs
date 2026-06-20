@@ -46,7 +46,6 @@ public static class ServiceCollectionExtensions
         AddValidator<MoveConversationRequest, MoveConversationRequestValidator>(services);
         AddValidator<CreateProjectRequest, CreateProjectRequestValidator>(services);
         AddValidator<UpdateProjectRequest, UpdateProjectRequestValidator>(services);
-        AddValidator<CreateMemoryRequest, CreateMemoryRequestValidator>(services);
         AddValidator<UpdateSettingsRequest, UpdateSettingsRequestValidator>(services);
         AddValidator<DocumentUpload, DocumentUploadValidator>(services);
         AddValidator<AnswerRequest, AnswerRequestValidator>(services);
@@ -64,7 +63,6 @@ public static class ServiceCollectionExtensions
         AddValidator<MakeArtifactArgs, MakeArtifactArgsValidator>(services);
         AddValidator<EditArtifactArgs, EditArtifactArgsValidator>(services);
         AddValidator<ReadArtifactArgs, ReadArtifactArgsValidator>(services);
-        AddValidator<SaveMemoryArgs, SaveMemoryArgsValidator>(services);
 
         return services;
     }

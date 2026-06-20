@@ -21,7 +21,7 @@ public sealed class ToolsApiTests : IClassFixture<GertApiFactory>
     // The canonical built-in tool ids (Gert.Tools.Builtin BuiltInToolIds) - a blanket
     // grant (gert_tools = "*") entitles exactly this set.
     private static readonly string[] AllBuiltInToolIds =
-        ["rag", "search", "sandbox", "todo", "clock", "make_artifact", "edit_artifact", "read_artifact", "ask_user", "fetch", "memory", "sub_agent"];
+        ["rag", "search", "sandbox", "todo", "clock", "make_artifact", "edit_artifact", "read_artifact", "ask_user", "fetch", "sub_agent"];
 
     private static readonly JsonSerializerOptions Json = GertJsonOptions.Default;
 

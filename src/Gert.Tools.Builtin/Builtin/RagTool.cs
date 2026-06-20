@@ -54,8 +54,8 @@ public sealed class RagTool : ToolCall<RagArgs, RagResult>
         // the rendered tools block grows past ~1.8k tokens (chat-and-tools.md
         // section tool specs are a token budget) - keep every description to one or
         // two short sentences that carry only the behavioural contract.
-        "Search this project's private documents and memory; returns the most "
-        + "relevant passages with their source and score.";
+        "Search this project's private documents; returns the most relevant "
+        + "passages with their source and score.";
 
     /// <inheritdoc />
     public override string ParametersSchema =>
@@ -115,9 +115,6 @@ public sealed class RagTool : ToolCall<RagArgs, RagResult>
         {
             var hit = hits[i];
             var ordinal = i + 1;
-            // A memory hit's `filename` is the base64-encoded entry title
-            // (MemoryService.EncodeTitle) - decode it so the card and the
-            // citation show the title, never the encoded blob.
             var display = DisplayName(hit.Document);
             var label = hit.Chunk.Page is { Length: > 0 } page
                 ? $"{display} - {page}"
@@ -139,7 +136,6 @@ public sealed class RagTool : ToolCall<RagArgs, RagResult>
             {
                 Ordinal = ordinal,
                 Doc = display,
-                Kind = hit.Document.Kind == DocumentKind.Memory ? "memory" : "document",
                 Page = hit.Chunk.Page,
                 Score = Math.Round(hit.Score, 4),
                 Content = hit.Chunk.Content,
@@ -151,12 +147,8 @@ public sealed class RagTool : ToolCall<RagArgs, RagResult>
 
     /// <summary>
     /// What a hit is called in the card/citation. The <c>filename</c> column is
-    /// base64 display metadata for EVERY kind - uploads through
-    /// <c>StoredFilenames.Encode</c>, memory titles through
-    /// <c>MemoryService.EncodeTitle</c> - so always decode (the old
-    /// memory-only decode leaked base64 labels for document hits; found live
-    /// 2026-06-11). Falls back to the raw value if it does not decode
-    /// (defensive; never fails the search).
+    /// base64 display metadata (<c>StoredFilenames.Encode</c>), so decode it. Falls
+    /// back to the raw value if it does not decode (defensive; never fails the search).
     /// </summary>
     private static string DisplayName(Document document) =>
         StoredFilenames.Decode(document.Filename);

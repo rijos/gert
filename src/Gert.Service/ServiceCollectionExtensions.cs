@@ -91,7 +91,6 @@ public static class ServiceCollectionExtensions
 
         services.AddUserScoped<IDocumentService, DocumentService>();
         services.AddUserScoped<IArtifactService, ArtifactService>();
-        services.AddUserScoped<IMemoryService, MemoryService>();
         services.AddUserScoped<IProjectService, ProjectService>();
         services.AddUserScoped<ISettingsService, SettingsService>();
         // The journal-guarded eraser: one crash-consistent erase path for self-service

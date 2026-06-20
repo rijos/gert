@@ -80,7 +80,6 @@ wwwroot/
     conversations.js         #   list / open / rename / delete
     projects.js              #   list / create / switch / delete projects
     documents.js             #   upload, poll status, delete
-    memory.js                #   project memory entries
     models.js                #   GET /api/models
     tools.js                 #   GET /api/tools (the entitled-tool catalog)
     settings.js              #   GET/PUT /api/settings

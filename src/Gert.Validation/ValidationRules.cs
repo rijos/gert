@@ -18,7 +18,7 @@ public static class ValidationRules
     /// <summary>Default cap for medium free text (instructions, descriptions).</summary>
     public const int MediumTextMax = 10_000;
 
-    /// <summary>Default cap for a chat message / memory body (DoS brake).</summary>
+    /// <summary>Default cap for long free text - a chat message / artifact body (DoS brake).</summary>
     public const int LongTextMax = 100_000;
 
     /// <summary>Hard upper bound on an identifier-shaped string (model id, language tag).</summary>
@@ -171,7 +171,7 @@ public static class ValidationRules
     }
 
     /// <summary>
-    /// True if <paramref name="value"/> is a well-formed conversation/document/memory
+    /// True if <paramref name="value"/> is a well-formed conversation/document
     /// identifier: a GUID in the canonical "D" format (8-4-4-4-12, the shape
     /// <c>Guid.NewGuid().ToString("D")</c> produces and every server-generated id
     /// uses). Pinned to "D" - not <see cref="Guid.TryParse(string?, out Guid)"/> -

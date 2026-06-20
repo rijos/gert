@@ -3,7 +3,7 @@ namespace Gert.Tools;
 /// <summary>
 /// A metadata-aware store of named objects, pre-scoped by the host to a project or the active
 /// conversation (chat-and-tools.md section objects resource). Create-or-overwrite by name bumps
-/// the version; listing returns metadata only. Replaces the old raw-blob artifact/memory paths -
+/// the version; listing returns metadata only. Replaces the old raw-blob artifact paths -
 /// the tool sees neither a storage key nor an identity, only a <see cref="ResourceScope"/> + name.
 /// </summary>
 public interface IObjectResource

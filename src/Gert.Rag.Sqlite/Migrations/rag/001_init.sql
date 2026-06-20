@@ -20,8 +20,6 @@ CREATE TABLE documents (
     status      TEXT NOT NULL,                  -- processing | ready | failed
     chunk_count INTEGER NOT NULL DEFAULT 0,
     error       TEXT,                           -- "no extractable text"
-    kind        TEXT NOT NULL DEFAULT 'document', -- document | memory
-    pinned      INTEGER NOT NULL DEFAULT 0,       -- memory entries: always injected
     created_at  TEXT NOT NULL
 );
 

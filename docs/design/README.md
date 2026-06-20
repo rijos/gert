@@ -46,7 +46,7 @@ why**; the code in [`src/`](../../src/) implements them.
 - [storage-and-data.md](storage-and-data.md) - the per-user/per-project folder layout, path
   resolution, lazy provisioning + migrations, and the `chat.db` / `rag.db` schemas.
 - [rest-api.md](rest-api.md) - every endpoint: settings, projects, conversations, the
-  **detached turn** (202 + seq-cursor delivery over SSE/polling), documents, memory,
+  **detached turn** (202 + seq-cursor delivery over SSE/polling), documents,
   artifacts, account, admin.
 - [chat-and-tools.md](chat-and-tools.md) - the tool loop and detached-turn pipeline, artifacts,
   hybrid RAG (vec0 + FTS5 + RRF), the ingestion pipeline, and per-tool detail (RAG, web
@@ -108,7 +108,7 @@ why**; the code in [`src/`](../../src/) implements them.
 | Endpoints, DTOs, status codes | [rest-api.md](rest-api.md) | [testing section 6](testing.md#6-api-integration-tests---gertapitests), [configuration section 7](configuration.md#7-api-surface) |
 | The tool loop, turns, streaming/replay, prompts | [chat-and-tools.md](chat-and-tools.md) | [rest-api section receiving a turn](rest-api.md#receiving-a-turn), [turn-budgets.md](turn-budgets.md) |
 | RAG, retrieval, ingestion, embeddings | [chat-and-tools.md](chat-and-tools.md) | [storage-and-data section rag.db](storage-and-data.md#ragdb-sqlite-vec), [decisions section 1/section 5](decisions.md) |
-| Projects, settings, memory, data lifecycle | [configuration.md](configuration.md) | [storage-and-data.md](storage-and-data.md), [rest-api.md](rest-api.md) |
+| Projects, settings, data lifecycle | [configuration.md](configuration.md) | [storage-and-data.md](storage-and-data.md), [rest-api.md](rest-api.md) |
 | Anything in `wwwroot/` | [ui-components.md](ui-components.md) + [spa-style-guide.md](spa-style-guide.md) | [security F2-F4](security.md#3-findings--remediations) |
 | The SPA build/type toolchain (esbuild, tsgo, type-checking) | [ui-components section 6](ui-components.md#6-devrelease-pipeline-no-npm) | [spa-style-guide.md](spa-style-guide.md#typescript-conventions) |
 | New inputs, parsers, fetches, anything security-adjacent | [security.md](security.md) | [testing section validation](testing.md#validation---the-input-security-boundary), [principles #6](principles.md) |

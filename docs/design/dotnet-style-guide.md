@@ -163,7 +163,7 @@ Where a new type goes (full map: [tech-stack section solution layout](tech-stack
   `GetTimestamp()`/`GetElapsedTime()` for intervals. Never `DateTimeOffset.UtcNow` /
   `DateTime.Now`. The sweep is complete: every service that stamps a row
   (`TurnPlanner`, `TurnRunner`, `ConversationService`, `ConversationReader`,
-  `DocumentService`, `MemoryService`, `ProjectService`, `UserProvisioner`,
+  `DocumentService`, `ProjectService`, `UserProvisioner`,
   `SqliteUserRepository`) takes `TimeProvider` in its constructor; the default
   `TimeProvider.System` is `TryAdd`-registered in `AddGertServices`.
   Why: fakeable time is what lets tests pin the instant and exercise the orphan-horizon and
@@ -195,7 +195,7 @@ Fail-closed, in the service layer, so validation runs identically for every call
   }
   ```
 
-  This is the uniform shape (`TurnPlanner`, `DocumentService`, `MemoryService`,
+  This is the uniform shape (`TurnPlanner`, `DocumentService`,
   `SettingsService`, `ProjectService`, `ConversationService`). A registered validator
   that is never invoked is a silent hole - a service-tier test pins the invocation.
 - Shared vocabulary lives in `ValidationRules`: the `SafeText`/`OptionalSafeText` extensions

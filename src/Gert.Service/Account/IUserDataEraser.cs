@@ -3,7 +3,7 @@ namespace Gert.Service.Account;
 /// <summary>
 /// Erases <b>all</b> of one user's data across the independent stores - the structured
 /// databases (<c>user.db</c> + <c>chat.db</c>), the RAG index (<c>rag.db</c>), and the
-/// object store (file/memory blobs), which may sit on separate volumes - as a single,
+/// object store (file blobs), which may sit on separate volumes - as a single,
 /// crash-consistent operation. It is guarded by the <see cref="Gert.Storage.IDeletionJournal"/>:
 /// the user is marked owed <i>before</i> any store is touched and cleared only once every
 /// store is confirmed gone, so an interrupted erase is resumable and idempotent (a recovery

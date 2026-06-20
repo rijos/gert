@@ -39,7 +39,7 @@ public interface IUserDatabaseProvider
     /// every project's <c>chat.db</c> - the database engine's half of an account delete
     /// (the RAG index is a separate engine). The engine owns it: a file-backed
     /// engine drops its pooled handles and removes its database files; a server-backed
-    /// engine deletes the user's rows. The artifact half (file/memory blobs) is the
+    /// engine deletes the user's rows. The artifact half (file blobs) is the
     /// <c>IObjectStore</c>'s; the service orchestrates both and calls this <b>before</b>
     /// the blob delete so a local whole-tree wipe never races an open handle. Returns
     /// <see langword="true"/> if any state existed (idempotent).

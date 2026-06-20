@@ -23,7 +23,6 @@ const SUMMARY: Record<ToolKind, (c: ToolCardRow) => string> = {
   read_artifact: (c) => "Read " + (c.query || "a file"),
   ask_user: () => "Asked you",
   fetch: () => "Fetched a page",
-  memory: () => "Saved a memory",
   sub_agent: () => "Ran a sub-agent",
 };
 

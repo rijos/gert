@@ -101,7 +101,6 @@ export const open = async (id: string) => {
     chat.tools.read_artifact = !!t.read_artifact;
     chat.tools.ask_user = !!t.ask_user;
     chat.tools.fetch = !!t.fetch;
-    chat.tools.memory = !!t.memory;
   }
   // Detached turns: a still-streaming assistant row means the worker is busy on
   // this conversation - re-attach and let the bubble fill in live (the server

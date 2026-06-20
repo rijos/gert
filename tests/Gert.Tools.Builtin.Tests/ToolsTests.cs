@@ -261,7 +261,7 @@ public sealed class ToolsTests
     }
 
     [Fact]
-    public async Task RagTool_decodes_a_memory_hits_title_for_the_label_and_payload()
+    public async Task RagTool_decodes_a_hits_base64_filename_for_the_label_and_payload()
     {
         var ragRepo = Substitute.For<IRagStore>();
         var provider = Substitute.For<IRagIndexProvider>();
@@ -269,14 +269,13 @@ public sealed class ToolsTests
             .OpenAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(ragRepo);
 
-        // A memory entry's documents.filename is the base64-encoded title
-        // (MemoryService.EncodeTitle) - the tool must surface the decoded title.
-        var encoded = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes("Favorite database"));
-        var memoryHit = Hit("mem-1", encoded, null, "My favorite database is sqlite-vec.", 0.92);
-        memoryHit = memoryHit with { Document = memoryHit.Document with { Kind = DocumentKind.Memory } };
+        // documents.filename is base64 display metadata (StoredFilenames.Encode) -
+        // the tool must surface the decoded name in the hit and the citation.
+        var encoded = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes("Favorite database.pdf"));
+        var hit = Hit("doc-1", encoded, null, "My favorite database is sqlite-vec.", 0.92);
         ragRepo
             .HybridSearchAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<float>>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
-            .Returns(new[] { memoryHit });
+            .Returns(new[] { hit });
 
         var tool = new RagTool(Gert.Testing.Proof.Validation, provider, new FakeEmbeddings(), User);
         var result = await tool.ExecuteAsync(new ToolInvocation
@@ -287,9 +286,8 @@ public sealed class ToolsTests
 
         result.Success.Should().BeTrue();
         result.Citations.Should().ContainSingle();
-        result.Citations[0].Label.Should().Be("Favorite database");
-        result.ResultJson.Should().Contain("Favorite database")
-            .And.Contain("\"kind\":\"memory\"")
+        result.Citations[0].Label.Should().Be("Favorite database.pdf");
+        result.ResultJson.Should().Contain("Favorite database.pdf")
             .And.NotContain(encoded);
     }
 

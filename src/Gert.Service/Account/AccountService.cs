@@ -172,11 +172,10 @@ public sealed class AccountService : IAccountService
             await JsonSerializer.SerializeAsync(entryStream, threads, JsonOptions, cancellationToken).ConfigureAwait(false);
         }
 
-        // Original file blobs + memory bodies -> projects/{pid}/{key} (via the object
-        // store only). Listed by prefix so the database files are never pulled into
-        // the archive.
+        // Original file blobs -> projects/{pid}/{key} (via the object store only).
+        // Listed by prefix so the database files are never pulled into the archive.
         var scope = ObjectScope.Project(_user.Iss, _user.Sub, pid);
-        foreach (var prefix in new[] { "files/", "memory/" })
+        foreach (var prefix in new[] { "files/" })
         {
             var keys = await _objects.ListAsync(scope, prefix, cancellationToken).ConfigureAwait(false);
             foreach (var key in keys)

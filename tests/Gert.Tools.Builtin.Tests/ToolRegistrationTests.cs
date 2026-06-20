@@ -31,8 +31,7 @@ public sealed class ToolRegistrationTests
         services.AddBuiltinTools();
 
         // The host-supplied ports the tools ctor-inject - substitutes suffice;
-        // nothing executes here. (IObjectStore feeds the MemoryService that
-        // SaveMemoryTool wraps.)
+        // nothing executes here.
         services.AddSingleton(Substitute.For<IChatDatabaseProvider>());
         services.AddSingleton(Substitute.For<IRagIndexProvider>());
         services.AddSingleton(Substitute.For<IEmbeddingClient>());
@@ -68,7 +67,6 @@ public sealed class ToolRegistrationTests
     [Theory]
     [InlineData("ask_user")]
     [InlineData("fetch")]
-    [InlineData("memory")]
     [InlineData("sub_agent")]
     public void The_new_tool_is_a_registered_capability(string id)
     {
@@ -80,7 +78,6 @@ public sealed class ToolRegistrationTests
     [Theory]
     [InlineData("ask_user")]
     [InlineData("fetch")]
-    [InlineData("memory")]
     [InlineData("sub_agent")]
     public void Tool_toggles_accept_the_new_id(string id)
     {

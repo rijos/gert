@@ -1,7 +1,7 @@
 # Per-user storage & data model
 
 Data is owned by the filesystem at **two** levels of isolation: each **user** is a folder, and
-within it each **project** is a folder with its own `chat.db` + `rag.db` + memory, fully isolated
+within it each **project** is a folder with its own `chat.db` + `rag.db`, fully isolated
 from other projects ([configuration -> projects](configuration.md#2-projects)). The same
 "a connection only opens *this* folder's files" argument that isolates users
 ([principle #2](principles.md)) therefore isolates projects too. The conversation/RAG schemas
@@ -21,8 +21,7 @@ below are **per project** - there is one pair of databases per project, not per 
             ├── default/           # lazily created; always present (the landing project)
             │   ├── chat.db        # conversations, messages, tool calls, citations, chat objects
             │   ├── rag.db         # sqlite-vec: documents, chunks, embeddings, FTS
-            │   ├── files/         # original uploaded files (server key files/{doc-id}, no extension)
-            │   └── memory/        # memory entries (markdown) -> embedded into this project's rag.db
+            │   └── files/         # original uploaded files (server key files/{doc-id}, no extension)
             └── {project-id}/      # any further project - same shape, fully isolated
 ```
 
@@ -62,7 +61,7 @@ public sealed class SqliteDatabasePaths(IOptions<StorageOptions> storage, IOptio
 
 // The RAG engine's SqliteRagPaths resolves rag.db the same way under ITS root (Gert:Rag:Parameters:
 // DataRoot, else Storage:DataRoot):  {ragRoot}/users/{key}/projects/{pid}/rag.db. The uploaded
-// files/ and memory/ directories are the object store's, under Storage:DataRoot.
+// files/ directory is the object store's, under Storage:DataRoot.
 ```
 
 > `(iss, sub)` come **only** from the validated token, never the request, and the fail-closed
@@ -115,7 +114,7 @@ separate provisioning ceremony:
    path stays read-only - no per-request write/WAL churn; `(iss, sub)` never changes) and seeds
    the **`default` project row** in the registry so the user always has a landing project.
 2. **Open project DBs lazily** (`IChatDatabaseProvider` / `IRagIndexProvider`) - a project's
-   `chat.db`/`rag.db` (and `files/`, `memory/`) materialise on first use, each applying its own
+   `chat.db`/`rag.db` (and `files/`) materialise on first use, each applying its own
    `Migrations/{chat,rag}/*.sql` by `PRAGMA user_version`.
 
 Past the gate the validated JWT is trusted: the folder key derives from the token and nothing
@@ -160,7 +159,7 @@ CREATE TABLE user_meta (
 
 -- Single-row user settings (id pinned to 1); one JSON blob so the column set never
 -- has to track the UserSettings shape field-by-field (configuration.md section 3 - theme,
--- languages, default provider/tools, memory mode). Sampling is not here - it rides
+-- languages, default provider/tools). Sampling is not here - it rides
 -- the selected provider (configuration.md section providers), not user settings.
 CREATE TABLE settings (
     id            INTEGER PRIMARY KEY CHECK (id = 1),
@@ -295,8 +294,6 @@ CREATE TABLE documents (
     status      TEXT NOT NULL,              -- processing | ready | failed  (the pills)
     chunk_count INTEGER NOT NULL DEFAULT 0,
     error       TEXT,                       -- "no extractable text" (old-scan.pdf)
-    kind        TEXT NOT NULL DEFAULT 'document', -- document | memory   (configuration.md section 2.3)
-    pinned      INTEGER NOT NULL DEFAULT 0,       -- memory entries: always injected, not just retrieved
     created_at  TEXT NOT NULL
 );
 

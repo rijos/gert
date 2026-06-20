@@ -93,23 +93,6 @@ public sealed class ApiBreadthTests : IClassFixture<GertApiFactory>
     }
 
     [Fact]
-    public async Task Memory_create_list_delete_round_trips()
-    {
-        var client = Authed();
-
-        var create = await client.PostAsJsonAsync(
-            "/api/projects/default/memory",
-            new CreateMemoryRequest { Title = "Prefs", Content = "Use sqlite-vec." },
-            Json);
-        create.StatusCode.Should().Be(HttpStatusCode.OK, await create.Content.ReadAsStringAsync());
-        var entry = await create.Content.ReadFromJsonAsync<Gert.Model.Rag.MemoryEntry>(Json);
-        entry!.Title.Should().Be("Prefs");
-
-        var delete = await client.DeleteAsync($"/api/projects/default/memory/{entry.Id}");
-        delete.StatusCode.Should().Be(HttpStatusCode.NoContent);
-    }
-
-    [Fact]
     public async Task Non_uuid_pid_is_400_problem_details_not_500()
     {
         var client = Authed();

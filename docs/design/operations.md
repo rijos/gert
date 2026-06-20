@@ -8,7 +8,7 @@ Erasing a user's *data* drops each of their stores in turn:
 
 - the **structured databases** (`user.db` + every project's `chat.db`) - the database engine unlinks its files / drops its rows;
 - the **RAG index** (every project's `rag.db`) - the RAG engine does the same;
-- the **artifact blobs** (uploads, memory bodies) - the object store removes its tree.
+- the **artifact blobs** (uploads) - the object store removes its tree.
 
 This works cleanly because **nothing outside those stores references the user** - no rows in a shared DB, no foreign keys, no orphaned blobs. In the default single-root deployment all three live under one directory (`/data/users/{key}`, `key = sha256(iss + sub)`), so the net effect is removing that folder; point a database engine at its own `DataRoot` and the removal simply spans each root.
 

@@ -62,7 +62,7 @@ writes them through the conversation's `tools` map (the `ToolToggles` DTO on
 
 | Method | Path | Notes |
 |--------|------|-------|
-| `GET` | `/api/settings` | The user's preferences from `user.db` ([storage-and-data section user.db](storage-and-data.md#userdb)): theme, UI language, default reply language, default provider, default tools, memory mode ([configuration section 3](configuration.md#3-user-settings)). Sampling is not a user setting - it rides the selected provider. |
+| `GET` | `/api/settings` | The user's preferences from `user.db` ([storage-and-data section user.db](storage-and-data.md#userdb)): theme, UI language, default reply language, default provider, default tools ([configuration section 3](configuration.md#3-user-settings)). Sampling is not a user setting - it rides the selected provider. |
 | `PUT` | `/api/settings` | Update any subset (merge: absent fields stay, each supplied field overrides). |
 
 ## Projects
@@ -71,7 +71,7 @@ writes them through the conversation's `tools` map (the `ToolToggles` DTO on
 |--------|------|--------------|
 | `GET` | `/api/projects` | List the user's projects (the `user.db` registry): id, name, counts, updated_at. Optional `?q=` (name contains) + `?limit=`/`?offset=` (limit 0 = all, capped at 100) page the full-screen search's infinite scroll. |
 | `POST` | `/api/projects` | `{ name, description?, instructions?, defaults? }` -> a new isolated project folder. |
-| `GET` | `/api/projects/{pid}` | Project config + counts (conversations, documents, memory). |
+| `GET` | `/api/projects/{pid}` | Project config + counts (conversations, documents). |
 | `PATCH` | `/api/projects/{pid}` | `{ name?, description?, instructions?, defaults? }` (rename / edit instructions / defaults). |
 | `DELETE` | `/api/projects/{pid}` | **Drops the whole project** - its chats *and* documents (chat.db + rag.db + blobs together). `default` is emptied, not removed ([configuration section 5](configuration.md#5-data-lifecycle-user-facing)). |
 
@@ -228,16 +228,6 @@ Scoped to a project - a document belongs to exactly one project's `rag.db`.
 | `GET` | `/api/projects/{pid}/documents/{id}` | **Polled** by the client while processing -> drives `processing -> ready/failed` pills and "embedding 12 / 19 chunks...". Returns `status` and a progress field (e.g. `chunk_count` / chunks embedded). |
 | `DELETE` | `/api/projects/{pid}/documents/{id}` | Deletes chunks + vec rows + fts rows + the original file. |
 | `GET` | `/api/projects/{pid}/documents/events` | *(deferred - see [decisions.md section 6](decisions.md#6-live-ingestion-progress))* SSE stream of ingestion progress; additive future upgrade over polling. |
-
-## Memory (per project)
-
-Memory entries are stored as files under `projects/{pid}/memory/` and embedded into the project's `rag.db` as `kind='memory'` ([configuration section 2.3](configuration.md#23-memory)).
-
-| Method | Path | Notes |
-|--------|------|-------|
-| `GET` | `/api/projects/{pid}/memory` | List entries (id, title, pinned, updated_at). |
-| `POST` | `/api/projects/{pid}/memory` | `{ title, content, pinned? }` - add/edit an entry; it is (re)embedded for retrieval. |
-| `DELETE` | `/api/projects/{pid}/memory/{id}` | Remove an entry and its chunks. |
 
 ## Artifacts
 

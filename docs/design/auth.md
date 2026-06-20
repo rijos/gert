@@ -132,7 +132,7 @@ Three independent things decide access:
 | `GET /api/settings` - `.../api/projects*` (list - create - read - update - delete) | no | yes own | yes own |
 | `.../api/projects/{pid}/conversations*` (list - create - read - update - delete) | no | yes own | yes own |
 | `POST /api/projects/{pid}/conversations/{id}/messages` (stream) | no | yes own - tools gated by entitlement | yes own - entitlement |
-| `.../api/projects/{pid}/documents*` - `.../memory*` (list - upload - poll - delete) | no | yes own | yes own |
+| `.../api/projects/{pid}/documents*` (list - upload - poll - delete) | no | yes own | yes own |
 | `.../api/projects/{pid}/.../artifacts` - `.../export` - `DELETE /api/account` | no | yes own | yes own |
 | `GET /api/admin/users` | no | no | yes |
 | `DELETE /api/admin/users/{key}` | no | no | yes |
@@ -163,7 +163,7 @@ capability comes from the token or not at all. (The claim is a **scope string**;
 JSON-array value like `["rag","search"]` is not parsed - its tokens match no registered
 id and yield nothing.)
 
-> **Pocket ID setup.** Define `gert_tools` as a custom claim and attach it to users or to a group (e.g. a `gert-tools` group granting `rag search todo clock make_artifact edit_artifact read_artifact ask_user fetch memory sub_agent`, and a separate `gert-sandbox` group adding `sandbox`). Make sure it is emitted into the **access token** the API validates. If your Pocket ID build only places custom claims in the ID token / userinfo, have the API read it from the userinfo endpoint once per session - the rest of the logic is unchanged.
+> **Pocket ID setup.** Define `gert_tools` as a custom claim and attach it to users or to a group (e.g. a `gert-tools` group granting `rag search todo clock make_artifact edit_artifact read_artifact ask_user fetch sub_agent`, and a separate `gert-sandbox` group adding `sandbox`). Make sure it is emitted into the **access token** the API validates. If your Pocket ID build only places custom claims in the ID token / userinfo, have the API read it from the userinfo endpoint once per session - the rest of the logic is unchanged.
 
 ### Tool registry
 
@@ -183,7 +183,6 @@ The Notes column records why a grant is more or less sensitive:
 | Canvas read - `read_artifact` | `read_artifact` | read-only; returns numbered lines |
 | Ask the user - `ask_user` | `ask_user` | blocks the turn awaiting the user's answer (own timeout budget); no external world ([chat-and-tools](chat-and-tools.md#ask-the-user-ask_user)) |
 | Web fetch - `web_fetch` | `fetch` | outbound egress to a **model-named URL**; SSRF-guarded - the same hardened fetcher as web search's page pulls ([chat-and-tools](chat-and-tools.md#web-fetch-web_fetch)) |
-| Save memory - `save_memory` | `memory` | writes a new memory entry into this project's `rag.db` + object store; immediately retrievable by `search_documents` ([chat-and-tools](chat-and-tools.md#save-memory-save_memory)) |
 
 The SPA exposes the canvas trio (`make_artifact` / `edit_artifact` / `read_artifact`) as
 **one "Canvas" switch**, so a token granting the canvas should grant all three. An id in the

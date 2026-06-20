@@ -17,7 +17,6 @@ public sealed class GertServices : IGertServices
         IConversationService conversations,
         IDocumentService documents,
         IArtifactService artifacts,
-        IMemoryService memory,
         IProjectService projects,
         ISettingsService settings,
         IAccountService account,
@@ -26,7 +25,6 @@ public sealed class GertServices : IGertServices
         Conversations = conversations ?? throw new ArgumentNullException(nameof(conversations));
         Documents = documents ?? throw new ArgumentNullException(nameof(documents));
         Artifacts = artifacts ?? throw new ArgumentNullException(nameof(artifacts));
-        Memory = memory ?? throw new ArgumentNullException(nameof(memory));
         Projects = projects ?? throw new ArgumentNullException(nameof(projects));
         Settings = settings ?? throw new ArgumentNullException(nameof(settings));
         Account = account ?? throw new ArgumentNullException(nameof(account));
@@ -41,9 +39,6 @@ public sealed class GertServices : IGertServices
 
     /// <inheritdoc />
     public IArtifactService Artifacts { get; }
-
-    /// <inheritdoc />
-    public IMemoryService Memory { get; }
 
     /// <inheritdoc />
     public IProjectService Projects { get; }

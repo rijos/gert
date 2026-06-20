@@ -13,9 +13,9 @@ namespace Gert.Database.Sqlite.Tests;
 
 /// <summary>
 /// Real temp <c>rag.db</c> with the real vendored <c>vec0</c> extension and FTS5.
-/// Exercises provisioning, chunk writes, vector KNN, BM25, RRF fusion, memory
-/// retrieval, cascade delete, project isolation, and FTS-injection safety. All
-/// vectors come from <see cref="FakeEmbeddings"/> so KNN/RRF order is deterministic.
+/// Exercises provisioning, chunk writes, vector KNN, BM25, RRF fusion, cascade
+/// delete, project isolation, and FTS-injection safety. All vectors come from
+/// <see cref="FakeEmbeddings"/> so KNN/RRF order is deterministic.
 /// </summary>
 public class SqliteRagRepositoryTests
 {
@@ -44,26 +44,20 @@ public class SqliteRagRepositoryTests
     }
 
     [Fact]
-    public async Task Document_and_memory_round_trip_and_list_filters_by_kind()
+    public async Task Documents_round_trip_and_list_returns_all()
     {
         await using var root = new TempDataRoot();
         var provider = ProviderFixture.ProviderFor(root);
         await using var repo = await provider.OpenRagAsync(Iss, Sub, "default");
 
-        var doc = NewDocument("doc.pdf", DocumentKind.Document);
-        var mem = NewDocument("note", DocumentKind.Memory) with { Pinned = true };
+        var doc = NewDocument("doc.pdf");
+        var other = NewDocument("notes.txt");
         await repo.InsertDocumentAsync(doc);
-        await repo.InsertDocumentAsync(mem);
+        await repo.InsertDocumentAsync(other);
 
         (await repo.GetDocumentAsync(doc.Id))!.Filename.Should().Be("doc.pdf");
-        var memLoaded = await repo.GetDocumentAsync(mem.Id);
-        memLoaded!.Kind.Should().Be(DocumentKind.Memory);
-        memLoaded.Pinned.Should().BeTrue();
+        (await repo.GetDocumentAsync(other.Id))!.Filename.Should().Be("notes.txt");
 
-        (await repo.ListDocumentsAsync(DocumentKind.Document)).Should().ContainSingle()
-            .Which.Id.Should().Be(doc.Id);
-        (await repo.ListDocumentsAsync(DocumentKind.Memory)).Should().ContainSingle()
-            .Which.Id.Should().Be(mem.Id);
         (await repo.ListDocumentsAsync()).Should().HaveCount(2);
     }
 
@@ -74,7 +68,7 @@ public class SqliteRagRepositoryTests
         var provider = ProviderFixture.ProviderFor(root);
         await using var repo = await provider.OpenRagAsync(Iss, Sub, "default");
 
-        var doc = NewDocument("vectors.txt", DocumentKind.Document);
+        var doc = NewDocument("vectors.txt");
         await repo.InsertDocumentAsync(doc);
 
         // Distinct strings -> near-orthogonal unit vectors. The query embedding is
@@ -104,7 +98,7 @@ public class SqliteRagRepositoryTests
         var provider = ProviderFixture.ProviderFor(root);
         await using var repo = await provider.OpenRagAsync(Iss, Sub, "default");
 
-        var doc = NewDocument("text.txt", DocumentKind.Document);
+        var doc = NewDocument("text.txt");
         await repo.InsertDocumentAsync(doc);
         await repo.InsertChunksAsync(new[]
         {
@@ -128,7 +122,7 @@ public class SqliteRagRepositoryTests
         var provider = ProviderFixture.ProviderFor(root);
         await using var repo = await provider.OpenRagAsync(Iss, Sub, "default");
 
-        var doc = NewDocument("fusion.txt", DocumentKind.Document);
+        var doc = NewDocument("fusion.txt");
         await repo.InsertDocumentAsync(doc);
 
         // A is the vector winner; B is the lexical winner.
@@ -156,31 +150,6 @@ public class SqliteRagRepositoryTests
     }
 
     [Fact]
-    public async Task Memory_chunks_are_retrieved_alongside_documents()
-    {
-        await using var root = new TempDataRoot();
-        var provider = ProviderFixture.ProviderFor(root);
-        await using var repo = await provider.OpenRagAsync(Iss, Sub, "default");
-
-        var doc = NewDocument("doc.txt", DocumentKind.Document);
-        var mem = NewDocument("memory-note", DocumentKind.Memory);
-        await repo.InsertDocumentAsync(doc);
-        await repo.InsertDocumentAsync(mem);
-
-        await repo.InsertChunksAsync(new[] { Chunk(doc.Id, 0, "document body about widgets") });
-        await repo.InsertChunksAsync(new[] { Chunk(mem.Id, 0, "remember the widgets preference") });
-
-        // Lexical "widgets" hits both; both kinds must be retrievable in one query.
-        var hits = await repo.HybridSearchAsync(
-            "widgets",
-            FakeEmbeddings.Embed("remember the widgets preference"),
-            k: 5);
-
-        hits.Select(h => h.Document.Kind).Should().Contain(DocumentKind.Document);
-        hits.Select(h => h.Document.Kind).Should().Contain(DocumentKind.Memory);
-    }
-
-    [Fact]
     public async Task Hybrid_search_returns_only_chunks_of_ready_documents()
     {
         await using var root = new TempDataRoot();
@@ -191,9 +160,9 @@ public class SqliteRagRepositoryTests
         // embeddings are close enough for k=10 KNN to surface all three - only the
         // ready one may come back (failed/processing chunks must never leak into
         // retrieval, even while their rows exist).
-        var ready = NewDocument("ready.txt", DocumentKind.Document);
-        var processing = NewDocument("processing.txt", DocumentKind.Document) with { Status = DocumentStatus.Processing };
-        var failed = NewDocument("failed.txt", DocumentKind.Document) with { Status = DocumentStatus.Failed };
+        var ready = NewDocument("ready.txt");
+        var processing = NewDocument("processing.txt") with { Status = DocumentStatus.Processing };
+        var failed = NewDocument("failed.txt") with { Status = DocumentStatus.Failed };
         await repo.InsertDocumentAsync(ready);
         await repo.InsertDocumentAsync(processing);
         await repo.InsertDocumentAsync(failed);
@@ -219,8 +188,8 @@ public class SqliteRagRepositoryTests
         var paths = ProviderFixture.RagPathsFor(root);
         await using var repo = await provider.OpenRagAsync(Iss, Sub, "default");
 
-        var doc = NewDocument("kept.txt", DocumentKind.Document);
-        var other = NewDocument("other.txt", DocumentKind.Document);
+        var doc = NewDocument("kept.txt");
+        var other = NewDocument("other.txt");
         await repo.InsertDocumentAsync(doc);
         await repo.InsertDocumentAsync(other);
         await repo.InsertChunksAsync(new[]
@@ -260,7 +229,7 @@ public class SqliteRagRepositoryTests
         var paths = ProviderFixture.RagPathsFor(root);
         await using var repo = await provider.OpenRagAsync(Iss, Sub, "default");
 
-        var doc = NewDocument("gone.txt", DocumentKind.Document);
+        var doc = NewDocument("gone.txt");
         await repo.InsertDocumentAsync(doc);
         await repo.InsertChunksAsync(new[]
         {
@@ -297,7 +266,7 @@ public class SqliteRagRepositoryTests
         // Write a unique chunk only into the default project.
         await using (var repoA = await provider.OpenRagAsync(Iss, Sub, "default"))
         {
-            var doc = NewDocument("a.txt", DocumentKind.Document);
+            var doc = NewDocument("a.txt");
             await repoA.InsertDocumentAsync(doc);
             await repoA.InsertChunksAsync(new[] { Chunk(doc.Id, 0, "secretfromprojecta") });
         }
@@ -318,7 +287,7 @@ public class SqliteRagRepositoryTests
         var provider = ProviderFixture.ProviderFor(root);
         await using var repo = await provider.OpenRagAsync(Iss, Sub, "default");
 
-        var doc = NewDocument("safe.txt", DocumentKind.Document);
+        var doc = NewDocument("safe.txt");
         await repo.InsertDocumentAsync(doc);
         await repo.InsertChunksAsync(new[] { Chunk(doc.Id, 0, "ordinary content here") });
 
@@ -340,15 +309,14 @@ public class SqliteRagRepositoryTests
         }
     }
 
-    private static Document NewDocument(string filename, DocumentKind kind) => new()
+    private static Document NewDocument(string filename) => new()
     {
         Id = Guid.NewGuid().ToString("D"),
         Filename = filename,
-        Mime = kind == DocumentKind.Memory ? "text/markdown" : "text/plain",
+        Mime = "text/plain",
         SizeBytes = 1234,
         Status = DocumentStatus.Ready,
         ChunkCount = 0,
-        Kind = kind,
         CreatedAt = DateTimeOffset.UtcNow,
     };
 

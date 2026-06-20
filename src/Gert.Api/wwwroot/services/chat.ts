@@ -274,7 +274,6 @@ export const labelFor = (kind: ToolKind): string =>
     read_artifact: "Reading a file",
     ask_user: "Asking you a question",
     fetch: "Fetching a web page",
-    memory: "Saving a memory",
     sub_agent: "Running a sub-agent",
   } satisfies Record<ToolKind, string>)[kind];
 

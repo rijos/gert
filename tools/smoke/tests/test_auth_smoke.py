@@ -73,10 +73,6 @@ ENDPOINTS: list[tuple[str, str]] = [
     ("POST", f"/api/projects/{PID}/documents"),
     ("GET", f"/api/projects/{PID}/documents/{GUID}"),
     ("DELETE", f"/api/projects/{PID}/documents/{GUID}"),
-    # MemoryController
-    ("GET", f"/api/projects/{PID}/memory"),
-    ("POST", f"/api/projects/{PID}/memory"),
-    ("DELETE", f"/api/projects/{PID}/memory/{GUID}"),
     # AccountController
     ("POST", f"/api/projects/{PID}/forget-documents"),
     ("GET", f"/api/projects/{PID}/export"),

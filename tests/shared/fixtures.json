@@ -207,21 +207,6 @@
       }
     },
     {
-      "$comment": "Memory-retrieval fixture: search_documents over the memory entry the E2E seeds via POST /api/projects/{pid}/memory (title 'Favorite database') - proves memory rides the hybrid query and surfaces its DECODED title in the hit + citation.",
-      "match": "contains",
-      "when": "search my docs about favorite database",
-      "tool_call": {
-        "name": "search_documents",
-        "arguments": "{\"query\":\"favorite database\",\"k\":5}"
-      },
-      "finish": "tool_calls",
-      "after_tool": {
-        "deltas": ["Your notes say ", "sqlite-vec is your favorite [1]."],
-        "finish": "stop",
-        "usage": { "completion_tokens": 8 }
-      }
-    },
-    {
       "$comment": "Todo tool-call fixture: set_todos replaces the model-managed checklist the todo card renders (one done, one active, one pending).",
       "match": "contains",
       "when": "plan the homelab upgrade",
@@ -294,21 +279,6 @@
         "deltas": ["That address is private ", "and was refused by policy."],
         "finish": "stop",
         "usage": { "completion_tokens": 8 }
-      }
-    },
-    {
-      "$comment": "Save-memory fixture: save_memory writes a kind='memory' rag.db entry via the REAL MemoryService (FakeEmbeddings makes it deterministic) - afterwards the knowledge panel lists it and search_documents can hit it.",
-      "match": "contains",
-      "when": "remember that I prefer tabs",
-      "tool_call": {
-        "name": "save_memory",
-        "arguments": "{\"title\":\"Editor preference\",\"content\":\"User prefers tabs over spaces.\"}"
-      },
-      "finish": "tool_calls",
-      "after_tool": {
-        "deltas": ["Saved - ", "I will remember that."],
-        "finish": "stop",
-        "usage": { "completion_tokens": 5 }
       }
     },
     {

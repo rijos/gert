@@ -30,13 +30,10 @@ public sealed record ProjectSummary
 
     public int DocumentCount { get; init; }
 
-    public int MemoryCount { get; init; }
-
     public static ProjectSummary From(
         ProjectMeta meta,
         int conversationCount,
-        int documentCount,
-        int memoryCount) => new()
+        int documentCount) => new()
     {
         Id = meta.Id,
         Name = meta.Name,
@@ -47,6 +44,5 @@ public sealed record ProjectSummary
         UpdatedAt = meta.UpdatedAt,
         ConversationCount = conversationCount,
         DocumentCount = documentCount,
-        MemoryCount = memoryCount,
     };
 }

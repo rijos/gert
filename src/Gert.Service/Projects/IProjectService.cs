@@ -6,7 +6,7 @@ namespace Gert.Service.Projects;
 
 /// <summary>
 /// Manages the caller's projects - folders with their own <c>chat.db</c> /
-/// <c>rag.db</c> / memory (rest-api.md section projects; configuration.md section 2).
+/// <c>rag.db</c> (rest-api.md section projects; configuration.md section 2).
 /// Project config (id, name, instructions, defaults) is a row in the
 /// <c>user.db</c> project registry, not a JSON sidecar (storage-and-data.md
 /// section "No JSON sidecars").
@@ -25,7 +25,7 @@ public interface IProjectService
         int offset = 0,
         CancellationToken cancellationToken = default);
 
-    /// <summary>Get one project's config + counts (conversations, documents, memory).</summary>
+    /// <summary>Get one project's config + counts (conversations, documents).</summary>
     Task<ProjectSummary?> GetAsync(string pid, CancellationToken cancellationToken = default);
 
     /// <summary>Create a new isolated project folder.</summary>

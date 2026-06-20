@@ -277,9 +277,7 @@ the blast radius of a process compromise) as the deployment grows.
 - **Prompt injection is self-scoped.** A malicious document or web page can steer *this* user's
   model turn, but isolation means it can only touch the user's own data and own-entitlement tools -
   there is no cross-tenant blast radius. The real residual is **exfiltration via outbound channels**
-  (web-search fetch, sandbox egress), which F5 and the sandbox egress-off default address, and
-  **persistence via memory**, which is why memory ships `manual`-only first
-  ([configuration section 9](configuration.md#9-open-decisions)) - `auto` waits for a review/undo UI.
+  (web-search fetch, sandbox egress), which F5 and the sandbox egress-off default address.
 - **~1-hour revocation window.** Pocket ID's access-token lifetime isn't shortenable
   ([decisions section 4](decisions.md#4-token-lifetime--revocation)); routine off-boarding is effective
   within ~1h. There is no denylist (it would break multi-instance); sub-hour revocation means a shorter IdP token lifetime.

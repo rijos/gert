@@ -1,5 +1,4 @@
 using Gert.Model.Dtos;
-using Gert.Model.Rag;
 using Gert.Model.UI;
 
 namespace Gert.Model.Projects;
@@ -7,7 +6,7 @@ namespace Gert.Model.Projects;
 /// <summary>
 /// User preferences, persisted as the <c>settings_json</c> blob in <c>user.db</c>'s
 /// single settings row: theme, UI language, default reply language, default model,
-/// default tools, memory mode (configuration.md section 3; rest-api.md section settings).
+/// default tools (configuration.md section 3; rest-api.md section settings).
 /// </summary>
 public sealed record UserSettings
 {
@@ -24,6 +23,4 @@ public sealed record UserSettings
 
     /// <summary>Default tool toggles for new conversations.</summary>
     public ToolToggles? DefaultTools { get; init; }
-
-    public MemoryMode MemoryMode { get; init; } = MemoryMode.Manual;
 }

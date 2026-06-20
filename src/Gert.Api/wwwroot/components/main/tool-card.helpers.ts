@@ -55,7 +55,6 @@ export const iconFor = (kind: ToolKind): string =>
     read_artifact: "file",
     ask_user: "user",
     fetch: "globe",
-    memory: "brain",
     sub_agent: "user",
   } satisfies Record<ToolKind, string>)[kind];
 

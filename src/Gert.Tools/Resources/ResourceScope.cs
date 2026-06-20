@@ -6,7 +6,7 @@ namespace Gert.Tools;
 /// </summary>
 public enum ResourceScope
 {
-    /// <summary>Project-wide objects (memory, files) shared across the project's conversations.</summary>
+    /// <summary>Project-wide objects (files) shared across the project's conversations.</summary>
     Project,
 
     /// <summary>Objects scoped to the active conversation (canvas artifacts).</summary>

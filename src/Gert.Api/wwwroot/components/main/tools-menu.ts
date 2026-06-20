@@ -35,7 +35,6 @@ const LABELS: Record<string, string> = {
   todo: t("Todos"),
   clock: t("Clock"),
   ask_user: t("Ask me"),
-  memory: t("Save memories"),
   sub_agent: t("Sub-agents"),
 };
 

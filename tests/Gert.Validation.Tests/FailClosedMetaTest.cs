@@ -91,7 +91,6 @@ public sealed class FailClosedMetaTest
             "MoveConversationRequest",
             "CreateProjectRequest",
             "UpdateProjectRequest",
-            "CreateMemoryRequest",
             "UpdateSettingsRequest",
             "DocumentUpload",
             "AnswerRequest",
@@ -131,8 +130,8 @@ public sealed class FailClosedMetaTest
     public void Tool_args_discovery_finds_the_migrated_tools()
     {
         // Guards the discovery itself: if the filter ever stops seeing these, the check
-        // above could pass vacuously. These are the ten Standard tools migrated to the
-        // typed-args base (ask_user / sub_agent stay Modal and are excluded).
+        // above could pass vacuously. These are the nine Standard tools on the typed-args
+        // base (ask_user / sub_agent stay Modal and are excluded).
         var names = ToolCallArgTypes().Select(t => t.Name).ToHashSet(StringComparer.Ordinal);
 
         names.Should().Contain(new[]
@@ -146,7 +145,6 @@ public sealed class FailClosedMetaTest
             "MakeArtifactArgs",
             "EditArtifactArgs",
             "ReadArtifactArgs",
-            "SaveMemoryArgs",
         });
     }
 
@@ -157,7 +155,7 @@ public sealed class FailClosedMetaTest
     /// still seen.
     /// </summary>
     private static IReadOnlyList<Type> ToolCallArgTypes() =>
-        typeof(SaveMemoryTool).Assembly
+        typeof(RagTool).Assembly
             .GetTypes()
             .Where(t => t is { IsClass: true, IsAbstract: false })
             .Select(ToolCallArgs)

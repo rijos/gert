@@ -53,7 +53,7 @@ public sealed class DocumentService : IDocumentService
         CancellationToken cancellationToken = default)
     {
         await using var repo = await OpenAsync(pid, cancellationToken).ConfigureAwait(false);
-        return await repo.ListDocumentsAsync(DocumentKind.Document, cancellationToken).ConfigureAwait(false);
+        return await repo.ListDocumentsAsync(cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc />
@@ -63,10 +63,7 @@ public sealed class DocumentService : IDocumentService
         CancellationToken cancellationToken = default)
     {
         await using var repo = await OpenAsync(pid, cancellationToken).ConfigureAwait(false);
-        var document = await repo.GetDocumentAsync(documentId, cancellationToken).ConfigureAwait(false);
-
-        // Only documents are surfaced here; memory is GetAsync'd via IMemoryService.
-        return document is { Kind: DocumentKind.Document } ? document : null;
+        return await repo.GetDocumentAsync(documentId, cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc />
@@ -121,7 +118,6 @@ public sealed class DocumentService : IDocumentService
             SizeBytes = dto.SizeBytes ?? sizeBytes,
             Status = DocumentStatus.Processing,
             ChunkCount = 0,
-            Kind = DocumentKind.Document,
             CreatedAt = _time.GetUtcNow(),
         };
 
@@ -156,7 +152,7 @@ public sealed class DocumentService : IDocumentService
         await using var repo = await OpenAsync(pid, cancellationToken).ConfigureAwait(false);
 
         var document = await repo.GetDocumentAsync(documentId, cancellationToken).ConfigureAwait(false);
-        if (document is not { Kind: DocumentKind.Document })
+        if (document is null)
         {
             return false;
         }
@@ -182,11 +178,9 @@ public sealed class DocumentService : IDocumentService
             await repo.ClearAsync(cancellationToken).ConfigureAwait(false);
         }
 
-        // Clear the stored uploads and memory bodies; the project's registry row
-        // (user.db) and databases are not touched here.
+        // Clear the stored uploads; the project's registry row (user.db) and
+        // databases are not touched here.
         await _objects.DeletePrefixAsync(ScopeFor(pid), "files/", cancellationToken)
-            .ConfigureAwait(false);
-        await _objects.DeletePrefixAsync(ScopeFor(pid), "memory/", cancellationToken)
             .ConfigureAwait(false);
     }
 

@@ -4,12 +4,12 @@
 
 vLLM exposes an **OpenAI-compatible** `/v1/chat/completions` with function calling and streaming, so the orchestrator can use a standard OpenAI client pointed at the model's base URL.
 
-The API advertises up to twelve tools to the model (each gated by entitlement,
+The API advertises up to eleven tools to the model (each gated by entitlement,
 conversation toggles, and the request - see the intersection rule below):
 
 ```jsonc
 [
-  { "name":"search_documents", "description":"Hybrid search over this project's private docs + memory",
+  { "name":"search_documents", "description":"Hybrid search over this project's private docs",
     "parameters": { "query":"string", "k":"integer" } },
   { "name":"web_search", "description":"Search the web via SearXNG",
     "parameters": { "query":"string" } },
@@ -30,8 +30,6 @@ conversation toggles, and the request - see the intersection rule below):
     "parameters": { "questions":"{ question:string, header:string?, options:string[]?, allow_free_text:boolean? }[]" } },
   { "name":"web_fetch", "description":"Fetch one public web page by URL, return its readable content (HTML reduced to plain text, clipped)",
     "parameters": { "url":"string", "max_chars":"integer?" } },
-  { "name":"save_memory", "description":"Save ONE durable fact or preference for future conversations in this project",
-    "parameters": { "title":"string", "content":"string" } },
   { "name":"run_sub_agent", "description":"Delegate one self-contained task to a sub-agent and wait for its result (it cannot see this conversation; only its final answer returns)",
     "parameters": { "task":"string", "context":"string?" } }
 ]
@@ -50,6 +48,7 @@ description therefore stays at one or two short sentences carrying only the
 behavioural contract (the per-tool sections below hold the rationale); growing
 one back, or adding a twelfth tool, must be re-verified against the live model
 (`tools/smoke` section live tool sweep).
+
 
 **Tool-call robustness (leak salvage).** The server-side tool parser
 (`--tool-call-parser qwen3_coder`, regex-based) misses near-miss calls; the raw
@@ -226,7 +225,7 @@ Run phase (worker scope, `DetachedUserContext` seeded from the job's snapshot):
 3. If the model emits tool_calls:
      a. emit `tool_call` (card appears)
      b. execute the tool against THIS project's resources
-        - search_documents -> hybrid query (below) on this project's rag.db (docs + memory)
+        - search_documents -> hybrid query (below) on this project's rag.db (docs)
         - web_search       -> SearXNG
         - run_python       -> sandbox (monty by default, or gVisor)
         - make/edit/read_artifact -> this conversation's chat_objects rows (chat.db), via the host's IObjectResource
@@ -303,13 +302,6 @@ The mockup labels the retrieval a **hybrid query**, so combine lexical + vector 
 3. **Reciprocal Rank Fusion** to merge the two ranked lists into the final top-k, then join back to `chunks` + `documents` for content, `page`, filename, and score (the `0.89`, `0.81`, `0.77` in the mockup). The join-back filters to `documents.status = 'ready'`, so chunks of a failed or still-processing document are never retrievable - the read-side end of the ingestion failure cleanup below.
 
 The result becomes the `tool_result` SSE and seeds the citations.
-
-> **Memory rides the same query.** A project's memory entries are embedded into the *same*
-> `rag.db` as its documents, distinguished only by `documents.kind = 'memory'`
-> ([storage-and-data](storage-and-data.md#ragdb-sqlite-vec)). So `search_documents` retrieves
-> memory and documents together with no extra plumbing; `pinned` memory is additionally
-> prepended to the system prompt (loop step 0) rather than waiting to be retrieved
-> ([configuration -> memory](configuration.md#23-memory)).
 
 > **Loading sqlite-vec in .NET.** Use a SQLite build that permits extensions (`SQLitePCLRaw.bundle_e_sqlite3`), then on each `rag.db` connection:
 > ```csharp
@@ -400,27 +392,6 @@ mirroring web search.
 > model reads** (card-visible, exactly like a sandbox error) - never a turn
 > fault: the model fetched an attacker-influenceable URL, so the refusal must
 > be visible, not fatal.
-
-### Save memory (`save_memory`)
-
-`save_memory(title, content)` is the write side of memory: it calls the same
-`MemoryService.UpsertAsync` the knowledge panel's POST uses, so the entry is
-chunked + embedded into the project's `rag.db` as `kind='memory'` and is
-**immediately retrievable by `search_documents`**
-([memory rides the same query](#rag-hybrid-retrieval)). The embed runs inline
-(one vLLM embeddings round-trip) - comfortably inside the generic
-`ToolCallTimeout`.
-
-Two deliberate restrictions:
-
-- **No `pinned` argument.** Pinned entries are prepended to every future
-  system prompt; letting the model pin would let one turn quietly steer all
-  later ones, so pinning stays a human action in the knowledge panel.
-- **No dedup.** Each call creates a NEW entry (the DTO carries no id; editing
-  is add + delete at the host) - the tool description warns the model to never
-  re-save something it already saved this conversation. A validation failure
-  (title > 200 chars, content > 100 000) returns a correctable tool error the
-  model can shorten and retry.
 
 ### Sandbox - security-critical
 `run_python` runs untrusted, model-written code - the strongest blast radius in the system ([security F5](security.md#3-findings--remediations)). Two backends sit behind one `IPythonSandbox` port, chosen by the operator (`Gert:Tools:Sandbox:Type`):

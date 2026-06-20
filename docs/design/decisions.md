@@ -54,15 +54,15 @@ SSE (`.../documents/events`) vs. simple polling. See [REST API -> Documents](res
 
 How a user's data is organised: one flat store, or scoped workspaces? See [Configuration -> projects](configuration.md#2-projects).
 
-- **Decision:** **Per-project isolation, "default" not "global".** Each project is its own folder with its own `chat.db` + `rag.db` + memory, fully isolated - no cross-project search, no shared/global corpus. The initial, always-present project is **`default`** (the landing project); creating a project just makes another isolated folder. This nests [principle #2](principles.md) (filesystem isolation) and [principle #5](principles.md) (deletion drops a store's data, not a row) one level down. *Rejected:* a "global + local" blended scope - it reintroduced cross-corpus query fusion and a `use_global` flag for little gain over simply switching projects.
+- **Decision:** **Per-project isolation, "default" not "global".** Each project is its own folder with its own `chat.db` + `rag.db`, fully isolated - no cross-project search, no shared/global corpus. The initial, always-present project is **`default`** (the landing project); creating a project just makes another isolated folder. This nests [principle #2](principles.md) (filesystem isolation) and [principle #5](principles.md) (deletion drops a store's data, not a row) one level down. *Rejected:* a "global + local" blended scope - it reintroduced cross-corpus query fusion and a `use_global` flag for little gain over simply switching projects.
 
 
 
 ## 8. Storage backend seam - everything non-database through IObjectStore
 
-Where do the non-database bytes under a user's tree (uploads, memory bodies) live: direct file I/O in the adapter, or one storage-backend seam?
+Where do the non-database bytes under a user's tree (uploads) live: direct file I/O in the adapter, or one storage-backend seam?
 
-- **Decision:** **`IObjectStore` is the single storage-backend seam - every byte under a user's tree that is not a database file flows through it**: uploads (`files/...`) and memory bodies (`memory/...`). One seam means an S3/Azure-Blob backend is a drop-in swap. (Structured user state is **not** blob territory - it lives in `user.db`, [section 9](#9-userdb---structured-user-state-is-a-database-not-json-sidecars).)
+- **Decision:** **`IObjectStore` is the single storage-backend seam - every byte under a user's tree that is not a database file flows through it**: uploads (`files/...`). One seam means an S3/Azure-Blob backend is a drop-in swap. (Structured user state is **not** blob territory - it lives in `user.db`, [section 9](#9-userdb---structured-user-state-is-a-database-not-json-sidecars).)
   - **Scopes:** an `ObjectScope` is the user root or one project root; keys are scope-relative and traversal-guarded. The scope carries only the opaque `sha256(iss+sub)` key (derivation = `StorageKeys`, core policy in `Gert.Service`).
   - **Atomic PUT is a port contract** - a reader never observes a partial object. Cloud backends give it natively; `LocalObjectStore` stages to a temp sibling + renames.
   - **Lifecycle is independent stores, orchestrated by the service.** Deleting a user/project is not one store's job: the **service** drops the database halves (the providers' `DeleteUserAsync` / `DeleteProjectAsync` - the structured-database and RAG engines each removing their own files/rows) and then the artifact half (`DeleteScopeAsync`), in that order so a local whole-tree wipe never races an open db handle. "Emptied, never removed" = the providers' project delete + `DeletePrefixAsync("")`; the admin scan = `ListUserKeysAsync` + `ListEntriesAsync` (maps 1:1 to S3 listing). `IObjectStore` knows nothing about databases - it owns only the artifact bytes.
@@ -86,7 +86,7 @@ files on the object store, or a database?
     (`PRAGMA user_version`, `Migrations/user/*.sql`); and provisioning collapses to "open the
     database" - first open creates and migrates it, the provisioner seeds the `default`
     project row, and the steady-state request path stays read-only.
-  - **Consequences:** `IObjectStore` is demoted to genuine blobs (uploads, memory bodies) plus
+  - **Consequences:** `IObjectStore` is demoted to genuine blobs (uploads) plus
     the artifact half of the lifecycle and the admin footprint listing. The provider seam
     splits per database - `IUserDatabaseProvider` / `IChatDatabaseProvider` (and the RAG index
     is its own capability, `Gert.Rag.IRagIndexProvider`) - and each owns destroying its own data
@@ -176,7 +176,7 @@ parallelism? See [chat-and-tools section detached turns](chat-and-tools.md#detac
 ## 12. Deletion crash-consistency - a journal + idempotent forward recovery
 
 Erasing a user spans three independent stores - the structured-database engine
-(`user.db`/`chat.db`), the RAG engine (`rag.db`), and the object store (file/memory blobs) -
+(`user.db`/`chat.db`), the RAG engine (`rag.db`), and the object store (file blobs) -
 which may even sit on separate roots ([configuration -> data root](../installation/configuration.md#8-auth--storage--gertdatabase--gertrag---identity-the-data-root-and-the-engines)).
 A crash between steps would leave a partial state, worst case **blobs (PII) left on disk after a
 "delete my account" the operator believed finished**. See

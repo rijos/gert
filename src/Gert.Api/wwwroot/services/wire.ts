@@ -32,7 +32,6 @@ export type ToolKind =
   | "read_artifact"
   | "ask_user"
   | "fetch"
-  | "memory"
   | "sub_agent";
 // turn-event `$type` discriminator (Gert.Model/Events/ChatEvent.cs).
 export type WireEventType =
@@ -49,7 +48,6 @@ export type WireEventType =
   | "cancelled"
   | "error";
 export type Theme = "light" | "dark" | "auto";
-export type MemoryMode = "off" | "manual" | "auto";
 
 // The per-conversation tool on/off map: { tool_id: boolean }. The set of ids is open (server
 // owns it), so this is an open record rather than a fixed key list.
@@ -72,7 +70,6 @@ export interface WireProject {
   // present on the list (ProjectSummary), absent on the create/patch echo (ProjectMeta)
   conversation_count?: number;
   document_count?: number;
-  memory_count?: number;
 }
 
 // POST /api/projects, PATCH /api/projects/{pid}
@@ -267,20 +264,6 @@ export interface WireDocument {
   created_at?: string;
 }
 
-export interface WireMemoryEntry {
-  id: string;
-  title: string;
-  content?: string | null;
-  pinned?: boolean;
-  updated_at?: string;
-}
-
-export interface WireMemoryInput {
-  title: string;
-  content: string;
-  pinned?: boolean;
-}
-
 export interface WireModel {
   id: string;
   name: string;
@@ -299,7 +282,6 @@ export interface WireSettings {
   reply_language?: string | null;
   default_model_id?: string | null;
   default_tools?: WireToolToggles | null;
-  memory_mode?: MemoryMode;
 }
 
 // An artifact download ticket, served outside the turn stream.

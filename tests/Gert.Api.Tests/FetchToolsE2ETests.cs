@@ -5,38 +5,33 @@ using System.Text;
 using System.Text.Json;
 using FluentAssertions;
 using Gert.Api.Contracts;
-using Gert.Api.Controllers;
 using Gert.Model;
 using Gert.Model.Chat;
 using Gert.Model.Dtos;
 using Gert.Model.Events;
 using Gert.Model.Json;
-using Gert.Model.Rag;
 using Gert.Testing;
 using Xunit;
 
 namespace Gert.Api.Tests;
 
 /// <summary>
-/// The two outward-writing tools end-to-end over the mocks: <c>web_fetch</c>
-/// (fixture page -> content + web citation; the blocked metadata URL -> a
-/// card-visible TOOL ERROR while the turn completes - the F5 visibility proof)
-/// and <c>save_memory</c> (fixture prompt -> a <c>kind='memory'</c> entry the
-/// knowledge-panel GET lists). FakeWebFetcher / the real MemoryService over
-/// FakeEmbeddings stand in for the outside world (testing.md section 4.2).
+/// The <c>web_fetch</c> tool end-to-end over the mocks: the fixture page -> content +
+/// web citation, and the blocked metadata URL -> a card-visible TOOL ERROR while the
+/// turn completes (the F5 visibility proof). FakeWebFetcher stands in for the outside
+/// world (testing.md section 4.2).
 /// </summary>
-public sealed class FetchAndMemoryToolsE2ETests : IClassFixture<GertApiFactory>
+public sealed class FetchToolsE2ETests : IClassFixture<GertApiFactory>
 {
     private static readonly JsonSerializerOptions Json = GertJsonOptions.Default;
 
     private readonly GertApiFactory _factory;
 
-    public FetchAndMemoryToolsE2ETests(GertApiFactory factory) => _factory = factory;
+    public FetchToolsE2ETests(GertApiFactory factory) => _factory = factory;
 
     private HttpClient Authed()
     {
         var client = _factory.CreateClient();
-        // The standing `user` role carries "... fetch memory" - the new grants.
         client.DefaultRequestHeaders.Authorization =
             new AuthenticationHeaderValue("Bearer", _factory.TokenFor("user"));
         return client;
@@ -114,31 +109,6 @@ public sealed class FetchAndMemoryToolsE2ETests : IClassFixture<GertApiFactory>
         events[^1].Should().BeOfType<MessageEndEvent>();
         string.Concat(events.OfType<DeltaEvent>().Select(d => d.Text))
             .Should().Contain("refused by policy");
-    }
-
-    [Fact]
-    public async Task Save_memory_persists_an_unpinned_entry_the_knowledge_panel_lists()
-    {
-        var client = Authed();
-
-        var events = await RunTurnAsync(
-            client,
-            "Memory - save",
-            "remember that I prefer tabs",
-            new ToolToggles(new Dictionary<string, bool> { ["memory"] = true }));
-
-        var result = events.OfType<ToolResultEvent>().Should().ContainSingle().Subject;
-        result.Kind.Should().Be("memory");
-        result.Status.Should().Be(ToolCallStatus.Done);
-        result.Stdout.Should().Be("saved memory: Editor preference");
-        events[^1].Should().BeOfType<MessageEndEvent>();
-
-        // The write side is real (MemoryService + FakeEmbeddings): the entry is
-        // listed by the knowledge-panel GET, decoded title and all, unpinned.
-        var entries = await client.GetFromJsonAsync<IReadOnlyList<MemoryEntry>>(
-            "/api/projects/default/memory", Json);
-        var entry = entries.Should().ContainSingle(e => e.Title == "Editor preference").Subject;
-        entry.Pinned.Should().BeFalse("pinning stays a human action in the knowledge panel");
     }
 
     // SSE helpers (same shape as WalkingSkeletonTests).

@@ -9,8 +9,8 @@ using Xunit;
 namespace Gert.Validation.Tests;
 
 /// <summary>
-/// Positive / negative / boundary tests for the project / memory / settings /
-/// conversation validators (testing.md section 5), against the production registration.
+/// Positive / negative / boundary tests for the project / settings / conversation
+/// validators (testing.md section 5), against the production registration.
 /// </summary>
 public sealed class ProjectAndMemoryValidatorTests
 {
@@ -49,18 +49,6 @@ public sealed class ProjectAndMemoryValidatorTests
         var v = _sp.Validator<UpdateProjectRequest>();
         v.TestValidate(new UpdateProjectRequest()).ShouldNotHaveAnyValidationErrors();
         v.TestValidate(new UpdateProjectRequest { Name = " " }).ShouldHaveValidationErrorFor(r => r.Name);
-    }
-
-    [Fact]
-    public void CreateMemory_requires_safe_title_and_content()
-    {
-        var v = _sp.Validator<CreateMemoryRequest>();
-        v.TestValidate(new CreateMemoryRequest { Title = "T", Content = "Body" })
-            .ShouldNotHaveAnyValidationErrors();
-        v.TestValidate(new CreateMemoryRequest { Title = string.Empty, Content = "Body" })
-            .ShouldHaveValidationErrorFor(r => r.Title);
-        v.TestValidate(new CreateMemoryRequest { Title = "T", Content = "  " })
-            .ShouldHaveValidationErrorFor(r => r.Content);
     }
 
     [Fact]

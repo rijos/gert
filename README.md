@@ -35,8 +35,8 @@
   optional fetch-and-summarize step.
 - **Artifacts canvas** - named code fences open as live canvas tabs (HTML preview, source
   view, download) and persist across reloads.
-- **Projects & memory** - isolated workspaces, each with its own chats, documents, and
-  memory; pinned memory rides the system prompt, the rest is retrieved on demand.
+- **Projects** - isolated workspaces, each with its own chats and documents; custom
+  project instructions ride the system prompt, uploaded documents are retrieved on demand.
 - **Detached turns** - generation runs on a background worker and survives client
   disconnects; resume over SSE or polling from an exact event cursor.
 - **Passkey login** - OIDC Authorization Code + PKCE against an OAuth Compatible provider;  

@@ -24,8 +24,6 @@ public interface IGertServices
 
     IArtifactService Artifacts { get; }
 
-    IMemoryService Memory { get; }
-
     IProjectService Projects { get; }
 
     ISettingsService Settings { get; }
