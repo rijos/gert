@@ -74,6 +74,7 @@ public sealed class RagTool : ToolCall<RagArgs, RagResult>
     public override async Task<ToolCallResult<RagResult>> CallAsync(
         RagArgs args,
         ToolInvocation invocation,
+        IToolHost host,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(args);

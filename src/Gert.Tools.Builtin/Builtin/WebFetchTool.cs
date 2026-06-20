@@ -63,6 +63,7 @@ public sealed class WebFetchTool : ToolCall<WebFetchArgs, WebFetchResultPayload>
     public override async Task<ToolCallResult<WebFetchResultPayload>> CallAsync(
         WebFetchArgs args,
         ToolInvocation invocation,
+        IToolHost host,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(args);

@@ -48,6 +48,7 @@ internal static class ValidationTestHost
 
         public Task<ToolResult> ExecuteAsync(
             ToolInvocation invocation,
+            IToolHost host,
             CancellationToken cancellationToken = default) =>
             Task.FromResult(new ToolResult { Success = true });
     }

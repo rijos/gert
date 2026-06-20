@@ -59,6 +59,7 @@ public sealed class MakeArtifactTool : ToolCall<MakeArtifactArgs, MakeArtifactRe
     public override async Task<ToolCallResult<MakeArtifactResult>> CallAsync(
         MakeArtifactArgs args,
         ToolInvocation invocation,
+        IToolHost host,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(args);

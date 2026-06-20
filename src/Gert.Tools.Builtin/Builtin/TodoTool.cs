@@ -84,6 +84,7 @@ public sealed class TodoTool : ToolCall<TodoArgs, TodoToolResult>, IToolReminder
     public override Task<ToolCallResult<TodoToolResult>> CallAsync(
         TodoArgs args,
         ToolInvocation invocation,
+        IToolHost host,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(args);

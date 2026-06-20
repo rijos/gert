@@ -110,6 +110,7 @@ public sealed class AskUserTool : ToolCallModal
     /// <inheritdoc />
     public override async Task<ToolResult> ExecuteAsync(
         ToolInvocation invocation,
+        IToolHost host,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(invocation);

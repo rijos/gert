@@ -56,6 +56,7 @@ public sealed class EditArtifactTool : ToolCall<EditArtifactArgs, EditArtifactRe
     public override async Task<ToolCallResult<EditArtifactResult>> CallAsync(
         EditArtifactArgs args,
         ToolInvocation invocation,
+        IToolHost host,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(args);

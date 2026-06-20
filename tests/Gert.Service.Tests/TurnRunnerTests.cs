@@ -966,6 +966,7 @@ public sealed class TurnRunnerTests
 
         public Task<ToolResult> ExecuteAsync(
             ToolInvocation invocation,
+            IToolHost host,
             CancellationToken cancellationToken = default)
         {
             clock.Advance(executionSpan);
@@ -1153,6 +1154,7 @@ public sealed class TurnRunnerTests
 
         public Task<ToolResult> ExecuteAsync(
             ToolInvocation invocation,
+            IToolHost host,
             CancellationToken cancellationToken = default) =>
             Task.FromResult(new ToolResult { Success = true, ResultJson = "{}" });
     }
@@ -1208,6 +1210,7 @@ public sealed class TurnRunnerTests
 
         public Task<ToolResult> ExecuteAsync(
             ToolInvocation invocation,
+            IToolHost host,
             CancellationToken cancellationToken = default)
         {
             Interlocked.Increment(ref _executions);
@@ -1233,6 +1236,7 @@ public sealed class TurnRunnerTests
 
         public async Task<ToolResult> ExecuteAsync(
             ToolInvocation invocation,
+            IToolHost host,
             CancellationToken cancellationToken = default)
         {
             await Task.Delay(wait, cancellationToken);
@@ -1255,6 +1259,7 @@ public sealed class TurnRunnerTests
 
         public async Task<ToolResult> ExecuteAsync(
             ToolInvocation invocation,
+            IToolHost host,
             CancellationToken cancellationToken = default)
         {
             Deadline = invocation.Deadline;
@@ -1283,6 +1288,7 @@ public sealed class TurnRunnerTests
 
         public async Task<ToolResult> ExecuteAsync(
             ToolInvocation invocation,
+            IToolHost host,
             CancellationToken cancellationToken = default)
         {
             await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
@@ -1349,6 +1355,7 @@ public sealed class TurnRunnerTests
 
         public Task<ToolResult> ExecuteAsync(
             ToolInvocation invocation,
+            IToolHost host,
             CancellationToken cancellationToken = default) =>
             Task.FromResult(new ToolResult { Success = true, ResultJson = "{}", Artifacts = [artifact] });
     }

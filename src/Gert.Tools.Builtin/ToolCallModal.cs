@@ -32,5 +32,6 @@ public abstract class ToolCallModal : ITool
     /// <inheritdoc />
     public abstract Task<ToolResult> ExecuteAsync(
         ToolInvocation invocation,
+        IToolHost host,
         CancellationToken cancellationToken = default);
 }

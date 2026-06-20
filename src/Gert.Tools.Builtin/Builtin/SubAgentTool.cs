@@ -108,6 +108,7 @@ public sealed class SubAgentTool : ToolCallModal
     /// <inheritdoc />
     public override async Task<ToolResult> ExecuteAsync(
         ToolInvocation invocation,
+        IToolHost host,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(invocation);
@@ -224,7 +225,7 @@ public sealed class SubAgentTool : ToolCallModal
                 foreach (var call in calls)
                 {
                     lifetime.Token.ThrowIfCancellationRequested();
-                    var resultJson = await ExecuteNestedAsync(nestedTools, call, invocation, lifetime.Token)
+                    var resultJson = await ExecuteNestedAsync(nestedTools, call, invocation, host, lifetime.Token)
                         .ConfigureAwait(false);
                     messages.Add(new ChatModelMessage
                     {
@@ -252,6 +253,7 @@ public sealed class SubAgentTool : ToolCallModal
         IReadOnlyList<ITool> nestedTools,
         ChatModelToolCall call,
         ToolInvocation parent,
+        IToolHost host,
         CancellationToken cancellationToken)
     {
         var tool = nestedTools.FirstOrDefault(t =>
@@ -275,7 +277,7 @@ public sealed class SubAgentTool : ToolCallModal
 
         try
         {
-            var result = await tool.ExecuteAsync(invocation, cancellationToken).ConfigureAwait(false);
+            var result = await tool.ExecuteAsync(invocation, host, cancellationToken).ConfigureAwait(false);
             return result.Success
                 ? result.ResultJson ?? "{}"
                 : ErrorJson(result.Error ?? "tool failed");

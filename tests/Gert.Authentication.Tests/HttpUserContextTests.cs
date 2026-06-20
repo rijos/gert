@@ -202,6 +202,7 @@ public sealed class HttpUserContextTests
 
         public Task<ToolResult> ExecuteAsync(
             ToolInvocation invocation,
+            IToolHost host,
             CancellationToken cancellationToken = default) =>
             Task.FromResult(new ToolResult { Success = true });
     }

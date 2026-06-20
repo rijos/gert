@@ -61,6 +61,7 @@ public sealed class ReadArtifactTool : ToolCall<ReadArtifactArgs, ReadArtifactRe
     public override async Task<ToolCallResult<ReadArtifactResult>> CallAsync(
         ReadArtifactArgs args,
         ToolInvocation invocation,
+        IToolHost host,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(args);

@@ -47,6 +47,7 @@ public sealed class ClockTool : ToolCall<ClockArgs, ClockResult>
     public override Task<ToolCallResult<ClockResult>> CallAsync(
         ClockArgs args,
         ToolInvocation invocation,
+        IToolHost host,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(args);

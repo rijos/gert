@@ -2,6 +2,7 @@ using FluentAssertions;
 using Gert.Model.Dtos;
 using Gert.Model.Rag;
 using Gert.Service.Documents;
+using Gert.Testing.Fakes;
 using Gert.Tools;
 using Gert.Tools.Builtin;
 using Gert.Validation;

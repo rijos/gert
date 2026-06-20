@@ -21,5 +21,6 @@ public interface IToolCall<TArgs, TResult> : ITool
     Task<ToolCallResult<TResult>> CallAsync(
         TArgs args,
         ToolInvocation invocation,
+        IToolHost host,
         CancellationToken cancellationToken = default);
 }

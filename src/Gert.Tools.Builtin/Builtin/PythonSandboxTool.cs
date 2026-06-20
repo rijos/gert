@@ -58,6 +58,7 @@ public sealed class PythonSandboxTool : ToolCall<PythonSandboxArgs, PythonSandbo
     public override async Task<ToolCallResult<PythonSandboxToolResult>> CallAsync(
         PythonSandboxArgs args,
         ToolInvocation invocation,
+        IToolHost host,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(args);

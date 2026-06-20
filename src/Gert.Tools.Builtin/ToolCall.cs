@@ -47,11 +47,13 @@ public abstract class ToolCall<TArgs, TResult> : IToolCall<TArgs, TResult>
     public abstract Task<ToolCallResult<TResult>> CallAsync(
         TArgs args,
         ToolInvocation invocation,
+        IToolHost host,
         CancellationToken cancellationToken = default);
 
     /// <inheritdoc />
     public async Task<ToolResult> ExecuteAsync(
         ToolInvocation invocation,
+        IToolHost host,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(invocation);
@@ -82,7 +84,7 @@ public abstract class ToolCall<TArgs, TResult> : IToolCall<TArgs, TResult>
             return new ToolResult { Success = false, Error = ex.Message };
         }
 
-        var result = await CallAsync(validated, invocation, cancellationToken).ConfigureAwait(false);
+        var result = await CallAsync(validated, invocation, host, cancellationToken).ConfigureAwait(false);
         return ToToolResult(result);
     }
 

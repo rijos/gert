@@ -65,6 +65,7 @@ public sealed class SaveMemoryTool : ToolCall<SaveMemoryArgs, SaveMemoryResult>
     public override async Task<ToolCallResult<SaveMemoryResult>> CallAsync(
         SaveMemoryArgs args,
         ToolInvocation invocation,
+        IToolHost host,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(args);

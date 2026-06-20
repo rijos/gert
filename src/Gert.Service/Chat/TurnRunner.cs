@@ -756,11 +756,16 @@ public sealed class TurnRunner : ITurnRunner
             callCts.CancelAfter(_options.ToolCallTimeout);
         }
 
+        // The capability surface handed to the tool. Transitional until the real chat host
+        // (Chat Objects, Project Rag, ChatToolUi, ChatToolDelegate) lands; carries the turn
+        // deadline the tools read today and throws on any not-yet-wired capability use.
+        var host = new NotSupportedToolHost(deadline);
+
         var stopwatch = Stopwatch.StartNew();
         ToolResult result;
         try
         {
-            result = await tool.ExecuteAsync(invocation, callCts.Token).ConfigureAwait(false);
+            result = await tool.ExecuteAsync(invocation, host, callCts.Token).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested
                                                  && callCts.IsCancellationRequested)

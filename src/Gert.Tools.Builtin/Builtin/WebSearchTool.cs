@@ -53,6 +53,7 @@ public sealed class WebSearchTool : ToolCall<WebSearchArgs, WebSearchToolResult>
     public override async Task<ToolCallResult<WebSearchToolResult>> CallAsync(
         WebSearchArgs args,
         ToolInvocation invocation,
+        IToolHost host,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(args);

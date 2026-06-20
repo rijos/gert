@@ -34,10 +34,28 @@ public interface ITool
     ToolType Type => ToolType.Standard;
 
     /// <summary>
-    /// Execute the tool against the active project's resources for the given
-    /// arguments (the model's tool-call payload).
+    /// Whether the tool needs a human in the loop (ask_user). An autonomous driver
+    /// (sub-agent, headless - <see cref="IToolHost.Ui"/> is null) excludes such tools
+    /// at advertise time and fails them closed at execution. Defaults to false.
+    /// </summary>
+    bool RequiresHuman => false;
+
+    /// <summary>Display title for the tools menu (chat-and-tools.md section tool catalog). Defaults to <see cref="Name"/>.</summary>
+    string Title => Name;
+
+    /// <summary>Icon key into the curated client vocabulary (icons.ts). Defaults to a generic tool glyph.</summary>
+    string Icon => "tool";
+
+    /// <summary>The menu grouping/source the descriptor sorts under. Defaults to the built-in group.</summary>
+    string Group => "builtin";
+
+    /// <summary>
+    /// Execute the tool against the <paramref name="host"/> capability surface for the
+    /// given arguments (the model's tool-call payload). The host is pre-scoped to the
+    /// active (user, project[, conversation]); the tool never sees iss/sub.
     /// </summary>
     Task<ToolResult> ExecuteAsync(
         ToolInvocation invocation,
+        IToolHost host,
         CancellationToken cancellationToken = default);
 }
