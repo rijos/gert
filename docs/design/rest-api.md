@@ -40,17 +40,29 @@ popup can never offer a tool the model would be denied: a `limited` token sees
 fewer rows, a token with no `gert_tools` claim sees an empty list. The user is
 implicit (token); nothing is request-supplied. Per-user, so `no-store`.
 
-Each entry is `{ id, name, description, tool_type }`: `id` is the capability id
-(== the `gert_tools` entitlement name, e.g. `rag`); `name` is the model-facing
-function name (`search_documents`) - the SPA maps `id` to a friendly label
-client-side; `tool_type` is the execution flow (`standard` | `modal`), which the
-popup uses to derive its groupings (the Canvas trio, the rag "Use my docs" row).
+Each entry carries the full display descriptor the popup renders from, so the SPA
+holds **no per-tool knowledge** - `{ id, name, description, tool_type, title, icon,
+group, source, requires_human }`:
+- `id` - the capability id (== the `gert_tools` entitlement name, e.g. `rag`).
+- `name` - the model-facing function name (`search_documents`).
+- `description` - the model-readable description (the popup uses it as a row's hover title).
+- `tool_type` - the execution flow (`standard` | `modal`).
+- `title` - the menu row's display label (e.g. `Use my docs`).
+- `icon` - a key into the SPA's curated icon vocabulary (`wwwroot/icons/icons.ts`);
+  the server degrades any key it doesn't recognise to a shipped fallback, so the
+  client only ever receives a glyph it can render (a future MCP tool can't break it).
+- `group` - the menu grouping the row sorts under (`standard` | `docs` | `canvas`):
+  `canvas` collapses to one "Canvas" switch, `docs` is the bordered "Use my docs"
+  section, everything else is a plain switch row.
+- `source` - the catalog the tool comes from (`builtin` today; an MCP server later) -
+  the menu sections on it, so adding an MCP source is data-only.
+- `requires_human` - whether the tool needs a human in the loop (`ask_user`).
 
 ```json
 [
-  { "id":"ask_user", "name":"ask_user", "description":"Ask the user...", "tool_type":"modal" },
-  { "id":"clock", "name":"get_time", "description":"Get the current time...", "tool_type":"standard" },
-  { "id":"rag", "name":"search_documents", "description":"Search the user's documents...", "tool_type":"standard" }
+  { "id":"ask_user", "name":"ask_user", "description":"Ask the user...", "tool_type":"modal", "title":"Ask me", "icon":"user", "group":"standard", "source":"builtin", "requires_human":true },
+  { "id":"clock", "name":"get_datetime", "description":"Get the current date and time...", "tool_type":"standard", "title":"Clock", "icon":"clock", "group":"standard", "source":"builtin", "requires_human":false },
+  { "id":"rag", "name":"search_documents", "description":"Search the user's documents...", "tool_type":"standard", "title":"Use my docs", "icon":"search", "group":"docs", "source":"builtin", "requires_human":false }
 ]
 ```
 

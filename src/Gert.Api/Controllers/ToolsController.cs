@@ -28,7 +28,12 @@ public sealed class ToolsController : ControllerBase
         _user = user ?? throw new ArgumentNullException(nameof(user));
     }
 
-    /// <summary>List the entitled tools (id, name, description, tool_type), ordered by id.</summary>
+    /// <summary>
+    /// List the entitled tools (the full display descriptor: id/name/description/tool_type +
+    /// title/icon/group/source/requires_human), ordered by id. An icon the client can't render
+    /// (a tool naming a key outside <see cref="ToolIcons.Keys"/> - a future MCP tool, say)
+    /// degrades to <see cref="ToolIcons.Fallback"/>, so the wire only carries renderable glyphs.
+    /// </summary>
     [HttpGet]
     public ActionResult<IReadOnlyList<ToolInfo>> List() =>
         Ok(_tools
@@ -40,6 +45,11 @@ public sealed class ToolsController : ControllerBase
                 Name = tool.Name,
                 Description = tool.Description,
                 ToolType = tool.Type,
+                Title = tool.Title,
+                Icon = ToolIcons.Keys.Contains(tool.Icon) ? tool.Icon : ToolIcons.Fallback,
+                Group = tool.Group,
+                Source = "builtin",
+                RequiresHuman = tool.RequiresHuman,
             })
             .ToList());
 }

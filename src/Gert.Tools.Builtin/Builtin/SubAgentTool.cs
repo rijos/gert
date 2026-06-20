@@ -29,6 +29,15 @@ public sealed class SubAgentTool : ToolCallModal
     /// <inheritdoc />
     public override string Name => "run_sub_agent";
 
+    /// <inheritdoc />
+    public override string Title => "Sub-agents";
+
+    /// <inheritdoc />
+    public override string Icon => "user";
+
+    /// <inheritdoc />
+    public override string Group => "standard";
+
     // Lean on purpose: the tools region must stay under the format-adherence
     // budget (chat-and-tools.md section tool specs are a token budget).
     /// <inheritdoc />

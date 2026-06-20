@@ -273,6 +273,16 @@ client on another instance still sees everything - just less live.
 
 Only tools that are **(a) granted to the user by the `gert_tools` JWT entitlement, (b) enabled on the conversation, (c) requested in the body, and (d) usable by the model** (a catalog entry without tool capability is never advertised tools, whatever the toggles say) are offered - the entitlement is the hard ceiling (see [Auth -> Tool entitlements](auth.md#tool-entitlements-allowed-tools-in-the-jwt)), enforced at advertise time in the planner and re-checked at execution time against the job's plan-time snapshot. So flipping "Use my docs" off removes `search_documents` for that turn, and a user without the `sandbox` entitlement never gets `run_python` advertised regardless of toggles. The request's toggles ride each send and a changed set persists onto the conversation before the intersection is computed - so flipping a tool ON mid-conversation takes effect that very turn; the conversation set is the *reload-restore* state, not a creation-time ceiling.
 
+**Server-driven catalog (MCP-ready).** Every `ITool` declares its own display metadata
+(`Title`/`Icon`/`Group` alongside `RequiresHuman`), and `GET /api/tools` projects it into the
+catalog the composer's menu renders ([rest-api -> Tools](rest-api.md#tools)). The menu carries no
+per-tool knowledge: labels, icons, grouping, and sectioning all ride the descriptor. Two fields
+make it MCP-ready: `source` (a future MCP server becomes its own menu section for free - only
+`builtin` exists today), and `icon`, which is a key into the SPA's curated icon vocabulary
+(`wwwroot/icons/icons.ts`). The server degrades any icon key it doesn't recognise to a shipped
+fallback before it reaches the wire, so a future MCP tool can only ever pick a glyph the client
+already ships - the SPA never has to render an unknown icon.
+
 ---
 
 ## RAG: hybrid retrieval

@@ -40,6 +40,15 @@ public sealed class WebFetchTool : ToolCall<WebFetchArgs, WebFetchResultPayload>
     public override string Name => "web_fetch";
 
     /// <inheritdoc />
+    public override string Title => "Fetch pages";
+
+    /// <inheritdoc />
+    public override string Icon => "globe";
+
+    /// <inheritdoc />
+    public override string Group => "standard";
+
+    /// <inheritdoc />
     public override string Description =>
         "Fetch one public web page by URL and return its readable text - use it "
         + "to read a page a search result or the user pointed at. Private, "

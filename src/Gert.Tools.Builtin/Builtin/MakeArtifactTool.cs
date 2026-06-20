@@ -25,6 +25,15 @@ public sealed class MakeArtifactTool(IValidationProvider validation)
     public override string Name => "make_artifact";
 
     /// <inheritdoc />
+    public override string Title => "Create file";
+
+    /// <inheritdoc />
+    public override string Icon => "file";
+
+    /// <inheritdoc />
+    public override string Group => "canvas";
+
+    /// <inheritdoc />
     public override string Description =>
         "Create a complete, self-contained file (HTML page, script, Markdown, SVG, "
         + "...) that opens in the user's canvas. Always use this instead of putting "

@@ -43,6 +43,15 @@ public sealed class AskUserTool : ToolCallModal
     public override string Name => "ask_user";
 
     /// <inheritdoc />
+    public override string Title => "Ask me";
+
+    /// <inheritdoc />
+    public override string Icon => "user";
+
+    /// <inheritdoc />
+    public override string Group => "standard";
+
+    /// <inheritdoc />
     public override bool RequiresHuman => true;
 
     /// <inheritdoc />

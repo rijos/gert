@@ -74,29 +74,25 @@ export const title = van.state("New conversation");
 export const messages = reactive<Message[]>([]);
 export const streaming = van.state(false);
 
-// Per-conversation tool toggles. Record<ToolKind> keeps the set == the contract.
-export const tools = reactive<Record<ToolKind, boolean>>({
-  rag: true,
-  search: true,
-  // On by default; monty needs no container infra and the JWT entitlement stays the real gate.
-  sandbox: true,
-  todo: true,
-  clock: true,
-  // Canvas artifact suite - on by default, toggled as one unit (see below).
-  make_artifact: true,
-  edit_artifact: true,
-  read_artifact: true,
-  // On by default: low blast radius, the JWT entitlement is the real gate.
-  ask_user: true,
-  fetch: true,
-  sub_agent: true,
-});
+// Per-conversation tool on/off map, keyed by tool id (open Record - the server owns the id
+// set, so it stays wire-compatible with ToolToggles = Record<string, boolean>). Default-enable
+// is server-driven: seedToolDefaults turns every entitled tool on once the catalog
+// (state/tools) loads (entitlement remains the real gate). An id absent here reads as enabled.
+export const tools = reactive<Record<string, boolean>>({});
 
-// make/edit/read artifact are one feature ("Canvas"); the menu shows one switch
-// flipping all three together. ToolId is the one place a string indexes `tools`.
-export type ToolId = keyof typeof tools;
-export const CANVAS_TOOL_IDS: ToolId[] = ["make_artifact", "edit_artifact", "read_artifact"];
-export const canvasOn = () => CANVAS_TOOL_IDS.every((id) => tools[id]);
+// Default-enable every entitled tool the catalog granted (called by services/tools after the
+// catalog loads). Idempotent and non-destructive: a toggle the user already set is left alone.
+export const seedToolDefaults = (ids: string[]) => {
+  for (const id of ids) if (!(id in tools)) tools[id] = true;
+};
+
+// make/edit/read artifact are one feature ("Canvas"); the menu shows one switch flipping all
+// three together. Module-init fallback only - the live set is derived from the catalog's
+// group==="canvas" rows (state/tools), so a renamed/added canvas tool needs no change here.
+export const CANVAS_TOOL_IDS: string[] = ["make_artifact", "edit_artifact", "read_artifact"];
+// An unseeded id (catalog not yet loaded) reads as enabled - the default-on contract.
+const enabled = (id: string) => tools[id] ?? true;
+export const canvasOn = () => CANVAS_TOOL_IDS.every((id) => enabled(id));
 export const toggleCanvas = () => {
   const on = !canvasOn();
   CANVAS_TOOL_IDS.forEach((id) => (tools[id] = on));
@@ -186,7 +182,9 @@ export const addAssistantMessage = () => {
 };
 
 export const setTitle = (t: string) => (title.val = t);
-export const toggleTool = (id: ToolId) => (tools[id] = !tools[id]);
+export const toggleTool = (id: string) => (tools[id] = !enabled(id));
+// Set one tool's toggle explicitly - used to flip a whole group (e.g. Canvas) to one state.
+export const setTool = (id: string, on: boolean) => (tools[id] = on);
 
 export const setProjects = (list: Project[]) => {
   projects.length = 0;

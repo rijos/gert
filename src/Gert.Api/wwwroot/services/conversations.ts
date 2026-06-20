@@ -88,20 +88,10 @@ export const open = async (id: string) => {
   };
   chat.setConversation(seed);
   artifacts.setArtifacts(conv.artifacts || []);
-  // `tools` is the persisted ToolToggles map - one line per known id.
+  // `tools` is the persisted ToolToggles map (Record<id, bool>) - apply each saved id as-is.
+  // Open by id (the server owns the set), so a new/MCP tool's toggle restores with no code change.
   const t = conv.tools;
-  if (t) {
-    chat.tools.rag = !!t.rag;
-    chat.tools.search = !!t.search;
-    chat.tools.sandbox = !!t.sandbox;
-    chat.tools.todo = !!t.todo;
-    chat.tools.clock = !!t.clock;
-    chat.tools.make_artifact = !!t.make_artifact;
-    chat.tools.edit_artifact = !!t.edit_artifact;
-    chat.tools.read_artifact = !!t.read_artifact;
-    chat.tools.ask_user = !!t.ask_user;
-    chat.tools.fetch = !!t.fetch;
-  }
+  if (t) for (const [id, on] of Object.entries(t)) chat.setTool(id, !!on);
   // Detached turns: a still-streaming assistant row means the worker is busy on
   // this conversation - re-attach and let the bubble fill in live (the server
   // applies the orphan rule, so an abandoned row reads "error", not "streaming").

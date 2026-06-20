@@ -23,6 +23,15 @@ public sealed class ReadArtifactTool(IValidationProvider validation)
     public override string Name => "read_artifact";
 
     /// <inheritdoc />
+    public override string Title => "Read file";
+
+    /// <inheritdoc />
+    public override string Icon => "file";
+
+    /// <inheritdoc />
+    public override string Group => "canvas";
+
+    /// <inheritdoc />
     public override string Description =>
         "Read the current content of an existing canvas artifact, line-numbered, "
         + "optionally limited to a [start, end] line range. Use before edit_artifact "

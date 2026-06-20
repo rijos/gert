@@ -24,6 +24,15 @@ public sealed class EditArtifactTool(IValidationProvider validation)
     public override string Name => "edit_artifact";
 
     /// <inheritdoc />
+    public override string Title => "Edit file";
+
+    /// <inheritdoc />
+    public override string Icon => "file";
+
+    /// <inheritdoc />
+    public override string Group => "canvas";
+
+    /// <inheritdoc />
     public override string Description =>
         "Edit an existing canvas artifact by replacing an exact snippet - change "
         + "part of a file instead of remaking it. old_str must match exactly once, "

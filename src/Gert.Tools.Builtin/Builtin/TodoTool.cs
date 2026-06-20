@@ -27,6 +27,15 @@ public sealed class TodoTool : ToolCall<TodoArgs, TodoToolResult>, IToolReminder
     public override string Name => "set_todos";
 
     /// <inheritdoc />
+    public override string Title => "Todos";
+
+    /// <inheritdoc />
+    public override string Icon => "checklist";
+
+    /// <inheritdoc />
+    public override string Group => "standard";
+
+    /// <inheritdoc />
     public override string Description =>
         "Replace your visible todo checklist for multi-step work. Always send the "
         + "full list (not a diff), keep exactly one step 'active', and mark a step "

@@ -36,6 +36,15 @@ public sealed class PythonSandboxTool : ToolCall<PythonSandboxArgs, PythonSandbo
     public override string Name => "run_python";
 
     /// <inheritdoc />
+    public override string Title => "Run Python";
+
+    /// <inheritdoc />
+    public override string Icon => "file";
+
+    /// <inheritdoc />
+    public override string Group => "standard";
+
+    /// <inheritdoc />
     public override string Description =>
         "Run Python in an isolated, network-less sandbox and return its stdout. "
         + "Use it whenever an exact computed result is needed (arithmetic, dates, "

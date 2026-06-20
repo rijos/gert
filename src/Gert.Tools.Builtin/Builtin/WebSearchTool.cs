@@ -33,6 +33,15 @@ public sealed class WebSearchTool : ToolCall<WebSearchArgs, WebSearchToolResult>
     public override string Name => "web_search";
 
     /// <inheritdoc />
+    public override string Title => "Search";
+
+    /// <inheritdoc />
+    public override string Icon => "globe";
+
+    /// <inheritdoc />
+    public override string Group => "standard";
+
+    /// <inheritdoc />
     public override string Description =>
         "Search the public web; returns the most relevant results with their "
         + "titles and URLs.";

@@ -32,6 +32,15 @@ public sealed class RagTool : ToolCall<RagArgs, RagResult>
     public override string Name => "search_documents";
 
     /// <inheritdoc />
+    public override string Title => "Use my docs";
+
+    /// <inheritdoc />
+    public override string Icon => "search";
+
+    /// <inheritdoc />
+    public override string Group => "docs";
+
+    /// <inheritdoc />
     public override string Description =>
         // Lean by design: qwen-class models lose tool-call format adherence when
         // the rendered tools block grows past ~1.8k tokens (chat-and-tools.md

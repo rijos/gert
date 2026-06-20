@@ -2,6 +2,7 @@
 // values, so they carry no reactivity.
 import type { ToolCard as ToolCardRow } from "../../state/chat.js";
 import type { ToolKind } from "../../services/wire.js";
+import { availableTools } from "../../state/tools.js";
 
 // One question (one tab) in a QuestionCard payload. `value` is the per-tab
 // answer collected before submit.
@@ -43,20 +44,12 @@ export interface Hit {
   score?: number;
 }
 
+// The card's icon comes from the server catalog descriptor (state/tools), keyed by tool id - the
+// same curated icons.ts key the menu uses, so cards and menu stay in lockstep with no hardcoded
+// kind->icon map. Cards only render for entitled tools (which are in the catalog); a kind not in
+// the catalog falls back to a neutral existing glyph.
 export const iconFor = (kind: ToolKind): string =>
-  ({
-    rag: "search",
-    search: "globe",
-    sandbox: "file",
-    todo: "checklist",
-    clock: "clock",
-    make_artifact: "file",
-    edit_artifact: "file",
-    read_artifact: "file",
-    ask_user: "user",
-    fetch: "globe",
-    sub_agent: "user",
-  } satisfies Record<ToolKind, string>)[kind];
+  availableTools.find((tool) => tool.id === kind)?.icon ?? "gear";
 
 // done/total over a card's todos ([] for non-todo cards).
 export const progress = (card: Card) => {

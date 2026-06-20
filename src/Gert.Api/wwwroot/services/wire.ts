@@ -308,14 +308,22 @@ export interface WireToolSpec {
 // (ask_user) renders the same as a standard one, but the axis stays on the wire for parity.
 export type WireToolType = "standard" | "modal";
 
-// One entitled tool in GET /api/tools (the composer's tools popup catalog). `id` is the
-// gert_tools entitlement name; `name` is the model-facing function name (the popup labels
-// rows client-side). Only tools the caller is entitled to come back.
+// One entitled tool in GET /api/tools (the composer's tools popup catalog). The popup renders
+// PURELY from this descriptor - `title`/`icon`/`group`/`source` carry every label, glyph, and
+// sectioning, so no per-tool knowledge lives in the SPA. `id` is the gert_tools entitlement
+// name; `name` is the model-facing function name. `icon` is a key into the curated icons.ts
+// vocabulary (the server degrades an unknown key to a shipped fallback, so it always renders).
+// Only tools the caller is entitled to come back.
 export interface WireToolInfo {
   id: string;
   name: string;
   description: string;
   tool_type: WireToolType;
+  title: string;
+  icon: string;
+  group: string;
+  source: string;
+  requires_human: boolean;
 }
 
 export interface WireSystemPrompt {

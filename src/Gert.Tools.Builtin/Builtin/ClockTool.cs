@@ -28,6 +28,15 @@ public sealed class ClockTool : ToolCall<ClockArgs, ClockResult>
     public override string Name => "get_datetime";
 
     /// <inheritdoc />
+    public override string Title => "Clock";
+
+    /// <inheritdoc />
+    public override string Icon => "clock";
+
+    /// <inheritdoc />
+    public override string Group => "standard";
+
+    /// <inheritdoc />
     public override string Description =>
         "Get the current date and time in the user's local timezone (or an "
         + "explicit IANA timezone). Use for questions about now, today, or dates.";

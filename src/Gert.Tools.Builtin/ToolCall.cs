@@ -43,6 +43,15 @@ public abstract class ToolCall<TArgs, TResult> : IToolCall<TArgs, TResult>
     /// <inheritdoc />
     public abstract string ParametersSchema { get; }
 
+    /// <summary>Menu title. Re-declared as a virtual class member (the <see cref="ITool"/> default isn't); defaults to <see cref="Name"/>.</summary>
+    public virtual string Title => Name;
+
+    /// <summary>Icon key into the curated client vocabulary; virtual, defaults to the neutral glyph (matches ToolIcons.Fallback).</summary>
+    public virtual string Icon => "gear";
+
+    /// <summary>Menu grouping; virtual, defaults to the built-in group.</summary>
+    public virtual string Group => "builtin";
+
     /// <inheritdoc />
     public abstract Task<ToolCallResult<TResult>> CallAsync(
         TArgs args,

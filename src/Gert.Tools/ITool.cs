@@ -43,8 +43,8 @@ public interface ITool
     /// <summary>Display title for the tools menu (chat-and-tools.md section tool catalog). Defaults to <see cref="Name"/>.</summary>
     string Title => Name;
 
-    /// <summary>Icon key into the curated client vocabulary (icons.ts). Defaults to a generic tool glyph.</summary>
-    string Icon => "tool";
+    /// <summary>Icon key into the curated client vocabulary (icons.ts). Defaults to a neutral glyph that key set ships (matches ToolIcons.Fallback).</summary>
+    string Icon => "gear";
 
     /// <summary>The menu grouping/source the descriptor sorts under. Defaults to the built-in group.</summary>
     string Group => "builtin";
