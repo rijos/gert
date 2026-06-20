@@ -4,7 +4,7 @@
 
 vLLM exposes an **OpenAI-compatible** `/v1/chat/completions` with function calling and streaming, so the orchestrator can use a standard OpenAI client pointed at the model's base URL.
 
-The API advertises up to eleven tools to the model (each gated by entitlement,
+The API advertises up to twelve tools to the model (each gated by entitlement,
 conversation toggles, and the request - see the intersection rule below):
 
 ```jsonc
@@ -26,6 +26,8 @@ conversation toggles, and the request - see the intersection rule below):
     "parameters": { "name":"string", "old_str":"string", "new_str":"string" } },
   { "name":"read_artifact", "description":"Return an artifact's current content, line-numbered",
     "parameters": { "name":"string", "range":"string?" } },
+  { "name":"list_artifacts", "description":"List this conversation's canvas files (name, format, version)",
+    "parameters": { } },
   { "name":"ask_user", "description":"Ask the user up to four clarifying questions (shown as tabs) and wait for their answers",
     "parameters": { "questions":"{ question:string, header:string?, options:string[]?, allow_free_text:boolean? }[]" } },
   { "name":"web_fetch", "description":"Fetch one public web page by URL, return its readable content (HTML reduced to plain text, clipped)",
@@ -41,12 +43,12 @@ that region grows past roughly 1.8k tokens**: measured live (2026-06-12,
 vLLM 0.22.1, seeds 7-9), the full set with the old verbose descriptions
 (~2,000 prompt tokens) made the model emit mangled call XML
 (`<user_search>`, `<parameter>query>`) or flatly claim "I don't have a web
-search tool", while the SAME eleven tools with lean descriptions - and a 10-of-11
-subset, even padded with 600 tokens of plain system text - called cleanly. The
-budget is specifically the tools region, not overall prompt length. Every
-description therefore stays at one or two short sentences carrying only the
+search tool", while the same tools with lean descriptions - and a subset one
+short of the full set, even padded with 600 tokens of plain system text - called
+cleanly. The budget is specifically the tools region, not overall prompt length.
+Every description therefore stays at one or two short sentences carrying only the
 behavioural contract (the per-tool sections below hold the rationale); growing
-one back, or adding a twelfth tool, must be re-verified against the live model
+one back, or adding a further tool, must be re-verified against the live model
 (`tools/smoke` section live tool sweep).
 
 
@@ -147,7 +149,7 @@ The earlier convention - a named fenced block (` ```html name=demo.html `) that 
 runner extracted from the final content - was replaced wholesale: a file's own
 ` ``` ` fences could truncate the block (the nested-fence bug), and extraction
 tolerances kept growing to chase model formatting. As tool arguments the content is
-opaque JSON, so none of that class of bug exists. Three functions:
+opaque JSON, so none of that class of bug exists. Four functions:
 
 - **`make_artifact(name, format, content)`** - create or **overwrite by name**
   within the conversation: a re-used name saves over the prior draft (same canvas
@@ -162,6 +164,9 @@ opaque JSON, so none of that class of bug exists. Three functions:
 - **`read_artifact(name, range?)`** - return the current content with **1-indexed,
   number-prefixed lines** (mirrors Anthropic's `view`), so a follow-up
   `edit_artifact` can copy a snippet verbatim. Read-only; emits no canvas event.
+- **`list_artifacts()`** - enumerate the conversation's artifacts (name, format,
+  version) so the model can pick the right one to read or edit instead of guessing
+  a name. No arguments. Read-only; emits no canvas event.
 
 Each call persists as a normal `tool_calls` row; created/updated artifacts ride back
 on the tool result and the runner emits the `artifact` event - the canvas tab
@@ -173,7 +178,7 @@ fragment rides first in every turn's system prompt (before project pinned
 instructions) and tells the model to call `make_artifact` for any complete file
 instead of a code block. If artifacts stop appearing for prompts that should
 produce them, debug in this order: (1) is the canvas suite actually *offered* -
-entitlement (`make_artifact`/`edit_artifact`/`read_artifact` ids must be in the
+entitlement (`make_artifact`/`edit_artifact`/`read_artifact`/`list_artifacts` ids must be in the
 `gert_tools` claim, the sole grant source - [auth section tool registry](auth.md#tool-registry)),
 the conversation's Canvas toggle, and a tool-capable model all gate it; (2) is
 `SystemPrompts.Canvas` present in the upstream request (a stale host build);

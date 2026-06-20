@@ -244,4 +244,38 @@ public sealed class ArtifactToolsTests
         result.Success.Should().BeFalse();
         result.Error.Should().Contain("no artifact named 'ghost.md'");
     }
+
+    [Fact]
+    public async Task List_returns_every_artifact_with_its_format_and_version()
+    {
+        var host = new FakeToolHost();
+        await SeedAsync(host, "page.html", "<h1>hi</h1>", "html");
+        // A second put under the same name bumps the version - the listing must reflect it.
+        await SeedAsync(host, "notes.md", "v1");
+        await SeedAsync(host, "notes.md", "v2");
+
+        var tool = new ListArtifactsTool(Gert.Testing.Proof.Validation);
+        var result = await tool.ExecuteAsync(Inv("{}"), host);
+
+        result.Success.Should().BeTrue();
+        // The format word is the canonical one (html/markdown), not the on-disk token.
+        result.ResultJson.Should().Contain("page.html").And.Contain("\"format\":\"html\"")
+            .And.Contain("notes.md").And.Contain("\"format\":\"markdown\"")
+            .And.Contain("\"version\":2");
+        // The human-facing stdout lists each name with its version.
+        result.Stdout.Should().Contain("page.html (v1)").And.Contain("notes.md (v2)");
+    }
+
+    [Fact]
+    public async Task List_on_an_empty_conversation_returns_no_artifacts()
+    {
+        var host = new FakeToolHost();
+        var tool = new ListArtifactsTool(Gert.Testing.Proof.Validation);
+
+        var result = await tool.ExecuteAsync(Inv("{}"), host);
+
+        result.Success.Should().BeTrue();
+        result.ResultJson.Should().Contain("\"artifacts\":[]");
+        result.Stdout.Should().Be("No files yet.");
+    }
 }

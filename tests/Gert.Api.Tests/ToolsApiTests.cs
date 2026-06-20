@@ -31,7 +31,7 @@ public sealed class ToolsApiTests : IClassFixture<GertApiFactory>
     // The canonical built-in tool ids (Gert.Tools.Builtin BuiltInToolIds) - a blanket
     // grant (gert_tools = "*") entitles exactly this set.
     private static readonly string[] AllBuiltInToolIds =
-        ["rag", "search", "sandbox", "todo", "clock", "make_artifact", "edit_artifact", "read_artifact", "ask_user", "fetch", "sub_agent"];
+        ["rag", "search", "sandbox", "todo", "clock", "make_artifact", "edit_artifact", "read_artifact", "list_artifacts", "ask_user", "fetch", "sub_agent"];
 
     private static readonly JsonSerializerOptions Json = GertJsonOptions.Default;
 
@@ -85,9 +85,9 @@ public sealed class ToolsApiTests : IClassFixture<GertApiFactory>
         // requires_human is true only for ask_user (the one human-in-the-loop tool); all else false.
         tools.Single(t => t.Id == "ask_user").RequiresHuman.Should().BeTrue();
         tools.Where(t => t.Id != "ask_user").Should().OnlyContain(t => !t.RequiresHuman);
-        // The grouping the menu sections on: rag -> docs, the artifact trio -> canvas, rest standard.
+        // The grouping the menu sections on: rag -> docs, the artifact suite -> canvas, rest standard.
         tools.Single(t => t.Id == "rag").Group.Should().Be("docs");
-        tools.Where(t => t.Id is "make_artifact" or "edit_artifact" or "read_artifact")
+        tools.Where(t => t.Id is "make_artifact" or "edit_artifact" or "read_artifact" or "list_artifacts")
             .Should().OnlyContain(t => t.Group == "canvas");
     }
 

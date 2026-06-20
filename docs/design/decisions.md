@@ -118,7 +118,7 @@ server-side default set, or nothing?
     server config participates in an authorization decision).
   - **Consequences:** a bare login with no claim is a working chat with no tools (plain
     completion). Admins grant capability explicitly - e.g. a `gert-tools` group granting
-    `rag search todo clock make_artifact edit_artifact read_artifact` and a separate
+    `rag search todo clock make_artifact edit_artifact read_artifact list_artifacts` and a separate
     `gert-sandbox` group adding `sandbox`. `ToolRegistry` still intersects every grant, so a
     typo'd id fails closed rather than erroring the login.
   - *Rejected:* a configured default grant (convenient, but it's server state in an authz

@@ -63,6 +63,7 @@ public static class ServiceCollectionExtensions
         AddValidator<MakeArtifactArgs, MakeArtifactArgsValidator>(services);
         AddValidator<EditArtifactArgs, EditArtifactArgsValidator>(services);
         AddValidator<ReadArtifactArgs, ReadArtifactArgsValidator>(services);
+        AddValidator<ListArtifactsArgs, ListArtifactsArgsValidator>(services);
 
         return services;
     }

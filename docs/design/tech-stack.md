@@ -156,7 +156,7 @@ Gert.sln
 ├─ Gert.Tools/                # tool CONTRACTS - ITool/ToolRegistry/ToolResult/ToolInvocation + the IWebSearch/IWebFetcher/IPythonSandbox ports - references Model only
 │
 ├─ Gert.Tools.Builtin/        # built-in tools + search/sandbox/fetch impl leaf - refs Tools(contracts), Validation, Model (NOT Service/Database/Rag/Chat: tools reach RAG/objects/UI/delegation through the IToolHost seams; an architecture test enforces no Service edge)
-│  ├─ Builtin/                #   the 11 built-in ITool impls (rag, search, sandbox, fetch, todo, clock, artifact suite, ask_user, sub_agent) + the BuiltInToolIds census
+│  ├─ Builtin/                #   the 12 built-in ITool impls (rag, search, sandbox, fetch, todo, clock, artifact suite, ask_user, sub_agent) + the BuiltInToolIds census
 │  ├─ Fetch/                  #   SSRF-guarded fetcher + the web_fetch IWebFetcher impl (security F5)
 │  ├─ Search/                 #   IWebSearch keyed-plugin selector (WebSearchFactory, Gert:Tools:Search:Type)
 │  │  └─ SearXNG/             #     the SearXNG plugin leaf - AddGertSearchSearXNG (keyed by Type)

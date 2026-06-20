@@ -57,7 +57,7 @@ public static class ServiceCollectionExtensions
     /// set-equality guard fails if they drift.
     /// </summary>
     private static readonly string[] BuiltInToolIds =
-        ["rag", "search", "sandbox", "todo", "clock", "make_artifact", "edit_artifact", "read_artifact", "ask_user", "fetch", "sub_agent"];
+        ["rag", "search", "sandbox", "todo", "clock", "make_artifact", "edit_artifact", "read_artifact", "list_artifacts", "ask_user", "fetch", "sub_agent"];
 
     /// <summary>
     /// Register the built-in tools as scoped <see cref="ITool"/>s, resolved by the orchestrator
@@ -83,11 +83,12 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ITool, PythonSandboxTool>();
         services.AddScoped<ITool, TodoTool>();
         services.AddScoped<ITool, ClockTool>();
-        // Canvas artifact suite (make/edit/read): they reach the conversation's object store
+        // Canvas artifact suite (make/edit/read/list): they reach the conversation's object store
         // through the host's IObjectResource at call time, so the ctor needs only validation.
         services.AddScoped<ITool, MakeArtifactTool>();
         services.AddScoped<ITool, EditArtifactTool>();
         services.AddScoped<ITool, ReadArtifactTool>();
+        services.AddScoped<ITool, ListArtifactsTool>();
         // ask_user drives the host's IToolUi (the chat loop's ChatToolUi wires it
         // to the question registry + wire events); the tool itself has no deps.
         services.AddScoped<ITool, AskUserTool>();

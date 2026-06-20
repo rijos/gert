@@ -236,8 +236,8 @@ def test_todo_card_survives_reload(page: Page, base_url: str) -> None:
 def test_todo_tool_is_refused_without_the_entitlement(
     user_page: Page, base_url: str
 ) -> None:
-    # `user` carries gert_tools "rag search ask_user fetch sub_agent" - it has
-    # no `todo` entitlement, so set_todos is dropped by the ceiling. The drop stays
+    # `user` carries gert_tools "rag search ask_user fetch sub_agent list_artifacts"
+    # - it has no `todo` entitlement, so set_todos is dropped by the ceiling. The drop stays
     # silent toward the user (auth.md - the boundary does not leak into the
     # conversation): NO tool card surfaces, yet the turn still completes because the
     # model reads the synthetic refusal and answers around the dropped tool.
