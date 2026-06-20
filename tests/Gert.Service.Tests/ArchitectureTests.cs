@@ -62,6 +62,28 @@ public class ArchitectureTests
     }
 
     /// <summary>
+    /// The acceptance gate for Phase 6 (chat-and-tools.md section the tool loop): the tool impl leaf
+    /// (Gert.Tools.Builtin) must NOT depend on the service layer. Every tool reaches RAG, objects,
+    /// the UI, and delegation through the host's <see cref="global::Gert.Tools.IToolHost"/> seams at
+    /// call time - never the loop impl - so the leaf sits squarely outward of Gert.Service, mirroring
+    /// Gert.Chat.OpenAI -> Gert.Chat. A future edit that re-introduces the edge fails here.
+    /// </summary>
+    [Fact]
+    public void Tools_impl_leaf_does_not_depend_on_the_service_layer()
+    {
+        var result = Types.InAssembly(typeof(global::Gert.Tools.Builtin.RagTool).Assembly)
+            .Should()
+            .NotHaveDependencyOn("Gert.Service")
+            .GetResult();
+
+        Assert.True(
+            result.IsSuccessful,
+            "Gert.Tools.Builtin must not reference the service layer (the tools reach RAG/objects/UI/" +
+            "delegation through the host seams). Offending types: " +
+            string.Join(", ", result.FailingTypeNames ?? System.Array.Empty<string>()));
+    }
+
+    /// <summary>
     /// Per-user isolation (principles.md) requires that any service consuming the
     /// request-scoped <see cref="IUserContext"/> is itself scoped: a singleton would
     /// capture the first caller's identity and then serve their data to everyone (a

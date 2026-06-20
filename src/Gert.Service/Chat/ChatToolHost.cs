@@ -4,18 +4,27 @@ namespace Gert.Service.Chat;
 
 /// <summary>
 /// The chat loop's <see cref="IToolHost"/> (chat-and-tools.md section tool host): pre-scoped to the
-/// active conversation's object store, carrying the turn's <see cref="ToolLimits.Deadline"/>, and
-/// (for an interactive turn) a <see cref="ChatToolUi"/> wired to the question registry. The RAG
-/// resource and <see cref="Delegate"/> are wired in later phases - until then Rag throws (any
-/// premature use fails loudly) and Delegate is a no-op.
+/// active conversation's object store + the project's RAG index, carrying the turn's
+/// <see cref="ToolLimits.Deadline"/>, a <see cref="ChatToolUi"/> wired to the question registry (for
+/// an interactive turn; null for the autonomous sub-agent host), and an <see cref="IToolDelegate"/>
+/// over the same <see cref="IAgentLoop"/> the turn runs (a no-op on the sub-agent's own nested host,
+/// so delegation never recurses).
 /// </summary>
 internal sealed class ChatToolHost : IToolHost
 {
-    public ChatToolHost(IObjectResource objects, IToolUi? ui, DateTimeOffset? deadline)
+    public ChatToolHost(
+        IObjectResource objects,
+        IRagResource rag,
+        IToolUi? ui,
+        IToolDelegate @delegate,
+        DateTimeOffset? deadline)
     {
         ArgumentNullException.ThrowIfNull(objects);
-        Resources = new ChatResources(objects);
+        ArgumentNullException.ThrowIfNull(rag);
+        ArgumentNullException.ThrowIfNull(@delegate);
+        Resources = new ChatResources(objects, rag);
         Ui = ui;
+        Delegate = @delegate;
         Limits = new ToolLimits(deadline, null);
     }
 
@@ -23,17 +32,14 @@ internal sealed class ChatToolHost : IToolHost
 
     public IToolUi? Ui { get; }
 
-    public IToolDelegate Delegate { get; } = new NoOpDelegate();
+    public IToolDelegate Delegate { get; }
 
     public ToolLimits Limits { get; }
 
-    private sealed class ChatResources(IObjectResource objects) : IToolResources
+    private sealed class ChatResources(IObjectResource objects, IRagResource rag) : IToolResources
     {
         public IObjectResource Objects { get; } = objects;
 
-        public IRagResource Rag =>
-            throw new NotSupportedException("The Rag resource is wired in a later phase.");
+        public IRagResource Rag { get; } = rag;
     }
-
-    private sealed class NoOpDelegate : IToolDelegate;
 }

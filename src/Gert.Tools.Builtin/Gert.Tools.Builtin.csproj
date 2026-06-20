@@ -2,15 +2,13 @@
 
   <ItemGroup>
     <!-- Tool CONTRACTS (ITool/ToolRegistry/ToolResult + the IWebSearch/IWebFetcher/IPythonSandbox
-         ports): this impl leaf implements them. Mirrors Gert.Chat.OpenAI -> Gert.Chat. -->
+         ports + the IToolHost/IRagResource/IToolDelegate seams): this impl leaf implements them.
+         Mirrors Gert.Chat.OpenAI -> Gert.Chat. RagTool/SubAgentTool reach RAG + delegation through
+         the host at call time, so this leaf no longer references Gert.Service, Gert.Database,
+         Gert.Rag, or Gert.Chat (the architecture test enforces the Service edge is gone). -->
     <ProjectReference Include="..\Gert.Tools\Gert.Tools.csproj" />
-    <ProjectReference Include="..\Gert.Service\Gert.Service.csproj" />
-    <ProjectReference Include="..\Gert.Database\Gert.Database.csproj" />
-    <!-- RAG contracts: RagTool drives IRagIndexProvider/IRagStore. -->
-    <ProjectReference Include="..\Gert.Rag\Gert.Rag.csproj" />
+    <ProjectReference Include="..\Gert.Validation\Gert.Validation.csproj" />
     <ProjectReference Include="..\Gert.Model\Gert.Model.csproj" />
-    <!-- Chat ports: SubAgentTool resolves IChatClientFactory; RagTool uses IEmbeddingClient. -->
-    <ProjectReference Include="..\Gert.Chat\Gert.Chat.csproj" />
   </ItemGroup>
 
   <ItemGroup>

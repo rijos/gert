@@ -61,13 +61,13 @@ public static class ServiceCollectionExtensions
 
     /// <summary>
     /// Register the built-in tools as scoped <see cref="ITool"/>s, resolved by the orchestrator
-    /// via <c>IEnumerable&lt;ITool&gt;</c>. Scoped because <see cref="RagTool"/> depends on the
-    /// per-request <see cref="Gert.Service.IUserContext"/>. The external ports, RAG index provider
-    /// (<see cref="Gert.Rag.IRagIndexProvider"/>) and chat database provider
-    /// (<see cref="Gert.Database.IChatDatabaseProvider"/>) are supplied by the host/adapters. The
-    /// id-only <see cref="ToolRegistry"/> + <c>BuiltInToolIds</c> census ship here too (tool
-    /// identity belongs with the impls); the auth entitlement resolver + the tool-toggle validator
-    /// depend on the registry for id checks only. <c>ToolRegistrationTests</c> guards the two lists.
+    /// via <c>IEnumerable&lt;ITool&gt;</c>. Scoped to match the per-request lifetime of the host's
+    /// capability surface; the tools themselves reach RAG, objects, the UI, and delegation through
+    /// the <see cref="IToolHost"/> handed at call time, never through DI - so no tool here references
+    /// the service layer or an external provider. The id-only <see cref="ToolRegistry"/> +
+    /// <c>BuiltInToolIds</c> census ship here too (tool identity belongs with the impls); the auth
+    /// entitlement resolver + the tool-toggle validator depend on the registry for id checks only.
+    /// <c>ToolRegistrationTests</c> guards the two lists.
     /// </summary>
     public static IServiceCollection AddBuiltinTools(this IServiceCollection services)
     {
@@ -94,9 +94,9 @@ public static class ServiceCollectionExtensions
         // web_fetch only calls the IWebFetcher port - the SSRF hardening (F5)
         // is the adapter's job, mirroring WebSearchTool.
         services.AddScoped<ITool, WebFetchTool>();
-        // run_sub_agent delegates a task to a fresh nested model loop. It takes
-        // IServiceProvider (not IEnumerable<ITool> - that would recurse its own
-        // resolution) and re-resolves the delegable tools per execution.
+        // run_sub_agent delegates a task to a fresh nested model loop through the
+        // host's IToolDelegate (the chat driver's ChatToolDelegate over IAgentLoop) -
+        // the tool itself only parses/bounds the args, so it has no deps.
         services.AddScoped<ITool, SubAgentTool>();
 
         return services;

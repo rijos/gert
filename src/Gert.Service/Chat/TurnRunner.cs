@@ -6,6 +6,7 @@ using Gert.Model;
 using Gert.Model.Chat;
 using Gert.Model.Events;
 using Gert.Model.Json;
+using Gert.Rag;
 using Gert.Service.Chat.Bus;
 using Gert.Tools;
 using Microsoft.Extensions.Logging;
@@ -49,11 +50,16 @@ namespace Gert.Service.Chat;
 /// </summary>
 public sealed class TurnRunner : ITurnRunner
 {
+    /// <summary>Read-only built-ins a sub-agent may use (never itself - delegation cannot recurse).</summary>
+    private static readonly string[] DelegableToolIds = ["rag", "search", "fetch", "clock"];
+
     private readonly IChatDatabaseProvider _databases;
     private readonly IChatClientFactory _clients;
     private readonly IConversationBus _bus;
     private readonly IAgentLoop _loop;
     private readonly IReadOnlyList<ITool> _tools;
+    private readonly IRagIndexProvider _ragProvider;
+    private readonly IEmbeddingClient _embeddings;
     private readonly TurnOptions _options;
     private readonly TimeProvider _clock;
     private readonly ITurnCancellation _cancellation;
@@ -66,6 +72,8 @@ public sealed class TurnRunner : ITurnRunner
         IConversationBus bus,
         IAgentLoop loop,
         IEnumerable<ITool> tools,
+        IRagIndexProvider ragProvider,
+        IEmbeddingClient embeddings,
         IOptions<TurnOptions> options,
         TimeProvider clock,
         ITurnCancellation cancellation,
@@ -78,6 +86,8 @@ public sealed class TurnRunner : ITurnRunner
         _loop = loop ?? throw new ArgumentNullException(nameof(loop));
         ArgumentNullException.ThrowIfNull(tools);
         _tools = tools.ToList();
+        _ragProvider = ragProvider ?? throw new ArgumentNullException(nameof(ragProvider));
+        _embeddings = embeddings ?? throw new ArgumentNullException(nameof(embeddings));
         _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
         _clock = clock ?? throw new ArgumentNullException(nameof(clock));
         _cancellation = cancellation ?? throw new ArgumentNullException(nameof(cancellation));
@@ -205,12 +215,14 @@ public sealed class TurnRunner : ITurnRunner
         var collectedCitations = new List<Citation>();
 
         // The chat IToolHost, built ONCE for the turn: pre-scoped to this
-        // conversation's object store (the canvas artifact tools), carrying the
-        // turn deadline, and a ChatToolUi for the human-interaction port (ask_user)
-        // wired to the question registry + the runner's own persist-then-publish
-        // emit. RAG and delegation are wired in later phases.
+        // conversation's object store (the canvas artifact tools) + the project's
+        // RAG index (search_documents), carrying the turn deadline, a ChatToolUi for
+        // the human-interaction port (ask_user) wired to the question registry + the
+        // runner's own persist-then-publish emit, and a ChatToolDelegate over the same
+        // IAgentLoop the turn runs (run_sub_agent).
         Task Emit(ChatEvent ev, CancellationToken ct) => EmitAsync(repo, topic, ev, ct);
         var objects = new ChatObjectResource(repo, job.ConversationId, _clock);
+        var rag = new ProjectRagResource(_ragProvider, _embeddings, job.Iss, job.Sub, job.Pid);
         var ui = new ChatToolUi(
             _questions,
             Emit,
@@ -218,7 +230,31 @@ public sealed class TurnRunner : ITurnRunner
             _clock,
             _options.AskUserTimeout,
             deadline);
-        var host = new ChatToolHost(objects, ui, deadline);
+
+        // The sub-agent's delegable tools: the read-only built-ins intersected with
+        // the parent turn's entitlement snapshot, so a nested tool can never out-tool
+        // the parent (auth.md). The nested host is AUTONOMOUS - no Ui (no ask_user),
+        // a no-op delegate (no recursion), throwing Objects (the delegable set never
+        // touches objects), the same project RAG. The intersected id set is the
+        // ceiling the nested loop re-checks each call against.
+        var delegableTools = _tools
+            .Where(t => DelegableToolIds.Contains(t.Id, StringComparer.Ordinal)
+                        && job.AllowedToolIds.Contains(t.Id))
+            .ToList();
+        var delegableIds = delegableTools.Select(t => t.Id).ToHashSet(StringComparer.Ordinal);
+        var nestedHost = new ChatToolHost(
+            new NotSupportedObjectResource(), rag, ui: null, new NoOpToolDelegate(), deadline);
+        var subAgent = new ChatToolDelegate(
+            _loop,
+            _clients.ForProvider(job.ModelId),
+            job.ModelId,
+            delegableTools,
+            delegableIds,
+            nestedHost,
+            _options.MaxTokensPerRound > 0 ? _options.MaxTokensPerRound : null,
+            _options.MaxSearchCallsPerTurn);
+
+        var host = new ChatToolHost(objects, rag, ui, subAgent, deadline);
 
         // Insert the entitled call's tool_call row LIVE (the tree read model grows
         // as the turn runs) and collect its citations bound to the new row id - the

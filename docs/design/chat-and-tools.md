@@ -357,7 +357,16 @@ Status transitions map directly to the panel pills: `processing` (amber, pulsing
 
 ### RAG
 
-See [RAG: hybrid retrieval](#rag-hybrid-retrieval) above.
+The retrieval mechanics are [RAG: hybrid retrieval](#rag-hybrid-retrieval) above.
+
+**Port, not impl.** `search_documents` owns only the schema + the hit->payload/citation
+shaping; the index sits behind the `IRagResource` port (`host.Resources.Rag.SearchAsync(scope,
+query, k) -> RagSearchHit[]`, in `Gert.Tools`), so the tool depends on a contract, not the RAG
+engine - it never embeds a query or opens a store, and never sees `iss`/`sub`/`pid`. The chat
+driver's `ProjectRagResource` is the impl: pre-scoped to the turn's validated `(iss, sub, pid)`,
+it embeds the query, opens **this** project's `rag.db`, runs the hybrid search, and decodes each
+hit's filename into the display title. Identity is the host's, so a query structurally cannot
+reach another user's or project's documents ([principles](principles.md)).
 
 ### Web search (SearXNG)
 Server-side `HttpClient` (via `IHttpClientFactory`) to the SearXNG JSON API. Take the top results, optionally fetch + summarize, keep the few that matter (the mockup shows "1 result kept"), and return titles/URLs as web-type citations.
@@ -413,22 +422,32 @@ result. That asymmetry is the point: a context-hungry side quest (digest these
 pages, survey this topic) costs the parent one tool result instead of a
 transcript.
 
+**Port, not impl.** The tool owns only the schema + caps (it parses/bounds
+`{task, context}`, where a bad value is a model-correctable error) and the
+success/failure result shape; the nested-loop machinery sits behind the
+`IToolDelegate` port (`host.Delegate.RunAsync(DelegateRequest) ->
+DelegateResult`, in `Gert.Tools`), so `run_sub_agent` depends on a contract, not
+the loop. The chat driver's `ChatToolDelegate` is the impl: it runs the **same
+`IAgentLoop`** the parent turn runs against an **autonomous nested host** (no
+`Ui` so no `ask_user`, a no-op delegate so no recursion, throwing objects, the
+project's RAG) and returns only the final text.
+
 - **Nested tools = delegable AND entitled.** The sub-agent may use a fixed
   read-only subset (`rag`, `search`, `fetch`, `clock`), intersected with the
   parent turn's entitlement snapshot - the claim stays the ceiling
   ([auth](auth.md)) at every nesting depth. `run_sub_agent` is not in the
-  delegable set, so delegation cannot recurse; nested invocations carry no
-  `ModelId`, so a nested tool could not re-delegate even if it were.
-- **Budget.** The nested loop is bounded three ways: its own round cap (16,
-  far below the parent's `MaxToolRounds`), the per-round `MaxTokensPerRound`,
-  and the parent turn's deadline minus a grace slice - the wait is exempt from
-  the generic `ToolCallTimeout` (the `IInteractiveTool` marker, like
-  `ask_user`) because a delegated task legitimately outlives 60 s. Running out
-  of rounds or time degrades to a model-readable error result, never a turn
-  fault.
-- **Invisible by design.** Nested tool calls emit no events and persist no
-  `tool_calls` rows; the parent's single `run_sub_agent` card (with the final
-  answer as its output) is the user-visible record.
+  delegable set, and the nested host's delegate is a no-op, so delegation
+  cannot recurse.
+- **Budget.** The nested loop is bounded by its own round cap (16, far below the
+  parent's `MaxToolRounds`) and the per-round `MaxTokensPerRound`, all under the
+  parent turn's lifetime token as the hard wall. The wait is exempt from the
+  generic `ToolCallTimeout` (`ToolType.Modal`, like `ask_user`) because a
+  delegated task legitimately outlives 60 s. Running out of rounds degrades to
+  the loop's wind-down - the streamed final text returns rather than a fault.
+- **Invisible by design.** The nested loop is autonomous (no `Emit`): its tool
+  calls emit no events and persist no `tool_calls` rows; the parent's single
+  `run_sub_agent` card (with the final answer as its output) is the
+  user-visible record.
 
 ### Ask the user (`ask_user`)
 

@@ -406,6 +406,7 @@ public sealed class AgentLoop : IAgentLoop
             TokenCount = tokenCount,
             PromptTokens = promptTokens,
             GenElapsedTicks = genElapsedTicks,
+            ToolRounds = round,
         };
     }
 

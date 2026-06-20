@@ -1,14 +1,9 @@
-using System.Text;
 using FluentAssertions;
-using Gert.Chat;
 using Gert.Model;
 using Gert.Model.Chat;
-using Gert.Model.Rag;
-using Gert.Rag;
 using Gert.Testing.Fakes;
 using Gert.Tools;
 using Gert.Tools.Builtin;
-using NSubstitute;
 using Xunit;
 
 namespace Gert.Tools.Builtin.Tests;
@@ -16,51 +11,29 @@ namespace Gert.Tools.Builtin.Tests;
 /// <summary>
 /// Unit tests for the core tools -- each driven through its <see cref="ITool"/>
 /// surface (parse args -> call the port -> shape the <see cref="ToolResult"/>),
-/// using the shared fakes (<see cref="FakeEmbeddings"/>, <see cref="FakeWebSearch"/>,
-/// <see cref="StubPythonSandbox"/>) and an NSubstitute <see cref="IRagStore"/>.
+/// using the shared fakes (<see cref="FakeWebSearch"/>, <see cref="StubPythonSandbox"/>)
+/// and the host's scripted RAG resource (<see cref="FakeToolHost.ScriptedRagResource"/>).
 /// </summary>
 public sealed class ToolsTests
 {
-    private static readonly TestUserContext User = new();
-
     [Fact]
-    public async Task RagTool_embeds_query_then_hybrid_searches_and_emits_document_citations()
+    public async Task RagTool_searches_the_host_rag_resource_and_emits_document_citations()
     {
-        var ragRepo = Substitute.For<IRagStore>();
-        var provider = Substitute.For<IRagIndexProvider>();
-        provider
-            .OpenAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(ragRepo);
-
-        var hits = new[]
-        {
+        var host = new FakeToolHost();
+        host.RagIndex.Hits.AddRange(
+        [
             Hit("doc-1", "qdrant-benchmarks.pdf", "p.4", "sqlite-vec wins at this scale", 0.89),
             Hit("doc-2", "notes.md", null, "single-file stack", 0.77),
-        };
-        ragRepo
-            .HybridSearchAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<float>>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
-            .Returns(hits);
+        ]);
 
-        var tool = new RagTool(Gert.Testing.Proof.Validation, provider, new FakeEmbeddings(), User);
-        var result = await tool.ExecuteAsync(new ToolInvocation
-        {
-            Pid = "default",
-            ArgumentsJson = "{\"query\":\"qdrant\",\"k\":5}",
-        });
+        var result = await new RagTool(Gert.Testing.Proof.Validation).ExecuteAsync(
+            new ToolInvocation { Pid = "default", ArgumentsJson = "{\"query\":\"qdrant\",\"k\":5}" },
+            host);
 
         result.Success.Should().BeTrue();
         result.ResultJson.Should().Contain("qdrant-benchmarks.pdf");
 
-        // The rag.db is opened for the user-context identity + the invocation pid.
-        await provider.Received(1).OpenAsync(User.Iss, User.Sub, "default", Arg.Any<CancellationToken>());
-
-        // The query was embedded and passed to the hybrid search (k clamped within range).
-        await ragRepo.Received(1).HybridSearchAsync(
-            "qdrant",
-            Arg.Is<IReadOnlyList<float>>(v => v.Count == FakeEmbeddings.Dimensions),
-            5,
-            Arg.Any<CancellationToken>());
-
+        // The shape: ordinal-numbered hits + a document citation per hit, in rank order.
         result.Citations.Should().HaveCount(2);
         result.Citations[0].SourceType.Should().Be(CitationSourceType.Document);
         result.Citations[0].Label.Should().Be("qdrant-benchmarks.pdf - p.4");
@@ -70,82 +43,36 @@ public sealed class ToolsTests
     }
 
     [Fact]
-    public async Task RagTool_decodes_base64_stored_filenames_for_document_hits()
+    public async Task RagTool_surfaces_the_decoded_hit_title_in_the_payload_and_citation()
     {
-        // Uploaded documents persist filename = Base64(original) (StoredFilenames,
-        // pipeline) - the card label and citation must show the ORIGINAL name, never
-        // the encoded blob (found live against real vLLM, 2026-06-11).
-        var ragRepo = Substitute.For<IRagStore>();
-        var provider = Substitute.For<IRagIndexProvider>();
-        provider
-            .OpenAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(ragRepo);
+        // The host's ProjectRagResource already decodes documents.filename (base64
+        // display metadata) into the hit Title; the tool surfaces that decoded name
+        // verbatim in the card label, the citation, and the model payload.
+        var host = new FakeToolHost();
+        host.RagIndex.Hits.Add(Hit("doc-1", "brewery-notes.md", null, "tripel ferments at 21C", 0.9));
 
-        var encoded = Convert.ToBase64String(Encoding.UTF8.GetBytes("brewery-notes.md"));
-        ragRepo
-            .HybridSearchAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<float>>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
-            .Returns(new[] { Hit("doc-1", encoded, null, "tripel ferments at 21C", 0.9) });
-
-        var tool = new RagTool(Gert.Testing.Proof.Validation, provider, new FakeEmbeddings(), User);
-        var result = await tool.ExecuteAsync(new ToolInvocation
-        {
-            Pid = "default",
-            ArgumentsJson = "{\"query\":\"tripel\"}",
-        });
+        var result = await new RagTool(Gert.Testing.Proof.Validation).ExecuteAsync(
+            new ToolInvocation { Pid = "default", ArgumentsJson = "{\"query\":\"tripel\"}" },
+            host);
 
         result.Success.Should().BeTrue();
-        result.ResultJson.Should().Contain("brewery-notes.md").And.NotContain(encoded);
+        result.ResultJson.Should().Contain("brewery-notes.md");
         result.Citations.Single().Label.Should().Be("brewery-notes.md");
     }
 
     [Fact]
     public async Task RagTool_rejects_missing_query()
     {
-        var provider = Substitute.For<IRagIndexProvider>();
-        var tool = new RagTool(Gert.Testing.Proof.Validation, provider, new FakeEmbeddings(), User);
-
-        var result = await tool.ExecuteAsync(new ToolInvocation { Pid = "default", ArgumentsJson = "{}" });
+        var host = new FakeToolHost();
+        var result = await new RagTool(Gert.Testing.Proof.Validation).ExecuteAsync(
+            new ToolInvocation { Pid = "default", ArgumentsJson = "{}" }, host);
 
         // The empty query now fails arg validation (the typed-args base), so the
         // exact message is the validator's - assert the call failed, not its text.
         result.Success.Should().BeFalse();
 
-        // Fail-closed before any rag.db open.
-        await provider.DidNotReceive().OpenAsync(
-            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
-    }
-
-    [Fact]
-    public async Task RagTool_fails_the_call_when_the_embedding_client_returns_no_vector()
-    {
-        var ragRepo = Substitute.For<IRagStore>();
-        var provider = Substitute.For<IRagIndexProvider>();
-        provider
-            .OpenAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(ragRepo);
-
-        // Contract violation: one vector per input text is the IEmbeddingClient
-        // contract - an empty batch must fail the tool call, never silently
-        // degrade to a BM25-only search with an empty vector.
-        var embeddings = Substitute.For<IEmbeddingClient>();
-        embeddings
-            .EmbedAsync(Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
-            .Returns(Array.Empty<float[]>());
-
-        var tool = new RagTool(Gert.Testing.Proof.Validation, provider, embeddings, User);
-        var result = await tool.ExecuteAsync(new ToolInvocation
-        {
-            Pid = "default",
-            ArgumentsJson = "{\"query\":\"qdrant\"}",
-        });
-
-        result.Success.Should().BeFalse();
-        result.Error.Should().Contain("embedding");
-        await ragRepo.DidNotReceive().HybridSearchAsync(
-            Arg.Any<string>(),
-            Arg.Any<IReadOnlyList<float>>(),
-            Arg.Any<int>(),
-            Arg.Any<CancellationToken>());
+        // Fail-closed before any RAG search.
+        host.RagIndex.Searches.Should().Be(0);
     }
 
     [Fact]
@@ -261,34 +188,25 @@ public sealed class ToolsTests
     }
 
     [Fact]
-    public async Task RagTool_decodes_a_hits_base64_filename_for_the_label_and_payload()
+    public async Task RagTool_clamps_k_to_the_number_of_hits_the_resource_returns()
     {
-        var ragRepo = Substitute.For<IRagStore>();
-        var provider = Substitute.For<IRagIndexProvider>();
-        provider
-            .OpenAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(ragRepo);
+        // The model asks for k=5; the resource returns two. The tool shapes exactly
+        // what came back, in rank order, ordinal-numbered.
+        var host = new FakeToolHost();
+        host.RagIndex.Hits.AddRange(
+        [
+            Hit("doc-1", "first.md", "p.1", "alpha", 0.9),
+            Hit("doc-2", "second.md", null, "beta", 0.5),
+        ]);
 
-        // documents.filename is base64 display metadata (StoredFilenames.Encode) -
-        // the tool must surface the decoded name in the hit and the citation.
-        var encoded = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes("Favorite database.pdf"));
-        var hit = Hit("doc-1", encoded, null, "My favorite database is sqlite-vec.", 0.92);
-        ragRepo
-            .HybridSearchAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<float>>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
-            .Returns(new[] { hit });
-
-        var tool = new RagTool(Gert.Testing.Proof.Validation, provider, new FakeEmbeddings(), User);
-        var result = await tool.ExecuteAsync(new ToolInvocation
-        {
-            Pid = "default",
-            ArgumentsJson = "{\"query\":\"favorite database\"}",
-        });
+        var result = await new RagTool(Gert.Testing.Proof.Validation).ExecuteAsync(
+            new ToolInvocation { Pid = "default", ArgumentsJson = "{\"query\":\"x\",\"k\":5}" },
+            host);
 
         result.Success.Should().BeTrue();
-        result.Citations.Should().ContainSingle();
-        result.Citations[0].Label.Should().Be("Favorite database.pdf");
-        result.ResultJson.Should().Contain("Favorite database.pdf")
-            .And.NotContain(encoded);
+        result.Citations.Should().HaveCount(2);
+        result.Citations[0].Ordinal.Should().Be(1);
+        result.Citations[1].Ordinal.Should().Be(2);
     }
 
     [Fact]
@@ -483,26 +401,14 @@ public sealed class ToolsTests
         result.Error.Should().Contain("Mars/Olympus_Mons");
     }
 
-    private static RetrievedChunk Hit(
-        string docId, string filename, string? page, string content, double score) => new()
+    private static RagSearchHit Hit(
+        string docId, string title, string? page, string content, double score) => new()
     {
-        Chunk = new Chunk
-        {
-            Id = 1,
-            DocumentId = docId,
-            Ordinal = 0,
-            Content = content,
-            Page = page,
-        },
-        Document = new Document
-        {
-            Id = docId,
-            Filename = filename,
-            Mime = "application/pdf",
-            SizeBytes = 1024,
-            Status = DocumentStatus.Ready,
-            CreatedAt = DateTimeOffset.UtcNow,
-        },
+        DocId = docId,
+        Title = title,
+        Kind = "document",
+        Page = page,
         Score = score,
+        Content = content,
     };
 }

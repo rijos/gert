@@ -56,7 +56,7 @@ public sealed record ToolInvocation
 
     /// <summary>
     /// The parent turn's provider id (<c>TurnJob.ModelId</c>), so a delegating
-    /// tool (<see cref="SubAgentTool"/>) talks to the same model. Null outside
+    /// tool (<c>run_sub_agent</c>) talks to the same model. Null outside
     /// the turn loop - delegation is then unavailable.
     /// </summary>
     public string? ModelId { get; init; }

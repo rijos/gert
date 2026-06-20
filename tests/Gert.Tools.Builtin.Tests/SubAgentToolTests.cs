@@ -1,236 +1,102 @@
-using System.Runtime.CompilerServices;
 using System.Text.Json;
 using FluentAssertions;
-using Gert.Chat;
-using Gert.Model;
-using Gert.Model.Chat;
-using Gert.Service.Chat;
 using Gert.Testing.Fakes;
 using Gert.Tools;
-using Gert.Tools.Builtin;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.Extensions.Options;
 using Xunit;
 
 namespace Gert.Tools.Builtin.Tests;
 
 /// <summary>
-/// The sub-agent tool (chat-and-tools.md section sub-agent): the nested loop
-/// returns only the final text, nested tools are delegable AND entitled (the
-/// claim stays the ceiling), recursion is structurally impossible, and the
-/// failure paths (no provider, bad args, round cap) degrade to model-readable
-/// errors instead of throwing.
+/// The sub-agent tool (chat-and-tools.md section sub-agent): it parses + bounds the model's
+/// {task, context} args (model-correctable errors stay here), drives the host's
+/// <see cref="IToolDelegate"/> with a <see cref="DelegateRequest"/>, and shapes the
+/// <see cref="DelegateResult"/> back into a <see cref="ToolResult"/>. The nested loop, the
+/// delegable-set intersection, and the autonomous host live behind the delegate (ChatToolDelegate)
+/// and are tested in ChatToolDelegateTests - here the delegate is a scriptable fake.
 /// </summary>
 public sealed class SubAgentToolTests
 {
-    private const string Pid = "default";
+    private static FakeToolHost HostWith(FakeToolDelegate del) => new() { Delegate = del };
 
-    private static readonly IReadOnlySet<string> AllTools =
-        new HashSet<string>(["rag", "search", "fetch", "clock", "sub_agent"], StringComparer.Ordinal);
-
-    /// <summary>Scripted client: replays the given rounds; captures every request.</summary>
-    private sealed class ScriptedModel : IChatModelClient
+    private static ToolInvocation Invocation(string args) => new()
     {
-        private readonly Queue<ChatModelChunk[]> _rounds;
-
-        public List<ChatCompletionRequest> Requests { get; } = [];
-
-        public ScriptedModel(params ChatModelChunk[][] rounds)
-        {
-            _rounds = new Queue<ChatModelChunk[]>(rounds);
-        }
-
-        public async IAsyncEnumerable<ChatModelChunk> StreamAsync(
-            ChatCompletionRequest request,
-            [EnumeratorCancellation] CancellationToken cancellationToken = default)
-        {
-            Requests.Add(request);
-            var round = _rounds.Count > 0
-                ? _rounds.Dequeue()
-                : [new ChatModelChunk { TextDelta = "default answer", FinishReason = "stop" }];
-            foreach (var chunk in round)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                await Task.Yield();
-                yield return chunk;
-            }
-        }
-    }
-
-    private static SubAgentTool NewTool(IChatModelClient model)
-    {
-        // A real scope with the one delegable tool the tests exercise: the
-        // clock (deterministic via the pinned TimeProvider). ClockTool is now a
-        // typed-args ToolCall, so the scope must also carry the IValidationProvider
-        // its ctor takes (the production-wired one, so its arg validation is real).
-        var services = new ServiceCollection();
-        services.AddSingleton(TimeProvider.System);
-        services.AddSingleton(Gert.Testing.Proof.Validation);
-        services.AddScoped<ITool, ClockTool>();
-        var provider = services.BuildServiceProvider();
-        return new SubAgentTool(
-            provider,
-            new FixedChatClientFactory(model),
-            Options.Create(new TurnOptions()),
-            TimeProvider.System,
-            NullLogger<SubAgentTool>.Instance);
-    }
-
-    private static ToolInvocation Invocation(
-        string args,
-        string? modelId = "test-provider",
-        IReadOnlySet<string>? allowed = null) => new()
-    {
-        Pid = Pid,
+        Pid = "default",
         ArgumentsJson = args,
         ConversationId = "conv-1",
-        ModelId = modelId,
-        AllowedToolIds = allowed ?? AllTools,
     };
 
-    private static ChatModelChunk[] FinalText(string text) =>
-        [new ChatModelChunk { TextDelta = text, FinishReason = "stop" }];
+    [Fact]
+    public async Task Parses_task_and_context_and_calls_the_delegate()
+    {
+        var del = new FakeToolDelegate();
+        await new SubAgentTool().ExecuteAsync(
+            Invocation("""{"task":"summarize","context":"raw material"}"""), HostWith(del));
 
-    private static ChatModelChunk[] CallClock(string callId) =>
-    [
-        new ChatModelChunk
-        {
-            ToolCall = new ChatModelToolCall
-            {
-                Id = callId,
-                Name = "get_datetime",
-                ArgumentsJson = "{}",
-            },
-            FinishReason = "tool_calls",
-        },
-    ];
+        del.LastRequest.Should().NotBeNull();
+        del.LastRequest!.Task.Should().Be("summarize");
+        del.LastRequest.Context.Should().Be("raw material");
+    }
 
     [Fact]
-    public async Task Returns_the_final_text_only()
+    public async Task A_successful_delegate_result_becomes_the_tool_result()
     {
-        var model = new ScriptedModel(FinalText("the digested result"));
-        var result = await NewTool(model).ExecuteAsync(Invocation("""{"task":"digest this"}"""));
+        var del = new FakeToolDelegate
+        {
+            Result = new DelegateResult { Success = true, Text = "the digested result", Rounds = 3 },
+        };
+
+        var result = await new SubAgentTool().ExecuteAsync(
+            Invocation("""{"task":"digest this"}"""), HostWith(del));
 
         result.Success.Should().BeTrue();
         result.Stdout.Should().Be("the digested result");
         using var doc = JsonDocument.Parse(result.ResultJson!);
         doc.RootElement.GetProperty("result").GetString().Should().Be("the digested result");
-        doc.RootElement.GetProperty("rounds").GetInt32().Should().Be(1);
-
-        // The nested conversation is fresh: a system prompt + the task, nothing
-        // of the parent's history.
-        var first = model.Requests.Single();
-        first.Messages.Should().HaveCount(2);
-        first.Messages[0].Role.Should().Be("system");
-        first.Messages[1].Content.Should().Be("digest this");
+        doc.RootElement.GetProperty("rounds").GetInt32().Should().Be(3);
     }
 
     [Fact]
-    public async Task Context_rides_the_task_message()
+    public async Task A_failed_delegate_result_becomes_a_failed_tool_result()
     {
-        var model = new ScriptedModel(FinalText("ok"));
-        await NewTool(model).ExecuteAsync(
-            Invocation("""{"task":"summarize","context":"raw material"}"""));
-
-        model.Requests.Single().Messages[1].Content
-            .Should().Contain("summarize").And.Contain("raw material");
-    }
-
-    [Fact]
-    public async Task Nested_tool_round_trip_feeds_the_result_back()
-    {
-        var model = new ScriptedModel(CallClock("c1"), FinalText("it is late"));
-        var result = await NewTool(model).ExecuteAsync(Invocation("""{"task":"what time"}"""));
-
-        result.Success.Should().BeTrue();
-        result.Stdout.Should().Be("it is late");
-
-        // Round 2 carries the assistant tool-calls message + the clock's result.
-        var second = model.Requests[1];
-        second.Messages.Should().HaveCount(4);
-        second.Messages[2].Role.Should().Be("assistant");
-        second.Messages[2].ToolCalls.Should().ContainSingle(c => c.Id == "c1");
-        second.Messages[3].Role.Should().Be("tool");
-        second.Messages[3].ToolCallId.Should().Be("c1");
-        second.Messages[3].Content.Should().Contain("utc");
-    }
-
-    [Fact]
-    public async Task Advertised_tools_are_delegable_AND_entitled()
-    {
-        // Entitled to everything -> the scope's one delegable tool (clock) is offered.
-        var model = new ScriptedModel(FinalText("ok"));
-        await NewTool(model).ExecuteAsync(Invocation("""{"task":"t"}"""));
-        model.Requests.Single().Tools.Should().ContainSingle(t => t.Name == "get_datetime");
-
-        // Clock outside the parent's entitlement snapshot -> nothing is offered.
-        var bare = new ScriptedModel(FinalText("ok"));
-        await NewTool(bare).ExecuteAsync(Invocation(
-            """{"task":"t"}""",
-            allowed: new HashSet<string>(["sub_agent"], StringComparer.Ordinal)));
-        bare.Requests.Single().Tools.Should().BeEmpty();
-    }
-
-    [Fact]
-    public async Task Sub_agent_is_never_offered_to_itself()
-    {
-        // Even fully entitled, run_sub_agent is not in the delegable set: the
-        // nested loop cannot recurse.
-        var model = new ScriptedModel(FinalText("ok"));
-        await NewTool(model).ExecuteAsync(Invocation("""{"task":"t"}"""));
-        model.Requests.Single().Tools.Should().NotContain(t => t.Name == "run_sub_agent");
-    }
-
-    [Fact]
-    public async Task Unknown_nested_call_degrades_to_a_readable_error()
-    {
-        var rogue = new ChatModelChunk
+        var del = new FakeToolDelegate
         {
-            ToolCall = new ChatModelToolCall { Id = "c9", Name = "run_python", ArgumentsJson = "{}" },
-            FinishReason = "tool_calls",
+            Result = new DelegateResult { Success = false, Error = "sub-agent ran out of time" },
         };
-        var model = new ScriptedModel([rogue], FinalText("recovered"));
-        var result = await NewTool(model).ExecuteAsync(Invocation("""{"task":"t"}"""));
 
-        result.Success.Should().BeTrue("the sub-agent reads the error and answers anyway");
-        // The default JSON encoder escapes quotes, so assert the parts.
-        model.Requests[1].Messages[3].Content.Should().Contain("no tool named").And.Contain("run_python");
-    }
-
-    [Fact]
-    public async Task No_provider_snapshot_fails_closed()
-    {
-        var model = new ScriptedModel();
-        var result = await NewTool(model).ExecuteAsync(
-            Invocation("""{"task":"t"}""", modelId: null));
+        var result = await new SubAgentTool().ExecuteAsync(
+            Invocation("""{"task":"t"}"""), HostWith(del));
 
         result.Success.Should().BeFalse();
-        model.Requests.Should().BeEmpty();
+        result.Error.Should().Be("sub-agent ran out of time");
     }
 
     [Theory]
     [InlineData("not json")]
     [InlineData("{}")]
     [InlineData("""{"task":"  "}""")]
-    public async Task Bad_arguments_are_model_correctable_errors(string args)
+    public async Task Bad_arguments_are_model_correctable_errors_and_never_delegate(string args)
     {
-        var result = await NewTool(new ScriptedModel()).ExecuteAsync(Invocation(args));
+        var del = new FakeToolDelegate();
+        var result = await new SubAgentTool().ExecuteAsync(Invocation(args), HostWith(del));
+
         result.Success.Should().BeFalse();
         result.Error.Should().NotBeNullOrEmpty();
+        del.LastRequest.Should().BeNull("a malformed call must never reach the delegate");
     }
 
-    [Fact]
-    public async Task Round_cap_fails_instead_of_spinning_forever()
+    [Theory]
+    [InlineData(8_001, 0)]
+    [InlineData(10, 32_001)]
+    public async Task Oversized_task_or_context_fails_before_delegating(int taskLen, int contextLen)
     {
-        // A model that asks for the clock every round never converges; the cap
-        // turns that into a visible error, not an infinite loop.
-        var rounds = Enumerable.Range(0, 32).Select(i => CallClock($"c{i}")).ToArray();
-        var model = new ScriptedModel(rounds);
-        var result = await NewTool(model).ExecuteAsync(Invocation("""{"task":"t"}"""));
+        var del = new FakeToolDelegate();
+        var task = new string('x', taskLen);
+        var context = contextLen > 0 ? new string('x', contextLen) : null;
+        var args = JsonSerializer.Serialize(new { task, context });
+
+        var result = await new SubAgentTool().ExecuteAsync(Invocation(args), HostWith(del));
 
         result.Success.Should().BeFalse();
-        result.Error.Should().Contain("rounds");
-        model.Requests.Count.Should().Be(16);
+        del.LastRequest.Should().BeNull();
     }
 }

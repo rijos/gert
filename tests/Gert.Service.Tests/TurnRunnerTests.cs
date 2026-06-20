@@ -146,7 +146,11 @@ public sealed class TurnRunnerTests
         new(_chatProvider, new FixedChatClientFactory(model), _bus,
             // The real loop, so the chat-shell tests still exercise it end to end.
             new AgentLoop(clock ?? TimeProvider.System, NullLogger<AgentLoop>.Instance),
-            tools ?? [], Options.Create(options ?? new TurnOptions()),
+            tools ?? [],
+            // The runner now builds the project RAG resource + sub-agent delegate
+            // itself; the RAG index provider + embedding client are its own deps.
+            _ragProvider, new FakeEmbeddings(),
+            Options.Create(options ?? new TurnOptions()),
             clock ?? TimeProvider.System,
             cancellation ?? new TurnCancellation(
                 Options.Create(options ?? new TurnOptions()), clock ?? TimeProvider.System),
@@ -225,8 +229,9 @@ public sealed class TurnRunnerTests
     [Fact]
     public async Task Rag_tool_loop_emits_full_event_sequence_and_persists_provenance()
     {
-        var user = new TestUserContext { AllowedTools = new HashSet<string>(["rag"], StringComparer.Ordinal) };
-        var ragTool = new RagTool(Gert.Testing.Proof.Validation, _ragProvider, new FakeEmbeddings(), user);
+        // RagTool reaches the project RAG index through the host the runner builds
+        // (over _ragProvider + the embedding client); it takes only validation now.
+        var ragTool = new RagTool(Gert.Testing.Proof.Validation);
 
         await NewRunner(new FakeChatModel(), [ragTool])
             .RunAsync(NewJob("search my docs about qdrant", [ragTool]));

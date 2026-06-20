@@ -1,10 +1,4 @@
-using Gert.Chat;
-using Gert.Model;
 using Gert.Model.Chat;
-using Gert.Model.Rag;
-using Gert.Rag;
-using Gert.Service;
-using Gert.Service.Documents;
 using Gert.Tools;
 using Gert.Validation;
 
@@ -12,17 +6,13 @@ namespace Gert.Tools.Builtin;
 
 /// <summary>
 /// The RAG tool (chat-and-tools.md section RAG / hybrid retrieval). Model function
-/// <c>search_documents</c>: embeds the query with <see cref="IEmbeddingClient"/>,
-/// runs <see cref="IRagStore.HybridSearchAsync"/> over <b>this</b> project's
-/// <c>rag.db</c> (vector KNN + BM25 fused by RRF), and shapes the hits into a
-/// <see cref="RagResult"/> - a JSON payload for the model plus the
-/// <see cref="Citation"/>s that seed the message footnotes.
+/// <c>search_documents</c>: searches THIS project's documents through the host's pre-scoped
+/// <see cref="IRagResource"/> (the host owns the embedding client + the scoped index; vector KNN +
+/// BM25 fused by RRF) and shapes the ranked <see cref="RagSearchHit"/>s into a <see cref="RagResult"/>
+/// (the JSON payload for the model) plus the <see cref="Citation"/>s that seed the message footnotes.
 /// <para>
-/// The repository is opened for the caller's validated <c>(iss, sub)</c>
-/// (<see cref="IUserContext"/>) and the turn's <c>pid</c>, exactly as the turn
-/// pipeline (<c>TurnPlanner</c>/<c>TurnRunner</c>) opens chat.db - identity is
-/// never caller-supplied, so a query structurally cannot reach another user's
-/// or project's documents.
+/// The tool never sees iss/sub/pid and never opens a store or embeds a query - identity is the host's,
+/// so a query structurally cannot reach another user's or project's documents.
 /// </para>
 /// </summary>
 public sealed class RagTool : ToolCall<RagArgs, RagResult>
@@ -30,16 +20,9 @@ public sealed class RagTool : ToolCall<RagArgs, RagResult>
     /// <summary>Default top-k when the model omits <c>k</c> (the validator caps the range).</summary>
     private const int DefaultK = 8;
 
-    private readonly IRagIndexProvider _databases;
-    private readonly IEmbeddingClient _embeddings;
-    private readonly IUserContext _user;
-
-    public RagTool(IValidationProvider validation, IRagIndexProvider databases, IEmbeddingClient embeddings, IUserContext user)
+    public RagTool(IValidationProvider validation)
         : base(validation)
     {
-        _databases = databases ?? throw new ArgumentNullException(nameof(databases));
-        _embeddings = embeddings ?? throw new ArgumentNullException(nameof(embeddings));
-        _user = user ?? throw new ArgumentNullException(nameof(user));
     }
 
     /// <inheritdoc />
@@ -79,34 +62,17 @@ public sealed class RagTool : ToolCall<RagArgs, RagResult>
     {
         ArgumentNullException.ThrowIfNull(args);
         ArgumentNullException.ThrowIfNull(invocation);
+        ArgumentNullException.ThrowIfNull(host);
 
-        var query = args.Query;
-        var k = args.K ?? DefaultK;
-
-        var embeddings = await _embeddings.EmbedAsync([query], cancellationToken).ConfigureAwait(false);
-        if (embeddings.Count != 1)
-        {
-            // Contract violation by the embedding client (one vector per input
-            // text): fail the call with an error the model can read - silently
-            // searching with an empty vector would degrade to BM25-only results
-            // with no signal that vector recall was lost.
-            return ToolCallResult<RagResult>.Fail(
-                $"embedding failed: expected 1 query vector, got {embeddings.Count}");
-        }
-
-        var queryVector = embeddings[0];
-
-        await using var repo = await _databases
-            .OpenAsync(_user.Iss, _user.Sub, invocation.Pid, cancellationToken)
+        var hits = await host.Resources.Rag
+            .SearchAsync(RagSearchScope.Project, args.Query, args.K ?? DefaultK, cancellationToken)
             .ConfigureAwait(false);
-
-        var hits = await repo.HybridSearchAsync(query, queryVector, k, cancellationToken).ConfigureAwait(false);
 
         return Shape(hits);
     }
 
-    /// <summary>Turn the fused hits into the model-facing JSON plus document citations.</summary>
-    private static ToolCallResult<RagResult> Shape(IReadOnlyList<RetrievedChunk> hits)
+    /// <summary>Turn the ranked hits into the model-facing JSON plus document citations.</summary>
+    private static ToolCallResult<RagResult> Shape(IReadOnlyList<RagSearchHit> hits)
     {
         var citations = new List<Citation>(hits.Count);
         var resultHits = new List<RagHit>(hits.Count);
@@ -115,10 +81,9 @@ public sealed class RagTool : ToolCall<RagArgs, RagResult>
         {
             var hit = hits[i];
             var ordinal = i + 1;
-            var display = DisplayName(hit.Document);
-            var label = hit.Chunk.Page is { Length: > 0 } page
-                ? $"{display} - {page}"
-                : display;
+            var label = hit.Page is { Length: > 0 } page
+                ? $"{hit.Title} - {page}"
+                : hit.Title;
 
             citations.Add(new Citation
             {
@@ -126,30 +91,23 @@ public sealed class RagTool : ToolCall<RagArgs, RagResult>
                 MessageId = string.Empty, // bound to the assistant message by TurnRunner.
                 Ordinal = ordinal,
                 SourceType = CitationSourceType.Document,
-                DocId = hit.Document.Id,
+                DocId = hit.DocId,
                 Label = label,
-                Locator = hit.Chunk.Page,
+                Locator = hit.Page,
                 Score = hit.Score,
             });
 
             resultHits.Add(new RagHit
             {
                 Ordinal = ordinal,
-                Doc = display,
-                Page = hit.Chunk.Page,
+                Doc = hit.Title,
+                Kind = hit.Kind,
+                Page = hit.Page,
                 Score = Math.Round(hit.Score, 4),
-                Content = hit.Chunk.Content,
+                Content = hit.Content,
             });
         }
 
         return ToolCallResult<RagResult>.Ok(new RagResult { Hits = resultHits }, citations: citations);
     }
-
-    /// <summary>
-    /// What a hit is called in the card/citation. The <c>filename</c> column is
-    /// base64 display metadata (<c>StoredFilenames.Encode</c>), so decode it. Falls
-    /// back to the raw value if it does not decode (defensive; never fails the search).
-    /// </summary>
-    private static string DisplayName(Document document) =>
-        StoredFilenames.Decode(document.Filename);
 }

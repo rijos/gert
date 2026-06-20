@@ -4,7 +4,6 @@ using Gert.Database;
 using Gert.Model;
 using Gert.Model.Chat;
 using Gert.Model.Dtos;
-using Gert.Rag;
 using Gert.Service.Chat;
 using Gert.Testing.Fakes;
 using Gert.Tools;
@@ -29,7 +28,6 @@ public sealed class TurnPlannerTests
 
     private readonly IChatRepository _repo = Substitute.For<IChatRepository>();
     private readonly IChatDatabaseProvider _provider = Substitute.For<IChatDatabaseProvider>();
-    private readonly IRagIndexProvider _ragProvider = Substitute.For<IRagIndexProvider>();
     private readonly IValidationProvider _validation = Substitute.For<IValidationProvider>();
     private readonly TurnOptions _options = new();
     private readonly List<Message> _persisted = [];
@@ -551,7 +549,7 @@ public sealed class TurnPlannerTests
     public async Task Entitlement_ceiling_filters_unentitled_tools_and_snapshots_the_claim()
     {
         var user = new TestUserContext { AllowedTools = new HashSet<string>(["rag"], StringComparer.Ordinal) };
-        var rag = new RagTool(Gert.Testing.Proof.Validation, _ragProvider, new FakeEmbeddings(), user);
+        var rag = new RagTool(Gert.Testing.Proof.Validation);
         var sandbox = new PythonSandboxTool(Gert.Testing.Proof.Validation, new StubPythonSandbox());
         SeedConversation(("rag", true), ("sandbox", true));
 
@@ -577,7 +575,7 @@ public sealed class TurnPlannerTests
     public async Task Model_without_tool_capability_is_offered_no_tools()
     {
         var user = new TestUserContext { AllowedTools = new HashSet<string>(["rag"], StringComparer.Ordinal) };
-        var rag = new RagTool(Gert.Testing.Proof.Validation, _ragProvider, new FakeEmbeddings(), user);
+        var rag = new RagTool(Gert.Testing.Proof.Validation);
         SeedConversation(("rag", true));
 
         var catalog = Substitute.For<IChatProviderCatalog>();

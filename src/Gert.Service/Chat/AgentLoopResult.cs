@@ -21,4 +21,7 @@ public sealed record AgentLoopResult
 
     /// <summary>Pure generation time in stopwatch ticks - stream consumption only, no tool gaps.</summary>
     public long GenElapsedTicks { get; init; }
+
+    /// <summary>Completed tool rounds (the upstream round count is this + the final answer round).</summary>
+    public int ToolRounds { get; init; }
 }

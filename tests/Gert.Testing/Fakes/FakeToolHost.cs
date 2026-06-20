@@ -34,7 +34,11 @@ public sealed class FakeToolHost : IToolHost
 
     private sealed record Bundle(IObjectResource Objects, IRagResource Rag) : IToolResources;
 
-    private sealed class NoOpDelegate : IToolDelegate;
+    private sealed class NoOpDelegate : IToolDelegate
+    {
+        public Task<DelegateResult> RunAsync(DelegateRequest request, CancellationToken cancellationToken = default) =>
+            Task.FromResult(new DelegateResult { Success = false, Error = "no delegate configured" });
+    }
 
     /// <summary>A dictionary-backed <see cref="IObjectResource"/> that versions on overwrite.</summary>
     public sealed class InMemoryObjectResource : IObjectResource
@@ -87,11 +91,17 @@ public sealed class FakeToolHost : IToolHost
         /// <summary>The hits returned (truncated to k), in rank order. Tests append to script results.</summary>
         public List<RagSearchHit> Hits { get; } = [];
 
+        /// <summary>How many times <see cref="SearchAsync"/> ran - asserts fail-closed paths never search.</summary>
+        public int Searches { get; private set; }
+
         public Task<IReadOnlyList<RagSearchHit>> SearchAsync(
             RagSearchScope scope,
             string query,
             int k,
-            CancellationToken cancellationToken = default) =>
-            Task.FromResult<IReadOnlyList<RagSearchHit>>(Hits.Take(k).ToList());
+            CancellationToken cancellationToken = default)
+        {
+            Searches++;
+            return Task.FromResult<IReadOnlyList<RagSearchHit>>(Hits.Take(k).ToList());
+        }
     }
 }
