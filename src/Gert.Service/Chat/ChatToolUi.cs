@@ -5,9 +5,10 @@ namespace Gert.Service.Chat;
 
 /// <summary>
 /// The chat loop's <see cref="IToolUi"/> (chat-and-tools.md section Ask the user) - the human
-/// interaction machinery <c>AskUserTool</c> used to own, moved behind the port. Constructed per
-/// tool call with everything one interaction needs: the question registry, the runner's
-/// persist-then-publish emit, the turn key + tool-call id, the clock, and the wait budget. Opens a
+/// interaction machinery <c>AskUserTool</c> used to own, moved behind the port. Constructed once per
+/// turn (the host is per-turn now) with everything an interaction needs: the question registry, the
+/// runner's persist-then-publish emit, the turn key, the clock, and the wait budget. The tool-call
+/// id rides each request (<see cref="InteractionRequest.CorrelationId"/>), not the ctor. Opens a
 /// pending question, emits <c>question_asked</c> before the wait, and on an answer emits
 /// <c>question_answered</c> before resolving - the wire protocol is unchanged.
 /// </summary>
@@ -22,7 +23,6 @@ internal sealed class ChatToolUi : IToolUi
     private readonly ITurnQuestions _questions;
     private readonly Func<ChatEvent, CancellationToken, Task> _emit;
     private readonly TurnKey _key;
-    private readonly string _toolCallId;
     private readonly TimeProvider _clock;
     private readonly TimeSpan _askUserTimeout;
     private readonly DateTimeOffset? _deadline;
@@ -31,7 +31,6 @@ internal sealed class ChatToolUi : IToolUi
         ITurnQuestions questions,
         Func<ChatEvent, CancellationToken, Task> emit,
         TurnKey key,
-        string toolCallId,
         TimeProvider clock,
         TimeSpan askUserTimeout,
         DateTimeOffset? deadline)
@@ -39,7 +38,6 @@ internal sealed class ChatToolUi : IToolUi
         _questions = questions ?? throw new ArgumentNullException(nameof(questions));
         _emit = emit ?? throw new ArgumentNullException(nameof(emit));
         _key = key;
-        _toolCallId = toolCallId ?? throw new ArgumentNullException(nameof(toolCallId));
         _clock = clock ?? throw new ArgumentNullException(nameof(clock));
         _askUserTimeout = askUserTimeout;
         _deadline = deadline;
@@ -74,7 +72,7 @@ internal sealed class ChatToolUi : IToolUi
             await _emit(
                 new QuestionAskedEvent
                 {
-                    Id = _toolCallId,
+                    Id = request.CorrelationId,
                     QuestionId = pending.QuestionId,
                     Questions = request.Prompts
                         .Select(p => new AskedQuestion(p.Text, p.Header, p.Options, p.AllowFreeText))
@@ -107,7 +105,7 @@ internal sealed class ChatToolUi : IToolUi
             await _emit(
                 new QuestionAnsweredEvent
                 {
-                    Id = _toolCallId,
+                    Id = request.CorrelationId,
                     QuestionId = pending.QuestionId,
                     Answers = answers,
                 },

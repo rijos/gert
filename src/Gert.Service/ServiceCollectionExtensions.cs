@@ -79,6 +79,9 @@ public static class ServiceCollectionExtensions
         services.AddUserScoped<IConversationReader, ConversationReader>();
         services.AddUserScoped<IConversationStreamer, ConversationStreamer>();
         services.AddUserScoped<ITurnPlanner, TurnPlanner>();
+        // The reusable tool loop the chat shell (and later the sub-agent / headless
+        // driver) run: stateless beyond the clock, so a process-wide singleton.
+        services.TryAddSingleton<IAgentLoop, AgentLoop>();
         services.AddUserScoped<ITurnRunner, TurnRunner>();
         // The worker-scope IUserContext: seeded from the TurnJob before anything
         // else resolves in the scope. The host's IUserContext registration picks

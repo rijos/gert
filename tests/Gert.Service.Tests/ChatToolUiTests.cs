@@ -27,7 +27,7 @@ public sealed class ChatToolUiTests
     private readonly List<ChatEvent> _emitted = [];
 
     private static InteractionRequest OneOpen =>
-        new([new InteractionPrompt("again?", null, [], AllowFreeText: true)]);
+        new(CallId, [new InteractionPrompt("again?", null, [], AllowFreeText: true)]);
 
     private static QuestionPayload OneOpenPayload =>
         new([new QuestionItem("again?", null, [], AllowFreeText: true)]);
@@ -50,7 +50,6 @@ public sealed class ChatToolUiTests
             _registry,
             EmitAsync,
             Key,
-            CallId,
             clock ?? TimeProvider.System,
             askUserTimeout ?? TimeSpan.FromMinutes(5),
             deadline);
@@ -78,6 +77,7 @@ public sealed class ChatToolUiTests
     public async Task An_answer_resolves_with_both_events_in_order_and_releases_the_key()
     {
         var task = NewUi().AskAsync(new InteractionRequest(
+            CallId,
             [new InteractionPrompt("Which color?", null, ["red", "blue"], AllowFreeText: false)]));
         var asked = await WaitForQuestionAsync();
 
@@ -114,11 +114,12 @@ public sealed class ChatToolUiTests
     public async Task Several_questions_pair_answers_in_order()
     {
         var task = NewUi().AskAsync(new InteractionRequest(
-        [
-            new InteractionPrompt("Which color?", "Color", ["red", "blue"], AllowFreeText: false),
-            new InteractionPrompt("Anything else?", "Notes", [], AllowFreeText: true),
-            new InteractionPrompt("Ship it?", null, ["yes", "no"], AllowFreeText: true),
-        ]));
+            CallId,
+            [
+                new InteractionPrompt("Which color?", "Color", ["red", "blue"], AllowFreeText: false),
+                new InteractionPrompt("Anything else?", "Notes", [], AllowFreeText: true),
+                new InteractionPrompt("Ship it?", null, ["yes", "no"], AllowFreeText: true),
+            ]));
         var asked = await WaitForQuestionAsync();
 
         asked.Questions.Select(q => q.Question)

@@ -96,6 +96,13 @@ public sealed class AskUserTool : ToolCallModal
             return new ToolResult { Success = false, Error = "ask_user is not available in this context" };
         }
 
+        // The question events fold onto this call's card: without a call id the Ui
+        // could never correlate them, so fail closed rather than wait invisibly.
+        if (string.IsNullOrEmpty(invocation.ToolCallId))
+        {
+            return new ToolResult { Success = false, Error = "ask_user requires a tool-call id" };
+        }
+
         if (ParseArguments(invocation.ArgumentsJson) is not { } parsed)
         {
             return new ToolResult { Success = false, Error = "invalid arguments: not a JSON object" };
@@ -108,7 +115,7 @@ public sealed class AskUserTool : ToolCallModal
         }
 
         var prompts = parsed.Prompts!;
-        var result = await host.Ui.AskAsync(new InteractionRequest(prompts), cancellationToken)
+        var result = await host.Ui.AskAsync(new InteractionRequest(invocation.ToolCallId, prompts), cancellationToken)
             .ConfigureAwait(false);
 
         if (result.Error is not null)
