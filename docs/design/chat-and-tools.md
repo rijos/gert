@@ -51,6 +51,18 @@ behavioural contract (the per-tool sections below hold the rationale); growing
 one back, or adding a further tool, must be re-verified against the live model
 (`tools/smoke` section live tool sweep).
 
+A typed tool's `ParametersSchema` is **generated** from its `TArgs` record by
+`Gert.Tools.Schema.ToolSchema` (the `ToolCall<TArgs, TResult>` base's virtual
+default), not hand-written: property names come from the record's snake_case wire
+shape, `required` from non-nullability, and the model-facing strings/bounds from
+`[ToolParameterDescription]` / `[ToolParameterEnum]` / `[ToolParameterRange]` /
+`[ToolParameterItems]` on the record's properties. Output is compact JSON to spend
+the fewest tokens. This keeps the one source of truth - the record - so the schema
+can't drift from the parsed contract; a fidelity test
+(`ToolSchemaFidelityTests`) pins each generated schema to its known-good shape. The
+two **modal** tools (`ask_user`, `sub_agent`) have no `TArgs` and keep a
+hand-written `ParametersSchema`.
+
 
 **Tool-call robustness (leak salvage).** The server-side tool parser
 (`--tool-call-parser qwen3_coder`, regex-based) misses near-miss calls; the raw

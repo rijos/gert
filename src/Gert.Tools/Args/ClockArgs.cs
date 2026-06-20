@@ -1,3 +1,5 @@
+using Gert.Tools.Schema;
+
 namespace Gert.Tools.Args;
 
 /// <summary>
@@ -8,5 +10,6 @@ namespace Gert.Tools.Args;
 public sealed record ClockArgs
 {
     /// <summary>Optional IANA timezone id (e.g. <c>Europe/Amsterdam</c>); null defaults to the client zone.</summary>
+    [ToolParameterDescription("Optional IANA timezone id (e.g. 'Europe/Amsterdam'). Defaults to the user's local timezone.")]
     public string? Timezone { get; init; }
 }

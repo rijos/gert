@@ -43,20 +43,6 @@ public sealed class EditArtifactTool(IValidationProvider validation)
         + "verbatim; include more surrounding lines if it is not unique.";
 
     /// <inheritdoc />
-    public override string ParametersSchema =>
-        """
-        {
-          "type": "object",
-          "properties": {
-            "name": { "type": "string", "description": "Name of the artifact to edit." },
-            "old_str": { "type": "string", "description": "Exact text to find - must match a single location verbatim." },
-            "new_str": { "type": "string", "description": "Replacement text (may be empty to delete the snippet)." }
-          },
-          "required": ["name", "old_str", "new_str"]
-        }
-        """;
-
-    /// <inheritdoc />
     public override async Task<ToolCallResult<EditArtifactResult>> CallAsync(
         EditArtifactArgs args,
         ToolInvocation invocation,
@@ -68,7 +54,7 @@ public sealed class EditArtifactTool(IValidationProvider validation)
         ArgumentNullException.ThrowIfNull(host);
 
         var oldStr = args.OldStr;
-        var newStr = args.NewStr ?? string.Empty;
+        var newStr = args.NewStr;
 
         var stored = await host.Resources.Objects.GetAsync(ResourceScope.Chat, args.Name, cancellationToken)
             .ConfigureAwait(false);

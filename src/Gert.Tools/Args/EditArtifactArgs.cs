@@ -1,3 +1,5 @@
+using Gert.Tools.Schema;
+
 namespace Gert.Tools.Args;
 
 /// <summary>
@@ -9,11 +11,14 @@ namespace Gert.Tools.Args;
 public sealed record EditArtifactArgs
 {
     /// <summary>Name of the artifact to edit (required).</summary>
+    [ToolParameterDescription("Name of the artifact to edit.")]
     public string Name { get; init; } = string.Empty;
 
     /// <summary>Exact text to find - must match one location verbatim (required).</summary>
+    [ToolParameterDescription("Exact text to find - must match a single location verbatim.")]
     public string OldStr { get; init; } = string.Empty;
 
-    /// <summary>Replacement text; null/empty deletes the snippet.</summary>
-    public string? NewStr { get; init; }
+    /// <summary>Replacement text; empty deletes the snippet. Non-nullable so it is required in the schema.</summary>
+    [ToolParameterDescription("Replacement text (may be empty to delete the snippet).")]
+    public string NewStr { get; init; } = string.Empty;
 }

@@ -1,3 +1,5 @@
+using Gert.Tools.Schema;
+
 namespace Gert.Tools.Args;
 
 /// <summary>
@@ -9,8 +11,10 @@ namespace Gert.Tools.Args;
 public sealed record WebFetchArgs
 {
     /// <summary>The absolute http(s) URL to fetch (required).</summary>
+    [ToolParameterDescription("The absolute http(s) URL to fetch.")]
     public string Url { get; init; } = string.Empty;
 
     /// <summary>Optional cap on the returned content; null defaults to 8000.</summary>
+    [ToolParameterDescription("Optional cap on the returned content (default 8000, max 20000).")]
     public int? MaxChars { get; init; }
 }

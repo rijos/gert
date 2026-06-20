@@ -42,25 +42,6 @@ public sealed class ReadArtifactTool(IValidationProvider validation)
         + "when unsure of the current content.";
 
     /// <inheritdoc />
-    public override string ParametersSchema =>
-        """
-        {
-          "type": "object",
-          "properties": {
-            "name": { "type": "string", "description": "Name of the artifact to read." },
-            "range": {
-              "type": "array",
-              "description": "Optional [start, end] line numbers, 1-indexed; end -1 reads to the end.",
-              "items": { "type": "integer" },
-              "minItems": 2,
-              "maxItems": 2
-            }
-          },
-          "required": ["name"]
-        }
-        """;
-
-    /// <inheritdoc />
     public override async Task<ToolCallResult<ReadArtifactResult>> CallAsync(
         ReadArtifactArgs args,
         ToolInvocation invocation,

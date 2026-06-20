@@ -56,18 +56,6 @@ public sealed class PythonSandboxTool : ToolCall<PythonSandboxArgs, PythonSandbo
         + "unexecuted code.";
 
     /// <inheritdoc />
-    public override string ParametersSchema =>
-        """
-        {
-          "type": "object",
-          "properties": {
-            "code": { "type": "string", "description": "The Python source to execute." }
-          },
-          "required": ["code"]
-        }
-        """;
-
-    /// <inheritdoc />
     public override async Task<ToolCallResult<PythonSandboxToolResult>> CallAsync(
         PythonSandboxArgs args,
         ToolInvocation invocation,

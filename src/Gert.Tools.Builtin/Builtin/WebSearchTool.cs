@@ -51,18 +51,6 @@ public sealed class WebSearchTool : ToolCall<WebSearchArgs, WebSearchToolResult>
         + "titles and URLs.";
 
     /// <inheritdoc />
-    public override string ParametersSchema =>
-        """
-        {
-          "type": "object",
-          "properties": {
-            "query": { "type": "string", "description": "The web search query." }
-          },
-          "required": ["query"]
-        }
-        """;
-
-    /// <inheritdoc />
     public override async Task<ToolCallResult<WebSearchToolResult>> CallAsync(
         WebSearchArgs args,
         ToolInvocation invocation,

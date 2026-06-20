@@ -44,20 +44,6 @@ public sealed class MakeArtifactTool(IValidationProvider validation)
         + "a whole file in a code block; re-using a name overwrites that artifact.";
 
     /// <inheritdoc />
-    public override string ParametersSchema =>
-        """
-        {
-          "type": "object",
-          "properties": {
-            "name": { "type": "string", "description": "File name with extension, e.g. index.html or notes.md." },
-            "format": { "type": "string", "enum": ["html", "markdown", "svg", "python", "csharp", "cpp", "javascript", "rust"] },
-            "content": { "type": "string", "description": "The entire file content." }
-          },
-          "required": ["name", "format", "content"]
-        }
-        """;
-
-    /// <inheritdoc />
     public override async Task<ToolCallResult<MakeArtifactResult>> CallAsync(
         MakeArtifactArgs args,
         ToolInvocation invocation,

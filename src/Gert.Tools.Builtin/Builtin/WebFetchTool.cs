@@ -59,20 +59,6 @@ public sealed class WebFetchTool : ToolCall<WebFetchArgs, WebFetchResultPayload>
         + "internal, and non-http(s) addresses are refused.";
 
     /// <inheritdoc />
-    public override string ParametersSchema =>
-        """
-        {
-          "type": "object",
-          "properties": {
-            "url": { "type": "string", "description": "The absolute http(s) URL to fetch." },
-            "max_chars": { "type": "integer",
-                           "description": "Optional cap on the returned content (default 8000, max 20000)." }
-          },
-          "required": ["url"]
-        }
-        """;
-
-    /// <inheritdoc />
     public override async Task<ToolCallResult<WebFetchResultPayload>> CallAsync(
         WebFetchArgs args,
         ToolInvocation invocation,

@@ -2,6 +2,7 @@ using System.Text.Json;
 using Gert.Model.Json;
 using Gert.Tools;
 using Gert.Tools.Hosting;
+using Gert.Tools.Schema;
 using Gert.Validation;
 
 namespace Gert.Tools.Builtin;
@@ -42,7 +43,13 @@ public abstract class ToolCall<TArgs, TResult> : IToolCall<TArgs, TResult>
     public abstract string Description { get; }
 
     /// <inheritdoc />
-    public abstract string ParametersSchema { get; }
+    /// <remarks>
+    /// GENERATED from <typeparamref name="TArgs"/> + its <c>[ToolParameter*]</c> annotations
+    /// (chat-and-tools.md section "tool specs are a token budget"), so a typed tool's
+    /// model-facing schema is derived from the record shape, not a hand-written string that
+    /// can drift. Cached per type by <see cref="ToolSchema"/>.
+    /// </remarks>
+    public virtual string ParametersSchema => ToolSchema.Generate(typeof(TArgs));
 
     /// <summary>Menu title. Re-declared as a virtual class member (the <see cref="ITool"/> default isn't); defaults to <see cref="Name"/>.</summary>
     public virtual string Title => Name;

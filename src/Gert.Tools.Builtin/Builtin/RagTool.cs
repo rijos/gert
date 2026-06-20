@@ -54,19 +54,6 @@ public sealed class RagTool : ToolCall<RagArgs, RagResult>
         + "passages with their source and score.";
 
     /// <inheritdoc />
-    public override string ParametersSchema =>
-        """
-        {
-          "type": "object",
-          "properties": {
-            "query": { "type": "string", "description": "The natural-language search query." },
-            "k": { "type": "integer", "description": "How many passages to return (1-20, default 8).", "minimum": 1, "maximum": 20 }
-          },
-          "required": ["query"]
-        }
-        """;
-
-    /// <inheritdoc />
     public override async Task<ToolCallResult<RagResult>> CallAsync(
         RagArgs args,
         ToolInvocation invocation,

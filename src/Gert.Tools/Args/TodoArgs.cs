@@ -1,3 +1,5 @@
+using Gert.Tools.Schema;
+
 namespace Gert.Tools.Args;
 
 /// <summary>
@@ -9,5 +11,6 @@ namespace Gert.Tools.Args;
 public sealed record TodoArgs
 {
     /// <summary>The complete todo list, in order (required, capped at 50).</summary>
+    [ToolParameterDescription("The complete todo list, in order.")]
     public IReadOnlyList<TodoArg> Todos { get; init; } = [];
 }

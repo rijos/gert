@@ -45,29 +45,6 @@ public sealed class TodoTool : ToolCall<TodoArgs, TodoToolResult>, IToolReminder
         + "'done' only after its result appears in your reply.";
 
     /// <inheritdoc />
-    public override string ParametersSchema =>
-        """
-        {
-          "type": "object",
-          "properties": {
-            "todos": {
-              "type": "array",
-              "description": "The complete todo list, in order.",
-              "items": {
-                "type": "object",
-                "properties": {
-                  "text": { "type": "string", "description": "The step, imperative and short." },
-                  "status": { "type": "string", "enum": ["pending", "active", "done"] }
-                },
-                "required": ["text", "status"]
-              }
-            }
-          },
-          "required": ["todos"]
-        }
-        """;
-
-    /// <inheritdoc />
     /// <remarks>
     /// The CROSS-TURN revival reminder (distinct from the within-turn "keep going"
     /// nudge in this tool's result). Re-injected only while the list still has

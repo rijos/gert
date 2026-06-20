@@ -1,3 +1,5 @@
+using Gert.Tools.Schema;
+
 namespace Gert.Tools.Args;
 
 /// <summary>
@@ -9,8 +11,10 @@ namespace Gert.Tools.Args;
 public sealed record TodoArg
 {
     /// <summary>The step, imperative and short (required, non-empty).</summary>
+    [ToolParameterDescription("The step, imperative and short.")]
     public string Text { get; init; } = string.Empty;
 
     /// <summary>The step status: pending, active, or done (required).</summary>
+    [ToolParameterEnum("pending", "active", "done")]
     public string Status { get; init; } = string.Empty;
 }

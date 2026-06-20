@@ -38,9 +38,6 @@ public sealed class ListArtifactsTool(IValidationProvider validation)
         + "read or edit the right one. Use when unsure what exists.";
 
     /// <inheritdoc />
-    public override string ParametersSchema => """{"type":"object","properties":{}}""";
-
-    /// <inheritdoc />
     public override async Task<ToolCallResult<ListArtifactsResult>> CallAsync(
         ListArtifactsArgs args,
         ToolInvocation invocation,

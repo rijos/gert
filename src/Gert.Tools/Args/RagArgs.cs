@@ -1,3 +1,5 @@
+using Gert.Tools.Schema;
+
 namespace Gert.Tools.Args;
 
 /// <summary>
@@ -10,8 +12,11 @@ namespace Gert.Tools.Args;
 public sealed record RagArgs
 {
     /// <summary>The natural-language search query (required).</summary>
+    [ToolParameterDescription("The natural-language search query.")]
     public string Query { get; init; } = string.Empty;
 
     /// <summary>How many passages to return (1-20); null defaults to 8.</summary>
+    [ToolParameterDescription("How many passages to return (1-20, default 8).")]
+    [ToolParameterRange(1, 20)]
     public int? K { get; init; }
 }

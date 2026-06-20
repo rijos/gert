@@ -45,17 +45,6 @@ public sealed class ClockTool : ToolCall<ClockArgs, ClockResult>
         + "explicit IANA timezone). Use for questions about now, today, or dates.";
 
     /// <inheritdoc />
-    public override string ParametersSchema =>
-        """
-        {
-          "type": "object",
-          "properties": {
-            "timezone": { "type": "string", "description": "Optional IANA timezone id (e.g. 'Europe/Amsterdam'). Defaults to the user's local timezone." }
-          }
-        }
-        """;
-
-    /// <inheritdoc />
     public override Task<ToolCallResult<ClockResult>> CallAsync(
         ClockArgs args,
         ToolInvocation invocation,
