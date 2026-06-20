@@ -1,5 +1,6 @@
 using FluentValidation;
 using Gert.Model.Chat;
+using Gert.Validation.Rules;
 
 namespace Gert.Validation.Validators;
 

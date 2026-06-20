@@ -52,7 +52,7 @@ builder.Host.UseDefaultServiceProvider(options =>
 // uploads get the authoritative, branded 400 - not a bare Kestrel 413.
 builder.WebHost.ConfigureKestrel(kestrel =>
     kestrel.Limits.MaxRequestBodySize =
-        Gert.Validation.UploadConstraints.MaxSizeBytes + 1_048_576);
+        Gert.Validation.Rules.UploadConstraints.MaxSizeBytes + 1_048_576);
 
 // Bounded shutdown.
 // Open SSE streams end themselves on ApplicationStopping (the stream endpoint

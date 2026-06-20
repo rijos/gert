@@ -14,6 +14,7 @@ using Gert.Testing;
 using Gert.Testing.Fakes;
 using Gert.Tools;
 using Gert.Validation;
+using Gert.Validation.Rules;
 using Xunit;
 
 namespace Gert.Database.Sqlite.Tests;

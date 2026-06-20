@@ -1,7 +1,8 @@
 using FluentValidation;
 using Gert.Tools.Args;
+using Gert.Validation.Rules;
 
-namespace Gert.Validation.Validators;
+namespace Gert.Validation.Validators.ToolArgs;
 
 /// <summary>
 /// Validates the canvas edit tool's args (<c>edit_artifact</c>): a safe, non-empty

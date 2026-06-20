@@ -1,5 +1,6 @@
 using FluentValidation;
 using Gert.Model.Documents;
+using Gert.Validation.Rules;
 
 namespace Gert.Validation.Validators;
 

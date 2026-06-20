@@ -1,7 +1,7 @@
 using FluentValidation;
 using Gert.Tools.Args;
 
-namespace Gert.Validation.Validators;
+namespace Gert.Validation.Validators.ToolArgs;
 
 /// <summary>
 /// Validates the web-fetch tool's args (<c>web_fetch</c>): a required, absolute

@@ -4,6 +4,7 @@ using Gert.Model.Dtos;
 using Gert.Service.Documents;
 using Gert.Testing.TestData;
 using Gert.Validation;
+using Gert.Validation.Rules;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 

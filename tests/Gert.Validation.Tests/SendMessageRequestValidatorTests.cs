@@ -4,6 +4,7 @@ using FluentValidation.TestHelper;
 using Gert.Model.Chat;
 using Gert.Model.Dtos;
 using Gert.Validation;
+using Gert.Validation.Rules;
 using Xunit;
 
 namespace Gert.Validation.Tests;

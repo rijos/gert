@@ -1,7 +1,8 @@
 using FluentValidation;
 using Gert.Tools.Args;
+using Gert.Validation.Rules;
 
-namespace Gert.Validation.Validators;
+namespace Gert.Validation.Validators.ToolArgs;
 
 /// <summary>
 /// Validates the RAG tool's args (<c>search_documents</c>): a required, safe query

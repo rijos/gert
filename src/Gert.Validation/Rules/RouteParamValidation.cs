@@ -1,4 +1,6 @@
-namespace Gert.Validation;
+using Gert.Validation;
+
+namespace Gert.Validation.Rules;
 
 /// <summary>
 /// Reusable validators for request-supplied <b>route parameters</b> (not DTO bodies):

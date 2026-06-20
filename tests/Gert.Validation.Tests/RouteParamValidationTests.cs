@@ -1,6 +1,7 @@
 using FluentAssertions;
 using Gert.Testing.TestData;
 using Gert.Validation;
+using Gert.Validation.Rules;
 using Xunit;
 
 namespace Gert.Validation.Tests;

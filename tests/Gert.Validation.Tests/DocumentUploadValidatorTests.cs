@@ -3,6 +3,7 @@ using FluentValidation.TestHelper;
 using Gert.Model.Documents;
 using Gert.Service.Documents;
 using Gert.Validation;
+using Gert.Validation.Rules;
 using Gert.Validation.Validators;
 using Xunit;
 

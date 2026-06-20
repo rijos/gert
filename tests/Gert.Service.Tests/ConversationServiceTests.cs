@@ -8,6 +8,7 @@ using Gert.Tools;
 using Gert.Tools.Builtin;
 using Gert.Tools.Ports;
 using Gert.Validation;
+using Gert.Validation.Rules;
 using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
 using Xunit;

@@ -1,7 +1,8 @@
 using FluentValidation;
 using Gert.Tools.Args;
+using Gert.Validation.Rules;
 
-namespace Gert.Validation.Validators;
+namespace Gert.Validation.Validators.ToolArgs;
 
 /// <summary>
 /// Validates the sandbox tool's args (<c>run_python</c>): a required, non-empty

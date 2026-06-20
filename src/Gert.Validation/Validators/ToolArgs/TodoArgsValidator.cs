@@ -1,7 +1,7 @@
 using FluentValidation;
 using Gert.Tools.Args;
 
-namespace Gert.Validation.Validators;
+namespace Gert.Validation.Validators.ToolArgs;
 
 /// <summary>
 /// Validates the todo tool's args (<c>set_todos</c>): a non-empty <c>todos</c> list

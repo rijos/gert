@@ -1,7 +1,8 @@
 using FluentValidation;
 using Gert.Tools.Args;
+using Gert.Validation.Rules;
 
-namespace Gert.Validation.Validators;
+namespace Gert.Validation.Validators.ToolArgs;
 
 /// <summary>
 /// Validates one <see cref="TodoArg"/>: a non-empty, safe <c>text</c> and a

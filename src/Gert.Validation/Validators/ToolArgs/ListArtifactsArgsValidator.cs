@@ -1,7 +1,7 @@
 using FluentValidation;
 using Gert.Tools.Args;
 
-namespace Gert.Validation.Validators;
+namespace Gert.Validation.Validators.ToolArgs;
 
 /// <summary>
 /// Validates the canvas list tool's args (<c>list_artifacts</c>): there are none, so

@@ -1,7 +1,7 @@
 using FluentValidation;
 using Gert.Tools.Args;
 
-namespace Gert.Validation.Validators;
+namespace Gert.Validation.Validators.ToolArgs;
 
 /// <summary>
 /// Validates the clock tool's args (<c>get_datetime</c>): an optional IANA

@@ -6,6 +6,7 @@ using Gert.Service.Ingestion;
 using Gert.Service.Storage;
 using Gert.Storage;
 using Gert.Validation;
+using Gert.Validation.Rules;
 
 namespace Gert.Service.Documents;
 

@@ -1,4 +1,4 @@
-namespace Gert.Validation;
+namespace Gert.Validation.Rules;
 
 /// <summary>
 /// The upload allowlists / caps the document validator enforces (testing.md section 5:

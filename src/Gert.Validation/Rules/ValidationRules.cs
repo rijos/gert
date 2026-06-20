@@ -1,7 +1,7 @@
 using System.Globalization;
 using FluentValidation;
 
-namespace Gert.Validation;
+namespace Gert.Validation.Rules;
 
 /// <summary>
 /// Shared, DRY building blocks for the per-DTO validators (testing.md section 5

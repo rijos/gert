@@ -3,6 +3,7 @@ using FluentValidation.TestHelper;
 using Gert.Model.Dtos;
 using Gert.Model.Projects;
 using Gert.Validation;
+using Gert.Validation.Rules;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
