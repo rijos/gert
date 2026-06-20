@@ -1,8 +1,10 @@
 using System.Runtime.CompilerServices;
 using FluentAssertions;
+using Gert.Agent;
+using Gert.Agent.Hosting;
+using Gert.Agent.Loop;
 using Gert.Chat;
 using Gert.Model.Chat;
-using Gert.Service.Chat;
 using Gert.Testing.Fakes;
 using Gert.Tools;
 using Gert.Tools.Builtin;

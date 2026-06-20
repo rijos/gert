@@ -1,6 +1,6 @@
 using System.Collections.Concurrent;
 using FluentAssertions;
-using Gert.Api.Chat;
+using Gert.Agent;
 using Gert.Service.Chat;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;

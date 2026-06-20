@@ -32,7 +32,7 @@ public static class ServiceCollectionExtensions
     /// opening the per-user store by <c>(Iss, Sub)</c>. <b>Which</b> impl backs
     /// <see cref="IUserContext"/> is chosen by the host: a request scope gets
     /// <c>HttpUserContext</c> (JWT claims); a worker scope (no <c>HttpContext</c>) gets
-    /// <see cref="DetachedUserContext"/> seeded from the job - see the "IUserContext
+    /// <c>Gert.Agent.DetachedUserContext</c> seeded from the job - see the "IUserContext
     /// routing" registration in <c>Gert.Api/Program.cs</c>. Uses <c>TryAdd</c> so a host
     /// may override any registration.
     /// </summary>
@@ -51,26 +51,16 @@ public static class ServiceCollectionExtensions
         // process-wide wall clock; TryAdd so tests override with a fake.
         services.TryAddSingleton(TimeProvider.System);
 
-        // Step-0 instructions reader - default to "no instructions" so the service
-        // layer is self-contained; a host that can read the user.db project
-        // registry overrides it.
-        services.TryAddScoped<IProjectInstructionsReader, NullProjectInstructionsReader>();
-
         // Granular services. All caller-bound (see AddUserScoped): they read/write the
         // requester's per-user store via IUserContext, so they must never outlive a scope.
         services.AddUserScoped<IConversationService, ConversationService>();
 
-        // Detached turn pipeline (chat-and-tools.md section detached turns): the bus is a
-        // process-wide singleton (live delivery is per-process; the DB is the
-        // cross-instance truth); the reader is scoped (per-request IUserContext).
+        // Request-facing read side (chat-and-tools.md section detached turns): the bus is a
+        // process-wide singleton (live delivery is per-process; the DB is the cross-instance
+        // truth); the reader/streamer are scoped (per-request IUserContext). The turn EXECUTION
+        // engine (worker, queue, planner, runner, AgentLoop, ask_user/cancel registries) moved to
+        // Gert.Agent (AddGertAgent); only the read side + the bus stay here.
         services.TryAddSingleton<Chat.Bus.IConversationBus, Chat.Bus.ConversationBus>();
-        // The cancel registry is process-wide for the same reason the bus is:
-        // the in-process queue means the addressed turn always lives here.
-        services.TryAddSingleton<ITurnCancellation, TurnCancellation>();
-        // The ask_user question registry mirrors the cancel registry: the
-        // waiting turn always lives in this process, so the answer endpoint
-        // can reach it here (chat-and-tools.md section Ask the user).
-        services.TryAddSingleton<ITurnQuestions, TurnQuestions>();
 
         // Forward-recovery for the deletion saga (storage-and-data.md section deletion): on
         // startup, finish any account deletion a previous run left interrupted. Business
@@ -78,22 +68,6 @@ public static class ServiceCollectionExtensions
         services.AddHostedService<DeletionRecoveryService>();
         services.AddUserScoped<IConversationReader, ConversationReader>();
         services.AddUserScoped<IConversationStreamer, ConversationStreamer>();
-        services.AddUserScoped<ITurnPlanner, TurnPlanner>();
-        // The reusable tool loop the chat shell (and later the sub-agent / headless
-        // driver) run: stateless beyond the clock, so a process-wide singleton.
-        services.TryAddSingleton<IAgentLoop, AgentLoop>();
-        services.AddUserScoped<ITurnRunner, TurnRunner>();
-        // The worker-scope IUserContext: seeded from the TurnJob before anything
-        // else resolves in the scope. The host's IUserContext registration picks
-        // this when there is no HttpContext (the queue seam: ITurnQueue is
-        // host-registered, like IIngestionQueue).
-        services.TryAddScoped<DetachedUserContext>();
-        // TurnOptions get DEFAULTS here; the host binds "Gert:Turn" over them
-        // (this layer stays configuration-agnostic).
-        services.AddOptions<TurnOptions>();
-        // PromptOptions same: empty defaults here; the host binds "Gert:Prompts"
-        // (the canvas nudge text) over them.
-        services.AddOptions<PromptOptions>();
 
         services.AddUserScoped<IDocumentService, DocumentService>();
         services.AddUserScoped<IArtifactService, ArtifactService>();
@@ -136,7 +110,7 @@ public static class ServiceCollectionExtensions
     /// <c>ArchitectureTests.Services_consuming_IUserContext_are_scoped</c> fails if any
     /// registration here turns singleton. Use <c>TryAddScoped</c> directly only for the
     /// rare scoped service that is <i>not</i> caller-bound (e.g. a stateless seam or the
-    /// <see cref="DetachedUserContext"/> impl itself).
+    /// <c>Gert.Agent.DetachedUserContext</c> impl itself).
     /// </summary>
     private static IServiceCollection AddUserScoped<TService, TImpl>(this IServiceCollection services)
         where TService : class

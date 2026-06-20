@@ -1,6 +1,6 @@
 using FluentAssertions;
+using Gert.Agent;
 using Gert.Model.Dtos;
-using Gert.Service.Chat;
 using Gert.Testing;
 using Gert.Validation;
 using Xunit;

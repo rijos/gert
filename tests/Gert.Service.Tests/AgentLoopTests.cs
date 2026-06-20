@@ -1,5 +1,6 @@
 using System.Runtime.CompilerServices;
 using FluentAssertions;
+using Gert.Agent.Loop;
 using Gert.Chat;
 using Gert.Model;
 using Gert.Model.Chat;

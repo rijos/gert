@@ -1,4 +1,5 @@
 using FluentAssertions;
+using Gert.Agent;
 using Gert.Service.Chat;
 using Microsoft.Extensions.Options;
 using Xunit;

@@ -1,7 +1,8 @@
 using FluentAssertions;
+using Gert.Agent;
+using Gert.Agent.Hosting;
 using Gert.Model.Dtos;
 using Gert.Model.Events;
-using Gert.Service.Chat;
 using Gert.Testing;
 using Gert.Tools;
 using Gert.Tools.Ui;

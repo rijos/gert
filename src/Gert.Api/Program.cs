@@ -1,4 +1,4 @@
-using Gert.Api.Chat;
+using Gert.Agent;
 using Gert.Api.Errors;
 using Gert.Api.Ingestion;
 using Gert.Api.Logging;
@@ -104,15 +104,15 @@ builder.Services.AddSingleton<ChannelIngestionQueue>();
 builder.Services.AddSingleton<IIngestionQueue>(sp => sp.GetRequiredService<ChannelIngestionQueue>());
 builder.Services.AddHostedService<IngestionWorker>();
 
-// Turn worker (chat-and-tools.md section detached turns): same shape as ingestion -
-// POST plans + enqueues and responds 202; the worker drives the tool loop
-// off-thread, so generation survives client disconnects. The TurnJob carries
-// (iss, sub, entitlement snapshot); TurnWorker seeds DetachedUserContext per scope.
-builder.Services.AddSingleton<ChannelTurnQueue>();
-builder.Services.AddSingleton<ITurnQueue>(sp => sp.GetRequiredService<ChannelTurnQueue>());
-builder.Services.AddHostedService<TurnWorker>();
-
 builder.Services.AddGertServices();
+
+// Turn/agent execution engine (chat-and-tools.md section detached turns): the worker +
+// queue, the planner/runner, the reusable agent loop, and the ask_user/cancel registries.
+// Gert.Agent is the layer between the host and the service layer; AddGertAgent registers the
+// Channel-backed queue + TurnWorker (POST plans + enqueues and responds 202; the worker drives
+// the tool loop off-thread, so generation survives client disconnects). The TurnJob carries
+// (iss, sub, entitlement snapshot); TurnWorker seeds DetachedUserContext per scope.
+builder.Services.AddGertAgent();
 
 // Detached turn pipeline tunables (chat-and-tools.md section detached turns). The service
 // layer registers the defaults; the host binds configuration over them
@@ -148,7 +148,7 @@ builder.Services.AddGertAuthorization();
 builder.Services.Replace(ServiceDescriptor.Scoped<IUserContext>(sp =>
     sp.GetRequiredService<IHttpContextAccessor>().HttpContext is not null
         ? ActivatorUtilities.CreateInstance<HttpUserContext>(sp)
-        : sp.GetRequiredService<DetachedUserContext>()));
+        : sp.GetRequiredService<Gert.Agent.DetachedUserContext>()));
 
 // DEV/TEST ONLY: trust a static dev JWKS file (testing.md section 4.3).
 // The E2E harness (tools/smoke) mints RS256 tokens with a git-ignored dev key and

@@ -22,6 +22,7 @@
          every concrete ToolCall<TArgs, _> and asserts a registered IValidator<TArgs>. -->
     <ProjectReference Include="..\..\src\Gert.Tools.Builtin\Gert.Tools.Builtin.csproj" />
     <ProjectReference Include="..\Gert.Testing\Gert.Testing.csproj" />
+    <ProjectReference Include="..\..\src\Gert.Agent\Gert.Agent.csproj" />
   </ItemGroup>
 
 </Project>

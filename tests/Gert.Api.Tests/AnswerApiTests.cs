@@ -2,7 +2,7 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
 using FluentAssertions;
-using Gert.Service.Chat;
+using Gert.Agent;
 using Gert.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;

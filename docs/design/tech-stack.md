@@ -22,8 +22,9 @@
 The codebase is a **host-agnostic service layer** with a single host on top of it, kept
 deliberately decoupled so the host stays swappable:
 
-- **`Gert.Service`** holds all business logic and references nothing host-specific - no `HttpContext`, no JWT, no SSE. It depends only on abstractions: `IUserContext` (who is the current user + their tool entitlement), the persistence contracts in **`Gert.Database`** (the per-database providers `IUserDatabaseProvider` / `IChatDatabaseProvider` and their repositories - this user's connections + migrations), the RAG index contracts in **`Gert.Rag`** (`IRagIndexProvider` / `IRagStore`), and the tool/validation interfaces.
-- **`Gert.Api`** drives the services over HTTP (controllers, JWT auth, SSE, the ingestion `BackgroundService`, SPA hosting).
+- **`Gert.Service`** holds all business logic and references nothing host-specific - no `HttpContext`, no JWT, no SSE. It depends only on abstractions: `IUserContext` (who is the current user + their tool entitlement), the persistence contracts in **`Gert.Database`** (the per-database providers `IUserDatabaseProvider` / `IChatDatabaseProvider` and their repositories - this user's connections + migrations), the RAG index contracts in **`Gert.Rag`** (`IRagIndexProvider` / `IRagStore`), and the tool/validation interfaces. The request-facing read side of chat (the conversation bus + reader/streamer) stays here; the turn EXECUTION engine does not.
+- **`Gert.Agent`** is the turn/agent execution engine, a layer between the host and `Gert.Service` (host -> `Gert.Agent` -> `Gert.Service`): the `TurnWorker` + `ChannelTurnQueue`, the `TurnPlanner`/`TurnRunner`, the reusable `IAgentLoop`, the ask_user/cancel registries, the worker-scope `DetachedUserContext`, and the chat tool-host wiring (`ChatToolHost`/`ProjectRagResource`/`ChatToolDelegate`). It references `Gert.Service` + the capability contracts, never the host or an adapter impl; `Gert.Service` must not reference it back. Registered by `AddGertAgent` (the host calls it right after `AddGertServices`).
+- **`Gert.Api`** drives the engine + services over HTTP (controllers, JWT auth, SSE, the ingestion `BackgroundService`, SPA hosting).
 
 Because the service layer can't see the host, its independence from any transport is **structural** (compiler-enforced reference direction), not a convention. Services that stream - chat - return `IAsyncEnumerable<ChatEvent>`; the Api renders those as SSE. Transport never leaks into the service.
 
@@ -36,7 +37,12 @@ Arrows are project references. Everything points inward to `Gert.Service` -> `Ge
 ```
   ── host ────────────────────────────────────────────────────────────────────
      Gert.Api
-       refs: Service, Authentication, Database.Sqlite, Storage(+Local), Chat(+OpenAI), Tools, Ingestion
+       refs: Agent, Service, Authentication, Database.Sqlite, Storage(+Local), Chat(+OpenAI), Tools, Ingestion
+       │
+       ▼
+  ── turn/agent execution engine ──────────────────────────────────────────────
+     Gert.Agent       refs: Service + the capability contracts (Database, Rag, Chat, Tools, Validation)
+       (TurnWorker/queue, TurnPlanner/TurnRunner, IAgentLoop, the chat tool-host wiring)
        │
        ▼
   ── impl adapters (per-impl leaves) ──────────────────────────────────────────
@@ -55,7 +61,7 @@ Arrows are project references. Everything points inward to `Gert.Service` -> `Ge
                             Gert.Model                   no dependencies
 ```
 
-The compiler enforces the inward direction: `Gert.Service` cannot reference `Gert.Api`, `Gert.Authentication`, the outside-world impl adapters (`Gert.Chat.OpenAI`, `Gert.Tools.Builtin`, `Gert.Ingestion`, `Gert.Storage.Local`), or any `Gert.Database.*` **adapter** - so the service layer's independence from any host is structural, not a convention. Each capability splits into a **contracts** assembly (`Gert.Database`, `Gert.Storage`, `Gert.Chat`, `Gert.Rag`, `Gert.Tools`) that depends only on `Gert.Model` and holds the ports (plus any impl-agnostic wiring, e.g. the chat provider catalog/factory) and a **per-impl leaf** that holds the real backend; the service layer references only the contracts. The service layer talks only to the ports (`IChatModelClient`, `IEmbeddingClient`, `IObjectStore`, the database providers, `IWebSearch`, `IPythonSandbox`, `ITextExtractor`), and the real vLLM/SearXNG/gVisor/local-FS clients live behind them - so they can be swapped (or pointed at mock upstreams for tests, see [testing](testing.md#41-the-fake-external-world)) with a single DI change. For a config-selected, multi-impl capability (chat, the database engine, the RAG index engine, web search, the run_python sandbox), each impl is a self-registering plugin keyed by its `Type` token (`ICapabilityPlugin`): a generic factory dispatches by config with no central `switch`, and the composition root registers the plugins it ships (`AddGert<Capability><Impl>`, e.g. `AddGertChatOpenAI` / `AddGertDatabaseSqlite` / `AddGertRagSqlite` / `AddGertSearchSearXNG` / `AddGertSandboxMonty`). The split is by assembly when the impl carries heavy deps (chat: `Gert.Chat` contracts vs `Gert.Chat.OpenAI` leaf; database: `Gert.Database` contracts vs `Gert.Database.Sqlite` leaf; RAG: `Gert.Rag` contracts vs `Gert.Rag.Sqlite` leaf) or by namespace leaf within one impl adapter when the ports live in the shared contracts assembly `Gert.Tools` (search/sandbox inside `Gert.Tools.Builtin`). `PluginArchitectureTests` asserts the contracts-vs-impl split and the registrar naming convention for all of them.
+The compiler enforces the inward direction: `Gert.Service` cannot reference `Gert.Api`, `Gert.Agent` (the turn engine sits OUTWARD of it - host -> `Gert.Agent` -> `Gert.Service`), `Gert.Authentication`, the outside-world impl adapters (`Gert.Chat.OpenAI`, `Gert.Tools.Builtin`, `Gert.Ingestion`, `Gert.Storage.Local`), or any `Gert.Database.*` **adapter** - so the service layer's independence from any host is structural, not a convention. An architecture test also pins `Gert.Agent` so it never references the host or an adapter impl leaf. Each capability splits into a **contracts** assembly (`Gert.Database`, `Gert.Storage`, `Gert.Chat`, `Gert.Rag`, `Gert.Tools`) that depends only on `Gert.Model` and holds the ports (plus any impl-agnostic wiring, e.g. the chat provider catalog/factory) and a **per-impl leaf** that holds the real backend; the service layer references only the contracts. The service layer talks only to the ports (`IChatModelClient`, `IEmbeddingClient`, `IObjectStore`, the database providers, `IWebSearch`, `IPythonSandbox`, `ITextExtractor`), and the real vLLM/SearXNG/gVisor/local-FS clients live behind them - so they can be swapped (or pointed at mock upstreams for tests, see [testing](testing.md#41-the-fake-external-world)) with a single DI change. For a config-selected, multi-impl capability (chat, the database engine, the RAG index engine, web search, the run_python sandbox), each impl is a self-registering plugin keyed by its `Type` token (`ICapabilityPlugin`): a generic factory dispatches by config with no central `switch`, and the composition root registers the plugins it ships (`AddGert<Capability><Impl>`, e.g. `AddGertChatOpenAI` / `AddGertDatabaseSqlite` / `AddGertRagSqlite` / `AddGertSearchSearXNG` / `AddGertSandboxMonty`). The split is by assembly when the impl carries heavy deps (chat: `Gert.Chat` contracts vs `Gert.Chat.OpenAI` leaf; database: `Gert.Database` contracts vs `Gert.Database.Sqlite` leaf; RAG: `Gert.Rag` contracts vs `Gert.Rag.Sqlite` leaf) or by namespace leaf within one impl adapter when the ports live in the shared contracts assembly `Gert.Tools` (search/sandbox inside `Gert.Tools.Builtin`). `PluginArchitectureTests` asserts the contracts-vs-impl split and the registrar naming convention for all of them.
 
 ## Engine portability
 
@@ -79,12 +85,19 @@ Gert.sln
 ├─ Gert.Service/              # host-agnostic business logic - refs Model + the capability contracts (Database, Storage, Chat, Rag, Tools) + Validation
 │  ├─ IGertServices.cs        # aggregate hub: .Chat .Conversations .Documents .Artifacts .Admin
 │  ├─ IUserContext.cs         # current user's scope: Sub, AllowedTools (abstraction only)
-│  ├─ Chat/                   # the detached turn pipeline: TurnPlanner, TurnRunner, queue, bus,
-│  │                          #   ConversationStreamer, MessageStatusRules, PromptOptions
+│  ├─ Chat/                   # the request-facing read side: ConversationBus, ConversationReader,
+│  │                          #   ConversationStreamer + the shared turn vocab (TurnOptions,
+│  │                          #   MessageStatusRules, PromptOptions, TurnInProgressException)
 │  ├─ Conversations/          # IConversationService
 │  ├─ Documents/              # IDocumentService
 │  ├─ Ingestion/              # IIngestionService.Ingest(doc) - pure pipeline (extract->chunk->embed->write)
 │  └─ Provisioning/           # UserProvisioner - username refresh + default-project seed (user.db)
+│
+├─ Gert.Agent/                # turn/agent EXECUTION engine - layer between host and Service - refs Service + the capability contracts + Validation
+│  ├─ TurnPlanner / TurnRunner / TurnWorker / ChannelTurnQueue  # the detached turn pipeline
+│  ├─ TurnQuestions / TurnCancellation / DetachedUserContext    # ask_user + cancel + worker IUserContext
+│  ├─ Loop/                   #   IAgentLoop + AgentLoop - the reusable tool loop
+│  └─ Hosting/                #   ChatToolHost / ProjectRagResource / ChatToolDelegate - the IToolHost wiring
 │
 ├─ Gert.Validation/           # fail-closed validation sub-layer - IValidationProvider + Validated<T> proof + per-DTO validators - refs Model + Tools(contracts)
 │
@@ -176,7 +189,7 @@ Gert.sln
 │  ├─ Subprocess/             #   IsolatedTextExtractor - unprivileged subprocess for PDF/DOCX parsing (security F7)
 │  └─ ServiceCollectionExtensions.cs  # AddGertIngestion(cfg): both keyed ITextExtractor leaves (md/txt + pdf/docx)
 │
-├─ Gert.Api/                  # HTTP host - refs Service, Authentication, Database.Sqlite, Storage(+Local), Chat(+OpenAI), Tools.Builtin, Ingestion
+├─ Gert.Api/                  # HTTP host - refs Agent, Service, Authentication, Database.Sqlite, Storage(+Local), Chat(+OpenAI), Tools.Builtin, Ingestion
 │  ├─ Program.cs              # DI, JwtBearer, static files + SPA fallback, SSE, BackgroundService
 │  ├─ appsettings.json        # NON-secret defaults only: vLLM/SearXNG URLs, embedding dim, DataRoot,
 │  │                          #   Auth. Keys/secrets come from env / user-secrets / a secret store

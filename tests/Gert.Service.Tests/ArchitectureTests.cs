@@ -21,6 +21,11 @@ public class ArchitectureTests
             .Should()
             .NotHaveDependencyOnAny(
                 "Gert.Api",
+                // The turn/agent execution engine sits OUTWARD of the service layer
+                // (host -> Gert.Agent -> Gert.Service); the service layer keeps only the
+                // request-facing read side (the bus + conversation reader/streamer), so it
+                // must never reference the engine back.
+                "Gert.Agent",
                 "Gert.Authentication",
                 // Capability CONTRACTS (Gert.Chat, Gert.Storage, Gert.Database, Gert.Rag,
                 // Gert.Tools) are inward of the service layer - they hold the ports + the generic,
@@ -80,6 +85,38 @@ public class ArchitectureTests
             result.IsSuccessful,
             "Gert.Tools.Builtin must not reference the service layer (the tools reach RAG/objects/UI/" +
             "delegation through the host seams). Offending types: " +
+            string.Join(", ", result.FailingTypeNames ?? System.Array.Empty<string>()));
+    }
+
+    /// <summary>
+    /// The turn/agent execution engine (Gert.Agent: worker, queue, planner, runner, AgentLoop,
+    /// the chat tool-host wiring) is the layer between the host and the service layer
+    /// (host -> Gert.Agent -> Gert.Service). It may reference the service layer + the capability
+    /// CONTRACTS it drives, but never the host (Gert.Api) nor an adapter IMPL leaf - those wire
+    /// in at the composition root. A future edit that drags an adapter or the host into the engine
+    /// fails here.
+    /// </summary>
+    [Fact]
+    public void Agent_engine_does_not_depend_on_the_host_or_adapter_impls()
+    {
+        var result = Types.InAssembly(System.Reflection.Assembly.Load("Gert.Agent"))
+            .Should()
+            .NotHaveDependencyOnAny(
+                "Gert.Api",
+                "Gert.Authentication",
+                "Gert.Chat.OpenAI",
+                "Gert.Tools.Builtin",
+                "Gert.Ingestion",
+                "Gert.Storage.Local",
+                "Gert.Database.Sqlite",
+                "Gert.Database.Postgres",
+                "Gert.Rag.Sqlite")
+            .GetResult();
+
+        Assert.True(
+            result.IsSuccessful,
+            "Gert.Agent must not reference the host or an adapter impl leaf (it may reference " +
+            "Gert.Service + the capability contracts). Offending types: " +
             string.Join(", ", result.FailingTypeNames ?? System.Array.Empty<string>()));
     }
 

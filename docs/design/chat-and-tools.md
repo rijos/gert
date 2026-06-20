@@ -190,6 +190,8 @@ stay inline in the bubble; nothing is ever extracted from prose.
 
 ### Detached turns
 
+**Where it lives.** The turn/agent EXECUTION engine - the `TurnWorker` + `ChannelTurnQueue`, the `TurnPlanner`/`TurnRunner`, the reusable `IAgentLoop`, the ask_user/cancel registries, and the chat tool-host wiring - is its own project **`Gert.Agent`**, a layer between the host and the service layer (host -> `Gert.Agent` -> `Gert.Service`, registered by `AddGertAgent`). The **request-facing read side** - the `ConversationBus`, `ConversationReader`, and `ConversationStreamer`, plus the shared turn vocabulary the readers also consume (`TurnOptions`, `MessageStatusRules`, `PromptOptions`, `TurnInProgressException`) - stays in `Gert.Service` (`Gert.Service.Chat`). `Gert.Service` does not reference `Gert.Agent` back; both edges are pinned by architecture tests ([tech-stack.md section Architecture](tech-stack.md#architecture)).
+
 A turn is **detached from the request that started it**: `POST .../messages` only
 *plans* (validate -> materialize the conversation if new -> persist the user
 message and a `streaming` assistant placeholder -> snapshot identity +

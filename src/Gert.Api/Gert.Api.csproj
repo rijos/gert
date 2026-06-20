@@ -5,6 +5,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- Turn/agent execution engine (worker, queue, planner, runner, AgentLoop, the chat
+         tool-host wiring): the layer between the host and Gert.Service (host -> Gert.Agent ->
+         Gert.Service). Transitively brings Gert.Service + the contracts the engine drives. -->
+    <ProjectReference Include="..\Gert.Agent\Gert.Agent.csproj" />
     <ProjectReference Include="..\Gert.Service\Gert.Service.csproj" />
     <ProjectReference Include="..\Gert.Authentication\Gert.Authentication.csproj" />
     <ProjectReference Include="..\Gert.Database.Sqlite\Gert.Database.Sqlite.csproj" />

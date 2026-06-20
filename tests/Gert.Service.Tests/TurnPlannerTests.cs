@@ -1,4 +1,5 @@
 using FluentAssertions;
+using Gert.Agent;
 using Gert.Chat;
 using Gert.Database;
 using Gert.Model;

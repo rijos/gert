@@ -15,8 +15,9 @@ code comments cite docs by section, so keep both ends accurate.
 ## Repo map
 
 - `src/` - inward-only references (enforced by an architecture test):
-  host (`Gert.Api`) -> adapters -> capability CONTRACTS -> `Gert.Service` (all business
-  logic, host-agnostic) -> `Gert.Model` (POCOs, no deps). A capability splits into a
+  host (`Gert.Api`) -> `Gert.Agent` (the turn/agent EXECUTION engine) -> adapters -> capability
+  CONTRACTS -> `Gert.Service` (all business logic, host-agnostic) -> `Gert.Model` (POCOs, no deps).
+  A capability splits into a
   **contracts** assembly (the ports + any generic, impl-agnostic wiring; depends only on
   `Gert.Model`, so the service layer may reference it) and one or more **per-impl leaf**
   adapters: `Gert.Chat` (chat/embeddings ports + the generic provider catalog/factory) with
@@ -34,12 +35,22 @@ code comments cite docs by section, so keep both ends accurate.
   impl `Gert.Tools.Builtin` (web search + sandbox backends, the built-in `ITool` implementations
   under `Builtin/`, and the id-only `ToolRegistry` derived from them). The remaining adapters:
   `Gert.Ingestion` (the md/txt + isolated pdf/docx text extractors), `Gert.Authentication`.
-  `Gert.Service` keeps the turn orchestration and drives `ITool` through the `Gert.Tools`
-  contracts, not the impls. `Gert.Tools.Builtin` references neither `Gert.Service` nor any
-  capability impl: every tool reaches RAG, objects, the UI, and delegation through the
-  `IToolHost` seams (`IRagResource`/`IObjectResource`/`IToolUi`/`IToolDelegate`) handed at call
-  time - the chat driver supplies the impls (`ProjectRagResource`, `ChatToolDelegate` over the
-  shared `IAgentLoop`). An architecture test enforces the missing `Gert.Service` edge.
+- `Gert.Agent` - the turn/agent EXECUTION engine, a layer between the host and `Gert.Service`
+  (host -> `Gert.Agent` -> `Gert.Service`): the `TurnWorker` + `ChannelTurnQueue`, the
+  `TurnPlanner`/`TurnRunner`, the reusable `IAgentLoop`, the ask_user/cancel registries
+  (`ITurnQuestions`/`ITurnCancellation`), the worker-scope `DetachedUserContext`, and the chat
+  tool-host wiring (`Gert.Agent.Hosting`: `ChatToolHost`, `ProjectRagResource`, `ChatToolDelegate`
+  over the shared loop). Registered by `AddGertAgent` (the host calls it right after
+  `AddGertServices`). It drives `ITool` through the `Gert.Tools` contracts, not the impls.
+  `Gert.Service` keeps the request-facing read side - the conversation bus + reader/streamer
+  (`Gert.Service.Chat`) plus the shared turn vocabulary (`TurnOptions`, `MessageStatusRules`,
+  `PromptOptions`, `TurnInProgressException`) the read side also consumes - and must NOT reference
+  `Gert.Agent` back (an architecture test enforces both this missing edge and that `Gert.Agent`
+  never references the host or an adapter impl leaf). `Gert.Tools.Builtin` references neither
+  `Gert.Service` nor any capability impl: every tool reaches RAG, objects, the UI, and delegation
+  through the `IToolHost` seams (`IRagResource`/`IObjectResource`/`IToolUi`/`IToolDelegate`) handed
+  at call time - the chat driver (in `Gert.Agent`) supplies the impls. An architecture test
+  enforces the missing `Gert.Service` edge.
 - **Capability-plugin pattern**: a config-selected capability (chat, the database engine, the
   RAG engine, web search, the sandbox) is a self-registering plugin keyed by its `Type` token
   (`Gert.Model.Plugins.ICapabilityPlugin`). Each impl exposes an `AddGert<Capability><Impl>`

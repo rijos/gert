@@ -27,7 +27,7 @@ namespace Gert.Validation.Tests;
 /// <para><b>Discovery strategy.</b> The single, authoritative list of "the services a
 /// host calls" is the <see cref="IGertServices"/> hub. We walk its property types (the
 /// granular service interfaces) plus the two detached chat boundaries
-/// (<see cref="Gert.Service.Chat.ITurnPlanner"/>, <see cref="Gert.Service.Chat.ITurnQuestions"/>),
+/// (<see cref="Gert.Agent.ITurnPlanner"/>, <see cref="Gert.Agent.ITurnQuestions"/>),
 /// then every method parameter. Route-param strings (<c>pid</c>, admin <c>{key}</c>)
 /// are not DTOs and are covered by <see cref="RouteParamValidationTests"/>.</para>
 /// </summary>
@@ -194,8 +194,8 @@ public sealed class FailClosedMetaTest
         // ask_user answer registry are still host-called boundaries that accept request
         // DTOs: include them explicitly so SendMessageRequest / AnswerRequest never drop
         // out of the net.
-        serviceInterfaces.Add(typeof(Gert.Service.Chat.ITurnPlanner));
-        serviceInterfaces.Add(typeof(Gert.Service.Chat.ITurnQuestions));
+        serviceInterfaces.Add(typeof(Gert.Agent.ITurnPlanner));
+        serviceInterfaces.Add(typeof(Gert.Agent.ITurnQuestions));
 
         return serviceInterfaces
             .SelectMany(svc => svc.GetMethods())

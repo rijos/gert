@@ -1,6 +1,9 @@
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using FluentAssertions;
+using Gert.Agent;
+using Gert.Agent.Hosting;
+using Gert.Agent.Loop;
 using Gert.Chat;
 using Gert.Database;
 using Gert.Model;

@@ -14,9 +14,9 @@ namespace Gert.Service.Chat;
 ///
 /// <para>
 /// The shared-anchor invariant: the horizon ages the row from its
-/// <c>CreatedAt</c> - the PLAN instant - and <see cref="TurnRunner"/> caps its
+/// <c>CreatedAt</c> - the PLAN instant - and the turn runner caps its
 /// own lifetime at the budget remaining from the very same instant
-/// (<see cref="TurnJob.PlannedAt"/>, one clock read in the planner). A running
+/// (<c>Gert.Agent.TurnJob.PlannedAt</c>, one clock read in the planner). A running
 /// turn therefore always self-cancels at or before the moment this rule starts
 /// reporting its row as <see cref="MessageStatus.Error"/> - a queue wait can
 /// never open a window where a healthy turn reads as dead and the 409 gate

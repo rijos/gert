@@ -11,7 +11,7 @@ public sealed class TurnOptions
     /// horizon: a <c>streaming</c> row older than this is REPORTED as error by
     /// readers - the in-memory queue is not durable, so a crashed worker never
     /// finalises its row (chat-and-tools.md section detached turns). Both uses measure
-    /// from the plan instant (<see cref="TurnJob.PlannedAt"/> = the placeholder's
+    /// from the plan instant (<c>Gert.Agent.TurnJob.PlannedAt</c> = the placeholder's
     /// <c>CreatedAt</c>): the runner budgets only what REMAINS of this cap after
     /// queue wait, so it can never outlive the readers' horizon.
     /// </summary>
