@@ -25,7 +25,7 @@ public class MigrationTests
             (await UserVersionAsync(connection)).Should().Be(1);
 
             var tables = await TableNamesAsync(connection);
-            tables.Should().Contain(new[] { "conversations", "messages", "tool_calls", "citations", "artifacts", "turn_events" });
+            tables.Should().Contain(new[] { "conversations", "messages", "tool_calls", "citations", "chat_objects", "turn_events" });
 
             // The atomic turn gate (decisions section 11): the partial unique index.
             (await ScalarAsync(

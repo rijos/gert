@@ -3,6 +3,9 @@ namespace Gert.Tools;
 /// <summary>A stored object with its content and metadata (the result of a get or a put).</summary>
 public sealed record StoredObject
 {
+    /// <summary>The object's stable id (assigned on first put, preserved across overwrites).</summary>
+    public required string Id { get; init; }
+
     /// <summary>The object's name - the handle a tool reads/writes by (e.g. <c>decision.md</c>).</summary>
     public required string Name { get; init; }
 

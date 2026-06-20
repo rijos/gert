@@ -19,7 +19,7 @@ below are **per project** - there is one pair of databases per project, not per 
         │                          #   settings, and the PROJECT REGISTRY (see section user.db)
         └── projects/
             ├── default/           # lazily created; always present (the landing project)
-            │   ├── chat.db        # conversations, messages, tool calls, citations, artifacts
+            │   ├── chat.db        # conversations, messages, tool calls, citations, chat objects
             │   ├── rag.db         # sqlite-vec: documents, chunks, embeddings, FTS
             │   ├── files/         # original uploaded files (server key files/{doc-id}, no extension)
             │   └── memory/        # memory entries (markdown) -> embedded into this project's rag.db
@@ -246,16 +246,19 @@ CREATE TABLE citations (
     tool_call_id TEXT REFERENCES tool_calls(id) ON DELETE SET NULL  -- provenance (NULL = model-inline)
 );
 
-CREATE TABLE artifacts (
+-- Conversation-scoped stored objects (the canvas artifacts): create-or-overwrite by
+-- name, versioned on overwrite. The artifact tools (make/edit/read) reach these only
+-- through the tool host's IObjectResource (ResourceScope.Chat) - never a raw key.
+CREATE TABLE chat_objects (
     id              TEXT PRIMARY KEY,
     conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
-    message_id      TEXT REFERENCES messages(id) ON DELETE SET NULL,
     kind            TEXT NOT NULL,          -- md | html | svg | py | cs | cpp | js | rs  (the canvas tabs)
     name            TEXT NOT NULL,          -- decision.md, status.html...
-    language        TEXT,                   -- for code artifacts
     content         TEXT NOT NULL,
     version         INTEGER NOT NULL DEFAULT 1,
-    created_at      TEXT NOT NULL
+    created_at      TEXT NOT NULL,
+    updated_at      TEXT NOT NULL,
+    UNIQUE(conversation_id, name)           -- a name is the create-or-overwrite key
 );
 
 -- The durable streaming replay log (chat-and-tools.md section detached turns): the runner

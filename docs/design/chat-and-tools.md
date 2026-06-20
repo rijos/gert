@@ -71,7 +71,8 @@ todo list is replace-not-patch (the latest call is the truth, rendered as a
 checklist on its tool card and persisted with the `tool_calls` row - no extra
 storage), the clock reads only through the injected `TimeProvider` (so tests
 pin the instant), and the artifact tools read/write only this conversation's
-`artifacts` rows.
+`chat_objects` rows - reached through the tool host's chat-scoped
+`IObjectResource`, never a raw key.
 
 **Round narration rides back.** A model that narrates while it calls tools
 (qwen streams "here's file one..." AND `set_todos` in the same round) must see
@@ -228,7 +229,7 @@ Run phase (worker scope, `DetachedUserContext` seeded from the job's snapshot):
         - search_documents -> hybrid query (below) on this project's rag.db (docs + memory)
         - web_search       -> SearXNG
         - run_python       -> sandbox (monty by default, or gVisor)
-        - make/edit/read_artifact -> this conversation's artifacts rows (chat.db)
+        - make/edit/read_artifact -> this conversation's chat_objects rows (chat.db), via the host's IObjectResource
         (entitlement re-checked against the job's plan-time snapshot)
      c. emit `tool_result` + persist the tool_calls row live (with latency_ms);
         collected citations keep tool_call_id provenance

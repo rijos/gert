@@ -1,5 +1,4 @@
-using Gert.Database;
-using Gert.Service;
+using Gert.Model.Chat;
 using Gert.Tools;
 using Gert.Validation;
 
@@ -12,20 +11,12 @@ namespace Gert.Tools.Builtin;
 /// <c>str_replace</c> contract: <c>old_str</c> must match EXACTLY (whitespace included) and
 /// EXACTLY ONCE; zero or many matches return an error the model corrects next round. The
 /// updated artifact rides back on <see cref="ToolCallResult{TResult}.Artifacts"/> with its
-/// original id, so the canvas tab updates in place.
+/// original id, so the canvas tab updates in place. Storage runs through the host's
+/// chat-scoped <see cref="IObjectResource"/>.
 /// </summary>
-public sealed class EditArtifactTool : ToolCall<EditArtifactArgs, EditArtifactResult>
+public sealed class EditArtifactTool(IValidationProvider validation)
+    : ToolCall<EditArtifactArgs, EditArtifactResult>(validation)
 {
-    private readonly IChatDatabaseProvider _databases;
-    private readonly IUserContext _user;
-
-    public EditArtifactTool(IValidationProvider validation, IChatDatabaseProvider databases, IUserContext user)
-        : base(validation)
-    {
-        _databases = databases ?? throw new ArgumentNullException(nameof(databases));
-        _user = user ?? throw new ArgumentNullException(nameof(user));
-    }
-
     /// <inheritdoc />
     public override string Id => "edit_artifact";
 
@@ -61,28 +52,20 @@ public sealed class EditArtifactTool : ToolCall<EditArtifactArgs, EditArtifactRe
     {
         ArgumentNullException.ThrowIfNull(args);
         ArgumentNullException.ThrowIfNull(invocation);
-
-        if (string.IsNullOrEmpty(invocation.ConversationId))
-        {
-            return ToolCallResult<EditArtifactResult>.Fail("edit_artifact needs a conversation context");
-        }
+        ArgumentNullException.ThrowIfNull(host);
 
         var oldStr = args.OldStr;
         var newStr = args.NewStr ?? string.Empty;
 
-        await using var repo = await _databases
-            .OpenAsync(_user.Iss, _user.Sub, invocation.Pid, cancellationToken)
+        var stored = await host.Resources.Objects.GetAsync(ResourceScope.Chat, args.Name, cancellationToken)
             .ConfigureAwait(false);
-
-        var artifact = await repo.GetArtifactByNameAsync(invocation.ConversationId, args.Name, cancellationToken)
-            .ConfigureAwait(false);
-        if (artifact is null)
+        if (stored is null)
         {
             return ToolCallResult<EditArtifactResult>.Fail(
                 $"no artifact named '{args.Name}'. Create it with make_artifact, or check the name.");
         }
 
-        var matches = CountOccurrences(artifact.Content, oldStr);
+        var matches = CountOccurrences(stored.Content, oldStr);
         if (matches == 0)
         {
             return ToolCallResult<EditArtifactResult>.Fail(
@@ -95,12 +78,26 @@ public sealed class EditArtifactTool : ToolCall<EditArtifactArgs, EditArtifactRe
                 $"old_str matches {matches} places in '{args.Name}'; include more surrounding context to make it unique.");
         }
 
-        var updated = artifact with
+        var newContent = ReplaceFirst(stored.Content, oldStr, newStr);
+        var updated = await host.Resources.Objects.PutAsync(
+            ResourceScope.Chat,
+            new ObjectWrite { Name = args.Name, Content = newContent, Kind = stored.Kind },
+            cancellationToken).ConfigureAwait(false);
+
+        var kind = ArtifactKinds.FromToken(updated.Kind);
+        var artifact = new Artifact
         {
-            Content = ReplaceFirst(artifact.Content, oldStr, newStr),
-            Version = artifact.Version + 1,
+            Id = updated.Id,
+            ConversationId = invocation.ConversationId!,
+            MessageId = invocation.MessageId,
+            Kind = kind,
+            Name = updated.Name,
+            Language = ArtifactFormat.FromKind(kind),
+            Content = updated.Content,
+            Version = updated.Version,
+            CreatedAt = updated.CreatedAt,
+            UpdatedAt = updated.UpdatedAt,
         };
-        await repo.UpdateArtifactAsync(updated, cancellationToken).ConfigureAwait(false);
 
         var payload = new EditArtifactResult
         {
@@ -110,7 +107,7 @@ public sealed class EditArtifactTool : ToolCall<EditArtifactArgs, EditArtifactRe
         };
 
         return ToolCallResult<EditArtifactResult>.Ok(
-            payload, stdout: $"edited {updated.Name}", artifacts: [updated]);
+            payload, stdout: $"edited {updated.Name}", artifacts: [artifact]);
     }
 
     private static int CountOccurrences(string haystack, string needle)

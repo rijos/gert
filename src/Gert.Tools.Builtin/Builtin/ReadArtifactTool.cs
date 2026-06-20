@@ -1,6 +1,5 @@
 using System.Text;
-using Gert.Database;
-using Gert.Service;
+using Gert.Model.Chat;
 using Gert.Tools;
 using Gert.Validation;
 
@@ -12,20 +11,11 @@ namespace Gert.Tools.Builtin;
 /// without re-deriving it. Lines are 1-indexed and prefixed with their number
 /// (mirrors Anthropic's <c>view</c>) so a follow-up <c>edit_artifact</c> can copy a
 /// snippet verbatim and an optional <c>range</c> is addressable. Read-only - emits
-/// no canvas event.
+/// no canvas event. Reads through the host's chat-scoped <see cref="IObjectResource"/>.
 /// </summary>
-public sealed class ReadArtifactTool : ToolCall<ReadArtifactArgs, ReadArtifactResult>
+public sealed class ReadArtifactTool(IValidationProvider validation)
+    : ToolCall<ReadArtifactArgs, ReadArtifactResult>(validation)
 {
-    private readonly IChatDatabaseProvider _databases;
-    private readonly IUserContext _user;
-
-    public ReadArtifactTool(IValidationProvider validation, IChatDatabaseProvider databases, IUserContext user)
-        : base(validation)
-    {
-        _databases = databases ?? throw new ArgumentNullException(nameof(databases));
-        _user = user ?? throw new ArgumentNullException(nameof(user));
-    }
-
     /// <inheritdoc />
     public override string Id => "read_artifact";
 
@@ -66,11 +56,7 @@ public sealed class ReadArtifactTool : ToolCall<ReadArtifactArgs, ReadArtifactRe
     {
         ArgumentNullException.ThrowIfNull(args);
         ArgumentNullException.ThrowIfNull(invocation);
-
-        if (string.IsNullOrEmpty(invocation.ConversationId))
-        {
-            return ToolCallResult<ReadArtifactResult>.Fail("read_artifact needs a conversation context");
-        }
+        ArgumentNullException.ThrowIfNull(host);
 
         // A non-[start, end] range (wrong length) is ignored, not errored - it reads
         // the whole file, as before. A non-integer entry never reaches here: the typed
@@ -82,18 +68,14 @@ public sealed class ReadArtifactTool : ToolCall<ReadArtifactArgs, ReadArtifactRe
             end = args.Range[1];
         }
 
-        await using var repo = await _databases
-            .OpenAsync(_user.Iss, _user.Sub, invocation.Pid, cancellationToken)
+        var stored = await host.Resources.Objects.GetAsync(ResourceScope.Chat, args.Name, cancellationToken)
             .ConfigureAwait(false);
-
-        var artifact = await repo.GetArtifactByNameAsync(invocation.ConversationId, args.Name, cancellationToken)
-            .ConfigureAwait(false);
-        if (artifact is null)
+        if (stored is null)
         {
             return ToolCallResult<ReadArtifactResult>.Fail($"no artifact named '{args.Name}'.");
         }
 
-        var lines = artifact.Content.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n');
+        var lines = stored.Content.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n');
 
         // Resolve the 1-indexed inclusive window (default = whole file; -1 end = last line).
         var from = start is { } s ? Math.Max(1, s) : 1;
@@ -107,9 +89,9 @@ public sealed class ReadArtifactTool : ToolCall<ReadArtifactArgs, ReadArtifactRe
 
         var payload = new ReadArtifactResult
         {
-            Name = artifact.Name,
-            Format = ArtifactFormat.FromKind(artifact.Kind),
-            Version = artifact.Version,
+            Name = stored.Name,
+            Format = ArtifactFormat.FromKind(ArtifactKinds.FromToken(stored.Kind)),
+            Version = stored.Version,
             LineCount = lines.Length,
             Content = sb.ToString(),
         };

@@ -45,6 +45,10 @@ public sealed class InMemoryArtifactRepository : IChatRepository
         return Task.CompletedTask;
     }
 
+    public Task<bool> DeleteArtifactByNameAsync(
+        string conversationId, string name, CancellationToken cancellationToken = default) =>
+        Task.FromResult(_artifacts.RemoveAll(a => a.ConversationId == conversationId && a.Name == name) > 0);
+
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 
     private static T Unsupported<T>() =>

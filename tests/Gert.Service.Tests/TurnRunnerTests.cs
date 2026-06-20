@@ -34,7 +34,9 @@ namespace Gert.Service.Tests;
 public sealed class TurnRunnerTests
 {
     private const string Pid = "default";
-    private const string Conv = "conv-1";
+    // A UUID: the runner now builds a ChatObjectResource per tool call, which
+    // validates the conversation id's shape (StorageKeys.ValidateConversationId).
+    private const string Conv = "11111111-1111-1111-1111-111111111111";
     private const string AssistantId = "assistant-msg-1";
 
     private readonly IChatRepository _repo = Substitute.For<IChatRepository>();
@@ -468,6 +470,7 @@ public sealed class TurnRunnerTests
             Content = "<h1>Demo</h1>",
             Version = 1,
             CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow,
         };
         var tool = new ArtifactStubTool(artifact);
 

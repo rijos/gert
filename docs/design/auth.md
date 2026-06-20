@@ -178,7 +178,7 @@ The Notes column records why a grant is more or less sensitive:
 | Sandbox - `run_python` | `sandbox` | gVisor; **executes arbitrary code** - the most sensitive grant, hand it out deliberately |
 | Todos - `set_todos` | `todo` | renders the chat checklist; no external world |
 | Clock - `get_datetime` | `clock` | reads the host clock via `TimeProvider`; no external world |
-| Canvas create - `make_artifact` | `make_artifact` | writes this conversation's `artifacts` rows; no external world ([chat-and-tools](chat-and-tools.md#artifacts-the-canvas-tool-suite)) |
+| Canvas create - `make_artifact` | `make_artifact` | writes this conversation's `chat_objects` rows; no external world ([chat-and-tools](chat-and-tools.md#artifacts-the-canvas-tool-suite)) |
 | Canvas edit - `edit_artifact` | `edit_artifact` | exact-substring replace on an existing artifact |
 | Canvas read - `read_artifact` | `read_artifact` | read-only; returns numbered lines |
 | Ask the user - `ask_user` | `ask_user` | blocks the turn awaiting the user's answer (own timeout budget); no external world ([chat-and-tools](chat-and-tools.md#ask-the-user-ask_user)) |

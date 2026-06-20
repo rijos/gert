@@ -1,6 +1,4 @@
-using Gert.Database;
 using Gert.Model.Chat;
-using Gert.Service;
 using Gert.Tools;
 using Gert.Validation;
 
@@ -13,22 +11,13 @@ namespace Gert.Tools.Builtin;
 /// bug the fenced-block convention had). Create-or-overwrite by <c>name</c> within the
 /// conversation - a re-used name saves over the prior draft (same canvas tab, bumped
 /// version). The artifact rides back on <see cref="ToolCallResult{TResult}.Artifacts"/>;
-/// the orchestrator emits the <c>ArtifactEvent</c> that opens/updates the tab.
+/// the orchestrator emits the <c>ArtifactEvent</c> that opens/updates the tab. Storage runs
+/// through the host's chat-scoped <see cref="IObjectResource"/> - the tool never sees an
+/// identity or a storage key.
 /// </summary>
-public sealed class MakeArtifactTool : ToolCall<MakeArtifactArgs, MakeArtifactResult>
+public sealed class MakeArtifactTool(IValidationProvider validation)
+    : ToolCall<MakeArtifactArgs, MakeArtifactResult>(validation)
 {
-    private readonly IChatDatabaseProvider _databases;
-    private readonly IUserContext _user;
-    private readonly TimeProvider _time;
-
-    public MakeArtifactTool(IValidationProvider validation, IChatDatabaseProvider databases, IUserContext user, TimeProvider time)
-        : base(validation)
-    {
-        _databases = databases ?? throw new ArgumentNullException(nameof(databases));
-        _user = user ?? throw new ArgumentNullException(nameof(user));
-        _time = time ?? throw new ArgumentNullException(nameof(time));
-    }
-
     /// <inheritdoc />
     public override string Id => "make_artifact";
 
@@ -64,11 +53,7 @@ public sealed class MakeArtifactTool : ToolCall<MakeArtifactArgs, MakeArtifactRe
     {
         ArgumentNullException.ThrowIfNull(args);
         ArgumentNullException.ThrowIfNull(invocation);
-
-        if (string.IsNullOrEmpty(invocation.ConversationId))
-        {
-            return ToolCallResult<MakeArtifactResult>.Fail("make_artifact needs a conversation context");
-        }
+        ArgumentNullException.ThrowIfNull(host);
 
         // Format aliases (py/md/...) resolve here, not in the validator: the alias map
         // is an impl detail of this leaf, so an unknown format is a business error.
@@ -78,54 +63,37 @@ public sealed class MakeArtifactTool : ToolCall<MakeArtifactArgs, MakeArtifactRe
                 $"unknown format '{args.Format}'; use one of: {string.Join(", ", ArtifactFormat.Canonical)}");
         }
 
-        await using var repo = await _databases
-            .OpenAsync(_user.Iss, _user.Sub, invocation.Pid, cancellationToken)
-            .ConfigureAwait(false);
+        // Create-or-overwrite by name; the resource bumps the version and preserves the id.
+        var stored = await host.Resources.Objects.PutAsync(
+            ResourceScope.Chat,
+            new ObjectWrite { Name = args.Name, Content = args.Content, Kind = ArtifactKinds.ToToken(kind) },
+            cancellationToken).ConfigureAwait(false);
 
-        var existing = await repo.GetArtifactByNameAsync(invocation.ConversationId, args.Name, cancellationToken)
-            .ConfigureAwait(false);
+        var action = stored.Version == 1 ? "created" : "updated";
 
-        Artifact artifact;
-        string action;
-        if (existing is not null)
+        var artifact = new Artifact
         {
-            artifact = existing with
-            {
-                Kind = kind,
-                Language = ArtifactFormat.FromKind(kind),
-                Content = args.Content,
-                Version = existing.Version + 1,
-            };
-            await repo.UpdateArtifactAsync(artifact, cancellationToken).ConfigureAwait(false);
-            action = "updated";
-        }
-        else
-        {
-            artifact = new Artifact
-            {
-                Id = Guid.NewGuid().ToString("D"),
-                ConversationId = invocation.ConversationId,
-                MessageId = invocation.MessageId,
-                Kind = kind,
-                Name = args.Name,
-                Language = ArtifactFormat.FromKind(kind),
-                Content = args.Content,
-                Version = 1,
-                CreatedAt = _time.GetUtcNow(),
-            };
-            await repo.InsertArtifactAsync(artifact, cancellationToken).ConfigureAwait(false);
-            action = "created";
-        }
+            Id = stored.Id,
+            ConversationId = invocation.ConversationId!,
+            MessageId = invocation.MessageId,
+            Kind = kind,
+            Name = stored.Name,
+            Language = ArtifactFormat.FromKind(kind),
+            Content = stored.Content,
+            Version = stored.Version,
+            CreatedAt = stored.CreatedAt,
+            UpdatedAt = stored.UpdatedAt,
+        };
 
         var payload = new MakeArtifactResult
         {
-            Name = artifact.Name,
+            Name = stored.Name,
             Format = ArtifactFormat.FromKind(kind),
             Action = action,
-            Version = artifact.Version,
+            Version = stored.Version,
         };
 
         return ToolCallResult<MakeArtifactResult>.Ok(
-            payload, stdout: $"{action} {artifact.Name}", artifacts: [artifact]);
+            payload, stdout: $"{action} {stored.Name}", artifacts: [artifact]);
     }
 }

@@ -1,46 +1,22 @@
 using FluentAssertions;
-using Gert.Database;
-using Gert.Model;
 using Gert.Model.Chat;
-using Gert.Service;
 using Gert.Testing.Fakes;
 using Gert.Tools;
-using Gert.Tools.Builtin;
-using NSubstitute;
 using Xunit;
 
 namespace Gert.Tools.Builtin.Tests;
 
 /// <summary>
 /// Unit tests for the canvas artifact tools (make/edit/read) - each driven through
-/// its <see cref="ITool"/> surface against an NSubstitute <see cref="IChatRepository"/>.
-/// These prove the create-or-overwrite-by-name contract, the str_replace one-match
-/// rule (the feedback loop), and that an edit/make rides the artifact back on
-/// <see cref="ToolResult.Artifacts"/> for the orchestrator to emit.
+/// its <see cref="ITool"/> surface against a <see cref="FakeToolHost"/>'s in-memory
+/// object store (<see cref="ResourceScope.Chat"/>). These prove the
+/// create-or-overwrite-by-name contract (id preserved, version bumped), the
+/// str_replace one-match rule (the feedback loop), and that an edit/make rides the
+/// artifact back on <see cref="ToolResult.Artifacts"/> for the orchestrator to emit.
 /// </summary>
 public sealed class ArtifactToolsTests
 {
     private const string Conv = "conv-1";
-
-    private sealed class FixedTime(DateTimeOffset instant) : TimeProvider
-    {
-        public override DateTimeOffset GetUtcNow() => instant;
-    }
-
-    private static readonly TimeProvider Time =
-        new FixedTime(new DateTimeOffset(2026, 6, 7, 9, 0, 0, TimeSpan.Zero));
-
-    private static readonly IUserContext User = new TestUserContext();
-
-    // The tools open chat.db per-use via the provider (the RagTool pattern), so a
-    // test backs that provider with its configured repo substitute.
-    private static IChatDatabaseProvider Provider(IChatRepository repo)
-    {
-        var provider = Substitute.For<IChatDatabaseProvider>();
-        provider.OpenAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(repo);
-        return provider;
-    }
 
     private static ToolInvocation Inv(string argsJson) => new()
     {
@@ -50,162 +26,165 @@ public sealed class ArtifactToolsTests
         MessageId = "msg-1",
     };
 
-    private static Artifact Existing(string name, string content, ArtifactKind kind = ArtifactKind.Md, int version = 1) => new()
-    {
-        Id = "art-1",
-        ConversationId = Conv,
-        MessageId = "msg-0",
-        Kind = kind,
-        Name = name,
-        Language = null,
-        Content = content,
-        Version = version,
-        CreatedAt = new DateTimeOffset(2026, 6, 1, 0, 0, 0, TimeSpan.Zero),
-    };
+    /// <summary>Seed an object into the host's store under its name (md by default).</summary>
+    private static async Task<StoredObject> SeedAsync(
+        FakeToolHost host, string name, string content, string kind = "md") =>
+        await host.ObjectStore.PutAsync(
+            ResourceScope.Chat, new ObjectWrite { Name = name, Content = content, Kind = kind }, default);
 
     [Fact]
     public async Task Make_creates_a_new_artifact_when_the_name_is_free()
     {
-        var repo = Substitute.For<IChatRepository>();
-        repo.GetArtifactByNameAsync(Conv, "index.html", Arg.Any<CancellationToken>()).Returns((Artifact?)null);
+        var host = new FakeToolHost();
+        var tool = new MakeArtifactTool(Gert.Testing.Proof.Validation);
 
-        var tool = new MakeArtifactTool(Gert.Testing.Proof.Validation, Provider(repo), User, Time);
-        var result = await tool.ExecuteAsync(Inv(
-            "{\"name\":\"index.html\",\"format\":\"html\",\"content\":\"<h1>hi</h1>\"}"));
+        var result = await tool.ExecuteAsync(
+            Inv("{\"name\":\"index.html\",\"format\":\"html\",\"content\":\"<h1>hi</h1>\"}"), host);
 
         result.Success.Should().BeTrue();
-        await repo.Received(1).InsertArtifactAsync(
-            Arg.Is<Artifact>(a => a.Name == "index.html" && a.Kind == ArtifactKind.Html
-                && a.Content == "<h1>hi</h1>" && a.ConversationId == Conv && a.Version == 1),
-            Arg.Any<CancellationToken>());
-        await repo.DidNotReceive().UpdateArtifactAsync(Arg.Any<Artifact>(), Arg.Any<CancellationToken>());
-        result.Artifacts.Should().ContainSingle();
         result.ResultJson.Should().Contain("created");
+
+        var stored = await host.ObjectStore.GetAsync(ResourceScope.Chat, "index.html");
+        stored.Should().NotBeNull();
+        stored!.Content.Should().Be("<h1>hi</h1>");
+        stored.Kind.Should().Be("html");
+        stored.Version.Should().Be(1);
+
+        var artifact = result.Artifacts.Should().ContainSingle().Subject;
+        artifact.Name.Should().Be("index.html");
+        artifact.Kind.Should().Be(ArtifactKind.Html);
+        artifact.Content.Should().Be("<h1>hi</h1>");
+        artifact.ConversationId.Should().Be(Conv);
+        artifact.Id.Should().Be(stored.Id);
     }
 
     [Fact]
     public async Task Make_overwrites_an_existing_name_keeping_id_and_bumping_version()
     {
-        var repo = Substitute.For<IChatRepository>();
-        repo.GetArtifactByNameAsync(Conv, "notes.md", Arg.Any<CancellationToken>())
-            .Returns(Existing("notes.md", "old", ArtifactKind.Md, version: 2));
+        var host = new FakeToolHost();
+        var seeded = await SeedAsync(host, "notes.md", "old");
 
-        var tool = new MakeArtifactTool(Gert.Testing.Proof.Validation, Provider(repo), User, Time);
-        var result = await tool.ExecuteAsync(Inv(
-            "{\"name\":\"notes.md\",\"format\":\"markdown\",\"content\":\"# new\"}"));
+        var tool = new MakeArtifactTool(Gert.Testing.Proof.Validation);
+        var result = await tool.ExecuteAsync(
+            Inv("{\"name\":\"notes.md\",\"format\":\"markdown\",\"content\":\"# new\"}"), host);
 
         result.Success.Should().BeTrue();
-        await repo.Received(1).UpdateArtifactAsync(
-            Arg.Is<Artifact>(a => a.Id == "art-1" && a.Content == "# new" && a.Version == 3),
-            Arg.Any<CancellationToken>());
-        await repo.DidNotReceive().InsertArtifactAsync(Arg.Any<Artifact>(), Arg.Any<CancellationToken>());
-        result.Artifacts!.Single().Id.Should().Be("art-1");
         result.ResultJson.Should().Contain("updated");
+
+        var stored = await host.ObjectStore.GetAsync(ResourceScope.Chat, "notes.md");
+        stored!.Id.Should().Be(seeded.Id, "an overwrite keeps the original id");
+        stored.Content.Should().Be("# new");
+        stored.Version.Should().Be(2);
+
+        result.Artifacts!.Single().Id.Should().Be(seeded.Id);
+        result.Artifacts!.Single().Version.Should().Be(2);
     }
 
     [Fact]
     public async Task Make_rejects_an_unknown_format()
     {
-        var repo = Substitute.For<IChatRepository>();
-        var tool = new MakeArtifactTool(Gert.Testing.Proof.Validation, Provider(repo), User, Time);
+        var host = new FakeToolHost();
+        var tool = new MakeArtifactTool(Gert.Testing.Proof.Validation);
 
-        var result = await tool.ExecuteAsync(Inv(
-            "{\"name\":\"a.cob\",\"format\":\"cobol\",\"content\":\"DISPLAY 1.\"}"));
+        var result = await tool.ExecuteAsync(
+            Inv("{\"name\":\"a.cob\",\"format\":\"cobol\",\"content\":\"DISPLAY 1.\"}"), host);
 
         result.Success.Should().BeFalse();
         result.Error.Should().Contain("format");
-        await repo.DidNotReceive().InsertArtifactAsync(Arg.Any<Artifact>(), Arg.Any<CancellationToken>());
+        (await host.ObjectStore.ListAsync(ResourceScope.Chat)).Should().BeEmpty();
     }
 
     [Fact]
-    public async Task Make_rejects_empty_content_and_missing_conversation()
+    public async Task Make_rejects_empty_content()
     {
-        var repo = Substitute.For<IChatRepository>();
-        var tool = new MakeArtifactTool(Gert.Testing.Proof.Validation, Provider(repo), User, Time);
+        var host = new FakeToolHost();
+        var tool = new MakeArtifactTool(Gert.Testing.Proof.Validation);
 
-        var empty = await tool.ExecuteAsync(Inv("{\"name\":\"a.md\",\"format\":\"markdown\",\"content\":\"\"}"));
-        empty.Success.Should().BeFalse();
-        empty.Error.Should().Contain("content");
+        // The fail-closed validator (not the tool) rejects empty content.
+        var result = await tool.ExecuteAsync(
+            Inv("{\"name\":\"a.md\",\"format\":\"markdown\",\"content\":\"\"}"), host);
 
-        var noConv = await tool.ExecuteAsync(new ToolInvocation
-        {
-            Pid = "default",
-            ArgumentsJson = "{\"name\":\"a.md\",\"format\":\"markdown\",\"content\":\"x\"}",
-        });
-        noConv.Success.Should().BeFalse();
+        result.Success.Should().BeFalse();
+        result.Error.Should().Contain("content");
+        (await host.ObjectStore.ListAsync(ResourceScope.Chat)).Should().BeEmpty();
     }
 
     [Fact]
     public async Task Make_accepts_a_short_format_alias()
     {
-        var repo = Substitute.For<IChatRepository>();
-        repo.GetArtifactByNameAsync(Conv, "s.py", Arg.Any<CancellationToken>()).Returns((Artifact?)null);
-        var tool = new MakeArtifactTool(Gert.Testing.Proof.Validation, Provider(repo), User, Time);
+        var host = new FakeToolHost();
+        var tool = new MakeArtifactTool(Gert.Testing.Proof.Validation);
 
-        var result = await tool.ExecuteAsync(Inv("{\"name\":\"s.py\",\"format\":\"py\",\"content\":\"print(1)\"}"));
+        var result = await tool.ExecuteAsync(Inv("{\"name\":\"s.py\",\"format\":\"py\",\"content\":\"print(1)\"}"), host);
 
         result.Success.Should().BeTrue();
-        await repo.Received(1).InsertArtifactAsync(
-            Arg.Is<Artifact>(a => a.Kind == ArtifactKind.Py), Arg.Any<CancellationToken>());
+        var stored = await host.ObjectStore.GetAsync(ResourceScope.Chat, "s.py");
+        stored!.Kind.Should().Be("py");
+        result.Artifacts!.Single().Kind.Should().Be(ArtifactKind.Py);
     }
 
     [Fact]
     public async Task Edit_replaces_a_unique_snippet_and_bumps_version()
     {
-        var repo = Substitute.For<IChatRepository>();
-        repo.GetArtifactByNameAsync(Conv, "page.html", Arg.Any<CancellationToken>())
-            .Returns(Existing("page.html", "<h1>Old Title</h1>", ArtifactKind.Html));
+        var host = new FakeToolHost();
+        var seeded = await SeedAsync(host, "page.html", "<h1>Old Title</h1>", "html");
 
-        var tool = new EditArtifactTool(Gert.Testing.Proof.Validation, Provider(repo), User);
-        var result = await tool.ExecuteAsync(Inv(
-            "{\"name\":\"page.html\",\"old_str\":\"Old Title\",\"new_str\":\"New Title\"}"));
+        var tool = new EditArtifactTool(Gert.Testing.Proof.Validation);
+        var result = await tool.ExecuteAsync(
+            Inv("{\"name\":\"page.html\",\"old_str\":\"Old Title\",\"new_str\":\"New Title\"}"), host);
 
         result.Success.Should().BeTrue();
-        await repo.Received(1).UpdateArtifactAsync(
-            Arg.Is<Artifact>(a => a.Content == "<h1>New Title</h1>" && a.Version == 2),
-            Arg.Any<CancellationToken>());
-        result.Artifacts!.Single().Id.Should().Be("art-1");
+
+        var stored = await host.ObjectStore.GetAsync(ResourceScope.Chat, "page.html");
+        stored!.Content.Should().Be("<h1>New Title</h1>");
+        stored.Version.Should().Be(2);
+        stored.Id.Should().Be(seeded.Id);
+
+        result.Artifacts!.Single().Id.Should().Be(seeded.Id);
+        result.Artifacts!.Single().Content.Should().Be("<h1>New Title</h1>");
     }
 
     [Fact]
     public async Task Edit_with_no_match_errors_and_does_not_write()
     {
-        var repo = Substitute.For<IChatRepository>();
-        repo.GetArtifactByNameAsync(Conv, "page.html", Arg.Any<CancellationToken>())
-            .Returns(Existing("page.html", "<h1>Title</h1>", ArtifactKind.Html));
+        var host = new FakeToolHost();
+        await SeedAsync(host, "page.html", "<h1>Title</h1>", "html");
 
-        var tool = new EditArtifactTool(Gert.Testing.Proof.Validation, Provider(repo), User);
-        var result = await tool.ExecuteAsync(Inv(
-            "{\"name\":\"page.html\",\"old_str\":\"absent\",\"new_str\":\"x\"}"));
+        var tool = new EditArtifactTool(Gert.Testing.Proof.Validation);
+        var result = await tool.ExecuteAsync(
+            Inv("{\"name\":\"page.html\",\"old_str\":\"absent\",\"new_str\":\"x\"}"), host);
 
         result.Success.Should().BeFalse();
         result.Error.Should().Contain("not found");
-        await repo.DidNotReceive().UpdateArtifactAsync(Arg.Any<Artifact>(), Arg.Any<CancellationToken>());
+
+        var stored = await host.ObjectStore.GetAsync(ResourceScope.Chat, "page.html");
+        stored!.Content.Should().Be("<h1>Title</h1>", "a no-match edit must not write");
+        stored.Version.Should().Be(1);
     }
 
     [Fact]
     public async Task Edit_with_multiple_matches_errors_and_asks_for_context()
     {
-        var repo = Substitute.For<IChatRepository>();
-        repo.GetArtifactByNameAsync(Conv, "a.md", Arg.Any<CancellationToken>())
-            .Returns(Existing("a.md", "x\nx\n", ArtifactKind.Md));
+        var host = new FakeToolHost();
+        await SeedAsync(host, "a.md", "x\nx\n");
 
-        var tool = new EditArtifactTool(Gert.Testing.Proof.Validation, Provider(repo), User);
-        var result = await tool.ExecuteAsync(Inv("{\"name\":\"a.md\",\"old_str\":\"x\",\"new_str\":\"y\"}"));
+        var tool = new EditArtifactTool(Gert.Testing.Proof.Validation);
+        var result = await tool.ExecuteAsync(Inv("{\"name\":\"a.md\",\"old_str\":\"x\",\"new_str\":\"y\"}"), host);
 
         result.Success.Should().BeFalse();
         result.Error.Should().Contain("2");
-        await repo.DidNotReceive().UpdateArtifactAsync(Arg.Any<Artifact>(), Arg.Any<CancellationToken>());
+
+        var stored = await host.ObjectStore.GetAsync(ResourceScope.Chat, "a.md");
+        stored!.Version.Should().Be(1, "an ambiguous edit must not write");
     }
 
     [Fact]
     public async Task Edit_of_an_unknown_artifact_errors()
     {
-        var repo = Substitute.For<IChatRepository>();
-        repo.GetArtifactByNameAsync(Conv, "ghost.md", Arg.Any<CancellationToken>()).Returns((Artifact?)null);
+        var host = new FakeToolHost();
+        var tool = new EditArtifactTool(Gert.Testing.Proof.Validation);
 
-        var tool = new EditArtifactTool(Gert.Testing.Proof.Validation, Provider(repo), User);
-        var result = await tool.ExecuteAsync(Inv("{\"name\":\"ghost.md\",\"old_str\":\"a\",\"new_str\":\"b\"}"));
+        var result = await tool.ExecuteAsync(Inv("{\"name\":\"ghost.md\",\"old_str\":\"a\",\"new_str\":\"b\"}"), host);
 
         result.Success.Should().BeFalse();
         result.Error.Should().Contain("no artifact named 'ghost.md'");
@@ -214,12 +193,11 @@ public sealed class ArtifactToolsTests
     [Fact]
     public async Task Read_returns_line_numbered_content()
     {
-        var repo = Substitute.For<IChatRepository>();
-        repo.GetArtifactByNameAsync(Conv, "a.md", Arg.Any<CancellationToken>())
-            .Returns(Existing("a.md", "first\nsecond\nthird", ArtifactKind.Md));
+        var host = new FakeToolHost();
+        await SeedAsync(host, "a.md", "first\nsecond\nthird");
 
-        var tool = new ReadArtifactTool(Gert.Testing.Proof.Validation, Provider(repo), User);
-        var result = await tool.ExecuteAsync(Inv("{\"name\":\"a.md\"}"));
+        var tool = new ReadArtifactTool(Gert.Testing.Proof.Validation);
+        var result = await tool.ExecuteAsync(Inv("{\"name\":\"a.md\"}"), host);
 
         result.Success.Should().BeTrue();
         result.ResultJson.Should().Contain("1\\tfirst").And.Contain("3\\tthird")
@@ -229,12 +207,11 @@ public sealed class ArtifactToolsTests
     [Fact]
     public async Task Read_honors_a_line_range()
     {
-        var repo = Substitute.For<IChatRepository>();
-        repo.GetArtifactByNameAsync(Conv, "a.md", Arg.Any<CancellationToken>())
-            .Returns(Existing("a.md", "l1\nl2\nl3\nl4", ArtifactKind.Md));
+        var host = new FakeToolHost();
+        await SeedAsync(host, "a.md", "l1\nl2\nl3\nl4");
 
-        var tool = new ReadArtifactTool(Gert.Testing.Proof.Validation, Provider(repo), User);
-        var result = await tool.ExecuteAsync(Inv("{\"name\":\"a.md\",\"range\":[2,3]}"));
+        var tool = new ReadArtifactTool(Gert.Testing.Proof.Validation);
+        var result = await tool.ExecuteAsync(Inv("{\"name\":\"a.md\",\"range\":[2,3]}"), host);
 
         result.Success.Should().BeTrue();
         result.ResultJson.Should().Contain("2\\tl2").And.Contain("3\\tl3")
@@ -247,26 +224,22 @@ public sealed class ArtifactToolsTests
     [InlineData("{\"name\":\"a.md\",\"range\":[null,3]}")] // null entry
     public async Task Read_with_a_malformed_range_is_a_tool_error_never_a_throw(string argsJson)
     {
-        var repo = Substitute.For<IChatRepository>();
-        var tool = new ReadArtifactTool(Gert.Testing.Proof.Validation, Provider(repo), User);
+        var host = new FakeToolHost();
+        var tool = new ReadArtifactTool(Gert.Testing.Proof.Validation);
 
-        var result = await tool.ExecuteAsync(Inv(argsJson));
+        var result = await tool.ExecuteAsync(Inv(argsJson), host);
 
         result.Success.Should().BeFalse();
         result.Error.Should().Contain("range");
-        // Fails before any chat.db open, like the other argument errors.
-        await repo.DidNotReceive().GetArtifactByNameAsync(
-            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
     public async Task Read_of_an_unknown_artifact_errors()
     {
-        var repo = Substitute.For<IChatRepository>();
-        repo.GetArtifactByNameAsync(Conv, "ghost.md", Arg.Any<CancellationToken>()).Returns((Artifact?)null);
+        var host = new FakeToolHost();
+        var tool = new ReadArtifactTool(Gert.Testing.Proof.Validation);
 
-        var tool = new ReadArtifactTool(Gert.Testing.Proof.Validation, Provider(repo), User);
-        var result = await tool.ExecuteAsync(Inv("{\"name\":\"ghost.md\"}"));
+        var result = await tool.ExecuteAsync(Inv("{\"name\":\"ghost.md\"}"), host);
 
         result.Success.Should().BeFalse();
         result.Error.Should().Contain("no artifact named 'ghost.md'");

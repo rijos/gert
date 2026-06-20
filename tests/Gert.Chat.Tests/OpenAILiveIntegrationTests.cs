@@ -77,8 +77,8 @@ public sealed class OpenAILiveIntegrationTests
         // what TurnPlanner sends). The model must call make_artifact rather than
         // pasting a fence - and a Markdown file with its OWN ``` code block must
         // survive intact, because the content is a JSON arg, not regex-extracted.
-        var repo = new InMemoryArtifactRepository();
-        var (specs, toolsByName) = ArtifactToolset(repo);
+        var host = new FakeToolHost();
+        var (specs, toolsByName) = ArtifactToolset();
 
         var messages = new List<ChatModelMessage>
         {
@@ -93,16 +93,16 @@ public sealed class OpenAILiveIntegrationTests
         };
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(170));
-        var calls = await DriveToolLoopAsync(client!, messages, specs, toolsByName, "live-conv", cts.Token);
+        var calls = await DriveToolLoopAsync(client!, messages, specs, toolsByName, host, cts.Token);
 
         // The file reached the canvas through the tool - not a fenced block - and
         // the nested ``` python fence is intact inside it (the truncation bug).
         calls.Should().Contain(
             c => c.Name == "make_artifact",
             $"the model must create the file with the tool (calls: {string.Join(",", calls.Select(c => c.Name))})");
-        var md = repo.Artifacts.Should().ContainSingle(a => a.Kind == ArtifactKind.Md).Subject;
-        md.Name.Should().Be("notes.md");
-        md.Content.Should().Contain("```", "a Markdown file's own code fence rides inside the JSON arg untouched");
+        var md = (await host.ObjectStore.GetAsync(ResourceScope.Chat, "notes.md"))
+            .Should().NotBeNull().And.Subject as StoredObject;
+        md!.Content.Should().Contain("```", "a Markdown file's own code fence rides inside the JSON arg untouched");
 
         // Iterate: a follow-up turn must MODIFY the file (edit or remake), not
         // restate it - and the change must land in the stored artifact.
@@ -111,13 +111,13 @@ public sealed class OpenAILiveIntegrationTests
             Role = "user",
             Content = "Add a new section heading '## Setup' at the end of notes.md.",
         });
-        var followUp = await DriveToolLoopAsync(client!, messages, specs, toolsByName, "live-conv", cts.Token);
+        var followUp = await DriveToolLoopAsync(client!, messages, specs, toolsByName, host, cts.Token);
 
         followUp.Should().Contain(
             c => c.Name == "edit_artifact" || c.Name == "make_artifact",
             $"the model must change the file with a tool (calls: {string.Join(",", followUp.Select(c => c.Name))})");
-        repo.Artifacts.Should().ContainSingle(a => a.Name == "notes.md")
-            .Which.Content.Should().Contain("Setup", $"the edit must land (got: {baseUrl})");
+        (await host.ObjectStore.GetAsync(ResourceScope.Chat, "notes.md"))!
+            .Content.Should().Contain("Setup", $"the edit must land (got: {baseUrl})");
     }
 
     [Fact]
@@ -321,8 +321,8 @@ public sealed class OpenAILiveIntegrationTests
         // generated twice). With the narration echoed, each file is produced once.
         // Files now flow through make_artifact, so the todo tool and the artifact
         // tools are offered together and the loop executes both for real.
-        var repo = new InMemoryArtifactRepository();
-        var (artifactSpecs, artifactTools) = ArtifactToolset(repo);
+        var host = new FakeToolHost();
+        var (artifactSpecs, artifactTools) = ArtifactToolset();
         var todo = new TodoTool(Gert.Testing.Proof.Validation);
 
         var specs = ToolSpecs(todo).Concat(artifactSpecs).ToList();
@@ -338,7 +338,7 @@ public sealed class OpenAILiveIntegrationTests
         };
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(170));
-        var calls = await DriveToolLoopAsync(client!, messages, specs, toolsByName, "live-conv", cts.Token);
+        var calls = await DriveToolLoopAsync(client!, messages, specs, toolsByName, host, cts.Token);
 
         var todoCalls = calls.Where(c => c.Name == "set_todos").ToList();
         todoCalls.Should().NotBeEmpty("the user explicitly asked for the todo list");
@@ -346,8 +346,9 @@ public sealed class OpenAILiveIntegrationTests
         // The restart bug's fingerprint is duplicated files and an abandoned list -
         // so assert the turn is COHERENT: files were created via the tool, each name
         // is unique (no double-generation), and the last set_todos finished the plan.
-        repo.Artifacts.Should().NotBeEmpty($"files were requested (calls: {string.Join(",", calls.Select(c => c.Name))})");
-        repo.Artifacts.Select(a => a.Name).Should().OnlyHaveUniqueItems(
+        var files = await host.ObjectStore.ListAsync(ResourceScope.Chat);
+        files.Should().NotBeEmpty($"files were requested (calls: {string.Join(",", calls.Select(c => c.Name))})");
+        files.Select(a => a.Name).Should().OnlyHaveUniqueItems(
             "a coherent turn emits each file once");
         todoCalls[^1].ArgumentsJson.Should().NotContainAny(
             ["pending", "active"],
@@ -358,17 +359,14 @@ public sealed class OpenAILiveIntegrationTests
     private static List<ChatToolSpec> ToolSpecs(ITool tool) =>
         [new() { Name = tool.Name, Description = tool.Description, ParametersSchema = tool.ParametersSchema }];
 
-    /// <summary>The canvas artifact tools over an in-memory repo, with their specs.</summary>
-    private static (List<ChatToolSpec> Specs, Dictionary<string, ITool> ByName) ArtifactToolset(
-        InMemoryArtifactRepository repo)
+    /// <summary>The canvas artifact tools (host-driven storage), with their specs.</summary>
+    private static (List<ChatToolSpec> Specs, Dictionary<string, ITool> ByName) ArtifactToolset()
     {
-        var provider = new FakeChatDatabaseProvider(repo);
-        var user = new FakeUserContext();
         ITool[] tools =
         [
-            new MakeArtifactTool(Gert.Testing.Proof.Validation, provider, user, TimeProvider.System),
-            new EditArtifactTool(Gert.Testing.Proof.Validation, provider, user),
-            new ReadArtifactTool(Gert.Testing.Proof.Validation, provider, user),
+            new MakeArtifactTool(Gert.Testing.Proof.Validation),
+            new EditArtifactTool(Gert.Testing.Proof.Validation),
+            new ReadArtifactTool(Gert.Testing.Proof.Validation),
         ];
         var specs = tools.Select(t => new ChatToolSpec
         {
@@ -382,16 +380,16 @@ public sealed class OpenAILiveIntegrationTests
     /// <summary>
     /// Drive the model through the tool loop exactly as TurnRunner does, but for an
     /// arbitrary tool set: stream a round; execute each call against the real tool
-    /// (with the conversation-scoped <see cref="ToolInvocation"/> the artifact tools
-    /// need); echo the assistant tool-call message + one tool result per call; stop
-    /// when a round makes no calls. Returns every tool call seen across rounds.
+    /// (handing it the pre-scoped <paramref name="host"/> the artifact tools read for
+    /// their object store); echo the assistant tool-call message + one tool result per
+    /// call; stop when a round makes no calls. Returns every tool call seen across rounds.
     /// </summary>
     private static async Task<List<ChatModelToolCall>> DriveToolLoopAsync(
         OpenAIChatModelClient client,
         List<ChatModelMessage> messages,
         IReadOnlyList<ChatToolSpec> specs,
         IReadOnlyDictionary<string, ITool> toolsByName,
-        string conversationId,
+        FakeToolHost host,
         CancellationToken token)
     {
         var allCalls = new List<ChatModelToolCall>();
@@ -440,9 +438,9 @@ public sealed class OpenAILiveIntegrationTests
                         {
                             Pid = "default",
                             ArgumentsJson = call.ArgumentsJson,
-                            ConversationId = conversationId,
+                            ConversationId = "live-conv",
                             MessageId = "live-msg",
-                        }, token);
+                        }, host, token);
                     content = outcome.Success
                         ? outcome.ResultJson ?? "{}"
                         : System.Text.Json.JsonSerializer.Serialize(new { error = outcome.Error });

@@ -3,6 +3,9 @@ namespace Gert.Tools;
 /// <summary>An object's metadata without its content - the shape <see cref="IObjectResource.ListAsync"/> returns.</summary>
 public sealed record ObjectSummary
 {
+    /// <summary>The object's stable id.</summary>
+    public required string Id { get; init; }
+
     /// <summary>The object's name.</summary>
     public required string Name { get; init; }
 

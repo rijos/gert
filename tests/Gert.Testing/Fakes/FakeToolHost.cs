@@ -49,6 +49,7 @@ public sealed class FakeToolHost : IToolHost
                 .Where(kv => kv.Key.Scope == scope)
                 .Select(kv => new ObjectSummary
                 {
+                    Id = kv.Value.Id,
                     Name = kv.Value.Name,
                     Version = kv.Value.Version,
                     Kind = kv.Value.Kind,
@@ -63,6 +64,8 @@ public sealed class FakeToolHost : IToolHost
             var existing = _store.GetValueOrDefault((scope, write.Name));
             var stored = new StoredObject
             {
+                // First put assigns a stable id; an overwrite preserves the existing one.
+                Id = existing?.Id ?? Guid.NewGuid().ToString("D"),
                 Name = write.Name,
                 Content = write.Content,
                 Kind = write.Kind,

@@ -756,10 +756,11 @@ public sealed class TurnRunner : ITurnRunner
             callCts.CancelAfter(_options.ToolCallTimeout);
         }
 
-        // The capability surface handed to the tool. Transitional until the real chat host
-        // (Chat Objects, Project Rag, ChatToolUi, ChatToolDelegate) lands; carries the turn
-        // deadline the tools read today and throws on any not-yet-wired capability use.
-        var host = new NotSupportedToolHost(deadline);
+        // The capability surface handed to the tool: pre-scoped to this conversation's object
+        // store (the canvas artifact tools) and carrying the turn deadline. RAG, Ui, and
+        // delegation are wired in later phases and throw/no-op until then.
+        var objects = new ChatObjectResource(repo, job.ConversationId, _clock);
+        var host = new ChatToolHost(objects, deadline);
 
         var stopwatch = Stopwatch.StartNew();
         ToolResult result;

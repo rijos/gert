@@ -83,7 +83,8 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ITool, PythonSandboxTool>();
         services.AddScoped<ITool, TodoTool>();
         services.AddScoped<ITool, ClockTool>();
-        // Canvas artifact suite (make/edit/read), each ctor-injected with IChatRepository.
+        // Canvas artifact suite (make/edit/read): they reach the conversation's object store
+        // through the host's IObjectResource at call time, so the ctor needs only validation.
         services.AddScoped<ITool, MakeArtifactTool>();
         services.AddScoped<ITool, EditArtifactTool>();
         services.AddScoped<ITool, ReadArtifactTool>();
