@@ -12,7 +12,7 @@ using Gert.Tools.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
-namespace Gert.Service.Tests;
+namespace Gert.Agent.Tests;
 
 /// <summary>
 /// <see cref="ChatToolDelegate"/> (chat-and-tools.md section sub-agent): the nested loop driver the

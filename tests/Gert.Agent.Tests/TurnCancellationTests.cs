@@ -4,7 +4,7 @@ using Gert.Service.Chat;
 using Microsoft.Extensions.Options;
 using Xunit;
 
-namespace Gert.Service.Tests;
+namespace Gert.Agent.Tests;
 
 /// <summary>
 /// The cancel registry (rest-api.md section stop generation): live-turn cancellation,

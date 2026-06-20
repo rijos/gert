@@ -8,7 +8,7 @@ using Gert.Tools;
 using Gert.Tools.Ui;
 using Xunit;
 
-namespace Gert.Service.Tests;
+namespace Gert.Agent.Tests;
 
 /// <summary>
 /// The chat loop's <see cref="IToolUi"/> (chat-and-tools.md section Ask the user) - the

@@ -15,7 +15,7 @@ using Microsoft.Extensions.Options;
 using NSubstitute;
 using Xunit;
 
-namespace Gert.Service.Tests;
+namespace Gert.Agent.Tests;
 
 /// <summary>
 /// Phase 1 in the request scope: validation fail-closed, conversation

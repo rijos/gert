@@ -12,7 +12,7 @@ using Gert.Tools.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
-namespace Gert.Service.Tests;
+namespace Gert.Agent.Tests;
 
 /// <summary>
 /// The reusable tool loop driven DIRECTLY (no chat shell, no repo, no bus): a

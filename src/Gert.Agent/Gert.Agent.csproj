@@ -22,9 +22,8 @@
 
   <ItemGroup>
     <!-- Test seam: ChatToolUiTests drives the internal ChatToolUi directly (the
-         human-interaction port impl behind IToolHost.Ui). The assembly name MUST match.
-         The moved-type tests live in Gert.Service.Tests for this step. -->
-    <InternalsVisibleTo Include="Gert.Service.Tests" />
+         human-interaction port impl behind IToolHost.Ui). The assembly name MUST match. -->
+    <InternalsVisibleTo Include="Gert.Agent.Tests" />
   </ItemGroup>
 
   <ItemGroup>

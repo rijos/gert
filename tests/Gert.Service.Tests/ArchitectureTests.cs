@@ -89,38 +89,6 @@ public class ArchitectureTests
     }
 
     /// <summary>
-    /// The turn/agent execution engine (Gert.Agent: worker, queue, planner, runner, AgentLoop,
-    /// the chat tool-host wiring) is the layer between the host and the service layer
-    /// (host -> Gert.Agent -> Gert.Service). It may reference the service layer + the capability
-    /// CONTRACTS it drives, but never the host (Gert.Api) nor an adapter IMPL leaf - those wire
-    /// in at the composition root. A future edit that drags an adapter or the host into the engine
-    /// fails here.
-    /// </summary>
-    [Fact]
-    public void Agent_engine_does_not_depend_on_the_host_or_adapter_impls()
-    {
-        var result = Types.InAssembly(System.Reflection.Assembly.Load("Gert.Agent"))
-            .Should()
-            .NotHaveDependencyOnAny(
-                "Gert.Api",
-                "Gert.Authentication",
-                "Gert.Chat.OpenAI",
-                "Gert.Tools.Builtin",
-                "Gert.Ingestion",
-                "Gert.Storage.Local",
-                "Gert.Database.Sqlite",
-                "Gert.Database.Postgres",
-                "Gert.Rag.Sqlite")
-            .GetResult();
-
-        Assert.True(
-            result.IsSuccessful,
-            "Gert.Agent must not reference the host or an adapter impl leaf (it may reference " +
-            "Gert.Service + the capability contracts). Offending types: " +
-            string.Join(", ", result.FailingTypeNames ?? System.Array.Empty<string>()));
-    }
-
-    /// <summary>
     /// Per-user isolation (principles.md) requires that any service consuming the
     /// request-scoped <see cref="IUserContext"/> is itself scoped: a singleton would
     /// capture the first caller's identity and then serve their data to everyone (a

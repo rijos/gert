@@ -11,7 +11,7 @@ using Gert.Tools.Resources;
 using NSubstitute;
 using Xunit;
 
-namespace Gert.Service.Tests;
+namespace Gert.Agent.Tests;
 
 /// <summary>
 /// <see cref="ProjectRagResource"/> (chat-and-tools.md section RAG / hybrid retrieval): the

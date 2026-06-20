@@ -25,7 +25,7 @@ using Microsoft.Extensions.Options;
 using NSubstitute;
 using Xunit;
 
-namespace Gert.Service.Tests;
+namespace Gert.Agent.Tests;
 
 /// <summary>
 /// The detached tool loop: event ORDER -- message_start -> tool_call(running)

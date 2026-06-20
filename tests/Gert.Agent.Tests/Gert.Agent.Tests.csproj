@@ -7,19 +7,18 @@
     <PackageReference Include="NetArchTest.Rules" Version="$(NetArchTestVersion)" />
     <PackageReference Include="NSubstitute" Version="$(NSubstituteVersion)" />
     <PackageReference Include="FluentAssertions" Version="$(FluentAssertionsVersion)" />
-    <!-- ShouldHaveValidationErrorFor / ShouldNotHaveValidationErrorFor.
-         FluentValidation.TestHelper ships inside the FluentValidation package. -->
-    <PackageReference Include="FluentValidation" Version="$(FluentValidationVersion)" />
   </ItemGroup>
 
   <ItemGroup>
+    <!-- The extracted turn/agent execution engine under test (worker, queue, planner,
+         runner, AgentLoop, the chat tool-host wiring). -->
+    <ProjectReference Include="..\..\src\Gert.Agent\Gert.Agent.csproj" />
+    <!-- The host-agnostic service layer the engine drives (IUserContext, PromptOptions, ...). -->
     <ProjectReference Include="..\..\src\Gert.Service\Gert.Service.csproj" />
-    <!-- The TurnPlanner / TurnRunner orchestration tests drive the real built-in
-         tools (now in the Gert.Tools adapter) through the turn pipeline. -->
+    <!-- Tool capability contracts: ITool/ToolRegistry/ToolResult + the IToolHost seams the loop drives. -->
     <ProjectReference Include="..\..\src\Gert.Tools\Gert.Tools.csproj" />
-    <!-- The tool impl leaf, for the Phase 6 acceptance gate (ArchitectureTests:
-         Gert.Tools.Builtin must NOT depend on Gert.Service) and the ChatToolDelegate
-         tests that drive the real RagTool/SubAgentTool through the nested loop. -->
+    <!-- The tool impl leaf: the ChatToolDelegate / TurnRunner tests drive the real
+         RagTool/SubAgentTool through the nested loop. -->
     <ProjectReference Include="..\..\src\Gert.Tools.Builtin\Gert.Tools.Builtin.csproj" />
     <ProjectReference Include="..\Gert.Testing\Gert.Testing.csproj" />
   </ItemGroup>

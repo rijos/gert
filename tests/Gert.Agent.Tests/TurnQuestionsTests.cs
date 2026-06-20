@@ -5,7 +5,7 @@ using Gert.Testing;
 using Gert.Validation;
 using Xunit;
 
-namespace Gert.Service.Tests;
+namespace Gert.Agent.Tests;
 
 /// <summary>
 /// The ask_user question registry (rest-api.md section answer a question): one
