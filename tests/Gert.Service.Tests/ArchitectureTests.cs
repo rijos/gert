@@ -22,11 +22,11 @@ public class ArchitectureTests
             .NotHaveDependencyOnAny(
                 "Gert.Api",
                 "Gert.Authentication",
-                // Capability CONTRACTS (Gert.Chat, Gert.Storage, Gert.Database, Gert.Rag) are
-                // inward of the service layer - they hold the ports + the generic, impl-agnostic
-                // catalog/factory; only the per-impl leaf assemblies are forbidden.
+                // Capability CONTRACTS (Gert.Chat, Gert.Storage, Gert.Database, Gert.Rag,
+                // Gert.Tools) are inward of the service layer - they hold the ports + the generic,
+                // impl-agnostic catalog/factory; only the per-impl leaf assemblies are forbidden.
                 "Gert.Chat.OpenAI",
-                "Gert.Tools",
+                "Gert.Tools.Builtin",
                 "Gert.Ingestion",
                 "Gert.Storage.Local",
                 "Gert.Database.Sqlite",
@@ -38,6 +38,27 @@ public class ArchitectureTests
             result.IsSuccessful,
             "Gert.Service must not reference any host or adapter assembly. Offending types: " +
             string.Join(", ", result.FailingTypeNames ?? System.Array.Empty<string>()));
+    }
+
+    /// <summary>
+    /// The tool contracts assembly (Gert.Tools: ITool / ToolRegistry / ToolResult + the
+    /// web-search/fetch/sandbox ports) sits inward of the service layer, mirroring Gert.Chat. It
+    /// must depend on neither its impl leaf (Gert.Tools.Builtin) nor Gert.Service, so the service
+    /// layer can reference it without dragging in an adapter (PluginArchitectureTests covers the
+    /// search/sandbox capability-plugin split within the impl leaf).
+    /// </summary>
+    [Fact]
+    public void Tools_contracts_do_not_depend_on_their_impl_or_the_service_layer()
+    {
+        var result = Types.InAssembly(typeof(global::Gert.Tools.ITool).Assembly)
+            .Should()
+            .NotHaveDependencyOnAny("Gert.Tools.Builtin", "Gert.Service")
+            .GetResult();
+
+        Assert.True(
+            result.IsSuccessful,
+            "Gert.Tools (contracts) must not reference its impl leaf or the service layer. " +
+            "Offending types: " + string.Join(", ", result.FailingTypeNames ?? System.Array.Empty<string>()));
     }
 
     /// <summary>

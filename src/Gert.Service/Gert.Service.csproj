@@ -14,6 +14,13 @@
     <!-- Chat capability contracts: the chat/embeddings ports the turn pipeline drives
          (Gert.Chat.OpenAI implements them - never referenced here). -->
     <ProjectReference Include="..\Gert.Chat\Gert.Chat.csproj" />
+    <!-- Tool capability contracts: ITool/ToolRegistry/ToolResult + the web-search/fetch/sandbox
+         ports the turn pipeline drives (Gert.Tools.Builtin implements them - never referenced here). -->
+    <ProjectReference Include="..\Gert.Tools\Gert.Tools.csproj" />
+    <!-- Fail-closed validation sub-layer: Validated<T>/IValidationProvider the service methods
+         consume + AddGertValidation (principle #6, security F6). Depends only on Gert.Model +
+         Gert.Tools, so it stays inward of the service layer. -->
+    <ProjectReference Include="..\Gert.Validation\Gert.Validation.csproj" />
   </ItemGroup>
 
   <ItemGroup>
@@ -29,16 +36,10 @@
          tool-budget brake). Abstractions only - each host wires the provider. -->
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions"
                       Version="$(MicrosoftExtensionsLoggingVersion)" />
-    <!-- The fail-closed validation provider + per-DTO validators (principle #6, security F6). -->
-    <PackageReference Include="FluentValidation"
-                      Version="$(FluentValidationVersion)" />
-    <PackageReference Include="FluentValidation.DependencyInjectionExtensions"
-                      Version="$(FluentValidationDIVersion)" />
-    <!-- U14B: the shared NDJSON ITextFormatter lives here so the host (Gert.Api)
-         emits the operations.md log schema. Serilog (core only - no sinks/hosting)
-         is a logging library, not a host coupling, so the host-agnostic service
-         layer stays clean. -->
-    <PackageReference Include="Serilog" Version="$(SerilogVersion)" />
+    <!-- IHostedService/BackgroundService for the deletion-recovery saga (Account/DeletionRecoveryService).
+         Abstractions only - the host owns the hosting runtime. -->
+    <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions"
+                      Version="$(MicrosoftExtensionsHostingAbstractionsVersion)" />
   </ItemGroup>
 
 </Project>

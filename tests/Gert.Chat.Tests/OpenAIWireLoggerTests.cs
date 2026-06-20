@@ -5,7 +5,7 @@ using FluentAssertions;
 using Gert.Chat.OpenAI;
 using Gert.Model;
 using Gert.Model.Chat;
-using Gert.Service.External;
+using Gert.Tools;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;

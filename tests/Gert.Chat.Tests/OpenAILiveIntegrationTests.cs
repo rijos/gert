@@ -3,9 +3,8 @@ using Gert.Chat.OpenAI;
 using Gert.Model;
 using Gert.Model.Chat;
 using Gert.Service.Chat;
-using Gert.Service.External;
-using Gert.Service.Tools;
 using Gert.Testing.Fakes;
+using Gert.Tools;
 using Gert.Tools.Builtin;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
@@ -134,7 +133,7 @@ public sealed class OpenAILiveIntegrationTests
         // tool_calls message. This drives the REAL wire path through both
         // rounds: the parsed arguments must be valid JSON, and the follow-up
         // request carrying them must complete.
-        var clock = new ClockTool(TimeProvider.System);
+        var clock = new ClockTool(Gert.Testing.Proof.Validation, TimeProvider.System);
         var tools = new List<ChatToolSpec>
         {
             new()
@@ -221,7 +220,7 @@ public sealed class OpenAILiveIntegrationTests
         // TodoTool must accept whatever arguments the parser assembled. This
         // is the within-turn half of the todo story (the cross-turn half is
         // the reminder test below).
-        var todo = new TodoTool();
+        var todo = new TodoTool(Gert.Testing.Proof.Validation);
         var tools = ToolSpecs(todo);
 
         var messages = new List<ChatModelMessage>
@@ -262,7 +261,7 @@ public sealed class OpenAILiveIntegrationTests
         // new user message. The assistant content is deliberately vague about
         // which steps are done: ONLY the reminder says winter is the one left,
         // so a winter haiku in the answer proves the snapshot was read.
-        var todo = new TodoTool();
+        var todo = new TodoTool(Gert.Testing.Proof.Validation);
         var tools = ToolSpecs(todo);
 
         const string snapshot =
@@ -324,7 +323,7 @@ public sealed class OpenAILiveIntegrationTests
         // tools are offered together and the loop executes both for real.
         var repo = new InMemoryArtifactRepository();
         var (artifactSpecs, artifactTools) = ArtifactToolset(repo);
-        var todo = new TodoTool();
+        var todo = new TodoTool(Gert.Testing.Proof.Validation);
 
         var specs = ToolSpecs(todo).Concat(artifactSpecs).ToList();
         var toolsByName = new Dictionary<string, ITool>(artifactTools, StringComparer.Ordinal)
@@ -367,9 +366,9 @@ public sealed class OpenAILiveIntegrationTests
         var user = new FakeUserContext();
         ITool[] tools =
         [
-            new MakeArtifactTool(provider, user, TimeProvider.System),
-            new EditArtifactTool(provider, user),
-            new ReadArtifactTool(provider, user),
+            new MakeArtifactTool(Gert.Testing.Proof.Validation, provider, user, TimeProvider.System),
+            new EditArtifactTool(Gert.Testing.Proof.Validation, provider, user),
+            new ReadArtifactTool(Gert.Testing.Proof.Validation, provider, user),
         ];
         var specs = tools.Select(t => new ChatToolSpec
         {

@@ -1,7 +1,8 @@
 using Gert.Api.Contracts;
 using Gert.Api.Validation;
+using Gert.Model.Documents;
 using Gert.Service.Documents;
-using Gert.Service.Validation;
+using Gert.Validation;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Gert.Api.Controllers;

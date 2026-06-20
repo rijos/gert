@@ -77,7 +77,7 @@ public sealed class TurnOptions
     /// is min(this, remaining turn budget - a small grace slice) so the
     /// graceful path always beats the <see cref="MaxTurnDuration"/> error
     /// finalize; the wait is exempt from <see cref="ToolCallTimeout"/>
-    /// (<c>IInteractiveTool</c>) or it could never exceed that backstop
+    /// (<c>ToolType.Modal</c>) or it could never exceed that backstop
     /// (chat-and-tools.md section Ask the user).
     /// </summary>
     public TimeSpan AskUserTimeout { get; set; } = TimeSpan.FromMinutes(5);

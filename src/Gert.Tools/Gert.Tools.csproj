@@ -1,39 +1,12 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
+  <!-- Tool capability CONTRACTS: the ports the turn pipeline drives (ITool, ToolRegistry,
+       ToolResult, ToolInvocation, IInteractiveTool, ITailReminder) plus the external-world
+       ports (IWebSearch, IWebFetcher, IPythonSandbox). The built-in implementations live in
+       the per-impl leaf Gert.Tools.Builtin (tech-stack.md section Architecture). Depends only
+       on Gert.Model, so the service layer can reference it without seeing any adapter. -->
   <ItemGroup>
-    <ProjectReference Include="..\Gert.Service\Gert.Service.csproj" />
-    <ProjectReference Include="..\Gert.Database\Gert.Database.csproj" />
-    <!-- RAG contracts: RagTool drives IRagIndexProvider/IRagStore. -->
-    <ProjectReference Include="..\Gert.Rag\Gert.Rag.csproj" />
     <ProjectReference Include="..\Gert.Model\Gert.Model.csproj" />
-    <!-- Chat ports: SubAgentTool resolves IChatClientFactory; RagTool uses IEmbeddingClient. -->
-    <ProjectReference Include="..\Gert.Chat\Gert.Chat.csproj" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <!-- F5 test seam: SafeHttpFetcherRedirectTests constructs SafeHttpFetcher via its
-         internal ctor to inject the DNS resolver / IP-check delegates (loopback
-         listeners stand in for "public" hosts). Internal-only by design - a public or
-         options-based override would ship an SSRF bypass. The assembly name MUST match. -->
-    <InternalsVisibleTo Include="Gert.Tools.Tests" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <!-- IHttpClientFactory + typed-client wiring, options binding, configuration,
-         DI, logging abstractions. -->
-    <PackageReference Include="Microsoft.Extensions.Http"
-                      Version="$(MicrosoftExtensionsHttpVersion)" />
-    <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions"
-                      Version="$(MicrosoftExtensionsOptionsVersion)" />
-    <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions"
-                      Version="$(MicrosoftExtensionsConfigVersion)" />
-    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions"
-                      Version="$(MicrosoftExtensionsLoggingVersion)" />
-
-    <!-- Resilience: timeout + retry around the SearXNG HTTP calls (tech-stack section HTTP).
-         Microsoft.Extensions.Http.Resilience layers Polly v8 pipelines onto the typed client. -->
-    <PackageReference Include="Microsoft.Extensions.Http.Resilience"
-                      Version="$(MicrosoftExtensionsHttpResilienceVersion)" />
   </ItemGroup>
 
 </Project>

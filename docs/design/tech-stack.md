@@ -40,22 +40,22 @@ Arrows are project references. Everything points inward to `Gert.Service` -> `Ge
        │
        ▼
   ── impl adapters (per-impl leaves) ──────────────────────────────────────────
-     Gert.Authentication   Gert.Database.Sqlite   Gert.Storage.Local   Gert.Chat.OpenAI   Gert.Tools / Gert.Ingestion
-     (JWT -> IUserContext)   (vec0 + FTS5)          (local FS object store)  (OpenAI plugin)   (search+sandbox / extractors)
+     Gert.Authentication   Gert.Database.Sqlite   Gert.Storage.Local   Gert.Chat.OpenAI   Gert.Tools.Builtin / Gert.Ingestion
+     (JWT -> IUserContext)   (vec0 + FTS5)          (local FS object store)  (OpenAI plugin)   (search+sandbox+built-in tools / extractors)
             └──────────────────────┴──────────────────────┴────────────────────┴─────────────┘
                                     │  all ref ▼
   ── capability contracts ─────────────────────────────────────────────────────
-              Gert.Database   Gert.Storage   Gert.Chat        refs: Model only (service may reference these)
+           Gert.Database   Gert.Storage   Gert.Chat   Gert.Rag   Gert.Tools   refs: Model only (service may reference these)
                                     │  service refs ▼
   ── core ────────────────────────────────────────────────────────────────────
-                            Gert.Service        refs: Model + Database + Storage + Chat (contracts)
+                            Gert.Service        refs: Model + Database + Storage + Chat + Rag + Tools (contracts)
                                     │
                                     ▼
   ── model ────────────────────────────────────────────────────────────────────
                             Gert.Model                   no dependencies
 ```
 
-The compiler enforces the inward direction: `Gert.Service` cannot reference `Gert.Api`, `Gert.Authentication`, the outside-world impl adapters (`Gert.Chat.OpenAI`, `Gert.Tools`, `Gert.Ingestion`, `Gert.Storage.Local`), or any `Gert.Database.*` **adapter** - so the service layer's independence from any host is structural, not a convention. Each capability splits into a **contracts** assembly (`Gert.Database`, `Gert.Storage`, `Gert.Chat`) that depends only on `Gert.Model` and holds the ports (plus any impl-agnostic wiring, e.g. the chat provider catalog/factory) and a **per-impl leaf** that holds the real backend; the service layer references only the contracts. The service layer talks only to the ports (`IChatModelClient`, `IEmbeddingClient`, `IObjectStore`, the database providers, `IWebSearch`, `IPythonSandbox`, `ITextExtractor`), and the real vLLM/SearXNG/gVisor/local-FS clients live behind them - so they can be swapped (or pointed at mock upstreams for tests, see [testing](testing.md#41-the-fake-external-world)) with a single DI change. For a config-selected, multi-impl capability (chat, the database engine, the RAG index engine, web search, the run_python sandbox), each impl is a self-registering plugin keyed by its `Type` token (`ICapabilityPlugin`): a generic factory dispatches by config with no central `switch`, and the composition root registers the plugins it ships (`AddGert<Capability><Impl>`, e.g. `AddGertChatOpenAI` / `AddGertDatabaseSqlite` / `AddGertRagSqlite` / `AddGertSearchSearXNG` / `AddGertSandboxMonty`). The split is by assembly when the impl carries heavy deps (chat: `Gert.Chat` contracts vs `Gert.Chat.OpenAI` leaf; database: `Gert.Database` contracts vs `Gert.Database.Sqlite` leaf; RAG: `Gert.Rag` contracts vs `Gert.Rag.Sqlite` leaf) or by namespace leaf within one adapter when the ports already live upstream in `Gert.Service.External` (search/sandbox inside `Gert.Tools`). `PluginArchitectureTests` asserts the contracts-vs-impl split and the registrar naming convention for all of them.
+The compiler enforces the inward direction: `Gert.Service` cannot reference `Gert.Api`, `Gert.Authentication`, the outside-world impl adapters (`Gert.Chat.OpenAI`, `Gert.Tools.Builtin`, `Gert.Ingestion`, `Gert.Storage.Local`), or any `Gert.Database.*` **adapter** - so the service layer's independence from any host is structural, not a convention. Each capability splits into a **contracts** assembly (`Gert.Database`, `Gert.Storage`, `Gert.Chat`, `Gert.Rag`, `Gert.Tools`) that depends only on `Gert.Model` and holds the ports (plus any impl-agnostic wiring, e.g. the chat provider catalog/factory) and a **per-impl leaf** that holds the real backend; the service layer references only the contracts. The service layer talks only to the ports (`IChatModelClient`, `IEmbeddingClient`, `IObjectStore`, the database providers, `IWebSearch`, `IPythonSandbox`, `ITextExtractor`), and the real vLLM/SearXNG/gVisor/local-FS clients live behind them - so they can be swapped (or pointed at mock upstreams for tests, see [testing](testing.md#41-the-fake-external-world)) with a single DI change. For a config-selected, multi-impl capability (chat, the database engine, the RAG index engine, web search, the run_python sandbox), each impl is a self-registering plugin keyed by its `Type` token (`ICapabilityPlugin`): a generic factory dispatches by config with no central `switch`, and the composition root registers the plugins it ships (`AddGert<Capability><Impl>`, e.g. `AddGertChatOpenAI` / `AddGertDatabaseSqlite` / `AddGertRagSqlite` / `AddGertSearchSearXNG` / `AddGertSandboxMonty`). The split is by assembly when the impl carries heavy deps (chat: `Gert.Chat` contracts vs `Gert.Chat.OpenAI` leaf; database: `Gert.Database` contracts vs `Gert.Database.Sqlite` leaf; RAG: `Gert.Rag` contracts vs `Gert.Rag.Sqlite` leaf) or by namespace leaf within one impl adapter when the ports live in the shared contracts assembly `Gert.Tools` (search/sandbox inside `Gert.Tools.Builtin`). `PluginArchitectureTests` asserts the contracts-vs-impl split and the registrar naming convention for all of them.
 
 ## Engine portability
 
@@ -76,7 +76,7 @@ Gert.sln
 ├─ Gert.Model/                # POCOs only, no deps - Conversation, Message, ToolCall,
 │                             #   Citation, Artifact, Document, Chunk, ChatEvent, DTOs
 │
-├─ Gert.Service/              # host-agnostic business logic - references Model + Database (contracts)
+├─ Gert.Service/              # host-agnostic business logic - refs Model + the capability contracts (Database, Storage, Chat, Rag, Tools) + Validation
 │  ├─ IGertServices.cs        # aggregate hub: .Chat .Conversations .Documents .Artifacts .Admin
 │  ├─ IUserContext.cs         # current user's scope: Sub, AllowedTools (abstraction only)
 │  ├─ Chat/                   # the detached turn pipeline: TurnPlanner, TurnRunner, queue, bus,
@@ -84,10 +84,9 @@ Gert.sln
 │  ├─ Conversations/          # IConversationService
 │  ├─ Documents/              # IDocumentService
 │  ├─ Ingestion/              # IIngestionService.Ingest(doc) - pure pipeline (extract->chunk->embed->write)
-│  ├─ Provisioning/           # UserProvisioner - username refresh + default-project seed (user.db)
-│  ├─ Tools/                  # ITool + ToolRegistry + ITailReminder; rag/search/sandbox/todo/clock
-│  │                          #   + the canvas suite (make/edit/read artifact)
-│  └─ Validation/             # IValidationProvider + FluentValidation validators per model
+│  └─ Provisioning/           # UserProvisioner - username refresh + default-project seed (user.db)
+│
+├─ Gert.Validation/           # fail-closed validation sub-layer - IValidationProvider + Validated<T> proof + per-DTO validators - refs Model + Tools(contracts)
 │
 ├─ Gert.Storage/              # storage CONTRACTS - references Model only (service may reference it)
 │  ├─ IObjectStore.cs         # the artifact-store port the service layer drives (blobs + footprint scan)
@@ -154,22 +153,24 @@ Gert.sln
 │  ├─ OpenAIChatModelClientBuilder.cs / ChatProviderParameters.cs  # the plugin (keyed by Type) + its sampling
 │  └─ ServiceCollectionExtensions.cs  # AddGertChatOpenAI(cfg): the keyed builder + per-provider transports
 │
-├─ Gert.Tools/                # tool backends + built-in tools adapter - references Service, Database, Model
-│  ├─ Builtin/                #   the 12 built-in ITool impls (rag, search, sandbox, fetch, todo, clock, artifact suite, ask_user, memory, sub_agent)
-│  ├─ Fetch/                  #   SSRF-guarded fetcher + the web_fetch IWebFetcher port (security F5)
+├─ Gert.Tools/                # tool CONTRACTS - ITool/ToolRegistry/ToolResult/ToolInvocation + the IWebSearch/IWebFetcher/IPythonSandbox ports - references Model only
+│
+├─ Gert.Tools.Builtin/        # built-in tools + search/sandbox/fetch impl leaf - refs Tools(contracts), Service, Database, Rag, Model, Chat
+│  ├─ Builtin/                #   the 12 built-in ITool impls (rag, search, sandbox, fetch, todo, clock, artifact suite, ask_user, memory, sub_agent) + the BuiltInToolIds census
+│  ├─ Fetch/                  #   SSRF-guarded fetcher + the web_fetch IWebFetcher impl (security F5)
 │  ├─ Search/                 #   IWebSearch keyed-plugin selector (WebSearchFactory, Gert:Tools:Search:Type)
 │  │  └─ SearXNG/             #     the SearXNG plugin leaf - AddGertSearchSearXNG (keyed by Type)
 │  ├─ Sandbox/                #   IPythonSandbox keyed-plugin selector (PythonSandboxFactory, Gert:Tools:Sandbox:Type)
 │  │  ├─ Monty/               #     the monty sidecar plugin leaf (default) - AddGertSandboxMonty
 │  │  └─ GVisor/              #     the gVisor (runsc) plugin leaf - AddGertSandboxGVisor
-│  └─ ServiceCollectionExtensions.cs  # AddGertTools(cfg): the generic search/sandbox selectors + fetch + AddBuiltinTools (no impl)
+│  └─ ServiceCollectionExtensions.cs  # AddGertTools(cfg): generic search/sandbox selectors + fetch + AddBuiltinTools (id-only ToolRegistry + the impls)
 │
 ├─ Gert.Ingestion/            # text-extractor adapter - references Service, Model
 │  ├─ PlainText/              #   PlainTextExtractor - the md/txt ITextExtractor leaf
 │  ├─ Subprocess/             #   IsolatedTextExtractor - unprivileged subprocess for PDF/DOCX parsing (security F7)
 │  └─ ServiceCollectionExtensions.cs  # AddGertIngestion(cfg): both keyed ITextExtractor leaves (md/txt + pdf/docx)
 │
-├─ Gert.Api/                  # HTTP host - refs Service, Authentication, Database.Sqlite, Storage(+Local), Chat(+OpenAI), Tools, Ingestion
+├─ Gert.Api/                  # HTTP host - refs Service, Authentication, Database.Sqlite, Storage(+Local), Chat(+OpenAI), Tools.Builtin, Ingestion
 │  ├─ Program.cs              # DI, JwtBearer, static files + SPA fallback, SSE, BackgroundService
 │  ├─ appsettings.json        # NON-secret defaults only: vLLM/SearXNG URLs, embedding dim, DataRoot,
 │  │                          #   Auth. Keys/secrets come from env / user-secrets / a secret store
@@ -185,11 +186,12 @@ Gert.sln
 │
 ├─ tests/                     # test projects - see docs/design/testing.md
 │  ├─ Gert.Testing/           #   shared infra: fakes (vLLM/SearXNG/sandbox), GertApiFactory, JWT mint
-│  ├─ Gert.Service.Tests/     #   whitebox: tool loop + turn orchestration, ingestion pipeline, validation
+│  ├─ Gert.Service.Tests/     #   whitebox: tool loop + turn orchestration, ingestion pipeline
+│  ├─ Gert.Validation.Tests/  #   fail-closed meta-test + per-DTO validator units + adversarial corpus
 │  ├─ Gert.Database.Sqlite.Tests/ # repositories vs real temp SQLite (vec0 + FTS5); isolation
 │  ├─ Gert.Authentication.Tests/  # JWT claims -> IUserContext; sub->key; RS256 pin
 │  ├─ Gert.Chat.Tests/        #   chat/embeddings adapter units: OpenAI client, catalog, Polly wiring
-│  ├─ Gert.Tools.Tests/       #   tool adapter units: built-in tools, SSRF guard, sandbox args, backend selection
+│  ├─ Gert.Tools.Builtin.Tests/ # tool adapter units: built-in tools, SSRF guard, sandbox args, backend selection
 │  ├─ Gert.Ingestion.Tests/   #   extractor hardening units (XXE, zip-bomb, helper output)
 │  ├─ Gert.Api.Tests/         #   integration (WebApplicationFactory): SSE, auth, IDOR, admin, SPA fallback
 │  ├─ Gert.Web.Bundle.Tests/  #   web toolchain: pinned esbuild + tsgo manifests, SHA-512 verifier, index.html repoint

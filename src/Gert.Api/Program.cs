@@ -9,14 +9,14 @@ using Gert.Chat.OpenAI;
 using Gert.Database;
 using Gert.Database.Sqlite;
 using Gert.Ingestion;
+using Gert.Model.Documents;
 using Gert.Rag;
 using Gert.Rag.Sqlite;
 using Gert.Service;
 using Gert.Service.Chat;
 using Gert.Service.Ingestion;
-using Gert.Service.Observability;
 using Gert.Storage.Local;
-using Gert.Tools;
+using Gert.Tools.Builtin;
 using Gert.Tools.Sandbox.GVisor;
 using Gert.Tools.Sandbox.Monty;
 using Gert.Tools.Search.SearXNG;
@@ -52,7 +52,7 @@ builder.Host.UseDefaultServiceProvider(options =>
 // uploads get the authoritative, branded 400 - not a bare Kestrel 413.
 builder.WebHost.ConfigureKestrel(kestrel =>
     kestrel.Limits.MaxRequestBodySize =
-        Gert.Service.Validation.UploadConstraints.MaxSizeBytes + 1_048_576);
+        Gert.Validation.UploadConstraints.MaxSizeBytes + 1_048_576);
 
 // Bounded shutdown.
 // Open SSE streams end themselves on ApplicationStopping (the stream endpoint
@@ -123,10 +123,10 @@ builder.Services.AddOptions<Gert.Service.Chat.TurnOptions>()
     .Validate(o => o.MaxConcurrentTurns >= 1, "Gert:Turn:MaxConcurrentTurns must be >= 1")
     .ValidateOnStart();
 
-// AddGertServices registers the id-only ToolRegistry singleton the auth + validation
-// layers use for entitlement/toggle id checks (auth.md section tool entitlements). The
-// built-in tool implementations (rag/search/sandbox/...) are registered as scoped ITool
-// by the Gert.Tools adapter's AddBuiltinTools (called from AddGertTools below); the
+// The Gert.Tools.Builtin adapter's AddBuiltinTools (called from AddGertTools below) registers
+// both the id-only ToolRegistry singleton the auth + validation layers use for entitlement/toggle
+// id checks (auth.md section tool entitlements) AND the built-in tool implementations
+// (rag/search/sandbox/...) as scoped ITool; the
 // orchestrator resolves the tool instances via IEnumerable<ITool>. The external ports
 // each tool needs (IChatModelClient / IEmbeddingClient / IWebSearch / IPythonSandbox)
 // are registered by the Gert.Chat/Tools/Ingestion adapters (or a Testing host's fakes).
@@ -265,10 +265,6 @@ builder.Services.AddGertDatabaseSqlite(builder.Configuration);
 builder.Services.AddGertRag(builder.Configuration);
 builder.Services.AddGertRagSqlite(builder.Configuration);
 builder.Services.AddGertStorageLocal(builder.Configuration);
-
-// Forward-recovery for the deletion saga: on startup, finish any account deletion a previous
-// run left interrupted (the deletion journal + the idempotent eraser are wired above).
-builder.Services.AddHostedService<Gert.Api.Lifecycle.DeletionRecoveryService>();
 
 // External-world ports.
 // One AddGert* per functionality (dotnet-style-guide.md section 4). Chat is split into the

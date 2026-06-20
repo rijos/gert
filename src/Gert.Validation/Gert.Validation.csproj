@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- The fail-closed validation sub-layer (principles.md #6, security.md F6): the
+       IValidationProvider port + FluentValidation-backed provider, the Validated<T> proof,
+       and a validator for every request DTO. Depends only on Gert.Model (the DTOs) and
+       Gert.Tools (ToolRegistry, for ToolTogglesValidator) - never on Gert.Service, so the
+       service layer can reference it as an inward sub-layer. -->
+  <ItemGroup>
+    <ProjectReference Include="..\Gert.Model\Gert.Model.csproj" />
+    <ProjectReference Include="..\Gert.Tools\Gert.Tools.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The fail-closed FluentValidation provider + per-DTO validators (principle #6, security F6). -->
+    <PackageReference Include="FluentValidation"
+                      Version="$(FluentValidationVersion)" />
+    <PackageReference Include="FluentValidation.DependencyInjectionExtensions"
+                      Version="$(FluentValidationDIVersion)" />
+    <!-- AddGertValidation registers the provider + validators and resolves IValidator<T>. -->
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions"
+                      Version="$(MicrosoftExtensionsDIAbstractionsVersion)" />
+  </ItemGroup>
+
+</Project>

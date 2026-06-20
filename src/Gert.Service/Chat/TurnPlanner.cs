@@ -3,8 +3,8 @@ using Gert.Database;
 using Gert.Model;
 using Gert.Model.Chat;
 using Gert.Model.Dtos;
-using Gert.Service.Tools;
-using Gert.Service.Validation;
+using Gert.Tools;
+using Gert.Validation;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -205,7 +205,7 @@ public sealed class TurnPlanner : ITurnPlanner
 
         // 6.5 Cross-turn state revival: the history above is role+content only, so
         // state a tool set in an earlier turn has already vanished from the prompt.
-        // Every offered tool that implements ITailReminder gets its newest accepted
+        // Every offered tool that implements IToolReminder gets its newest accepted
         // result snapshot and decides whether to re-inject it; any reminder it returns
         // rides at the TAIL of the rendered prompt (appended to the new user message)
         // - never the system prompt, whose bytes must stay stable for the vLLM prefix
@@ -214,7 +214,7 @@ public sealed class TurnPlanner : ITurnPlanner
         // turn (the todo list is the one reviver today).
         foreach (var tool in offered)
         {
-            if (tool is not ITailReminder reviver)
+            if (tool is not IToolReminder reviver)
             {
                 continue;
             }
@@ -338,7 +338,7 @@ public sealed class TurnPlanner : ITurnPlanner
 
     /// <summary>
     /// The <c>ResponseJson</c> of a tool's newest accepted (<c>done</c>) call, or
-    /// null when there is none. The raw snapshot a <see cref="ITailReminder"/> turns
+    /// null when there is none. The raw snapshot a <see cref="IToolReminder"/> turns
     /// into a reminder - the planner reads it; the tool interprets it. Best-effort:
     /// any read failure means "no snapshot", never a failed turn.
     /// </summary>
@@ -369,7 +369,7 @@ public sealed class TurnPlanner : ITurnPlanner
     /// contracts that implementations don't throw, but a parse bug must never fail
     /// the turn - so the planner guards the call too.
     /// </summary>
-    private static string? TryBuildTailReminder(ITailReminder reviver, string? snapshot)
+    private static string? TryBuildTailReminder(IToolReminder reviver, string? snapshot)
     {
         try
         {

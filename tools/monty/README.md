@@ -5,7 +5,7 @@ minimal Python interpreter written in Rust, with **no syscalls** (no filesystem,
 or env access exist in the language) - as Gert's `run_python` sandbox backend.
 
 It speaks the contract the .NET `MontySandbox` adapter
-([src/Gert.Tools/Sandbox/Monty/MontySandbox.cs](../../src/Gert.Tools/Sandbox/Monty/MontySandbox.cs))
+([src/Gert.Tools.Builtin/Sandbox/Monty/MontySandbox.cs](../../src/Gert.Tools.Builtin/Sandbox/Monty/MontySandbox.cs))
 calls:
 
 ```

@@ -195,7 +195,8 @@ A crash between steps would leave a partial state, worst case **blobs (PII) left
     `users/`**, so the user-tree wipe never takes it and it never shows up in the admin scan. It
     holds only opaque, transient folder keys (no user data), so it is operational recovery state,
     not a central user registry - [principle #1](principles.md) still holds.
-  - **Who replays it:** the `DeletionRecoveryService` hosted task on **startup** (covers a process
+  - **Who replays it:** the `DeletionRecoveryService` hosted task (a service-layer concern,
+    registered by `AddGertServices`) on **startup** (covers a process
     crash/restart) and the request-edge **provisioner gate** (covers a returning user whose
     self-service delete was interrupted - it finishes the erase *before* re-provisioning, so a
     fresh empty account never inherits stale residue). Both just re-run the eraser.

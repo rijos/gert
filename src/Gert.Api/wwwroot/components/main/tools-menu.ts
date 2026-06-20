@@ -1,53 +1,64 @@
-// components/main/tools-menu.js - composer dropdown of tool toggles (Search /
-// Sandbox / Todos / Clock) plus "Use my docs" (the rag tool -
-// chat-and-tools.md: off removes search_documents for that turn). Replaces
-// the top-bar chips to keep the top bar quiet. Reflects state/chat.tools;
-// rows toggle in place (the menu stays open).
-// Tool rows go inert when the selected model can't call tools (the server
-// drops them anyway - IModelCatalog gates the turn planner; this mirrors it).
+// components/main/tools-menu.js - composer popup of tool toggles, driven by the
+// server's entitlement catalog (GET /api/tools -> state/tools.availableTools).
+// The rows ARE the tools this user may use; the per-conversation on/off toggles
+// stay in state/chat.tools (persisted via ToolToggles). Two groupings are derived
+// client-side, NOT from a hardcoded list:
+//   - Canvas: the make/edit/read_artifact trio collapses to ONE switch
+//     (chat.canvasOn/toggleCanvas) - shown when any of the three is entitled.
+//   - "Use my docs": the rag tool, pinned to its own bordered section.
+// Other rows get a friendly client-side label keyed by id (the labels the old
+// hardcoded menu carried); a tool with no mapped label falls back to its
+// model-facing name. The endpoint's `name` is model-facing, so labels live here.
+// Rows go inert when the selected model can't call tools (the server drops them
+// anyway - this mirrors the turn-planner gate).
 import van from "/lib/van.js";
 import { component } from "../../lib/component.js";
 import { Icon } from "../../icons/icons.js";
 import { Menu } from "../ui/menu.js";
 import * as chat from "../../state/chat.js";
 import type { ToolId } from "../../state/chat.js";
+import * as toolsState from "../../state/tools.js";
 import * as models from "../../state/models.js";
 import { t } from "../../lib/i18n.js";
 
 const { div, button, span } = van.tags;
 
-interface ToolDef {
-  id: ToolId;
-  label: string;
-}
-const TOOLS: ToolDef[] = [
-  { id: "search", label: t("Search") },
-  { id: "fetch", label: t("Fetch pages") },
-  { id: "sandbox", label: t("Run Python") },
-  { id: "todo", label: t("Todos") },
-  { id: "clock", label: t("Clock") },
-  { id: "ask_user", label: t("Ask me") },
-  { id: "memory", label: t("Save memories") },
-  { id: "sub_agent", label: t("Sub-agents") },
-];
+// The artifact trio shown/toggled as one "Canvas" switch (state/chat.CANVAS_TOOL_IDS).
+const CANVAS_IDS = new Set<string>(chat.CANVAS_TOOL_IDS);
 
-// One toggle row in the menu, as a single <button role="switch"> so it is keyboard-operable
-// (WCAG 2.1.1) and exposes its state via aria-checked (4.1.2) - the knob is presentational.
-// Inert (greyed, no toggle) when the selected model can't call tools. Closes over the shared
-// chat/models state only - no instance state - so it lives at module scope rather than per-render.
-const ToolRow = ({ id, label }: ToolDef) =>
+// Friendly labels keyed by tool id - the names the old hardcoded menu used. A tool
+// with no entry here falls back to its model-facing `name` from the catalog.
+const LABELS: Record<string, string> = {
+  search: t("Search"),
+  fetch: t("Fetch pages"),
+  sandbox: t("Run Python"),
+  todo: t("Todos"),
+  clock: t("Clock"),
+  ask_user: t("Ask me"),
+  memory: t("Save memories"),
+  sub_agent: t("Sub-agents"),
+};
+
+// The entitled NON-special tools (everything except rag + the canvas trio): the
+// plain switch rows. Stable order = the catalog's (the endpoint sorts by id).
+const standardRows = () =>
+  toolsState.availableTools.filter((tool) => tool.id !== "rag" && !CANVAS_IDS.has(tool.id));
+
+// One toggle row as a single <button role="switch"> so it is keyboard-operable (WCAG 2.1.1) and
+// exposes its state via aria-checked (4.1.2) - the knob is presentational. Inert (greyed, no
+// toggle) when the selected model can't call tools. `id` is the catalog id; `label`/`title` are
+// the client-side friendly text. Closes over shared state only, so it lives at module scope.
+const ToolRow = (id: string, label: string, title: string) =>
   button(
     {
       class: () => "t-row" + (models.selectedSupportsTools.val ? "" : " disabled"),
       type: "button",
       role: "switch",
-      "aria-checked": () => String(!!chat.tools[id]),
+      "aria-checked": () => String(!!chat.tools[id as ToolId]),
       "aria-disabled": () => String(!models.selectedSupportsTools.val),
-      onclick: () => models.selectedSupportsTools.val && chat.toggleTool(id),
+      onclick: () => models.selectedSupportsTools.val && chat.toggleTool(id as ToolId),
       title: () =>
-        models.selectedSupportsTools.val
-          ? label + " tool"
-          : "This model doesn't support tool calling",
+        models.selectedSupportsTools.val ? title : "This model doesn't support tool calling",
     },
     span({ class: "t-label" }, label),
     span({ class: "t-knob", "aria-hidden": "true" }),
@@ -163,6 +174,12 @@ export const ToolsMenu = component({
       margin-top: 5px;
       padding-top: 5px;
     }
+    /* an empty catalog (no entitled tools) still owns a quiet line, never a blank menu */
+    .t-empty {
+      padding: var(--sp-2) var(--sp-3);
+      color: var(--ink-3);
+      font-size: var(--fs-sm);
+    }
   `,
   setup: () => {
     const open = van.state(false);
@@ -170,14 +187,18 @@ export const ToolsMenu = component({
       e.stopPropagation();
       open.val = !open.val;
     };
+    // Has the catalog granted any of the artifact trio? -> the Canvas row is offered.
+    const canvasEntitled = () => toolsState.availableTools.some((tool) => CANVAS_IDS.has(tool.id));
+    const ragEntitled = () => toolsState.availableTools.some((tool) => tool.id === "rag");
+    // Active = on AND entitled (a stale toggle for a now-ungranted tool doesn't count).
     const active = () =>
-      TOOLS.filter((t) => chat.tools[t.id]).length +
-      (chat.canvasOn() ? 1 : 0) +
-      (chat.tools.rag ? 1 : 0); // "Use my docs" - the rag row below
-    return { open, toggle, active };
+      standardRows().filter((tool) => chat.tools[tool.id as ToolId]).length +
+      (canvasEntitled() && chat.canvasOn() ? 1 : 0) +
+      (ragEntitled() && chat.tools.rag ? 1 : 0);
+    return { open, toggle, active, canvasEntitled, ragEntitled };
   },
-  view: ({ open, toggle, active }) => {
-    const trigger = button({ class: () => "cbtn toggle" + (active() ? " on" : ""), type: "button", "aria-haspopup": "true", "aria-expanded": () => String(open.val), onclick: toggle },
+  view: ({ open, toggle, active, canvasEntitled, ragEntitled }) => {
+    const trigger = button({ class: () => "cbtn toggle" + (active() ? " on" : ""), type: "button", "aria-haspopup": "true", "aria-expanded": () => String(open.val), "aria-label": t("Tools"), onclick: toggle },
       Icon("gear", { size: 14, strokeWidth: 2 }),
       t("Tools"),
       () => (active() ? span({ class: "tcount" }, String(active())) : span()),
@@ -190,33 +211,52 @@ export const ToolsMenu = component({
       trigger,
       children: [
         div({ class: "menu-h" }, t("Tools")),
-        ...TOOLS.map(ToolRow),
-        // Canvas suite (make/edit/read artifact) - one switch for the trio.
-        button(
-          {
-            class: () => "t-row" + (models.selectedSupportsTools.val ? "" : " disabled"),
-            type: "button",
-            role: "switch",
-            "aria-checked": () => String(chat.canvasOn()),
-            "aria-disabled": () => String(!models.selectedSupportsTools.val),
-            onclick: () => models.selectedSupportsTools.val && chat.toggleCanvas(),
-            title: () =>
-              models.selectedSupportsTools.val
-                ? "Let the model create and edit files in the canvas"
-                : "This model doesn't support tool calling",
-          },
-          span({ class: "t-label" }, t("Canvas")),
-          span({ class: "t-knob", "aria-hidden": "true" }),
-        ),
-        div({ class: "t-docs-wrap" },
-          // "Use my docs" IS the rag tool - off removes search_documents for
-          // the turn (chat-and-tools.md).
-          button({ class: () => "t-row t-docs" + (chat.tools.rag ? " on" : ""), type: "button", role: "switch", "aria-checked": () => String(!!chat.tools.rag), onclick: () => chat.toggleTool("rag"), title: "Ground replies in your uploaded documents" },
-            Icon("file", { size: 14, strokeWidth: 2 }),
-            span({ class: "t-label" }, t("Use my docs")),
-            span({ class: "t-knob", "aria-hidden": "true" }),
+        // The catalog drives the rows; () => reactively rebuilds when it (or the
+        // entitlement) loads. A standard row's label is the friendly id mapping,
+        // else the tool's model-facing name; the title is the description.
+        () =>
+          div(
+            ...standardRows().map((tool) =>
+              ToolRow(tool.id, LABELS[tool.id] ?? tool.name, tool.description || (LABELS[tool.id] ?? tool.name)),
+            ),
+            // Canvas suite (make/edit/read artifact) - one switch for the trio,
+            // shown only when at least one of the three is entitled.
+            canvasEntitled()
+              ? button(
+                  {
+                    class: () => "t-row" + (models.selectedSupportsTools.val ? "" : " disabled"),
+                    type: "button",
+                    role: "switch",
+                    "aria-checked": () => String(chat.canvasOn()),
+                    "aria-disabled": () => String(!models.selectedSupportsTools.val),
+                    onclick: () => models.selectedSupportsTools.val && chat.toggleCanvas(),
+                    title: () =>
+                      models.selectedSupportsTools.val
+                        ? "Let the model create and edit files in the canvas"
+                        : "This model doesn't support tool calling",
+                  },
+                  span({ class: "t-label" }, t("Canvas")),
+                  span({ class: "t-knob", "aria-hidden": "true" }),
+                )
+              : span(),
+            // No standard rows, no canvas, no rag -> the user is entitled to nothing.
+            standardRows().length === 0 && !canvasEntitled() && !ragEntitled()
+              ? div({ class: "t-empty" }, t("No tools available"))
+              : span(),
           ),
-        ),
+        // "Use my docs" IS the rag tool - off removes search_documents for the
+        // turn (chat-and-tools.md). Pinned to its own bordered section, shown
+        // only when rag is entitled.
+        () =>
+          ragEntitled()
+            ? div({ class: "t-docs-wrap" },
+                button({ class: () => "t-row t-docs" + (chat.tools.rag ? " on" : ""), type: "button", role: "switch", "aria-checked": () => String(!!chat.tools.rag), onclick: () => chat.toggleTool("rag"), title: "Ground replies in your uploaded documents" },
+                  Icon("file", { size: 14, strokeWidth: 2 }),
+                  span({ class: "t-label" }, t("Use my docs")),
+                  span({ class: "t-knob", "aria-hidden": "true" }),
+                ),
+              )
+            : span(),
       ],
     });
   },

@@ -6,11 +6,10 @@ using Gert.Model.Chat;
 using Gert.Model.Dtos;
 using Gert.Rag;
 using Gert.Service.Chat;
-using Gert.Service.External;
-using Gert.Service.Tools;
-using Gert.Service.Validation;
 using Gert.Testing.Fakes;
+using Gert.Tools;
 using Gert.Tools.Builtin;
+using Gert.Validation;
 using Microsoft.Extensions.Options;
 using NSubstitute;
 using Xunit;
@@ -228,7 +227,7 @@ public sealed class TurnPlannerTests
         // flips it ON mid-conversation. Without the Tools write-back the stale
         // conversation set vetoed the request forever (requested AND enabled).
         var user = new TestUserContext { AllowedTools = new HashSet<string>(["sandbox"], StringComparer.Ordinal) };
-        var sandbox = new PythonSandboxTool(new StubPythonSandbox());
+        var sandbox = new PythonSandboxTool(Gert.Testing.Proof.Validation, new StubPythonSandbox());
         SeedConversation(("sandbox", false));
 
         var request = new SendMessageRequest
@@ -423,7 +422,7 @@ public sealed class TurnPlannerTests
             Tools = new ToolToggles(new Dictionary<string, bool> { ["todo"] = true }),
         };
 
-        var job = await NewPlanner(user, [new TodoTool()]).PlanAsync(Pid, Conv, Valid(request));
+        var job = await NewPlanner(user, [new TodoTool(Gert.Testing.Proof.Validation)]).PlanAsync(Pid, Conv, Valid(request));
 
         // The reminder rides at the TAIL of the rendered prompt; prior history
         // keeps its exact bytes (prefix cache) and the persisted user row keeps
@@ -446,7 +445,7 @@ public sealed class TurnPlannerTests
             Tools = new ToolToggles(new Dictionary<string, bool> { ["todo"] = true }),
         };
 
-        var job = await NewPlanner(user, [new TodoTool()]).PlanAsync(Pid, Conv, Valid(request));
+        var job = await NewPlanner(user, [new TodoTool(Gert.Testing.Proof.Validation)]).PlanAsync(Pid, Conv, Valid(request));
 
         // A finished list needs no revival - no prompt tokens spent on it.
         job.History[^1].Content.Should().Be("thanks!");
@@ -468,7 +467,7 @@ public sealed class TurnPlannerTests
             Tools = new ToolToggles(new Dictionary<string, bool> { ["todo"] = false }),
         };
 
-        var job = await NewPlanner(user, [new TodoTool()]).PlanAsync(Pid, Conv, Valid(request));
+        var job = await NewPlanner(user, [new TodoTool(Gert.Testing.Proof.Validation)]).PlanAsync(Pid, Conv, Valid(request));
 
         job.History[^1].Content.Should().Be("continue");
     }
@@ -487,16 +486,16 @@ public sealed class TurnPlannerTests
             Tools = new ToolToggles(new Dictionary<string, bool> { ["todo"] = true }),
         };
 
-        var job = await NewPlanner(user, [new TodoTool()]).PlanAsync(Pid, Conv, Valid(request));
+        var job = await NewPlanner(user, [new TodoTool(Gert.Testing.Proof.Validation)]).PlanAsync(Pid, Conv, Valid(request));
 
         // Best-effort: the reminder is a nicety, never a turn-blocker.
         job.History[^1].Content.Should().Be("continue");
     }
 
     [Fact]
-    public async Task Any_offered_ITailReminder_tool_is_revived_not_just_todo()
+    public async Task Any_offered_IToolReminder_tool_is_revived_not_just_todo()
     {
-        // The mechanism is generic: a non-todo tool that implements ITailReminder
+        // The mechanism is generic: a non-todo tool that implements IToolReminder
         // gets its snapshot and its reminder appended at the tail, exactly like the
         // todo list - the planner has no per-tool branch.
         var user = new TestUserContext { AllowedTools = new HashSet<string>(["stub"], StringComparer.Ordinal) };
@@ -525,10 +524,10 @@ public sealed class TurnPlannerTests
 
     /// <summary>
     /// A non-todo tool that opts into cross-turn revival - proof the reminder path
-    /// keys off the <see cref="ITailReminder"/> interface, not a hard-coded tool id.
+    /// keys off the <see cref="IToolReminder"/> interface, not a hard-coded tool id.
     /// Echoes its snapshot verbatim so the test can assert exact tail placement.
     /// </summary>
-    private sealed class StubRevivableTool : ITool, ITailReminder
+    private sealed class StubRevivableTool : ITool, IToolReminder
     {
         public string Id => "stub";
 
@@ -551,8 +550,8 @@ public sealed class TurnPlannerTests
     public async Task Entitlement_ceiling_filters_unentitled_tools_and_snapshots_the_claim()
     {
         var user = new TestUserContext { AllowedTools = new HashSet<string>(["rag"], StringComparer.Ordinal) };
-        var rag = new RagTool(_ragProvider, new FakeEmbeddings(), user);
-        var sandbox = new PythonSandboxTool(new StubPythonSandbox());
+        var rag = new RagTool(Gert.Testing.Proof.Validation, _ragProvider, new FakeEmbeddings(), user);
+        var sandbox = new PythonSandboxTool(Gert.Testing.Proof.Validation, new StubPythonSandbox());
         SeedConversation(("rag", true), ("sandbox", true));
 
         var request = new SendMessageRequest
@@ -577,7 +576,7 @@ public sealed class TurnPlannerTests
     public async Task Model_without_tool_capability_is_offered_no_tools()
     {
         var user = new TestUserContext { AllowedTools = new HashSet<string>(["rag"], StringComparer.Ordinal) };
-        var rag = new RagTool(_ragProvider, new FakeEmbeddings(), user);
+        var rag = new RagTool(Gert.Testing.Proof.Validation, _ragProvider, new FakeEmbeddings(), user);
         SeedConversation(("rag", true));
 
         var catalog = Substitute.For<IChatProviderCatalog>();

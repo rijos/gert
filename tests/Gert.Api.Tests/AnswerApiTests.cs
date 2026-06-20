@@ -38,11 +38,14 @@ public sealed class AnswerApiTests : IClassFixture<GertApiFactory>
     private TurnKey KeyFor(string sub, string conversationId) =>
         new(_factory.Tokens.Issuer, sub, "default", conversationId);
 
-    private static StringContent Body(string questionId, string answer) =>
+    private static StringContent Body(string questionId, params string[] answers) =>
         new(
-            $$"""{"question_id":"{{questionId}}","answer":"{{answer}}"}""",
+            $$"""{"question_id":"{{questionId}}","answers":[{{string.Join(",", answers.Select(a => $"\"{a}\""))}}]}""",
             Encoding.UTF8,
             "application/json");
+
+    private static QuestionPayload OneQuestion(IReadOnlyList<string> options, bool allowFreeText) =>
+        new([new QuestionItem("Which color?", null, options, allowFreeText)]);
 
     [Fact]
     public async Task Answer_requires_authentication()
@@ -73,7 +76,7 @@ public sealed class AnswerApiTests : IClassFixture<GertApiFactory>
     {
         using var pending = Registry.Open(
             KeyFor(_sub, "conv-live"),
-            new QuestionPayload("Which color?", ["red", "blue"], AllowFreeText: false));
+            OneQuestion(["red", "blue"], allowFreeText: false));
         var wait = pending.WaitAsync(TimeSpan.FromSeconds(30), CancellationToken.None);
         var client = Authed();
 
@@ -82,7 +85,7 @@ public sealed class AnswerApiTests : IClassFixture<GertApiFactory>
             Body(pending.QuestionId, "blue"));
 
         response.StatusCode.Should().Be(HttpStatusCode.Accepted);
-        (await wait).Should().Be("blue");
+        (await wait).Should().Equal("blue");
     }
 
     [Fact]
@@ -90,7 +93,7 @@ public sealed class AnswerApiTests : IClassFixture<GertApiFactory>
     {
         using var pending = Registry.Open(
             KeyFor(_sub, "conv-closed"),
-            new QuestionPayload("Which color?", ["red", "blue"], AllowFreeText: false));
+            OneQuestion(["red", "blue"], allowFreeText: false));
         var wait = pending.WaitAsync(TimeSpan.FromSeconds(30), CancellationToken.None);
         var client = Authed();
 
@@ -105,7 +108,7 @@ public sealed class AnswerApiTests : IClassFixture<GertApiFactory>
             "/api/projects/default/conversations/conv-closed/answer",
             Body(pending.QuestionId, "red"));
         accepted.StatusCode.Should().Be(HttpStatusCode.Accepted);
-        (await wait).Should().Be("red");
+        (await wait).Should().Equal("red");
     }
 
     [Fact]
@@ -113,7 +116,7 @@ public sealed class AnswerApiTests : IClassFixture<GertApiFactory>
     {
         using var pending = Registry.Open(
             KeyFor(_sub, "conv-stale"),
-            new QuestionPayload("Which color?", [], AllowFreeText: true));
+            OneQuestion([], allowFreeText: true));
         var client = Authed();
 
         var response = await client.PostAsync(
@@ -131,7 +134,7 @@ public sealed class AnswerApiTests : IClassFixture<GertApiFactory>
         // and the caller sees the same 404 as none-pending (no oracle).
         using var foreign = Registry.Open(
             KeyFor("someone-else", "conv-shared-id"),
-            new QuestionPayload("Which color?", [], AllowFreeText: true));
+            OneQuestion([], allowFreeText: true));
         var wait = foreign.WaitAsync(TimeSpan.FromSeconds(1), CancellationToken.None);
         var client = Authed();
 
@@ -143,11 +146,42 @@ public sealed class AnswerApiTests : IClassFixture<GertApiFactory>
         (await wait).Should().BeNull("the foreign question must never receive this answer");
     }
 
+    [Fact]
+    public async Task A_count_mismatch_to_a_pending_question_is_400_and_keeps_it_pending()
+    {
+        // Two questions pend but the body carries one answer: a fail-closed
+        // count check in the registry refuses to mis-pair them.
+        using var pending = Registry.Open(
+            KeyFor(_sub, "conv-count"),
+            new QuestionPayload(
+            [
+                new QuestionItem("Which color?", null, ["red", "blue"], AllowFreeText: false),
+                new QuestionItem("Anything else?", null, [], AllowFreeText: true),
+            ]));
+        var wait = pending.WaitAsync(TimeSpan.FromSeconds(30), CancellationToken.None);
+        var client = Authed();
+
+        var refused = await client.PostAsync(
+            "/api/projects/default/conversations/conv-count/answer",
+            Body(pending.QuestionId, "blue"));
+
+        refused.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        // The question survives and still accepts the matching count.
+        var accepted = await client.PostAsync(
+            "/api/projects/default/conversations/conv-count/answer",
+            Body(pending.QuestionId, "blue", "no thanks"));
+        accepted.StatusCode.Should().Be(HttpStatusCode.Accepted);
+        (await wait).Should().Equal("blue", "no thanks");
+    }
+
     [Theory]
-    [InlineData("""{"question_id":"not-a-guid","answer":"blue"}""")]
-    [InlineData("""{"question_id":"5f0c6a1e-9d4b-4c7e-8f23-0a1b2c3d4e5f","answer":"   "}""")]
-    [InlineData("""{"question_id":"5f0c6a1e-9d4b-4c7e-8f23-0a1b2c3d4e5f","answer":"a\u0007b"}""")]
+    [InlineData("""{"question_id":"not-a-guid","answers":["blue"]}""")]
+    [InlineData("""{"question_id":"5f0c6a1e-9d4b-4c7e-8f23-0a1b2c3d4e5f","answers":["   "]}""")]
+    [InlineData("""{"question_id":"5f0c6a1e-9d4b-4c7e-8f23-0a1b2c3d4e5f","answers":["a\u0007b"]}""")]
     [InlineData("""{"question_id":"5f0c6a1e-9d4b-4c7e-8f23-0a1b2c3d4e5f"}""")]
+    [InlineData("""{"question_id":"5f0c6a1e-9d4b-4c7e-8f23-0a1b2c3d4e5f","answers":[]}""")]
+    [InlineData("""{"question_id":"5f0c6a1e-9d4b-4c7e-8f23-0a1b2c3d4e5f","answers":["a","b","c","d","e"]}""")]
     [InlineData("not json at all")]
     public async Task Malformed_bodies_are_rejected_with_400(string body)
     {

@@ -3,16 +3,25 @@
 import type { ToolCard as ToolCardRow } from "../../state/chat.js";
 import type { ToolKind } from "../../services/wire.js";
 
-// QuestionCard's reactive payload, folded onto an ask_user card by
-// services/chat.js. The card mutates `posting`/`expired` in place, so the fields
-// stay writable.
-export interface Question {
-  questionId: string;
+// One question (one tab) in a QuestionCard payload. `value` is the per-tab
+// answer collected before submit.
+export interface QuestionItem {
   text: string;
+  header: string;
   options: string[];
   allowFreeText: boolean;
+  value: string;
+}
+
+// QuestionCard's reactive payload, folded onto an ask_user card by
+// services/chat.js: one to four questions rendered as tabs, answered together.
+// The card mutates per-tab `value` plus `posting`/`answered`/`expired` in place,
+// so the fields stay writable.
+export interface Question {
+  questionId: string;
+  items: QuestionItem[];
   answered: boolean;
-  answer: string;
+  answers: string[];
   expired: boolean;
   posting: boolean;
 }

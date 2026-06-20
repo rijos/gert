@@ -9,6 +9,7 @@ import * as ui from "./state/ui.js";
 import * as chat from "./state/chat.js";
 import * as auth from "./services/auth.js";
 import * as modelsSvc from "./services/models.js";
+import * as toolsSvc from "./services/tools.js";
 import * as projectsSvc from "./services/projects.js";
 import * as conversationsSvc from "./services/conversations.js";
 
@@ -73,6 +74,9 @@ const boot = async () => {
 
   // fire-and-forget: services update state, views react
   modelsSvc.loadWithUserDefault().catch(() => {});
+  // The tool catalog is entitlement (token-scoped), like the model catalog - load
+  // it once at boot; the popup reacts when it lands.
+  toolsSvc.load().catch(() => {});
   projectsSvc.list().catch(() => {});
   conversationsSvc.list().catch(() => {});
 

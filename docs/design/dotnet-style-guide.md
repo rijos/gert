@@ -87,7 +87,7 @@ Where a new type goes (full map: [tech-stack section solution layout](tech-stack
   swallowed into a degraded result:
 
   ```csharp
-  // src/Gert.Tools/Builtin/PythonSandboxTool.cs
+  // src/Gert.Tools.Builtin/Builtin/PythonSandboxTool.cs
   catch (OperationCanceledException)
   {
       throw;

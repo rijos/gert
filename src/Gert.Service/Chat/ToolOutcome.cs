@@ -2,7 +2,7 @@ using System.Text.Json;
 using Gert.Model;
 using Gert.Model.Chat;
 using Gert.Model.Events;
-using Gert.Service.Tools;
+using Gert.Tools;
 
 namespace Gert.Service.Chat;
 

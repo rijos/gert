@@ -1,33 +1,33 @@
 using FluentAssertions;
 using Gert.Model.Dtos;
 using Gert.Service.Chat;
-using Gert.Service.Validation;
 using Gert.Testing;
+using Gert.Validation;
 using Xunit;
 
 namespace Gert.Service.Tests;
 
 /// <summary>
 /// The ask_user question registry (rest-api.md section answer a question): one
-/// pending question per turn, answer delivery with id/option enforcement,
-/// timeout/cancel sealing (a losing answer is NotFound, never silently
-/// dropped), tenant-key isolation, and the release semantics shared with
-/// <see cref="TurnCancellation"/>.
+/// pending (multi-)question per turn, answer delivery with id/count/option
+/// enforcement, timeout/cancel sealing (a losing answer is NotFound, never
+/// silently dropped), tenant-key isolation, and the release semantics shared
+/// with <see cref="TurnCancellation"/>.
 /// </summary>
 public sealed class TurnQuestionsTests
 {
     private static readonly TurnKey Key = new("https://idp.example", "sub-123", "default", "conv-1");
 
     private static readonly QuestionPayload OpenQuestion =
-        new("Which color?", [], AllowFreeText: true);
+        new([new QuestionItem("Which color?", null, [], AllowFreeText: true)]);
 
     private static readonly QuestionPayload ClosedQuestion =
-        new("Which color?", ["red", "blue"], AllowFreeText: false);
+        new([new QuestionItem("Which color?", null, ["red", "blue"], AllowFreeText: false)]);
 
     private readonly TurnQuestions _registry = new();
 
-    private static Validated<AnswerRequest> Reply(string questionId, string answer) =>
-        Proof.Of(new AnswerRequest { QuestionId = questionId, Answer = answer });
+    private static Validated<AnswerRequest> Reply(string questionId, params string[] answers) =>
+        Proof.Of(new AnswerRequest { QuestionId = questionId, Answers = answers });
 
     [Fact]
     public async Task An_answer_completes_the_wait_with_its_text()
@@ -38,7 +38,61 @@ public sealed class TurnQuestionsTests
         var outcome = _registry.Answer(Key, Reply(pending.QuestionId, "blue"));
 
         outcome.Should().Be(AnswerOutcome.Delivered);
-        (await wait).Should().Be("blue");
+        (await wait).Should().Equal("blue");
+    }
+
+    [Fact]
+    public async Task Several_questions_deliver_their_answers_in_order()
+    {
+        var payload = new QuestionPayload(
+        [
+            new QuestionItem("Which color?", "Color", ["red", "blue"], AllowFreeText: false),
+            new QuestionItem("Anything else?", "Notes", [], AllowFreeText: true),
+            new QuestionItem("Ship it?", "Ship", ["yes", "no"], AllowFreeText: true),
+        ]);
+        using var pending = _registry.Open(Key, payload);
+        var wait = pending.WaitAsync(TimeSpan.FromSeconds(30), CancellationToken.None);
+
+        _registry.Answer(Key, Reply(pending.QuestionId, "blue", "looks good", "later"))
+            .Should().Be(AnswerOutcome.Delivered);
+
+        (await wait).Should().Equal("blue", "looks good", "later");
+    }
+
+    [Fact]
+    public async Task A_wrong_answer_count_is_rejected()
+    {
+        var payload = new QuestionPayload(
+        [
+            new QuestionItem("Which color?", null, [], AllowFreeText: true),
+            new QuestionItem("Anything else?", null, [], AllowFreeText: true),
+        ]);
+        using var pending = _registry.Open(Key, payload);
+        var wait = pending.WaitAsync(TimeSpan.FromSeconds(30), CancellationToken.None);
+
+        // One answer for two questions: the registry will not mis-pair them.
+        _registry.Answer(Key, Reply(pending.QuestionId, "blue"))
+            .Should().Be(AnswerOutcome.InvalidOption);
+
+        // The pending question survives and still accepts the matching count.
+        _registry.Answer(Key, Reply(pending.QuestionId, "blue", "no"))
+            .Should().Be(AnswerOutcome.Delivered);
+        (await wait).Should().Equal("blue", "no");
+    }
+
+    [Fact]
+    public void A_closed_question_rejects_an_off_menu_answer_at_its_position()
+    {
+        var payload = new QuestionPayload(
+        [
+            new QuestionItem("Anything else?", null, [], AllowFreeText: true),
+            new QuestionItem("Which color?", null, ["red", "blue"], AllowFreeText: false),
+        ]);
+        using var pending = _registry.Open(Key, payload);
+
+        // The second answer is off-menu for the closed second question.
+        _registry.Answer(Key, Reply(pending.QuestionId, "whatever", "green"))
+            .Should().Be(AnswerOutcome.InvalidOption);
     }
 
     [Fact]
@@ -110,19 +164,19 @@ public sealed class TurnQuestionsTests
         // The pending question survives the rejected attempt.
         _registry.Answer(Key, Reply(pending.QuestionId, "red"))
             .Should().Be(AnswerOutcome.Delivered);
-        (await wait).Should().Be("red");
+        (await wait).Should().Equal("red");
     }
 
     [Fact]
     public async Task Free_text_is_accepted_alongside_options_when_allowed()
     {
         using var pending = _registry.Open(
-            Key, new QuestionPayload("Which color?", ["red", "blue"], AllowFreeText: true));
+            Key, new QuestionPayload([new QuestionItem("Which color?", null, ["red", "blue"], AllowFreeText: true)]));
         var wait = pending.WaitAsync(TimeSpan.FromSeconds(30), CancellationToken.None);
 
         _registry.Answer(Key, Reply(pending.QuestionId, "mauve"))
             .Should().Be(AnswerOutcome.Delivered);
-        (await wait).Should().Be("mauve");
+        (await wait).Should().Equal("mauve");
     }
 
     [Fact]
@@ -170,7 +224,7 @@ public sealed class TurnQuestionsTests
 
         _registry.Answer(Key, Reply(pending.QuestionId, "blue"))
             .Should().Be(AnswerOutcome.Delivered);
-        (await wait).Should().Be("blue");
+        (await wait).Should().Equal("blue");
 
         // Idempotency: the TCS already completed (the key may not be released
         // yet - the tool is still emitting question_answered).

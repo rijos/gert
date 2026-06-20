@@ -8,7 +8,7 @@ using Gert.Model.Chat;
 using Gert.Model.Events;
 using Gert.Model.Json;
 using Gert.Service.Chat.Bus;
-using Gert.Service.Tools;
+using Gert.Tools;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -746,12 +746,12 @@ public sealed class TurnRunner : ITurnRunner
         // The generic per-call backstop: tools carry their own tighter limits
         // (sandbox wall clock, search timeouts); this catches a hang outside
         // them. A trip fails THIS call with a visible card error - the turn
-        // token cancelling rethrows as before and ends the turn. Interactive
-        // tools (ask_user) are exempt - waiting on the user IS their job; their
-        // own Deadline math is the backstop and the turn lifetime token remains
-        // the hard wall.
+        // token cancelling rethrows as before and ends the turn. Modal tools
+        // (ask_user, sub_agent) are exempt - blocking/long-running IS their job;
+        // their own Deadline math is the backstop and the turn lifetime token
+        // remains the hard wall.
         using var callCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        if (_options.ToolCallTimeout > TimeSpan.Zero && tool is not IInteractiveTool)
+        if (_options.ToolCallTimeout > TimeSpan.Zero && tool.Type != ToolType.Modal)
         {
             callCts.CancelAfter(_options.ToolCallTimeout);
         }

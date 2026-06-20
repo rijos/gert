@@ -1,7 +1,7 @@
 using Gert.Chat;
-using Gert.Service.External;
 using Gert.Storage;
 using Gert.Testing.Fakes;
+using Gert.Tools;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;

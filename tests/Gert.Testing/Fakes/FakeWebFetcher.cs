@@ -1,6 +1,6 @@
 using Gert.Model;
 using Gert.Model.Tools;
-using Gert.Service.External;
+using Gert.Tools;
 
 namespace Gert.Testing.Fakes;
 

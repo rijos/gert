@@ -1,6 +1,6 @@
 using System.Collections.Concurrent;
 using Gert.Model.Dtos;
-using Gert.Service.Validation;
+using Gert.Validation;
 
 namespace Gert.Service.Chat;
 
@@ -53,18 +53,29 @@ public sealed class TurnQuestions : ITurnQuestions
             return AnswerOutcome.IdMismatch;
         }
 
-        var payload = pending.Payload;
-        if (!payload.AllowFreeText
-            && payload.Options.Count > 0
-            && !payload.Options.Contains(dto.Answer, StringComparer.Ordinal))
+        var questions = pending.Payload.Questions;
+        if (dto.Answers.Count != questions.Count)
         {
+            // One answer per question or the tool would mis-pair them - the
+            // validator caps the count, this enforces the match to the payload.
             return AnswerOutcome.InvalidOption;
+        }
+
+        for (var i = 0; i < questions.Count; i++)
+        {
+            var question = questions[i];
+            if (!question.AllowFreeText
+                && question.Options.Count > 0
+                && !question.Options.Contains(dto.Answers[i], StringComparer.Ordinal))
+            {
+                return AnswerOutcome.InvalidOption;
+            }
         }
 
         // TrySetResult loses to a sealed (timed-out / cancelled / disposed)
         // question - the benign race; the caller sees NotFound, never a 202
         // for an answer the tool will not read.
-        return pending.TryDeliver(dto.Answer)
+        return pending.TryDeliver(dto.Answers)
             ? AnswerOutcome.Delivered
             : AnswerOutcome.NotFound;
     }
@@ -80,7 +91,7 @@ public sealed class TurnQuestions : ITurnQuestions
     {
         private readonly TurnQuestions _owner;
         private readonly TurnKey _key;
-        private readonly TaskCompletionSource<string> _tcs =
+        private readonly TaskCompletionSource<IReadOnlyList<string>> _tcs =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         public Pending(TurnQuestions owner, TurnKey key, QuestionPayload payload)
@@ -95,9 +106,9 @@ public sealed class TurnQuestions : ITurnQuestions
 
         public QuestionPayload Payload { get; }
 
-        public bool TryDeliver(string answer) => _tcs.TrySetResult(answer);
+        public bool TryDeliver(IReadOnlyList<string> answers) => _tcs.TrySetResult(answers);
 
-        public async Task<string?> WaitAsync(TimeSpan timeout, CancellationToken token)
+        public async Task<IReadOnlyList<string>?> WaitAsync(TimeSpan timeout, CancellationToken token)
         {
             if (timeout < TimeSpan.Zero)
             {

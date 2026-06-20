@@ -1,5 +1,4 @@
 using Gert.Service;
-using Gert.Service.Observability;
 using Serilog.Context;
 
 namespace Gert.Api.Logging;

@@ -101,13 +101,6 @@ const GLYPHS: Record<string, () => Element[]> = {
     path({ d: "M4 19.5A2.5 2.5 0 0 1 6.5 17H20" }),
     path({ d: "M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" }),
   ],
-  expand: () => [
-    path({
-      d: "M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7",
-      "stroke-linecap": "round",
-      "stroke-linejoin": "round",
-    }),
-  ],
   upload: () => [
     path({
       d: "M12 16V4M7 9l5-5 5 5",

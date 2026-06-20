@@ -1,4 +1,4 @@
-// state/ui.js - scalar UI state: theme, nav/panel collapse, panel-wide,
+// state/ui.js - scalar UI state: theme, nav/panel collapse,
 // mobile drawers, active artifact tab / KB view. van.state only. No DOM, no I/O.
 // (Theme persists to localStorage - the token never does; see services/auth.js.)
 import van from "/lib/van.js";
@@ -45,8 +45,7 @@ export const setPanelWidth = (px: number) => {
 
 // layout flags (mirror the mockup's app classes)
 export const navCollapsed = van.state(false);
-export const panelCollapsed = van.state(false);
-export const panelWide = van.state(false);
+export const panelCollapsed = van.state(true); // pane starts closed; openArtifact reopens it on a live event
 export const navOpen = van.state(false); // mobile drawer
 export const panelOpen = van.state(false); // mobile drawer
 // true on non-chat routes (admin) - the canvas column folds away there
@@ -126,8 +125,6 @@ export const togglePanel = () => {
     panelOpen.val = !panelOpen.val;
   } else panelCollapsed.val = !panelCollapsed.val;
 };
-
-export const toggleWide = () => (panelWide.val = !panelWide.val);
 
 export const closeDrawers = () => {
   navOpen.val = false;

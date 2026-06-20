@@ -1,7 +1,7 @@
 using Gert.Database;
 using Gert.Model.Dtos;
 using Gert.Model.Projects;
-using Gert.Service.Validation;
+using Gert.Validation;
 
 namespace Gert.Service.Projects;
 

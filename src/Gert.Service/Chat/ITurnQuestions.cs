@@ -1,5 +1,5 @@
 using Gert.Model.Dtos;
-using Gert.Service.Validation;
+using Gert.Validation;
 
 namespace Gert.Service.Chat;
 
@@ -29,12 +29,13 @@ public interface ITurnQuestions
     IPendingQuestion Open(TurnKey key, QuestionPayload payload);
 
     /// <summary>
-    /// Deliver an answer to the pending question for <paramref name="key"/>.
-    /// <see cref="AnswerOutcome.NotFound"/> when none is pending (or it already
-    /// resolved), <see cref="AnswerOutcome.IdMismatch"/> for a stale/foreign
-    /// question id, <see cref="AnswerOutcome.InvalidOption"/> when the question
-    /// is closed (<c>allow_free_text=false</c>) and the answer is not one of
-    /// its options.
+    /// Deliver the answers to the pending question for <paramref name="key"/>
+    /// (one answer per question, in order). <see cref="AnswerOutcome.NotFound"/>
+    /// when none is pending (or it already resolved),
+    /// <see cref="AnswerOutcome.IdMismatch"/> for a stale/foreign question id,
+    /// <see cref="AnswerOutcome.InvalidOption"/> when the answer count does not
+    /// match the question count, or when a closed question
+    /// (<c>allow_free_text=false</c>) gets an answer outside its options.
     /// </summary>
     AnswerOutcome Answer(TurnKey key, Validated<AnswerRequest> request);
 }
@@ -48,23 +49,23 @@ public interface IPendingQuestion : IDisposable
     QuestionPayload Payload { get; }
 
     /// <summary>
-    /// Wait for the answer: the answer text, or null on timeout (the graceful
-    /// "user did not respond" path). Cancellation of <paramref name="token"/>
-    /// (user stop / shutdown / turn budget) throws
+    /// Wait for the answers: one answer per question (in question order), or
+    /// null on timeout (the graceful "user did not respond" path). Cancellation
+    /// of <paramref name="token"/> (user stop / shutdown / turn budget) throws
     /// <see cref="OperationCanceledException"/> - the runner's existing
     /// cancel/error finalize handles it. Timeout and cancellation both seal the
     /// question, so an answer losing the race lands as
     /// <see cref="AnswerOutcome.NotFound"/>, never silently dropped after the
     /// tool already reported no response.
     /// </summary>
-    Task<string?> WaitAsync(TimeSpan timeout, CancellationToken token);
+    Task<IReadOnlyList<string>?> WaitAsync(TimeSpan timeout, CancellationToken token);
 }
 
-/// <summary>The question as shown to the user (the <c>question_asked</c> payload).</summary>
-public sealed record QuestionPayload(
-    string Question,
-    IReadOnlyList<string> Options,
-    bool AllowFreeText);
+/// <summary>
+/// The questions as shown to the user (the <c>question_asked</c> payload): up to
+/// four questions answered together, rendered as tabs.
+/// </summary>
+public sealed record QuestionPayload(IReadOnlyList<QuestionItem> Questions);
 
 /// <summary>Outcome of <see cref="ITurnQuestions.Answer"/>.</summary>
 public enum AnswerOutcome

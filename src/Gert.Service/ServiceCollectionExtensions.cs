@@ -1,4 +1,3 @@
-using FluentValidation;
 using Gert.Model.Dtos;
 using Gert.Model.Projects;
 using Gert.Service.Account;
@@ -8,9 +7,7 @@ using Gert.Service.Conversations;
 using Gert.Service.Documents;
 using Gert.Service.Ingestion;
 using Gert.Service.Projects;
-using Gert.Service.Tools;
-using Gert.Service.Validation;
-using Gert.Service.Validation.Validators;
+using Gert.Validation;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -43,11 +40,11 @@ public static class ServiceCollectionExtensions
     {
         ArgumentNullException.ThrowIfNull(services);
 
-        // Validation seam -- the fail-closed FluentValidation-backed provider
-        // plus a validator for every request DTO a service accepts. A DTO with no
-        // registered IValidator<T> makes the provider throw (principle #6); the
-        // reflection meta-test keeps that throw unreachable in production.
-        AddValidation(services);
+        // Validation seam (principle #6) - the fail-closed provider + a validator for every
+        // request DTO a service accepts. Ships in Gert.Validation; a DTO with no registered
+        // IValidator<T> makes the provider throw, and the reflection meta-test keeps that throw
+        // unreachable in production.
+        services.AddGertValidation();
 
         // All service-layer time flows through the injected TimeProvider
         // (dotnet-style-guide.md section 5), so tests pin the instant. Singleton:
@@ -74,6 +71,11 @@ public static class ServiceCollectionExtensions
         // waiting turn always lives in this process, so the answer endpoint
         // can reach it here (chat-and-tools.md section Ask the user).
         services.TryAddSingleton<ITurnQuestions, TurnQuestions>();
+
+        // Forward-recovery for the deletion saga (storage-and-data.md section deletion): on
+        // startup, finish any account deletion a previous run left interrupted. Business
+        // orchestration over the journal + idempotent eraser, so it ships with the service layer.
+        services.AddHostedService<DeletionRecoveryService>();
         services.AddUserScoped<IConversationReader, ConversationReader>();
         services.AddUserScoped<IConversationStreamer, ConversationStreamer>();
         services.AddUserScoped<ITurnPlanner, TurnPlanner>();
@@ -108,10 +110,9 @@ public static class ServiceCollectionExtensions
         // The API host replaces it with a Channel-backed queue + BackgroundService (responds 202).
         AddIngestion(services);
 
-        // The built-in tool IMPLEMENTATIONS live in the Gert.Tools adapter (AddBuiltinTools,
-        // called by the host's AddGertTools). This layer keeps only the id-only ToolRegistry +
-        // BuiltInToolIds census (registered in AddValidation): they name capability ids, not
-        // impls. The orchestrator resolves the tool instances via IEnumerable<ITool>.
+        // The built-in tools (impls + the id-only ToolRegistry census) live in the
+        // Gert.Tools.Builtin adapter (AddBuiltinTools, called by the host's AddGertTools); the
+        // orchestrator resolves the tool instances via IEnumerable<ITool>.
 
         services.AddUserScoped<IGertServices, GertServices>();
 
@@ -139,16 +140,6 @@ public static class ServiceCollectionExtensions
         services.TryAddScoped<TService, TImpl>();
         return services;
     }
-
-    /// <summary>
-    /// The canonical capability ids of the built-in tools -- the id-only
-    /// <see cref="ToolRegistry"/> singleton is built from these, matching the
-    /// <see cref="ITool.Id"/> of each registered tool. Keep in sync with the
-    /// <c>AddBuiltinTools</c> registrations in the Gert.Tools adapter; the
-    /// <c>ToolRegistrationTests</c> set-equality guard fails if they drift.
-    /// </summary>
-    private static readonly string[] BuiltInToolIds =
-        ["rag", "search", "sandbox", "todo", "clock", "make_artifact", "edit_artifact", "read_artifact", "ask_user", "fetch", "memory", "sub_agent"];
 
     /// <summary>
     /// DI key for the per-type leaf <see cref="ITextExtractor"/>s the
@@ -182,54 +173,5 @@ public static class ServiceCollectionExtensions
         // The inline queue is infrastructure, not caller-bound: it just runs the pipeline
         // on the calling scope (the API host swaps it for a Channel-backed singleton).
         services.TryAddScoped<IIngestionQueue, InlineIngestionQueue>();
-    }
-
-    /// <summary>
-    /// Wire the fail-closed validation provider and register every validator.
-    /// Validators are registered <b>both</b> as their concrete type (so a parent
-    /// validator can take a child via constructor injection for <c>SetValidator</c>)
-    /// and as <c>IValidator&lt;T&gt;</c> (so <see cref="FluentValidationProvider"/>
-    /// resolves them and the meta-test can discover them). Validators are stateless,
-    /// so they are singletons.
-    /// </summary>
-    private static void AddValidation(IServiceCollection services)
-    {
-        services.TryAddScoped<IValidationProvider, FluentValidationProvider>();
-
-        // The tool validator + the entitlement resolver depend on the registry for
-        // id checks only (Contains / Normalize / AllIds), so it is an id-only
-        // singleton built from the registered tools' canonical ids - it never holds
-        // the per-request scoped tool instances (which the orchestrator resolves via
-        // IEnumerable<ITool>). Registered as a singleton so the singleton validators
-        // that take it are not captive-dependent on a scoped service.
-        services.TryAddSingleton(new ToolRegistry(BuiltInToolIds));
-
-        // Shared / nested validators - needed by concrete type for SetValidator.
-        AddValidator<ToolToggles, ToolTogglesValidator>(services);
-        AddValidator<ProjectDefaults, ProjectDefaultsValidator>(services);
-        AddValidator<Gert.Model.Chat.MessageAttachment, MessageAttachmentValidator>(services);
-
-        // Request DTOs every service method accepts.
-        AddValidator<SendMessageRequest, SendMessageRequestValidator>(services);
-        AddValidator<CreateConversationRequest, CreateConversationRequestValidator>(services);
-        AddValidator<UpdateConversationRequest, UpdateConversationRequestValidator>(services);
-        AddValidator<MoveConversationRequest, MoveConversationRequestValidator>(services);
-        AddValidator<CreateProjectRequest, CreateProjectRequestValidator>(services);
-        AddValidator<UpdateProjectRequest, UpdateProjectRequestValidator>(services);
-        AddValidator<CreateMemoryRequest, CreateMemoryRequestValidator>(services);
-        AddValidator<UpdateSettingsRequest, UpdateSettingsRequestValidator>(services);
-        AddValidator<DocumentUpload, DocumentUploadValidator>(services);
-        AddValidator<AnswerRequest, AnswerRequestValidator>(services);
-    }
-
-    /// <summary>
-    /// Register <typeparamref name="TValidator"/> as both its concrete type and
-    /// <c>IValidator&lt;TModel&gt;</c>, sharing one instance.
-    /// </summary>
-    private static void AddValidator<TModel, TValidator>(IServiceCollection services)
-        where TValidator : class, IValidator<TModel>
-    {
-        services.TryAddSingleton<TValidator>();
-        services.TryAddSingleton<IValidator<TModel>>(sp => sp.GetRequiredService<TValidator>());
     }
 }

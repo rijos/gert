@@ -14,7 +14,9 @@
     <ProjectReference Include="..\Gert.Storage.Local\Gert.Storage.Local.csproj" />
     <ProjectReference Include="..\Gert.Chat\Gert.Chat.csproj" />
     <ProjectReference Include="..\Gert.Chat.OpenAI\Gert.Chat.OpenAI.csproj" />
-    <ProjectReference Include="..\Gert.Tools\Gert.Tools.csproj" />
+    <!-- Built-in tool impls + the AddGertTools/AddBuiltinTools registrars (transitively brings
+         the Gert.Tools contracts). The host wires the impls; the service layer sees only contracts. -->
+    <ProjectReference Include="..\Gert.Tools.Builtin\Gert.Tools.Builtin.csproj" />
     <ProjectReference Include="..\Gert.Ingestion\Gert.Ingestion.csproj" />
   </ItemGroup>
 

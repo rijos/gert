@@ -186,6 +186,13 @@ export interface WireMessageInput {
   timezone?: string;
 }
 
+// POST .../answer request body: the server-minted question id + one answer per asked question,
+// in question order (mirrors the C# AnswerRequest DTO).
+export interface WireAnswerInput {
+  question_id: string;
+  answers: string[];
+}
+
 // 202 response to a message POST: the row ids + the seq the consumer's cursor starts from.
 export interface WireTurnAccepted {
   conversation_id: string;
@@ -201,10 +208,19 @@ export interface WireEventPage {
   has_more?: boolean;
 }
 
+// One asked question inside a `question_asked` event (one tab in the SPA). Mirrors the C#
+// AskedQuestion record (Gert.Model/Events/AskedQuestion.cs).
+export interface WireAskedQuestion {
+  question: string;
+  header?: string | null;
+  options: string[];
+  allow_free_text: boolean;
+}
+
 // One streamed turn event (the SSE `data:` object / a persisted turn_events row). A single wide
 // bag keyed by `$type`; every field is optional because each event populates only its own. This
 // is the one genuinely dynamic boundary - values are applied after a `$type` switch, and `hits`
-// arrives as raw rows. POST .../answer carries { question_id, answer }.
+// arrives as raw rows. POST .../answer carries { question_id, answers }.
 export interface WireChatEvent {
   $type?: WireEventType;
   message_id?: string;
@@ -215,10 +231,10 @@ export interface WireChatEvent {
   status?: ToolCallStatus;
   request?: { query?: string; name?: string; code?: string };
   question_id?: string;
-  question?: string;
-  options?: string[];
-  allow_free_text?: boolean;
-  answer?: string;
+  // question_asked carries the full tabbed payload; question_answered carries the answers in
+  // question order.
+  questions?: WireAskedQuestion[];
+  answers?: string[];
   hits?: unknown;
   stdout?: string;
   error?: string;
@@ -304,6 +320,20 @@ export interface WireToolSpec {
   name: string;
   description: string;
   parameters_schema: string;
+}
+
+// A tool's execution flow (Gert.Tools/ToolType.cs). The popup groups on it - a modal tool
+// (ask_user) renders the same as a standard one, but the axis stays on the wire for parity.
+export type WireToolType = "standard" | "modal";
+
+// One entitled tool in GET /api/tools (the composer's tools popup catalog). `id` is the
+// gert_tools entitlement name; `name` is the model-facing function name (the popup labels
+// rows client-side). Only tools the caller is entitled to come back.
+export interface WireToolInfo {
+  id: string;
+  name: string;
+  description: string;
+  tool_type: WireToolType;
 }
 
 export interface WireSystemPrompt {

@@ -19,9 +19,10 @@ namespace Gert.Chat.Tests;
 /// each <see cref="ICapabilityPlugin"/> lives in its per-impl leaf; and every capability-impl DI
 /// registrar follows <c>AddGert&lt;Capability&gt;&lt;Impl&gt;</c>. A capability may be split by
 /// ASSEMBLY (chat: <c>Gert.Chat</c> contracts vs <c>Gert.Chat.OpenAI</c> impl) or, when the ports
-/// already live upstream in <c>Gert.Service.External</c> and the adapter is a single multi-backend
-/// bag, by NAMESPACE leaf within one assembly (search/sandbox in <c>Gert.Tools</c>); both shapes
-/// are enforced here. As capabilities split, add a row to <see cref="Capabilities"/>.
+/// live in the shared contracts assembly (<c>Gert.Tools</c>) and the impl adapter is a single
+/// multi-backend bag, by NAMESPACE leaf within one assembly (search/sandbox in
+/// <c>Gert.Tools.Builtin</c>); both shapes are enforced here. As capabilities split, add a row to
+/// <see cref="Capabilities"/>.
 /// </summary>
 public sealed class PluginArchitectureTests
 {
@@ -61,8 +62,8 @@ public sealed class PluginArchitectureTests
             Registrars: [("AddGertRagSqlite", typeof(SqliteRagEngineBuilder).Assembly)],
             AssemblySplit: (typeof(IRagEngineBuilder).Assembly, typeof(SqliteRagEngineBuilder).Assembly)),
 
-        // Search: split by NAMESPACE leaf inside Gert.Tools (the ports live upstream in
-        // Gert.Service.External, so Gert.Tools is a single impl-adapter bag).
+        // Search: split by NAMESPACE leaf inside Gert.Tools.Builtin (the ports live in the
+        // Gert.Tools contracts assembly, so the impl leaf is a single multi-backend bag).
         new(
             Name: "Search",
             PluginInterface: typeof(IWebSearchBuilder),
@@ -71,7 +72,7 @@ public sealed class PluginArchitectureTests
             Registrars: [("AddGertSearchSearXNG", typeof(IWebSearchBuilder).Assembly)],
             AssemblySplit: null),
 
-        // Sandbox: split by NAMESPACE leaf inside Gert.Tools, two impls (Monty, GVisor).
+        // Sandbox: split by NAMESPACE leaf inside Gert.Tools.Builtin, two impls (Monty, GVisor).
         new(
             Name: "Sandbox",
             PluginInterface: typeof(IPythonSandboxBuilder),

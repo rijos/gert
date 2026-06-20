@@ -42,6 +42,9 @@
     <!-- Family floor 10.0.3+ forced by OpenAI -> System.ClientModel 1.10.0 (NU1605
          otherwise); the whole Microsoft.Extensions.* set rides 10.0.x together. -->
     <MicrosoftExtensionsLoggingVersion>10.0.9</MicrosoftExtensionsLoggingVersion>
+    <!-- IHostedService for the deletion-recovery saga. Abstractions only: the service
+         layer ships the background worker, the host wires the runtime. -->
+    <MicrosoftExtensionsHostingAbstractionsVersion>10.0.9</MicrosoftExtensionsHostingAbstractionsVersion>
     <!-- Polly v8 resilience pipelines (timeout + retry) layered on the typed clients. -->
     <MicrosoftExtensionsHttpResilienceVersion>10.7.0</MicrosoftExtensionsHttpResilienceVersion>
     <!-- Official OpenAI .NET SDK: typed wire models + clients for the OpenAI-compatible

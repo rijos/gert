@@ -11,10 +11,9 @@ using Gert.Model.Rag;
 using Gert.Rag;
 using Gert.Service.Chat;
 using Gert.Service.Chat.Bus;
-using Gert.Service.External;
-using Gert.Service.Tools;
 using Gert.Testing;
 using Gert.Testing.Fakes;
+using Gert.Tools;
 using Gert.Tools.Builtin;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -217,7 +216,7 @@ public sealed class TurnRunnerTests
     public async Task Rag_tool_loop_emits_full_event_sequence_and_persists_provenance()
     {
         var user = new TestUserContext { AllowedTools = new HashSet<string>(["rag"], StringComparer.Ordinal) };
-        var ragTool = new RagTool(_ragProvider, new FakeEmbeddings(), user);
+        var ragTool = new RagTool(Gert.Testing.Proof.Validation, _ragProvider, new FakeEmbeddings(), user);
 
         await NewRunner(new FakeChatModel(), [ragTool])
             .RunAsync(NewJob("search my docs about qdrant", [ragTool]));
@@ -270,7 +269,7 @@ public sealed class TurnRunnerTests
         // the conversation (auth.md - "the drop stays silent toward the model and
         // the user"). So NO card and NO tool row surface; only a synthetic refusal
         // is fed upstream, which the model reads and answers around.
-        var sandbox = new PythonSandboxTool(new StubPythonSandbox());
+        var sandbox = new PythonSandboxTool(Gert.Testing.Proof.Validation, new StubPythonSandbox());
 
         await NewRunner(new FakeChatModel(), [sandbox])
             .RunAsync(NewJob(
@@ -693,7 +692,7 @@ public sealed class TurnRunnerTests
     public async Task An_interactive_tool_is_exempt_from_the_generic_tool_call_timeout()
     {
         // ask_user must outlive ToolCallTimeout (waiting on the user IS its
-        // job): the runner skips the per-call backstop for IInteractiveTool -
+        // job): the runner skips the per-call backstop for modal tools -
         // the tool's own deadline math and the turn lifetime stay the walls.
         var slow = new SlowInteractiveTool(TimeSpan.FromMilliseconds(300));
         var options = new TurnOptions { ToolCallTimeout = TimeSpan.FromMilliseconds(50) };
@@ -720,7 +719,7 @@ public sealed class TurnRunnerTests
 
         var asked = Events.OfType<QuestionAskedEvent>().Single();
         asked.Id.Should().Be("call_1");
-        asked.Question.Should().Be("Which color?");
+        asked.Questions.Single().Question.Should().Be("Which color?");
 
         var types = Events.Select(e => e.GetType().Name).ToList();
         types.IndexOf(nameof(QuestionAskedEvent))
@@ -764,17 +763,17 @@ public sealed class TurnRunnerTests
         }
 
         var asked = Events.OfType<QuestionAskedEvent>().Single();
-        asked.Question.Should().Be("Which color?");
-        asked.Options.Should().Equal("red", "blue");
+        asked.Questions.Single().Question.Should().Be("Which color?");
+        asked.Questions.Single().Options.Should().Equal("red", "blue");
 
         questions.Answer(
                 new TurnKey("https://idp.example", "sub-123", Pid, Conv),
-                Proof.Of(new AnswerRequest { QuestionId = asked.QuestionId, Answer = "blue" }))
+                Proof.Of(new AnswerRequest { QuestionId = asked.QuestionId, Answers = ["blue"] }))
             .Should().Be(AnswerOutcome.Delivered);
 
         await turn;
 
-        Events.OfType<QuestionAnsweredEvent>().Single().Answer.Should().Be("blue");
+        Events.OfType<QuestionAnsweredEvent>().Single().Answers.Should().Equal("blue");
         string.Concat(Events.OfType<DeltaEvent>().Select(d => d.Text))
             .Should().Be("Noted - proceeding with your choice.");
         _finalized.Single().Status.Should().Be(MessageStatus.Complete);
@@ -1217,10 +1216,10 @@ public sealed class TurnRunnerTests
     }
 
     /// <summary>
-    /// An <see cref="IInteractiveTool"/> that takes longer than the generic
+    /// A <see cref="ToolType.Modal"/> tool that takes longer than the generic
     /// per-call timeout - must NOT be cancelled by it.
     /// </summary>
-    private sealed class SlowInteractiveTool(TimeSpan wait) : ITool, IInteractiveTool
+    private sealed class SlowInteractiveTool(TimeSpan wait) : ITool
     {
         public string Id => "stub";
 
@@ -1229,6 +1228,8 @@ public sealed class TurnRunnerTests
         public string Description => "waits on the user";
 
         public string ParametersSchema => """{"type":"object"}""";
+
+        public ToolType Type => ToolType.Modal;
 
         public async Task<ToolResult> ExecuteAsync(
             ToolInvocation invocation,
@@ -1262,9 +1263,7 @@ public sealed class TurnRunnerTests
                 {
                     Id = invocation.ToolCallId!,
                     QuestionId = Guid.NewGuid().ToString("D"),
-                    Question = "Which color?",
-                    Options = ["red", "blue"],
-                    AllowFreeText = false,
+                    Questions = [new AskedQuestion("Which color?", null, ["red", "blue"], false)],
                 },
                 cancellationToken);
             return new ToolResult { Success = true, ResultJson = "{}" };

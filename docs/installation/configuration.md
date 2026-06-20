@@ -289,7 +289,7 @@ fetch step (downloading result pages) is the SSRF-exposed part and is **off by d
 `web_fetch` tool shares this section's fetch caps (`MaxFetchBytes` / `FetchTimeoutSeconds` /
 `MaxRedirects`) - same guarded fetcher, no parallel knob set; it needs no SearXNG instance and
 ignores `Parameters:BaseUrl` / `FetchPages`. Binds to `SearXngOptions`
-(`src/Gert.Tools/Search/SearXngOptions.cs`).
+(`src/Gert.Tools.Builtin/Search/SearXngOptions.cs`).
 
 | Key | Default | Required? | Secret? | Notes |
 |-----|---------|-----------|---------|-------|
@@ -310,7 +310,7 @@ The `run_python` sandbox backend. `Type` picks one of two implementations behind
 `IPythonSandbox` port; an unknown value fails fast at startup. The cross-backend per-run caps
 sit beside `Type`; the per-backend bag lives under `Parameters`. The defaults *are* the
 security posture: egress off, no `/data` mount, hard caps. Raise them knowingly. Binds to
-`PythonSandboxOptions` (`src/Gert.Tools/Sandbox/PythonSandboxOptions.cs`).
+`PythonSandboxOptions` (`src/Gert.Tools.Builtin/Sandbox/PythonSandboxOptions.cs`).
 
 | Key | Default | Required? | Secret? | Notes |
 |-----|---------|-----------|---------|-------|
@@ -321,7 +321,7 @@ security posture: egress off, no `/data` mount, hard caps. Raise them knowingly.
 
 ### 6a. `Parameters` when `Type=Monty` - the monty sidecar
 
-Binds to `MontyParameters` (`src/Gert.Tools/Sandbox/MontyParameters.cs`). Run the sidecar
+Binds to `MontyParameters` (`src/Gert.Tools.Builtin/Sandbox/MontyParameters.cs`). Run the sidecar
 from [tools/monty](../../tools/monty/README.md); it is reached server-side only.
 
 | Key | Default | Required? | Secret? | Notes |
@@ -331,7 +331,7 @@ from [tools/monty](../../tools/monty/README.md); it is reached server-side only.
 
 ### 6b. `Parameters` when `Type=GVisor` - the runsc container
 
-Binds to `GVisorParameters` (`src/Gert.Tools/Sandbox/GVisorParameters.cs`). gVisor-only; monty
+Binds to `GVisorParameters` (`src/Gert.Tools.Builtin/Sandbox/GVisorParameters.cs`). gVisor-only; monty
 has no processes, filesystem, or network to limit.
 
 | Key | Default | Required? | Secret? | Notes |

@@ -13,7 +13,6 @@ const appClass = () => {
   const c = ["app"];
   if (ui.navCollapsed.val) c.push("nav-collapsed");
   if (ui.panelCollapsed.val) c.push("panel-collapsed");
-  if (ui.panelWide.val) c.push("panel-wide");
   if (ui.navOpen.val) c.push("nav-open");
   if (ui.panelOpen.val) c.push("panel-open");
   if (ui.adminRoute.val) c.push("route-admin"); // folds the canvas column away

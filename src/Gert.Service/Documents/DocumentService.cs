@@ -1,10 +1,11 @@
 using Gert.Model;
+using Gert.Model.Documents;
 using Gert.Model.Rag;
 using Gert.Rag;
 using Gert.Service.Ingestion;
 using Gert.Service.Storage;
-using Gert.Service.Validation;
 using Gert.Storage;
+using Gert.Validation;
 
 namespace Gert.Service.Documents;
 

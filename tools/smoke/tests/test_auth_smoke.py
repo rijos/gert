@@ -82,8 +82,9 @@ ENDPOINTS: list[tuple[str, str]] = [
     ("GET", f"/api/projects/{PID}/export"),
     ("GET", "/api/account/export"),
     ("DELETE", "/api/account"),
-    # ModelsController / SettingsController
+    # ModelsController / ToolsController / SettingsController
     ("GET", "/api/models"),
+    ("GET", "/api/tools"),
     ("GET", "/api/settings"),
     ("PUT", "/api/settings"),
     # AdminController (admin policy on top of the fallback - still 401 anonymous)

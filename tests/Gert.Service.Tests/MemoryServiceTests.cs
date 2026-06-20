@@ -5,9 +5,9 @@ using Gert.Model;
 using Gert.Model.Rag;
 using Gert.Rag;
 using Gert.Service.Documents;
-using Gert.Service.External;
-using Gert.Service.Validation;
 using Gert.Storage;
+using Gert.Tools;
+using Gert.Validation;
 using NSubstitute;
 using Xunit;
 

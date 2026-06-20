@@ -1,6 +1,7 @@
 using FluentAssertions;
+using Gert.Model.Documents;
 using Gert.Service.Storage;
-using Gert.Service.Validation;
+using Gert.Validation;
 using Xunit;
 
 namespace Gert.Service.Tests;

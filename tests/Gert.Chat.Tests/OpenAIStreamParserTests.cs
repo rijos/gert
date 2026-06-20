@@ -3,7 +3,7 @@ using FluentAssertions;
 using Gert.Chat.OpenAI;
 using Gert.Model;
 using Gert.Model.Chat;
-using Gert.Service.External;
+using Gert.Tools;
 using OpenAI.Chat;
 using Xunit;
 

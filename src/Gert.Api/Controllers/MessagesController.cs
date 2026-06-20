@@ -2,7 +2,7 @@ using Gert.Api.Validation;
 using Gert.Model.Dtos;
 using Gert.Service;
 using Gert.Service.Chat;
-using Gert.Service.Validation;
+using Gert.Validation;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Gert.Api.Controllers;
@@ -12,7 +12,7 @@ namespace Gert.Api.Controllers;
 /// message and start a detached turn (rest-api.md section sending a message,
 /// chat-and-tools.md section detached turns). The controller is transport-only:
 /// <see cref="ITurnPlanner"/> validates and persists (a thrown
-/// <see cref="Gert.Service.Validation.ValidationException"/> -> 400, a
+/// <see cref="Gert.Validation.ValidationException"/> -> 400, a
 /// <see cref="TurnInProgressException"/> -> 409, both via the exception
 /// handlers), the job is queued for the background worker, and the client
 /// receives <b>202</b> with the ids + the cursor to subscribe from - delivery

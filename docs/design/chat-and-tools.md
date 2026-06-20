@@ -26,8 +26,8 @@ conversation toggles, and the request - see the intersection rule below):
     "parameters": { "name":"string", "old_str":"string", "new_str":"string" } },
   { "name":"read_artifact", "description":"Return an artifact's current content, line-numbered",
     "parameters": { "name":"string", "range":"string?" } },
-  { "name":"ask_user", "description":"Ask the user ONE clarifying question and wait for their answer",
-    "parameters": { "question":"string", "options":"string[]?", "allow_free_text":"boolean?" } },
+  { "name":"ask_user", "description":"Ask the user up to four clarifying questions (shown as tabs) and wait for their answers",
+    "parameters": { "questions":"{ question:string, header:string?, options:string[]?, allow_free_text:boolean? }[]" } },
   { "name":"web_fetch", "description":"Fetch one public web page by URL, return its readable content (HTML reduced to plain text, clipped)",
     "parameters": { "url":"string", "max_chars":"integer?" } },
   { "name":"save_memory", "description":"Save ONE durable fact or preference for future conversations in this project",
@@ -460,16 +460,23 @@ transcript.
 
 ### Ask the user (`ask_user`)
 
-`ask_user(question, options?, allow_free_text?)` lets the model ask the user
-**one clarifying question mid-turn and block until it is answered, times out,
-or the turn is cancelled**. No external world: the question travels as a
-`question_asked` event (the one tool that emits mid-execution, through the
-optional `ToolInvocation.EmitAsync` seam the runner populates with its own
-persist-then-publish emit), and the answer arrives through the singleton
-`ITurnQuestions` registry - the awaitable mirror of the cancel registry, keyed
-by the same tenant-scoped `TurnKey` - from
-[`POST .../answer`](rest-api.md#answer-a-question). `allow_free_text` defaults to
-true for an open question and false once `options` (max 8) are offered.
+`ask_user(questions[])` lets the model ask the user **up to four clarifying
+questions mid-turn and block until they are all answered, the wait times out, or
+the turn is cancelled**. Each question is `{ question, header?, options?,
+allow_free_text? }`; the SPA renders them as **tabs** (one tab per question, the
+`header` as its label, falling back to "Question N"), collects one answer per
+tab, and submits them together once every question has an answer. No external
+world: the questions travel as a single `question_asked` event (the one tool
+that emits mid-execution, through the optional `ToolInvocation.EmitAsync` seam
+the runner populates with its own persist-then-publish emit), and the answers
+arrive through the singleton `ITurnQuestions` registry - the awaitable mirror of
+the cancel registry, keyed by the same tenant-scoped `TurnKey` - from
+[`POST .../answer`](rest-api.md#answer-a-question) as an `answers[]` in question
+order. Per question, `allow_free_text` defaults to true for an open question and
+false once `options` (max 8) are offered; a closed question's answer must be one
+of its options (a runtime check in `TurnQuestions`). The successful tool result
+pairs each question with its answer (`{answered:true, answers:[{question,
+answer}, ...]}`) so the model knows which reply belongs to which prompt.
 
 **Wait budget.** The wait is exempt from the generic `ToolCallTimeout`
 backstop (the `IInteractiveTool` marker - a 60 s cap would kill every wait) and
@@ -487,12 +494,13 @@ always released.
 **Replay.** A pending question lives only in `turn_events` (the `tool_calls`
 row lands when the call returns), so a reconnecting client recovers it through
 the resume replay: `tool_call(ask_user)` -> `question_asked` with nothing after
-=> render the interactive card; a following `question_answered` (or the call's
-`tool_result`) => render the resolved/expired state. After the turn ends, the
-thread GET rebuilds a read-only card from the persisted row
-(`{answered, answer | reason}`).
+=> render the interactive (tabbed) card; a following `question_answered` (or the
+call's `tool_result`) => render the resolved/expired state. After the turn ends,
+the thread GET rebuilds a read-only card from the persisted row
+(`{answered, answers | reason}`).
 
 **UX consequence.** While the question pends the turn is in-flight, so the 409
 rule blocks new sends in that conversation - the question card (or Stop) is
-the only input. One question per turn: a second `ask_user` while one pends is
-a tool error the model reads.
+the only input. One question card per turn: a second `ask_user` while one pends
+is a tool error the model reads (so it must batch its questions into the single
+call's `questions[]`).

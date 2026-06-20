@@ -2,7 +2,7 @@ using Gert.Database;
 using Gert.Model;
 using Gert.Model.Chat;
 using Gert.Model.Dtos;
-using Gert.Service.Validation;
+using Gert.Validation;
 
 namespace Gert.Service.Conversations;
 

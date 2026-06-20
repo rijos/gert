@@ -3,9 +3,9 @@ using Gert.Database;
 using Gert.Model.Chat;
 using Gert.Model.Dtos;
 using Gert.Service.Conversations;
-using Gert.Service.Tests.Validation;
-using Gert.Service.Validation;
 using Gert.Testing.Fakes;
+using Gert.Tools.Builtin;
+using Gert.Validation;
 using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
 using Xunit;
@@ -16,7 +16,7 @@ namespace Gert.Service.Tests;
 /// CRUD + scoping + fail-closed validation tests for <see cref="ConversationService"/>
 /// (dotnet-style-guide.md section 6: the registered validator must be invoked). The repo and
 /// provider are NSubstitute fakes; validation is the <b>production</b>
-/// <see cref="IValidationProvider"/> from <see cref="ValidationTestHost"/>; the user
+/// <see cref="IValidationProvider"/> from the real <c>AddGertServices</c> wiring; the user
 /// is a fixed <see cref="TestUserContext"/>.
 /// </summary>
 public sealed class ConversationServiceTests
@@ -24,7 +24,8 @@ public sealed class ConversationServiceTests
     private readonly IChatRepository _repo = Substitute.For<IChatRepository>();
     private readonly IChatDatabaseProvider _provider = Substitute.For<IChatDatabaseProvider>();
     private readonly IValidationProvider _validation =
-        ValidationTestHost.Build().GetRequiredService<IValidationProvider>();
+        new ServiceCollection().AddGertServices().AddBuiltinTools().BuildServiceProvider()
+            .GetRequiredService<IValidationProvider>();
     private readonly TestUserContext _user = new();
 
     public ConversationServiceTests()

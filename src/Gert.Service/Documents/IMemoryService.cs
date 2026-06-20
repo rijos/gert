@@ -1,6 +1,6 @@
 using Gert.Model.Dtos;
 using Gert.Model.Rag;
-using Gert.Service.Validation;
+using Gert.Validation;
 
 namespace Gert.Service.Documents;
 

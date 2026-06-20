@@ -24,12 +24,13 @@ code comments cite docs by section, so keep both ends accurate.
   with impl `Gert.Storage.Local`; `Gert.Database` (`user.db`/`chat.db` ports, keyed by
   `Gert:Database:Type`) with impl `Gert.Database.Sqlite`; `Gert.Rag` (the vector/RAG index
   port `IRagStore`/`IRagIndexProvider`, keyed by `Gert:Rag:Type` - decoupled from the SQL
-  engine) with impl `Gert.Rag.Sqlite` (sqlite-vec + FTS5). The
-  remaining adapters: `Gert.Tools` (web search + sandbox backends **and** the built-in `ITool`
-  implementations under `Builtin/`; the `IWebSearch`/`IWebFetcher`/`IPythonSandbox` ports stay
-  in `Gert.Service.External`), `Gert.Ingestion` (the md/txt + isolated pdf/docx text
-  extractors), `Gert.Authentication`. `Gert.Service` keeps the tool *contracts*
-  (`ITool`/`ToolRegistry`) + the turn orchestration, not the tool impls.
+  engine) with impl `Gert.Rag.Sqlite` (sqlite-vec + FTS5); and `Gert.Tools` (the
+  `ITool`/`ToolRegistry`/`ToolResult` tool contracts + the `IWebSearch`/`IWebFetcher`/`IPythonSandbox`
+  ports) with impl `Gert.Tools.Builtin` (web search + sandbox backends, the built-in `ITool`
+  implementations under `Builtin/`, and the `BuiltInToolIds` census). The remaining adapters:
+  `Gert.Ingestion` (the md/txt + isolated pdf/docx text extractors), `Gert.Authentication`.
+  `Gert.Service` keeps the turn orchestration and drives `ITool` through the `Gert.Tools`
+  contracts, not the impls.
 - **Capability-plugin pattern**: a config-selected capability (chat, the database engine, the
   RAG engine, web search, the sandbox) is a self-registering plugin keyed by its `Type` token
   (`Gert.Model.Plugins.ICapabilityPlugin`). Each impl exposes an `AddGert<Capability><Impl>`
@@ -59,7 +60,9 @@ code comments cite docs by section, so keep both ends accurate.
   query, or body. The one request-supplied selector, `pid`, must only ever be joined *under*
   the token-derived folder ([docs/design/principles.md](docs/design/principles.md)).
 - **Validation is fail-closed.** Every request DTO needs a registered `IValidator<T>`; a
-  reflection meta-test goes red if one is missing.
+  reflection meta-test goes red if one is missing. The validation sub-layer is its own assembly
+  `Gert.Validation` (the `IValidationProvider` port + `Validated<T>` proof + per-DTO validators;
+  depends only on `Gert.Model` + `Gert.Tools`); `AddGertServices` calls its `AddGertValidation`.
 - **No npm.** The SPA is no-build ESM with vendored libs; on publish a .NET target drives a
   pinned, SHA-512-verified esbuild Go binary (fetched from the npm-registry tarball - no npm,
   no Node) to bundle it into one `app.js` + `app.css` (`tools/Gert.Web.Bundle`).
