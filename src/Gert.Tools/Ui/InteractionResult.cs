@@ -1,4 +1,4 @@
-namespace Gert.Tools;
+namespace Gert.Tools.Ui;
 
 /// <summary>
 /// The outcome of an <see cref="IToolUi.AskAsync"/> (chat-and-tools.md section ask the user):

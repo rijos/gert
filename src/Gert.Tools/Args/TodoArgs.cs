@@ -1,4 +1,4 @@
-namespace Gert.Tools;
+namespace Gert.Tools.Args;
 
 /// <summary>
 /// Arguments for the todo tool (<c>set_todos</c>): the WHOLE list, replace-not-patch.

@@ -1,7 +1,7 @@
 using Gert.Model;
 using Gert.Model.Tools;
 
-namespace Gert.Tools;
+namespace Gert.Tools.Ports;
 
 /// <summary>
 /// Port for the code sandbox (chat-and-tools.md section sandbox; security F5). Two real

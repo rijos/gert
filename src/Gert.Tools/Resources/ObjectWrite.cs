@@ -1,4 +1,4 @@
-namespace Gert.Tools;
+namespace Gert.Tools.Resources;
 
 /// <summary>The input to <see cref="IObjectResource.PutAsync"/>: the name, content, and kind to store.</summary>
 public sealed record ObjectWrite

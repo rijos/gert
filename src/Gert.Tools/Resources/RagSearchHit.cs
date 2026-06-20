@@ -1,4 +1,4 @@
-namespace Gert.Tools;
+namespace Gert.Tools.Resources;
 
 /// <summary>
 /// One ranked RAG hit: the source document id + decoded title, its kind, the page locator, the

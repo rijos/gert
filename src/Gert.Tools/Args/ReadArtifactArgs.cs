@@ -1,4 +1,4 @@
-namespace Gert.Tools;
+namespace Gert.Tools.Args;
 
 /// <summary>
 /// Arguments for the canvas read tool (<c>read_artifact</c>): the artifact

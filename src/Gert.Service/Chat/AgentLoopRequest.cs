@@ -2,6 +2,7 @@ using Gert.Chat;
 using Gert.Model.Chat;
 using Gert.Model.Events;
 using Gert.Tools;
+using Gert.Tools.Hosting;
 
 namespace Gert.Service.Chat;
 

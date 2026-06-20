@@ -1,4 +1,4 @@
-namespace Gert.Tools;
+namespace Gert.Tools.Args;
 
 /// <summary>
 /// Arguments for the canvas list tool (<c>list_artifacts</c>): none - it lists every

@@ -1,4 +1,4 @@
-namespace Gert.Tools.Builtin;
+namespace Gert.Tools.Results;
 
 /// <summary>
 /// The model-facing payload of the RAG tool: the fused hits the model reads back

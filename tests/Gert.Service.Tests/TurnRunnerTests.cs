@@ -15,6 +15,7 @@ using Gert.Testing;
 using Gert.Testing.Fakes;
 using Gert.Tools;
 using Gert.Tools.Builtin;
+using Gert.Tools.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;

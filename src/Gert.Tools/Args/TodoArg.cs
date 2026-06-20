@@ -1,4 +1,4 @@
-namespace Gert.Tools;
+namespace Gert.Tools.Args;
 
 /// <summary>
 /// One entry of a <see cref="TodoArgs"/> list: the step <see cref="Text"/> and a

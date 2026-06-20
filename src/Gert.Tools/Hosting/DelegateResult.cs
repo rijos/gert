@@ -1,4 +1,4 @@
-namespace Gert.Tools;
+namespace Gert.Tools.Hosting;
 
 /// <summary>
 /// The outcome of a delegated task (<see cref="IToolDelegate.RunAsync"/>): the sub-agent's final

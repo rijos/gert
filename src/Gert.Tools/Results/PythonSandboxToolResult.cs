@@ -1,4 +1,4 @@
-namespace Gert.Tools.Builtin;
+namespace Gert.Tools.Results;
 
 /// <summary>
 /// The model-facing payload of the sandbox tool: the captured exit status and

@@ -1,4 +1,4 @@
-namespace Gert.Tools;
+namespace Gert.Tools.Args;
 
 /// <summary>Arguments for the sandbox tool (<c>run_python</c>): the Python source to execute.</summary>
 public sealed record PythonSandboxArgs

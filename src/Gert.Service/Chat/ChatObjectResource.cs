@@ -2,6 +2,7 @@ using Gert.Database;
 using Gert.Model.Chat;
 using Gert.Storage;
 using Gert.Tools;
+using Gert.Tools.Resources;
 
 namespace Gert.Service.Chat;
 

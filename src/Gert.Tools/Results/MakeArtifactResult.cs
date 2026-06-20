@@ -1,4 +1,4 @@
-namespace Gert.Tools.Builtin;
+namespace Gert.Tools.Results;
 
 /// <summary>
 /// The model-facing payload of <c>make_artifact</c>: the artifact name, its

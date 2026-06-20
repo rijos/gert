@@ -1,4 +1,4 @@
-namespace Gert.Tools;
+namespace Gert.Tools.Hosting;
 
 /// <summary>
 /// One delegated task for <see cref="IToolDelegate"/>: the self-contained <see cref="Task"/> the

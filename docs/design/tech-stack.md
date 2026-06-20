@@ -153,7 +153,13 @@ Gert.sln
 │  ├─ OpenAIChatModelClientBuilder.cs / ChatProviderParameters.cs  # the plugin (keyed by Type) + its sampling
 │  └─ ServiceCollectionExtensions.cs  # AddGertChatOpenAI(cfg): the keyed builder + per-provider transports
 │
-├─ Gert.Tools/                # tool CONTRACTS - ITool/ToolRegistry/ToolResult/ToolInvocation + the IWebSearch/IWebFetcher/IPythonSandbox ports - references Model only
+├─ Gert.Tools/                # tool CONTRACTS - references Model only. Core tool-calling types at the root (ITool/ToolRegistry/ToolResult/ToolInvocation/ToolType); folder-matched sub-namespaces hold the rest
+│  ├─ Args/                   #   Gert.Tools.Args - the typed tool-argument records (one per tool)
+│  ├─ Results/                #   Gert.Tools.Results - the typed result-payload POCOs (RagResult, WebSearchToolResult, ... - the model-facing shapes; live in the contracts assembly, not the impl leaf)
+│  ├─ Resources/              #   Gert.Tools.Resources - IToolResources/IObjectResource/IRagResource + their DTOs (ResourceScope, StoredObject, RagSearchHit, ...)
+│  ├─ Ui/                     #   Gert.Tools.Ui - IToolUi + the ask_user interaction DTOs
+│  ├─ Hosting/                #   Gert.Tools.Hosting - IToolHost/IToolDelegate/ToolLimits + Delegate{Request,Result} seams
+│  └─ Ports/                  #   Gert.Tools.Ports - the IWebSearch/IWebFetcher/IPythonSandbox external-world ports
 │
 ├─ Gert.Tools.Builtin/        # built-in tools + search/sandbox/fetch impl leaf - refs Tools(contracts), Validation, Model (NOT Service/Database/Rag/Chat: tools reach RAG/objects/UI/delegation through the IToolHost seams; an architecture test enforces no Service edge)
 │  ├─ Builtin/                #   the 12 built-in ITool impls (rag, search, sandbox, fetch, todo, clock, artifact suite, ask_user, sub_agent); the id-only ToolRegistry is derived from them

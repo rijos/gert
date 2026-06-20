@@ -1,4 +1,4 @@
-namespace Gert.Tools.Builtin;
+namespace Gert.Tools.Results;
 
 /// <summary>
 /// The model-facing payload of <c>read_artifact</c>: the artifact name, its format

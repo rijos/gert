@@ -2,6 +2,7 @@ using System.Security.Claims;
 using FluentAssertions;
 using Gert.Authentication;
 using Gert.Tools;
+using Gert.Tools.Hosting;
 using Microsoft.AspNetCore.Http;
 using NSubstitute;
 using Xunit;

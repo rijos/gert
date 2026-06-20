@@ -1,4 +1,4 @@
-namespace Gert.Tools;
+namespace Gert.Tools.Ui;
 
 /// <summary>
 /// One prompt put to the user (chat-and-tools.md section ask the user): the question

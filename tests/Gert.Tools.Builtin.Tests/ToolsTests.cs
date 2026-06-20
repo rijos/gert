@@ -4,6 +4,7 @@ using Gert.Model.Chat;
 using Gert.Testing.Fakes;
 using Gert.Tools;
 using Gert.Tools.Builtin;
+using Gert.Tools.Resources;
 using Xunit;
 
 namespace Gert.Tools.Builtin.Tests;

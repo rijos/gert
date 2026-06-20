@@ -1,4 +1,4 @@
-namespace Gert.Tools;
+namespace Gert.Tools.Args;
 
 /// <summary>
 /// Arguments for the canvas edit tool (<c>edit_artifact</c>): the artifact

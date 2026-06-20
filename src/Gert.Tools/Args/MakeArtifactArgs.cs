@@ -1,4 +1,4 @@
-namespace Gert.Tools;
+namespace Gert.Tools.Args;
 
 /// <summary>
 /// Arguments for the canvas create tool (<c>make_artifact</c>): the file

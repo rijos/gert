@@ -1,4 +1,4 @@
-namespace Gert.Tools;
+namespace Gert.Tools.Resources;
 
 /// <summary>
 /// Which pre-scoped object store a tool addresses. The host translates this to the identity-bearing

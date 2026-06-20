@@ -1,4 +1,4 @@
-namespace Gert.Tools;
+namespace Gert.Tools.Args;
 
 /// <summary>
 /// Arguments for the web-fetch tool (<c>web_fetch</c>): the absolute http(s)

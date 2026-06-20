@@ -1,4 +1,4 @@
-namespace Gert.Tools;
+namespace Gert.Tools.Resources;
 
 /// <summary>
 /// A metadata-aware store of named objects, pre-scoped by the host to a project or the active

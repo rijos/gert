@@ -4,6 +4,7 @@ using Gert.Model.Events;
 using Gert.Service.Chat;
 using Gert.Testing;
 using Gert.Tools;
+using Gert.Tools.Ui;
 using Xunit;
 
 namespace Gert.Service.Tests;

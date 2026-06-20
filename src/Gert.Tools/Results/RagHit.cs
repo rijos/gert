@@ -1,4 +1,4 @@
-namespace Gert.Tools.Builtin;
+namespace Gert.Tools.Results;
 
 /// <summary>
 /// One fused hit in a <see cref="RagResult"/> - the ordinal that ties it to its

@@ -1,4 +1,4 @@
-namespace Gert.Tools;
+namespace Gert.Tools.Resources;
 
 /// <summary>
 /// The two resources a tool sees (chat-and-tools.md section tool host): metadata-aware stored

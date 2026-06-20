@@ -1,4 +1,4 @@
-namespace Gert.Tools;
+namespace Gert.Tools.Hosting;
 
 /// <summary>
 /// The per-invocation budget a tool honours: the wall-clock <see cref="Deadline"/> (a modal tool

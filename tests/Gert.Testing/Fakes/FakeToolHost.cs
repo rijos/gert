@@ -1,4 +1,7 @@
 using Gert.Tools;
+using Gert.Tools.Hosting;
+using Gert.Tools.Resources;
+using Gert.Tools.Ui;
 
 namespace Gert.Testing.Fakes;
 

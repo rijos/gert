@@ -1,4 +1,4 @@
-namespace Gert.Tools.Builtin;
+namespace Gert.Tools.Results;
 
 /// <summary>One row in a <see cref="WebSearchToolResult"/> - ordinal, title, url, and snippet.</summary>
 public sealed record WebSearchHit

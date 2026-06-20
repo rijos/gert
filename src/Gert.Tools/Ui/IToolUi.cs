@@ -1,4 +1,4 @@
-namespace Gert.Tools;
+namespace Gert.Tools.Ui;
 
 /// <summary>
 /// The human-interaction surface (chat-and-tools.md section ask the user) - the generalized port

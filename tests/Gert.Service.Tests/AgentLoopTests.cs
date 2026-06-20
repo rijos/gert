@@ -7,6 +7,7 @@ using Gert.Model.Events;
 using Gert.Service.Chat;
 using Gert.Testing.Fakes;
 using Gert.Tools;
+using Gert.Tools.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 

@@ -10,6 +10,7 @@ using Gert.Service;
 using Gert.Testing;
 using Gert.Testing.Fakes;
 using Gert.Tools;
+using Gert.Tools.Hosting;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;

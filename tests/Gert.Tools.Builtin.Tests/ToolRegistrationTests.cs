@@ -8,6 +8,8 @@ using Gert.Service;
 using Gert.Storage;
 using Gert.Testing.Fakes;
 using Gert.Tools;
+using Gert.Tools.Hosting;
+using Gert.Tools.Ports;
 using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
 using Xunit;

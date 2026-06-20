@@ -1,4 +1,4 @@
-namespace Gert.Tools;
+namespace Gert.Tools.Hosting;
 
 /// <summary>
 /// Delegation to a nested agent loop (chat-and-tools.md section sub-agent) - the seam the

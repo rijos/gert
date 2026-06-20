@@ -1,4 +1,5 @@
 using Gert.Tools;
+using Gert.Tools.Resources;
 
 namespace Gert.Service.Chat;
 

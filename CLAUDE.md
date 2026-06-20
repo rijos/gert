@@ -25,9 +25,14 @@ code comments cite docs by section, so keep both ends accurate.
   `Gert:Database:Type`) with impl `Gert.Database.Sqlite`; `Gert.Rag` (the vector/RAG index
   port `IRagStore`/`IRagIndexProvider`, keyed by `Gert:Rag:Type` - decoupled from the SQL
   engine) with impl `Gert.Rag.Sqlite` (sqlite-vec + FTS5); and `Gert.Tools` (the
-  `ITool`/`ToolRegistry`/`ToolResult` tool contracts + the `IWebSearch`/`IWebFetcher`/`IPythonSandbox`
-  ports) with impl `Gert.Tools.Builtin` (web search + sandbox backends, the built-in `ITool`
-  implementations under `Builtin/`, and the id-only `ToolRegistry` derived from them). The remaining adapters:
+  core tool contracts at the root - `ITool`/`ToolRegistry`/`ToolResult`/`ToolInvocation`/
+  `ToolType` - organized into folder-matched sub-namespaces: `Gert.Tools.Args` (the typed
+  tool-arg records), `Gert.Tools.Results` (the typed result-payload POCOs), `Gert.Tools.Resources`
+  (the `IToolResources`/`IObjectResource`/`IRagResource` surfaces), `Gert.Tools.Ui` (the `IToolUi`
+  ask-user contracts), `Gert.Tools.Hosting` (the `IToolHost`/`IToolDelegate`/`ToolLimits` seams),
+  and `Gert.Tools.Ports` (the `IWebSearch`/`IWebFetcher`/`IPythonSandbox` external ports)) with
+  impl `Gert.Tools.Builtin` (web search + sandbox backends, the built-in `ITool` implementations
+  under `Builtin/`, and the id-only `ToolRegistry` derived from them). The remaining adapters:
   `Gert.Ingestion` (the md/txt + isolated pdf/docx text extractors), `Gert.Authentication`.
   `Gert.Service` keeps the turn orchestration and drives `ITool` through the `Gert.Tools`
   contracts, not the impls. `Gert.Tools.Builtin` references neither `Gert.Service` nor any

@@ -1,4 +1,4 @@
-namespace Gert.Tools;
+namespace Gert.Tools.Resources;
 
 /// <summary>An object's metadata without its content - the shape <see cref="IObjectResource.ListAsync"/> returns.</summary>
 public sealed record ObjectSummary

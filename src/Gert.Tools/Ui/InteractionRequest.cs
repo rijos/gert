@@ -1,4 +1,4 @@
-namespace Gert.Tools;
+namespace Gert.Tools.Ui;
 
 /// <summary>
 /// A batch of prompts put to the user in one interaction (chat-and-tools.md section ask the user) -

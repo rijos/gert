@@ -1,4 +1,7 @@
-namespace Gert.Tools;
+using Gert.Tools.Resources;
+using Gert.Tools.Ui;
+
+namespace Gert.Tools.Hosting;
 
 /// <summary>
 /// The capability surface a tool is HANDED at invocation (chat-and-tools.md section tool host).

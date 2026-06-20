@@ -1,7 +1,7 @@
 using Gert.Model;
 using Gert.Model.Tools;
 
-namespace Gert.Tools;
+namespace Gert.Tools.Ports;
 
 /// <summary>
 /// Port for fetching one model-named URL (chat-and-tools.md section web fetch). The

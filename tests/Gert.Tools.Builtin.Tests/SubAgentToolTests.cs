@@ -2,6 +2,7 @@ using System.Text.Json;
 using FluentAssertions;
 using Gert.Testing.Fakes;
 using Gert.Tools;
+using Gert.Tools.Hosting;
 using Xunit;
 
 namespace Gert.Tools.Builtin.Tests;

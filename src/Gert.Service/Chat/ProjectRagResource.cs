@@ -2,6 +2,7 @@ using Gert.Chat;
 using Gert.Rag;
 using Gert.Service.Documents;
 using Gert.Tools;
+using Gert.Tools.Resources;
 
 namespace Gert.Service.Chat;
 

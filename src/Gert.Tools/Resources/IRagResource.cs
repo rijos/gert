@@ -1,4 +1,4 @@
-namespace Gert.Tools;
+namespace Gert.Tools.Resources;
 
 /// <summary>
 /// Read-only hybrid search over a project's RAG index (chat-and-tools.md section RAG), pre-scoped

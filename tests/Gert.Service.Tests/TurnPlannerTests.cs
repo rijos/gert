@@ -8,6 +8,7 @@ using Gert.Service.Chat;
 using Gert.Testing.Fakes;
 using Gert.Tools;
 using Gert.Tools.Builtin;
+using Gert.Tools.Hosting;
 using Gert.Validation;
 using Microsoft.Extensions.Options;
 using NSubstitute;

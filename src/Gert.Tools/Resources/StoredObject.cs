@@ -1,4 +1,4 @@
-namespace Gert.Tools;
+namespace Gert.Tools.Resources;
 
 /// <summary>A stored object with its content and metadata (the result of a get or a put).</summary>
 public sealed record StoredObject

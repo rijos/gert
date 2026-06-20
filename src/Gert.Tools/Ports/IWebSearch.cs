@@ -1,7 +1,7 @@
 using Gert.Model;
 using Gert.Model.Tools;
 
-namespace Gert.Tools;
+namespace Gert.Tools.Ports;
 
 /// <summary>
 /// Port for web search (chat-and-tools.md section web search). The real client

@@ -1,4 +1,4 @@
-namespace Gert.Tools.Builtin;
+namespace Gert.Tools.Results;
 
 /// <summary>
 /// One row of <c>list_artifacts</c>: an artifact's name, its canonical format word,

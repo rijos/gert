@@ -1,4 +1,4 @@
-namespace Gert.Tools;
+namespace Gert.Tools.Resources;
 
 /// <summary>
 /// What a RAG search ranges over. A record (not a bare enum) so a Chat case carrying a

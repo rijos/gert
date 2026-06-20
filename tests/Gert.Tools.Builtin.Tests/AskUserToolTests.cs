@@ -2,6 +2,7 @@ using FluentAssertions;
 using Gert.Testing.Fakes;
 using Gert.Tools;
 using Gert.Tools.Builtin;
+using Gert.Tools.Ui;
 using Xunit;
 
 namespace Gert.Tools.Builtin.Tests;
