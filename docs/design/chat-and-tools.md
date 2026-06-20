@@ -173,18 +173,20 @@ on the tool result and the runner emits the `artifact` event - the canvas tab
 opens/updates **live, mid-turn**, and a reload gets the same artifacts back through the
 thread GET.
 
-**How the model learns the convention.** The built-in `SystemPrompts.Canvas`
-fragment rides first in every turn's system prompt (before project pinned
-instructions) and tells the model to call `make_artifact` for any complete file
-instead of a code block. If artifacts stop appearing for prompts that should
-produce them, debug in this order: (1) is the canvas suite actually *offered* -
-entitlement (`make_artifact`/`edit_artifact`/`read_artifact`/`list_artifacts` ids must be in the
+**How the model learns the convention.** The operator-configurable
+`Gert:Prompts:Canvas` fragment (bound to `PromptOptions`; default text in
+`appsettings.json`) rides first in every turn's system prompt (before project
+pinned instructions) and tells the model to call `make_artifact` for any complete
+file instead of a code block. An empty `Canvas` omits it. If artifacts stop
+appearing for prompts that should produce them, debug in this order: (1) is the
+canvas suite actually *offered* - entitlement
+(`make_artifact`/`edit_artifact`/`read_artifact`/`list_artifacts` ids must be in the
 `gert_tools` claim, the sole grant source - [auth section tool registry](auth.md#tool-registry)),
-the conversation's Canvas toggle, and a tool-capable model all gate it; (2) is
-`SystemPrompts.Canvas` present in the upstream request (a stale host build);
-(3) did the model paste a fenced block anyway (a model/template regression -
-capture the completion and re-measure compliance). Inline code blocks stay
-inline in the bubble; nothing is ever extracted from prose.
+the conversation's Canvas toggle, and a tool-capable model all gate it; (2) is the
+`Gert:Prompts:Canvas` fragment present in the upstream request (an empty config or a
+stale host build); (3) did the model paste a fenced block anyway (a model/template
+regression - capture the completion and re-measure compliance). Inline code blocks
+stay inline in the bubble; nothing is ever extracted from prose.
 
 ### Detached turns
 

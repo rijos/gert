@@ -123,6 +123,11 @@ builder.Services.AddOptions<Gert.Service.Chat.TurnOptions>()
     .Validate(o => o.MaxConcurrentTurns >= 1, "Gert:Turn:MaxConcurrentTurns must be >= 1")
     .ValidateOnStart();
 
+// Operator-configurable system-prompt fragments (the canvas/artifact nudge). The
+// service layer registers empty defaults; the host binds the real text over them.
+builder.Services.AddOptions<Gert.Service.Chat.PromptOptions>()
+    .BindConfiguration("Gert:Prompts");
+
 // The Gert.Tools.Builtin adapter's AddBuiltinTools (called from AddGertTools below) registers
 // both the id-only ToolRegistry singleton the auth + validation layers use for entitlement/toggle
 // id checks (auth.md section tool entitlements) AND the built-in tool implementations

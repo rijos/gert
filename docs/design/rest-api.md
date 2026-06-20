@@ -270,7 +270,7 @@ Self-service data lifecycle ([configuration section 5](configuration.md#5-data-l
 | `GET` | `/api/admin/users` | Lists user folders, reading each one's `user.db` for the username (plus a footprint listing): username, key, size, doc count, last-active. The closest thing to a "user list" the API has. |
 | `GET` | `/api/admin/users/{key}` | One user's folder summary. `{key}` validated as below. |
 | `DELETE` | `/api/admin/users/{key}` | **Erases all of that user's data** across its stores (see [Operations -> User lifecycle](operations.md#user-lifecycle---remove-a-user)). |
-| `GET` | `/api/admin/system-prompt` | What the model is sent, verbatim: the built-in system prompt plus every registered tool spec (`{ system_prompt, tools: [{ id, name, description, parameters_schema }] }`). Pure configuration - per-project pinned instructions are user data and excluded (admin grants no cross-user data read). Rendered on the admin page's "Model prompt" section. |
+| `GET` | `/api/admin/system-prompt` | What the model is sent, verbatim: the operator-configured system prompt (`Gert:Prompts:Canvas`) plus every registered tool spec (`{ system_prompt, tools: [{ id, name, description, parameters_schema }] }`). Pure configuration - per-project pinned instructions are user data and excluded (admin grants no cross-user data read). Rendered on the admin page's "Model prompt" section. |
 
 > **`{key}` is the most dangerous path parameter in the API** - it feeds a destructive whole-account delete. Unlike `pid`
 > (whose IDOR-safety is covered in [configuration section 2.5](configuration.md#25-path-resolution--why-a-request-supplied-project-id-is-still-idor-safe)),

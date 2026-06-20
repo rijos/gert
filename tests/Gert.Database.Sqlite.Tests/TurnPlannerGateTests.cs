@@ -27,6 +27,7 @@ public class TurnPlannerGateTests
         _user,
         tools: [],
         Options.Create(options),
+        Options.Create(new PromptOptions()),
         TimeProvider.System,
         instructions: null);
 

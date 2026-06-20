@@ -91,6 +91,9 @@ public static class ServiceCollectionExtensions
         // TurnOptions get DEFAULTS here; the host binds "Gert:Turn" over them
         // (this layer stays configuration-agnostic).
         services.AddOptions<TurnOptions>();
+        // PromptOptions same: empty defaults here; the host binds "Gert:Prompts"
+        // (the canvas nudge text) over them.
+        services.AddOptions<PromptOptions>();
 
         services.AddUserScoped<IDocumentService, DocumentService>();
         services.AddUserScoped<IArtifactService, ArtifactService>();

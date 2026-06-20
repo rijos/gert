@@ -133,6 +133,10 @@ block follow in sections 3-7.
         "MaxZipEntries": 2048,
         "MaxOutputBytes": 16777216
       }
+    },
+    "Prompts": {
+      // Operator-configurable system-prompt fragments. See section 10.
+      "Canvas": "When you produce a complete, self-contained file ... use the make_artifact tool ..."  // canvas/artifact nudge; empty omits it
     }
   },
   "Auth": { "Authority": "https://id.example.com", "Audience": "gert-api" },
@@ -429,7 +433,23 @@ override it.
 
 ---
 
-## 10. `Artifacts` - served-artifact tickets
+## 10. `Gert:Prompts` - operator-configurable system prompt
+
+Binds to `PromptOptions` (`src/Gert.Service/Chat/PromptOptions.cs`). System-prompt
+fragments the host prepends to every turn - not a secret, so they live in
+`appsettings.json` (or any config source). The service layer ships empty defaults; the
+host binds `Gert:Prompts` over them.
+
+| Key | Default | Notes |
+|-----|---------|-------|
+| `Canvas` | *(the canvas nudge in `appsettings.json`)* | The canvas/artifact convention prepended first to every turn's system prompt (before a project's pinned instructions). It steers the model to call the `make_artifact`/`edit_artifact`/`read_artifact` tools instead of pasting whole files into code blocks. Empty omits it. Editing it invalidates the vLLM prefix cache for **all** conversations at once - it is the first bytes of every rendered prompt. |
+
+The exact text the admin model sees is returned by `GET /api/admin/system-prompt`
+([rest-api.md section admin](../design/rest-api.md)).
+
+---
+
+## 11. `Artifacts` - served-artifact tickets
 
 Binds to `ArtifactTicketOptions` (`src/Gert.Api/Security/ArtifactTicketOptions.cs`):
 the separate-origin HTML-artifact preview and the HMAC-signed capability URLs it rides
@@ -443,7 +463,7 @@ the separate-origin HTML-artifact preview and the HMAC-signed capability URLs it
 
 ---
 
-## 11. `Gert:RateLimiting` - the per-user API limiter
+## 12. `Gert:RateLimiting` - the per-user API limiter
 
 Binds to `RateLimiting.PolicyOptions` (`src/Gert.Api/Security/RateLimiting.cs`),
 security F10. A **fixed window per user**: each authenticated caller gets its own
@@ -462,7 +482,7 @@ absent and nothing changes.
 
 ---
 
-## 12. Request size limits
+## 13. Request size limits
 
 Not knobs - compile-time constants, listed so the numbers are findable:
 
@@ -478,7 +498,7 @@ Not knobs - compile-time constants, listed so the numbers are findable:
 
 ---
 
-## 13. Dev & test modes
+## 14. Dev & test modes
 
 Not for production - listed here so a deployment never enables them by accident.
 
@@ -495,7 +515,7 @@ profile by construction.
 
 ---
 
-## 14. `Logging` - verbosity
+## 15. `Logging` - verbosity
 
 The standard .NET `Logging:LogLevel` config drives **Serilog** (the host logger): set the
 floor with `Logging:LogLevel:Default`, and quiet individual categories with overrides.

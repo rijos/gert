@@ -122,7 +122,7 @@ logs line up with folders and the admin API without leaking identity.
 
 > **The one deliberate exception - the `Debug` wire trace.** At `Debug`, `OpenAIWireLogger`
 > traces the actual `/v1/chat/completions` request body Gert sends upstream - so sampling params
-> and the tools block can be tuned ([installation/configuration.md section 14](../installation/configuration.md#14-logging---verbosity)).
+> and the tools block can be tuned ([installation/configuration.md section 15](../installation/configuration.md#15-logging---verbosity)).
 > That body carries message **content**. The api-key bearer is still redacted; content is not. So
 > production runs at `Information`, where the trace is silent - `Debug` is a local tuning mode only.
 

@@ -26,6 +26,11 @@ public sealed class TurnPlannerTests
     private const string Pid = "default";
     private const string Conv = "conv-1";
 
+    // The tests give the planner their OWN canvas fragment (the production text now
+    // lives in appsettings, bound by the host) and assert against this value - it
+    // must mention make_artifact so the canvas-convention tests can prove it carries.
+    private const string TestCanvas = "TEST CANVAS: call make_artifact for whole files.";
+
     private readonly IChatRepository _repo = Substitute.For<IChatRepository>();
     private readonly IChatDatabaseProvider _provider = Substitute.For<IChatDatabaseProvider>();
     private readonly IValidationProvider _validation = Substitute.For<IValidationProvider>();
@@ -67,12 +72,14 @@ public sealed class TurnPlannerTests
         TestUserContext? user = null,
         IEnumerable<ITool>? tools = null,
         IProjectInstructionsReader? instructions = null,
-        IChatProviderCatalog? catalog = null) =>
+        IChatProviderCatalog? catalog = null,
+        string canvas = TestCanvas) =>
         new(
             _provider,
             user ?? new TestUserContext(),
             tools ?? [],
             Options.Create(_options),
+            Options.Create(new PromptOptions { Canvas = canvas }),
             TimeProvider.System,
             instructions,
             catalog);
@@ -596,7 +603,7 @@ public sealed class TurnPlannerTests
     }
 
     [Fact]
-    public async Task Instructions_append_after_the_builtin_canvas_prompt()
+    public async Task Instructions_append_after_the_configured_canvas_prompt()
     {
         var reader = Substitute.For<IProjectInstructionsReader>();
         reader.GetInstructionsAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
@@ -605,8 +612,7 @@ public sealed class TurnPlannerTests
         var job = await NewPlanner(instructions: reader)
             .PlanAsync(Pid, Conv, Valid(new SendMessageRequest { Content = "hello" }));
 
-        job.SystemPrompt.Should().StartWith(SystemPrompts.Canvas);
-        job.SystemPrompt.Should().EndWith("Always answer in haiku.");
+        job.SystemPrompt.Should().Be(TestCanvas + "\n\nAlways answer in haiku.");
     }
 
     [Fact]
@@ -616,7 +622,33 @@ public sealed class TurnPlannerTests
         // complete files in the canvas via the make_artifact tool.
         var job = await NewPlanner().PlanAsync(Pid, Conv, Valid(new SendMessageRequest { Content = "hello" }));
 
-        job.SystemPrompt.Should().Be(SystemPrompts.Canvas);
+        job.SystemPrompt.Should().Be(TestCanvas);
         job.SystemPrompt.Should().Contain("make_artifact");
+    }
+
+    [Fact]
+    public async Task An_empty_canvas_with_no_instructions_yields_a_null_system_prompt()
+    {
+        // Gert:Prompts:Canvas empty AND no project instructions -> nothing to send;
+        // the runner skips a null/empty system prompt.
+        var job = await NewPlanner(canvas: string.Empty)
+            .PlanAsync(Pid, Conv, Valid(new SendMessageRequest { Content = "hello" }));
+
+        job.SystemPrompt.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task An_empty_canvas_falls_back_to_project_instructions_alone()
+    {
+        // Empty canvas but real instructions -> the system prompt is just the
+        // instructions, with no leading blank line.
+        var reader = Substitute.For<IProjectInstructionsReader>();
+        reader.GetInstructionsAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns("Always answer in haiku.");
+
+        var job = await NewPlanner(instructions: reader, canvas: string.Empty)
+            .PlanAsync(Pid, Conv, Valid(new SendMessageRequest { Content = "hello" }));
+
+        job.SystemPrompt.Should().Be("Always answer in haiku.");
     }
 }

@@ -80,7 +80,7 @@ Gert.sln
 │  ├─ IGertServices.cs        # aggregate hub: .Chat .Conversations .Documents .Artifacts .Admin
 │  ├─ IUserContext.cs         # current user's scope: Sub, AllowedTools (abstraction only)
 │  ├─ Chat/                   # the detached turn pipeline: TurnPlanner, TurnRunner, queue, bus,
-│  │                          #   ConversationStreamer, MessageStatusRules, SystemPrompts
+│  │                          #   ConversationStreamer, MessageStatusRules, PromptOptions
 │  ├─ Conversations/          # IConversationService
 │  ├─ Documents/              # IDocumentService
 │  ├─ Ingestion/              # IIngestionService.Ingest(doc) - pure pipeline (extract->chunk->embed->write)

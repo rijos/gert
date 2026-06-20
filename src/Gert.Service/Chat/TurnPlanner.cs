@@ -28,6 +28,7 @@ public sealed class TurnPlanner : ITurnPlanner
     private readonly IProjectInstructionsReader? _instructions;
     private readonly IChatProviderCatalog _catalog;
     private readonly TurnOptions _options;
+    private readonly PromptOptions _prompts;
     private readonly TimeProvider _time;
     private readonly ILogger<TurnPlanner> _logger;
 
@@ -36,6 +37,7 @@ public sealed class TurnPlanner : ITurnPlanner
         IUserContext user,
         IEnumerable<ITool> tools,
         IOptions<TurnOptions> options,
+        IOptions<PromptOptions> prompts,
         TimeProvider time,
         IProjectInstructionsReader? instructions,
         IChatProviderCatalog? catalog = null,
@@ -46,6 +48,7 @@ public sealed class TurnPlanner : ITurnPlanner
         ArgumentNullException.ThrowIfNull(tools);
         _tools = tools.ToList();
         _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
+        _prompts = prompts?.Value ?? throw new ArgumentNullException(nameof(prompts));
         _time = time ?? throw new ArgumentNullException(nameof(time));
         _instructions = instructions;
         _catalog = catalog ?? new NullChatProviderCatalog();
@@ -309,11 +312,13 @@ public sealed class TurnPlanner : ITurnPlanner
 
     private async Task<string?> ResolveSystemPromptAsync(string pid, CancellationToken cancellationToken)
     {
-        // The built-in canvas convention always rides first (real models don't
-        // know the name= opt-in otherwise); project instructions append after.
+        // The operator-configured canvas convention (Gert:Prompts:Canvas) rides
+        // first (real models don't know the name= opt-in otherwise); project
+        // instructions append after. An empty canvas is omitted.
+        var canvas = _prompts.Canvas;
         if (_instructions is null)
         {
-            return SystemPrompts.Canvas;
+            return Combine(canvas, null);
         }
 
         try
@@ -321,9 +326,7 @@ public sealed class TurnPlanner : ITurnPlanner
             var instructions = await _instructions
                 .GetInstructionsAsync(_user.Iss, _user.Sub, pid, cancellationToken)
                 .ConfigureAwait(false);
-            return string.IsNullOrWhiteSpace(instructions)
-                ? SystemPrompts.Canvas
-                : SystemPrompts.Canvas + "\n\n" + instructions;
+            return Combine(canvas, instructions);
         }
         catch (OperationCanceledException)
         {
@@ -331,9 +334,25 @@ public sealed class TurnPlanner : ITurnPlanner
         }
         catch (Exception)
         {
-            // Best-effort (step 0): a broken reader must not fail the turn.
-            return SystemPrompts.Canvas;
+            // Best-effort (step 0): a broken reader returns just the canvas (or
+            // null when the canvas is also empty - the runner skips a null prompt).
+            return Combine(canvas, null);
         }
+    }
+
+    // canvas + instructions -> "canvas\n\ninstructions"; either alone -> that one;
+    // neither -> null (TurnRunner skips an empty/null system prompt).
+    private static string? Combine(string? canvas, string? instructions)
+    {
+        var hasCanvas = !string.IsNullOrWhiteSpace(canvas);
+        var hasInstructions = !string.IsNullOrWhiteSpace(instructions);
+        return (hasCanvas, hasInstructions) switch
+        {
+            (true, true) => canvas + "\n\n" + instructions,
+            (true, false) => canvas,
+            (false, true) => instructions,
+            _ => null,
+        };
     }
 
     /// <summary>

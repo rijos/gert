@@ -2,7 +2,6 @@ using FluentAssertions;
 using Gert.Chat.OpenAI;
 using Gert.Model;
 using Gert.Model.Chat;
-using Gert.Service.Chat;
 using Gert.Testing.Fakes;
 using Gert.Tools;
 using Gert.Tools.Builtin;
@@ -24,6 +23,17 @@ namespace Gert.Chat.Tests;
 /// </summary>
 public sealed class OpenAILiveIntegrationTests
 {
+    // The canvas/artifact nudge these live tests feed the model. Production reads
+    // it from Gert:Prompts:Canvas; the test carries its own realistic copy (it
+    // must mention the make/edit artifact tools to steer the model the same way).
+    private const string CanvasPrompt =
+        "When you produce a complete, self-contained file (an HTML page, a script, a Markdown " +
+        "document, an SVG, etc.), call the make_artifact tool with the whole file content - it " +
+        "opens in the user's canvas. Do not paste a whole file into a code block. To change an " +
+        "existing artifact, use edit_artifact to replace just the part that changes rather than " +
+        "remaking the whole file; use read_artifact to see its current content first if needed. " +
+        "Keep ordinary code blocks for short inline snippets and examples.";
+
     private static OpenAIChatModelClient? CreateClient(out string baseUrl, bool thinking = false)
     {
         baseUrl = Environment.GetEnvironmentVariable("GERT_VLLM_URL") ?? string.Empty;
@@ -82,7 +92,7 @@ public sealed class OpenAILiveIntegrationTests
 
         var messages = new List<ChatModelMessage>
         {
-            new() { Role = "system", Content = SystemPrompts.Canvas },
+            new() { Role = "system", Content = CanvasPrompt },
             new()
             {
                 Role = "user",
@@ -225,7 +235,7 @@ public sealed class OpenAILiveIntegrationTests
 
         var messages = new List<ChatModelMessage>
         {
-            new() { Role = "system", Content = SystemPrompts.Canvas },
+            new() { Role = "system", Content = CanvasPrompt },
             new()
             {
                 Role = "user",
@@ -269,7 +279,7 @@ public sealed class OpenAILiveIntegrationTests
 
         var messages = new List<ChatModelMessage>
         {
-            new() { Role = "system", Content = SystemPrompts.Canvas },
+            new() { Role = "system", Content = CanvasPrompt },
             new()
             {
                 Role = "user",
@@ -333,7 +343,7 @@ public sealed class OpenAILiveIntegrationTests
 
         var messages = new List<ChatModelMessage>
         {
-            new() { Role = "system", Content = SystemPrompts.Canvas },
+            new() { Role = "system", Content = CanvasPrompt },
             new() { Role = "user", Content = "using todo, generate three random files for me." },
         };
 
