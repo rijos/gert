@@ -16,7 +16,16 @@ public sealed class ToolRegistry
     public ToolRegistry(IEnumerable<ITool> tools)
     {
         ArgumentNullException.ThrowIfNull(tools);
-        _byId = tools.ToDictionary(t => t.Id, t => (ITool?)t, StringComparer.Ordinal);
+        _byId = new Dictionary<string, ITool?>(StringComparer.Ordinal);
+        foreach (var t in tools)
+        {
+            // Loop + TryAdd (not ToDictionary): a collision must name the offending id, not throw an opaque framework message.
+            if (!_byId.TryAdd(t.Id, t))
+            {
+                throw new ArgumentException($"duplicate tool id '{t.Id}'", nameof(tools));
+            }
+        }
+
         AllIds = _byId.Keys.ToHashSet(StringComparer.Ordinal);
     }
 
@@ -35,9 +44,16 @@ public sealed class ToolRegistry
         _byId = new Dictionary<string, ITool?>(StringComparer.Ordinal);
         foreach (var id in toolIds)
         {
-            if (!string.IsNullOrWhiteSpace(id))
+            if (string.IsNullOrWhiteSpace(id))
             {
-                _byId[id] = null;
+                continue;
+            }
+
+            // Id uniqueness is enforced here, not silently coalesced: a duplicate id means two
+            // tools share a capability key, which would split entitlement/execution ambiguously.
+            if (!_byId.TryAdd(id, null))
+            {
+                throw new ArgumentException($"duplicate tool id '{id}'", nameof(toolIds));
             }
         }
 

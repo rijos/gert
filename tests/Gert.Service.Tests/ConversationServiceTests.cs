@@ -4,6 +4,7 @@ using Gert.Model.Chat;
 using Gert.Model.Dtos;
 using Gert.Service.Conversations;
 using Gert.Testing.Fakes;
+using Gert.Tools;
 using Gert.Tools.Builtin;
 using Gert.Validation;
 using Microsoft.Extensions.DependencyInjection;
@@ -23,8 +24,14 @@ public sealed class ConversationServiceTests
 {
     private readonly IChatRepository _repo = Substitute.For<IChatRepository>();
     private readonly IChatDatabaseProvider _provider = Substitute.For<IChatDatabaseProvider>();
+    // The id-only ToolRegistry is derived from the registered ITool instances, so the tools must
+    // resolve - the host ports they ctor-inject are wired as fakes (validation never executes them).
     private readonly IValidationProvider _validation =
-        new ServiceCollection().AddGertServices().AddBuiltinTools().BuildServiceProvider()
+        new ServiceCollection().AddGertServices().AddBuiltinTools()
+            .AddSingleton<IWebSearch>(new FakeWebSearch())
+            .AddSingleton<IWebFetcher>(new FakeWebFetcher())
+            .AddSingleton<IPythonSandbox>(new StubPythonSandbox())
+            .BuildServiceProvider()
             .GetRequiredService<IValidationProvider>();
     private readonly TestUserContext _user = new();
 

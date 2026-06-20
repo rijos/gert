@@ -15,12 +15,12 @@ using Xunit;
 namespace Gert.Tools.Builtin.Tests;
 
 /// <summary>
-/// Hand-sync guard for the tool census (auth.md section tool registry): the id-only
-/// <see cref="ToolRegistry"/> (built from <c>BuiltInToolIds</c>) and the <c>AddBuiltinTools</c>
-/// <see cref="ITool"/> registrations - both in the Gert.Tools.Builtin adapter - are two
-/// lists that MUST agree - a tool registered without its id (or vice versa) silently
-/// breaks entitlement or execution. Resolves both from the production wiring and asserts
-/// set-equality.
+/// Invariants of the tool registry (auth.md section tool registry): the id-only
+/// <see cref="ToolRegistry"/> singleton is DERIVED from the registered <see cref="ITool"/>
+/// instances (no hand-maintained census), so the only thing to guard is that the derivation
+/// holds - the registry's ids equal the resolved tools' ids with no duplicates - and that the
+/// registry's ctors reject a duplicate id rather than silently coalescing it (which would split
+/// a capability key across two tools and break entitlement/execution).
 /// </summary>
 public sealed class ToolRegistrationTests
 {
@@ -49,19 +49,37 @@ public sealed class ToolRegistrationTests
     }
 
     [Fact]
-    public void The_registered_tools_match_the_built_in_id_registry_exactly()
+    public void The_id_registry_is_derived_from_the_registered_tools_with_no_duplicates()
     {
         using var sp = BuildProductionHost();
         using var scope = sp.CreateScope();
 
         var toolIds = scope.ServiceProvider.GetRequiredService<IEnumerable<ITool>>()
             .Select(t => t.Id)
-            .ToHashSet(StringComparer.Ordinal);
+            .ToList();
         var registry = sp.GetRequiredService<ToolRegistry>();
 
-        toolIds.Should().BeEquivalentTo(
-            registry.AllIds,
-            "BuiltInToolIds and AddTools are hand-synced lists - they must name the same capability ids");
+        // No tool id collides (derivation would have thrown, but pin it explicitly).
+        registry.AllIds.Should().HaveCount(toolIds.Count, "every registered tool contributes a distinct capability id");
+        registry.AllIds.Should().BeEquivalentTo(
+            toolIds,
+            "the id-only registry is derived from the registered ITool instances");
+    }
+
+    [Fact]
+    public void The_id_only_ctor_rejects_a_duplicate_id()
+    {
+        var act = () => new ToolRegistry(new[] { "a", "a" });
+
+        act.Should().Throw<ArgumentException>().WithMessage("*duplicate*'a'*");
+    }
+
+    [Fact]
+    public void The_instance_ctor_rejects_two_tools_sharing_an_id()
+    {
+        var act = () => new ToolRegistry(new ITool[] { new FakeTool("dup"), new FakeTool("dup") });
+
+        act.Should().Throw<ArgumentException>().WithMessage("*duplicate*'dup'*");
     }
 
     [Theory]
@@ -96,5 +114,23 @@ public sealed class ToolRegistrationTests
 
         validator.Validate(new ToolToggles(new Dictionary<string, bool> { ["ask_userr"] = true }))
             .IsValid.Should().BeFalse();
+    }
+
+    // Minimal ITool stub: the instance ctor keys only on Id, so the rest is unreachable.
+    private sealed class FakeTool(string id) : ITool
+    {
+        public string Id => id;
+
+        public string Name => id;
+
+        public string Description => id;
+
+        public string ParametersSchema => "{}";
+
+        public Task<ToolResult> ExecuteAsync(
+            ToolInvocation invocation,
+            IToolHost host,
+            CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
     }
 }

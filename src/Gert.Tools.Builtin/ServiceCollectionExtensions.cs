@@ -50,24 +50,13 @@ public static class ServiceCollectionExtensions
     }
 
     /// <summary>
-    /// The canonical capability ids of the built-in tools -- the id-only
-    /// <see cref="ToolRegistry"/> singleton is built from these, matching the
-    /// <see cref="ITool.Id"/> of each registered tool. Keep in sync with the
-    /// <c>AddBuiltinTools</c> registrations below; the <c>ToolRegistrationTests</c>
-    /// set-equality guard fails if they drift.
-    /// </summary>
-    private static readonly string[] BuiltInToolIds =
-        ["rag", "search", "sandbox", "todo", "clock", "make_artifact", "edit_artifact", "read_artifact", "list_artifacts", "ask_user", "fetch", "sub_agent"];
-
-    /// <summary>
     /// Register the built-in tools as scoped <see cref="ITool"/>s, resolved by the orchestrator
     /// via <c>IEnumerable&lt;ITool&gt;</c>. Scoped to match the per-request lifetime of the host's
     /// capability surface; the tools themselves reach RAG, objects, the UI, and delegation through
     /// the <see cref="IToolHost"/> handed at call time, never through DI - so no tool here references
-    /// the service layer or an external provider. The id-only <see cref="ToolRegistry"/> +
-    /// <c>BuiltInToolIds</c> census ship here too (tool identity belongs with the impls); the auth
+    /// the service layer or an external provider. The id-only <see cref="ToolRegistry"/> ships here
+    /// too (tool identity belongs with the impls) and is derived from these registrations; the auth
     /// entitlement resolver + the tool-toggle validator depend on the registry for id checks only.
-    /// <c>ToolRegistrationTests</c> guards the two lists.
     /// </summary>
     public static IServiceCollection AddBuiltinTools(this IServiceCollection services)
     {
@@ -76,7 +65,14 @@ public static class ServiceCollectionExtensions
         // The id-only registry names capability ids, not impls (it never holds the per-request
         // scoped tool instances - the orchestrator resolves those via IEnumerable<ITool>).
         // Singleton so the singleton validators that take it are not captive on a scoped service.
-        services.TryAddSingleton(new ToolRegistry(BuiltInToolIds));
+        // The ids are DERIVED from the registered ITool instances (single source of truth, no
+        // hand-maintained census); a duplicate id throws at first resolution. The scoped tools are
+        // resolved once into a throwaway scope (their ctors only store an IValidationProvider).
+        services.TryAddSingleton(sp =>
+        {
+            using var scope = sp.CreateScope();
+            return new ToolRegistry(scope.ServiceProvider.GetServices<ITool>().Select(t => t.Id).ToList());
+        });
 
         services.AddScoped<ITool, RagTool>();
         services.AddScoped<ITool, WebSearchTool>();

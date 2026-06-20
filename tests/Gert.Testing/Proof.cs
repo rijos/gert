@@ -1,4 +1,6 @@
 using Gert.Service;
+using Gert.Testing.Fakes;
+using Gert.Tools;
 using Gert.Tools.Builtin;
 using Gert.Validation;
 using Microsoft.Extensions.DependencyInjection;
@@ -14,6 +16,8 @@ namespace Gert.Testing;
 /// supplies the id-only <c>ToolRegistry</c> the tool-toggle validator needs), so a proof minted
 /// here passes exactly the validators that ship. An invalid value throws
 /// <see cref="ValidationException"/>, which is what the service-boundary tests want to assert against.
+/// The id-only registry is derived from the registered ITool instances, so the tools must be
+/// resolvable - the host ports they ctor-inject are wired here as fakes (nothing executes).
 /// </summary>
 public static class Proof
 {
@@ -21,6 +25,9 @@ public static class Proof
         new ServiceCollection()
             .AddGertServices()
             .AddBuiltinTools()
+            .AddSingleton<IWebSearch>(new FakeWebSearch())
+            .AddSingleton<IWebFetcher>(new FakeWebFetcher())
+            .AddSingleton<IPythonSandbox>(new StubPythonSandbox())
             .BuildServiceProvider()
             .GetRequiredService<IValidationProvider>();
 

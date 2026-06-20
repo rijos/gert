@@ -27,7 +27,7 @@ code comments cite docs by section, so keep both ends accurate.
   engine) with impl `Gert.Rag.Sqlite` (sqlite-vec + FTS5); and `Gert.Tools` (the
   `ITool`/`ToolRegistry`/`ToolResult` tool contracts + the `IWebSearch`/`IWebFetcher`/`IPythonSandbox`
   ports) with impl `Gert.Tools.Builtin` (web search + sandbox backends, the built-in `ITool`
-  implementations under `Builtin/`, and the `BuiltInToolIds` census). The remaining adapters:
+  implementations under `Builtin/`, and the id-only `ToolRegistry` derived from them). The remaining adapters:
   `Gert.Ingestion` (the md/txt + isolated pdf/docx text extractors), `Gert.Authentication`.
   `Gert.Service` keeps the turn orchestration and drives `ITool` through the `Gert.Tools`
   contracts, not the impls. `Gert.Tools.Builtin` references neither `Gert.Service` nor any
