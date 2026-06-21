@@ -155,6 +155,7 @@ public sealed class TurnRunnerTests
             // itself; the RAG index provider + embedding client are its own deps.
             _ragProvider, new FakeEmbeddings(),
             Options.Create(options ?? new TurnOptions()),
+            Options.Create(new ToolsOptions()),
             clock ?? TimeProvider.System,
             cancellation ?? new TurnCancellation(
                 Options.Create(options ?? new TurnOptions()), clock ?? TimeProvider.System),

@@ -123,6 +123,29 @@ builder.Services.AddOptions<Gert.Service.Chat.TurnOptions>()
     .Validate(o => o.MaxConcurrentTurns >= 1, "Gert:Turn:MaxConcurrentTurns must be >= 1")
     .ValidateOnStart();
 
+// Per-tool budget overrides (turn-budgets.md section 1): for each registered tool id, bind any
+// "Gert:Tools:<id>:Limits" section into a PARTIAL ToolBoundsOverride - absent fields leave the tool's
+// intrinsic ToolBounds untouched. The id-only ToolRegistry (a singleton) is the id source: resolving
+// the scoped ITool instances from the root options provider would trip ValidateScopes. The configure
+// action runs lazily, when IOptions<ToolsOptions> is first materialised (a turn), not at build time.
+builder.Services.AddOptions<Gert.Service.Chat.ToolsOptions>()
+    .Configure<IServiceProvider>((options, sp) =>
+    {
+        var toolsSection = builder.Configuration.GetSection("Gert:Tools");
+        foreach (var id in sp.GetRequiredService<Gert.Tools.ToolRegistry>().AllIds)
+        {
+            var limits = toolsSection.GetSection($"{id}:Limits");
+            if (!limits.Exists())
+            {
+                continue;
+            }
+
+            var ov = new Gert.Service.Chat.ToolBoundsOverride();
+            limits.Bind(ov);
+            options.PerTool[id] = ov;
+        }
+    });
+
 // Operator-configurable system-prompt fragments (the canvas/artifact nudge). The
 // service layer registers empty defaults; the host binds the real text over them.
 builder.Services.AddOptions<Gert.Service.Chat.PromptOptions>()

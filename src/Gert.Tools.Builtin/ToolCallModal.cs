@@ -7,9 +7,9 @@ namespace Gert.Tools.Builtin;
 /// Base for a <see cref="ToolType.Modal"/> tool - one that legitimately blocks mid-turn on
 /// out-of-band input (<c>ask_user</c>) or runs a long nested flow (<c>run_sub_agent</c>). Setting
 /// <see cref="ITool.Type"/> to <see cref="ToolType.Modal"/> is the single signal the runner keys
-/// off to exempt the call from the generic <c>ToolCallTimeout</c>: the tool owns its own deadline
-/// math (the <see cref="ToolInvocation.Deadline"/> budget) and the turn's lifetime token stays the
-/// hard wall (chat-and-tools.md section Ask the user). Replaces the old <c>IInteractiveTool</c>
+/// off to exempt the call from the per-tool <c>ToolBounds.CallTimeout</c>: the tool owns its own
+/// deadline math (the <see cref="ToolInvocation.Deadline"/> budget) and the turn's lifetime token
+/// stays the hard wall (chat-and-tools.md section Ask the user). Replaces the old <c>IInteractiveTool</c>
 /// marker. The derived tool still implements <see cref="ITool.ExecuteAsync"/> itself - modal flows
 /// differ too much (a question-wait vs a nested model loop) to share a body.
 /// </summary>
@@ -45,6 +45,9 @@ public abstract class ToolCallModal : ITool
 
     /// <summary>Menu grouping; virtual, defaults to the built-in group.</summary>
     public virtual string Group => "builtin";
+
+    /// <summary>Per-turn budget ceiling; virtual class member (the <see cref="ITool"/> default isn't), defaults to <see cref="ToolBounds.Default"/>. A modal tool is timeout-exempt, so only the call/token caps apply.</summary>
+    public virtual ToolBounds Bounds => ToolBounds.Default;
 
     /// <inheritdoc />
     public abstract Task<ToolResult> ExecuteAsync(

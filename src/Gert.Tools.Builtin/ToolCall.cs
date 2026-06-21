@@ -60,6 +60,9 @@ public abstract class ToolCall<TArgs, TResult> : IToolCall<TArgs, TResult>
     /// <summary>Menu grouping; virtual, defaults to the built-in group.</summary>
     public virtual string Group => "builtin";
 
+    /// <summary>Per-turn budget ceiling; virtual class member (the <see cref="ITool"/> default isn't), defaults to <see cref="ToolBounds.Default"/>.</summary>
+    public virtual ToolBounds Bounds => ToolBounds.Default;
+
     /// <inheritdoc />
     public abstract Task<ToolCallResult<TResult>> CallAsync(
         TArgs args,

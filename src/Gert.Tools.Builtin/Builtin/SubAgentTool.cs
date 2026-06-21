@@ -14,9 +14,9 @@ namespace Gert.Tools.Builtin;
 /// (the chat driver's <c>ChatToolDelegate</c>), so this tool depends on the contract, not the loop.
 ///
 /// <para>
-/// <see cref="ToolType.Modal"/> (via <see cref="ToolCallModal"/>) exempts the wait from the generic
-/// <c>ToolCallTimeout</c> backstop (a delegated research task legitimately outlives 60 s); the turn's
-/// lifetime token remains the hard wall.
+/// <see cref="ToolType.Modal"/> (via <see cref="ToolCallModal"/>) exempts the wait from the per-tool
+/// <c>ToolBounds.CallTimeout</c> backstop (a delegated research task legitimately outlives 60 s); the
+/// turn's lifetime token remains the hard wall.
 /// </para>
 /// </summary>
 public sealed class SubAgentTool : ToolCallModal

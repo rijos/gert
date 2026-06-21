@@ -99,6 +99,31 @@ with open items it says "N step(s) remain - continue in this same reply",
 because qwen's instruct mode otherwise yields to the user after one step;
 when all items are done it says to wrap up.
 
+**Loop structure.** The reusable loop (`Gert.Agent`'s `AgentLoop`, run by the
+chat shell, the sub-agent, and any headless driver alike) decomposes into small
+units the regression tests guard: a per-run **`Toolset`** (the offered tools, the
+advertised specs, the entitlement ceiling, and each tool's *effective bounds* -
+below), a **`DeltaSink`** (the single emit channel plus the delta/reasoning
+coalescing and the content/reasoning accumulators), **`StreamRoundAsync`** (consume
+one model stream into the sink, emit the live tool-call-start card, collect the
+round's calls + token counts), and **`ExecuteRoundAsync`** (append the assistant
+tool-calls message, then per call: gate the entitlement card, consume the per-tool
+call budget, run under the tool's timeout, emit/persist the result). `RunAsync` is
+the thin orchestrator over them, with the wind-down brake between the stream and the
+execute step.
+
+**Per-tool bounds.** Every `ITool` declares concrete `ToolBounds`
+(`MaxCallsPerTurn`, `CallTimeout`, `TokenBudget`) - `web_search` ships a tight call
+cap (searches dominate runaway cost), the rest take the defaults. An operator
+retunes individual fields under `Gert:Tools:<toolId>:Limits`
+([configuration section per-tool budgets](../installation/configuration.md#per-tool-budgets---gerttoolstoolidlimits));
+at run start the `Toolset` copies the *effective* value (intrinsic with overrides
+applied) into a per-run tracker, so the shared singleton tool is never mutated and
+the loop never reads config. A per-tool call cap trips into the same synthetic
+budget-exhausted refusal the round brake uses; modal tools are exempt from
+`CallTimeout`; the `TokenBudget` rides onto the per-call host but is not yet enforced
+([turn-budgets.md section 4b](turn-budgets.md#4b-per-turn-token-budget-gertturnmaxturntokens---proposed)).
+
 **Mode-correct sampling rides the provider (Qwen3.6).** The checkpoint's
 `generation_config.json` carries only the thinking-mode set (temperature 1.0,
 top_p 0.95, top_k 20) - that is what vLLM applies to omitted fields. Neither
@@ -472,7 +497,7 @@ project's RAG) and returns only the final text.
 - **Budget.** The nested loop is bounded by its own round cap (16, far below the
   parent's `MaxToolRounds`) and the per-round `MaxTokensPerRound`, all under the
   parent turn's lifetime token as the hard wall. The wait is exempt from the
-  generic `ToolCallTimeout` (`ToolType.Modal`, like `ask_user`) because a
+  per-tool `ToolBounds.CallTimeout` (`ToolType.Modal`, like `ask_user`) because a
   delegated task legitimately outlives 60 s. Running out of rounds degrades to
   the loop's wind-down - the streamed final text returns rather than a fault.
 - **Invisible by design.** The nested loop is autonomous (no `Emit`): its tool
@@ -510,7 +535,7 @@ of its options (a runtime check in `TurnQuestions`). The successful tool result
 pairs each question with its answer (`{answered:true, answers:[{question,
 answer}, ...]}`) so the model knows which reply belongs to which prompt.
 
-**Wait budget.** The wait is exempt from the generic `ToolCallTimeout`
+**Wait budget.** The wait is exempt from the per-tool `ToolBounds.CallTimeout`
 backstop (the `ToolType.Modal` flag - a 60 s cap would kill every wait) and
 instead runs for **min(`Gert:Turn:AskUserTimeout` (default 5 min), remaining
 turn budget - a 15 s grace)**, the math `ChatToolUi` does against the turn

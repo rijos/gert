@@ -63,31 +63,30 @@ public sealed class AgentLoopTests
         IReadOnlySet<string>? allowed = null,
         IToolHost? host = null,
         TurnOptions? options = null,
+        ToolsOptions? toolsOptions = null,
         string userContent = "hello")
     {
         options ??= new TurnOptions();
         tools ??= [];
+        var specs = tools.Select(t => new ChatToolSpec
+        {
+            Name = t.Name,
+            Description = t.Description,
+            ParametersSchema = t.ParametersSchema,
+        }).ToList();
+        var allowedIds = allowed ?? tools.Select(t => t.Id).ToHashSet(StringComparer.Ordinal);
         return new AgentLoopRequest
         {
             Messages = [new ChatModelMessage { Role = "user", Content = userContent }],
-            ToolSpecs = tools.Select(t => new ChatToolSpec
-            {
-                Name = t.Name,
-                Description = t.Description,
-                ParametersSchema = t.ParametersSchema,
-            }).ToList(),
-            Tools = tools,
+            Tools = new Toolset(tools, specs, allowedIds, toolsOptions?.PerTool),
             ModelId = "default",
             Model = model,
             Host = host ?? new FakeToolHost(),
             Pid = Pid,
             ConversationId = Conv,
             MessageId = AssistantId,
-            AllowedToolIds = allowed ?? tools.Select(t => t.Id).ToHashSet(StringComparer.Ordinal),
             MaxRounds = options.MaxToolRounds,
             MaxTokensPerRound = options.MaxTokensPerRound,
-            MaxSearchCallsPerTurn = options.MaxSearchCallsPerTurn,
-            ToolCallTimeout = options.ToolCallTimeout,
             DeltaFlushInterval = options.DeltaFlushInterval,
             DeltaFlushMaxChars = options.DeltaFlushMaxChars,
             Emit = Emit,
@@ -274,15 +273,15 @@ public sealed class AgentLoopTests
     }
 
     [Fact]
-    public async Task Per_turn_search_budget_refuses_searches_past_the_cap()
+    public async Task A_tools_intrinsic_call_cap_refuses_calls_past_the_cap()
     {
-        var search = new CountingSearchTool();
+        // The tool ships its own MaxCallsPerTurn=2 (web_search's intrinsic ceiling pattern); no
+        // operator config involved. Two calls execute, the rest refuse with a synthetic result.
+        var search = new CountingSearchTool(ToolBounds.Default with { MaxCallsPerTurn = 2 });
         var model = new SearchingModel(rounds: 4);
 
-        await NewLoop().RunAsync(
-            Request(model, [search], options: new TurnOptions { MaxSearchCallsPerTurn = 2 }));
+        await NewLoop().RunAsync(Request(model, [search]));
 
-        // Two searches execute, the rest refuse with a synthetic budget result.
         search.Executions.Should().Be(2);
         _executed.Count(r => r.Status == ToolCallStatus.Done).Should().Be(2);
         _executed.Count(r => r.Status == ToolCallStatus.Error).Should().Be(2);
@@ -290,17 +289,38 @@ public sealed class AgentLoopTests
         var refused = Events.OfType<ToolResultEvent>()
             .Where(e => e.Status == ToolCallStatus.Error).ToList();
         refused.Should().HaveCount(2);
-        refused.Should().OnlyContain(e => e.Error!.Contains("web search budget exhausted"));
+        refused.Should().OnlyContain(e => e.Error!.Contains("call budget exhausted"));
     }
 
     [Fact]
-    public async Task Disabled_search_budget_lets_every_search_run()
+    public async Task A_per_tool_config_override_sets_the_call_cap()
     {
+        // The tool keeps its generous default; an operator Gert:Tools:<id>:Limits override tightens
+        // MaxCallsPerTurn to 2. Same refusal behaviour, sourced from config not the tool.
         var search = new CountingSearchTool();
+        var toolsOptions = new ToolsOptions();
+        toolsOptions.PerTool["search"] = new ToolBoundsOverride { MaxCallsPerTurn = 2 };
         var model = new SearchingModel(rounds: 4);
 
-        await NewLoop().RunAsync(
-            Request(model, [search], options: new TurnOptions { MaxSearchCallsPerTurn = 0 }));
+        await NewLoop().RunAsync(Request(model, [search], toolsOptions: toolsOptions));
+
+        search.Executions.Should().Be(2);
+        _executed.Count(r => r.Status == ToolCallStatus.Error).Should().Be(2);
+        Events.OfType<ToolResultEvent>()
+            .Where(e => e.Status == ToolCallStatus.Error)
+            .Should().OnlyContain(e => e.Error!.Contains("call budget exhausted"));
+    }
+
+    [Fact]
+    public async Task A_disabled_call_cap_lets_every_call_run()
+    {
+        // MaxCallsPerTurn <= 0 is unlimited (the disable sentinel) - every call runs.
+        var search = new CountingSearchTool();
+        var toolsOptions = new ToolsOptions();
+        toolsOptions.PerTool["search"] = new ToolBoundsOverride { MaxCallsPerTurn = 0 };
+        var model = new SearchingModel(rounds: 4);
+
+        await NewLoop().RunAsync(Request(model, [search], toolsOptions: toolsOptions));
 
         search.Executions.Should().Be(4);
         _executed.Should().OnlyContain(r => r.Status == ToolCallStatus.Done);
@@ -320,12 +340,12 @@ public sealed class AgentLoopTests
     }
 
     [Fact]
-    public async Task Hung_tool_call_times_out_with_a_visible_error_and_the_loop_completes()
+    public async Task Hung_tool_call_times_out_on_its_intrinsic_bounds_and_the_loop_completes()
     {
-        var hung = new HangingTool();
-        var options = new TurnOptions { ToolCallTimeout = TimeSpan.FromMilliseconds(50) };
+        // The tool's own Bounds.CallTimeout (50 ms) is the backstop - no operator config.
+        var hung = new HangingTool(ToolBounds.Default with { CallTimeout = TimeSpan.FromMilliseconds(50) });
 
-        await NewLoop().RunAsync(Request(new TextThenToolModel(), [hung], options: options));
+        await NewLoop().RunAsync(Request(new TextThenToolModel(), [hung]));
 
         // The call failed visibly - card error text names the timeout - and the
         // loop went on to a final answer instead of dying with it.
@@ -336,18 +356,58 @@ public sealed class AgentLoopTests
     }
 
     [Fact]
-    public async Task An_interactive_tool_is_exempt_from_the_generic_tool_call_timeout()
+    public async Task A_per_tool_config_override_sets_the_call_timeout()
     {
-        // A Modal tool must outlive ToolCallTimeout (blocking IS its job): the loop
-        // skips the per-call backstop for modal tools.
-        var slow = new SlowInteractiveTool(TimeSpan.FromMilliseconds(300));
-        var options = new TurnOptions { ToolCallTimeout = TimeSpan.FromMilliseconds(50) };
+        // The tool keeps its 60 s default; a Gert:Tools:<id>:Limits override tightens CallTimeout to
+        // 50 ms, which trips the hung call.
+        var hung = new HangingTool();
+        var toolsOptions = new ToolsOptions();
+        toolsOptions.PerTool["stub"] = new ToolBoundsOverride { CallTimeout = TimeSpan.FromMilliseconds(50) };
 
-        await NewLoop().RunAsync(Request(new TextThenToolModel(), [slow], options: options));
+        await NewLoop().RunAsync(Request(new TextThenToolModel(), [hung], toolsOptions: toolsOptions));
+
+        var result = Events.OfType<ToolResultEvent>().Single();
+        result.Status.Should().Be(ToolCallStatus.Error);
+        result.Error.Should().Contain("timed out");
+    }
+
+    [Fact]
+    public async Task An_interactive_tool_is_exempt_from_the_per_call_timeout()
+    {
+        // A Modal tool must outlive its CallTimeout (blocking IS its job): the loop skips the per-call
+        // backstop for modal tools, even with a tight intrinsic CallTimeout.
+        var slow = new SlowInteractiveTool(
+            TimeSpan.FromMilliseconds(300), ToolBounds.Default with { CallTimeout = TimeSpan.FromMilliseconds(50) });
+
+        await NewLoop().RunAsync(Request(new TextThenToolModel(), [slow]));
 
         var result = Events.OfType<ToolResultEvent>().Single();
         result.Status.Should().Be(ToolCallStatus.Done);
         _executed.Single().Status.Should().Be(ToolCallStatus.Done);
+    }
+
+    [Fact]
+    public async Task A_tools_effective_token_budget_reaches_its_host_limits()
+    {
+        // The per-tool TokenBudget (intrinsic, overridable) is copied onto the per-call host the tool
+        // is handed - BudgetedToolHost feeds the existing ToolLimits.TokenBudget seam.
+        var probe = new TokenBudgetProbeTool(ToolBounds.Default with { TokenBudget = 4242 });
+
+        await NewLoop().RunAsync(Request(new TextThenToolModel(), [probe]));
+
+        probe.TokenBudgetSeen.Should().Be(4242);
+    }
+
+    [Fact]
+    public async Task A_per_tool_config_override_sets_the_token_budget()
+    {
+        var probe = new TokenBudgetProbeTool();
+        var toolsOptions = new ToolsOptions();
+        toolsOptions.PerTool["stub"] = new ToolBoundsOverride { TokenBudget = 99 };
+
+        await NewLoop().RunAsync(Request(new TextThenToolModel(), [probe], toolsOptions: toolsOptions));
+
+        probe.TokenBudgetSeen.Should().Be(99);
     }
 
     [Fact]
@@ -607,8 +667,8 @@ public sealed class AgentLoopTests
             Task.FromResult(new ToolResult { Success = true, ResultJson = "{}" });
     }
 
-    /// <summary>A "search"-id tool that counts how often it actually executes.</summary>
-    private sealed class CountingSearchTool : ITool
+    /// <summary>A "search"-id tool that counts how often it executes; carries a settable call cap.</summary>
+    private sealed class CountingSearchTool(ToolBounds? bounds = null) : ITool
     {
         private int _executions;
 
@@ -622,6 +682,8 @@ public sealed class AgentLoopTests
 
         public string ParametersSchema => """{"type":"object"}""";
 
+        public ToolBounds Bounds { get; } = bounds ?? ToolBounds.Default;
+
         public Task<ToolResult> ExecuteAsync(
             ToolInvocation invocation,
             IToolHost host,
@@ -632,8 +694,8 @@ public sealed class AgentLoopTests
         }
     }
 
-    /// <summary>A Modal tool that takes longer than the generic per-call timeout.</summary>
-    private sealed class SlowInteractiveTool(TimeSpan wait) : ITool
+    /// <summary>A Modal tool that takes longer than its own CallTimeout (which it is exempt from).</summary>
+    private sealed class SlowInteractiveTool(TimeSpan wait, ToolBounds? bounds = null) : ITool
     {
         public string Id => "stub";
 
@@ -644,6 +706,8 @@ public sealed class AgentLoopTests
         public string ParametersSchema => """{"type":"object"}""";
 
         public ToolType Type => ToolType.Modal;
+
+        public ToolBounds Bounds { get; } = bounds ?? ToolBounds.Default;
 
         public async Task<ToolResult> ExecuteAsync(
             ToolInvocation invocation,
@@ -688,8 +752,8 @@ public sealed class AgentLoopTests
         }
     }
 
-    /// <summary>Hangs until cancelled - exercises the per-call timeout backstop.</summary>
-    private sealed class HangingTool : ITool
+    /// <summary>Hangs until cancelled - exercises the per-call timeout backstop; carries a settable CallTimeout.</summary>
+    private sealed class HangingTool(ToolBounds? bounds = null) : ITool
     {
         public string Id => "stub";
 
@@ -699,6 +763,8 @@ public sealed class AgentLoopTests
 
         public string ParametersSchema => """{"type":"object"}""";
 
+        public ToolBounds Bounds { get; } = bounds ?? ToolBounds.Default;
+
         public async Task<ToolResult> ExecuteAsync(
             ToolInvocation invocation,
             IToolHost host,
@@ -706,6 +772,31 @@ public sealed class AgentLoopTests
         {
             await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
             return new ToolResult { Success = true, ResultJson = "{}" };
+        }
+    }
+
+    /// <summary>Records the per-call <see cref="ToolLimits.TokenBudget"/> the host handed it (a probe).</summary>
+    private sealed class TokenBudgetProbeTool(ToolBounds? bounds = null) : ITool
+    {
+        public string Id => "stub";
+
+        public string Name => "stub_tool";
+
+        public string Description => "probes the token budget";
+
+        public string ParametersSchema => """{"type":"object"}""";
+
+        public ToolBounds Bounds { get; } = bounds ?? ToolBounds.Default;
+
+        public int? TokenBudgetSeen { get; private set; }
+
+        public Task<ToolResult> ExecuteAsync(
+            ToolInvocation invocation,
+            IToolHost host,
+            CancellationToken cancellationToken = default)
+        {
+            TokenBudgetSeen = host.Limits.TokenBudget;
+            return Task.FromResult(new ToolResult { Success = true, ResultJson = "{}" });
         }
     }
 

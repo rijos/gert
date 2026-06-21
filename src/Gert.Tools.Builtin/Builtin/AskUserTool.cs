@@ -16,7 +16,7 @@ namespace Gert.Tools.Builtin;
 /// <see cref="IToolUi"/> contract, not the chat impl.
 /// <para>
 /// <see cref="ToolType.Modal"/> (via <see cref="ToolCallModal"/>) exempts the wait from the
-/// generic <c>ToolCallTimeout</c>. A timeout is a SUCCESSFUL result the model continues from; a
+/// per-tool <c>ToolBounds.CallTimeout</c>. A timeout is a SUCCESSFUL result the model continues from; a
 /// host with no Ui (autonomous driver) fails the call closed. <see cref="RequiresHuman"/> keeps
 /// the tool off an autonomous driver's advertised set.
 /// </para>

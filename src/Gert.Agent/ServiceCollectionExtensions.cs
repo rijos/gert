@@ -57,6 +57,9 @@ public static class ServiceCollectionExtensions
         // TurnOptions get DEFAULTS here; the host binds "Gert:Turn" over them
         // (this layer stays configuration-agnostic).
         services.AddOptions<TurnOptions>();
+        // ToolsOptions (per-tool bound overrides) same: empty defaults here; the host fills PerTool
+        // from each registered tool's "Gert:Tools:<id>:Limits" section (it knows the tool ids).
+        services.AddOptions<ToolsOptions>();
         // PromptOptions same: empty defaults; the host binds "Gert:Prompts" over them.
         // The type itself stays in Gert.Service.Chat (the admin SystemPromptInspector also
         // reads it), so the engine references it from the service layer.

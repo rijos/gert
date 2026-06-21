@@ -52,6 +52,13 @@ public interface ITool
     string Group => "builtin";
 
     /// <summary>
+    /// The tool's budget ceiling (calls/turn, per-call timeout, nested-work tokens). Operator config
+    /// (<c>Gert:Tools:&lt;id&gt;:Limits</c>) overrides individual fields; the per-run loop copies the
+    /// effective value and tracks consumption. Always concrete - see <see cref="ToolBounds.Default"/>.
+    /// </summary>
+    ToolBounds Bounds => ToolBounds.Default;
+
+    /// <summary>
     /// Execute the tool against the <paramref name="host"/> capability surface for the
     /// given arguments (the model's tool-call payload). The host is pre-scoped to the
     /// active (user, project[, conversation]); the tool never sees iss/sub.

@@ -45,6 +45,13 @@ public sealed class WebSearchTool : ToolCall<WebSearchArgs, WebSearchToolResult>
     /// <inheritdoc />
     public override string Group => "standard";
 
+    /// <summary>
+    /// Searches dominate tool-loop runaway (each costs a SearXNG round-trip and floods the prompt),
+    /// so the tool ships a call cap tighter than the round budget - the old <c>MaxSearchCallsPerTurn</c>,
+    /// now intrinsic (turn-budgets.md section 1). Operators retune it under <c>Gert:Tools:search:Limits</c>.
+    /// </summary>
+    public override ToolBounds Bounds => ToolBounds.Default with { MaxCallsPerTurn = 5 };
+
     /// <inheritdoc />
     public override string Description =>
         "Search the public web; returns the most relevant results with their "

@@ -1,14 +1,19 @@
 # Turn budgets - bounding long agentic turns
 
-**Status: the layered-guards shape (section 2b survey summary) is implemented** - loop brake
-(`MaxToolRounds` 64, visible trip), per-turn search cap (`MaxSearchCallsPerTurn` 5 -
-searches dominate runaway cost, so they get a budget tighter than the round brake;
-refusals use the same synthetic-result shape), per-round completion bound
-(`MaxTokensPerRound`), per-tool-call backstop (`ToolCallTimeout`), all under `Gert:Turn`
-([installation/configuration.md section 9](../installation/configuration.md)), with every trip
-rendered on its tool card live *and* on reload. **Token budgets (section 4b) and steering (section 4c)
-remain open design.** Written after the 2026-06-07 runaway-loop incident and a survey of
-how [pi](https://pi.dev) and Open WebUI handle the same problem.
+**Status: the layered-guards shape (section 2b survey summary) is implemented** - the loop brake
+(`MaxToolRounds` 64, visible trip) and the per-round completion bound (`MaxTokensPerRound`) under
+`Gert:Turn` ([installation/configuration.md section 9](../installation/configuration.md)), plus the
+**per-tool bounds** - a per-turn call cap (now on *every* tool, generalizing the old search-only
+cap: each defaults to 64 = the round budget, and `web_search` ships a tighter 5 because searches
+dominate runaway cost), a per-call timeout, and a nested-work token allowance - declared on each
+tool as concrete `ToolBounds` defaults and retunable under `Gert:Tools:<toolId>:Limits`
+([configuration.md per-tool budgets](../installation/configuration.md#per-tool-budgets---gerttoolstoolidlimits)).
+Every trip (round brake or a per-tool call cap) is a synthetic budget-exhausted result the model
+reads, rendered on its tool card live *and* on reload. The old global `Gert:Turn:ToolCallTimeout`
+folded into `ToolBounds.CallTimeout`, and `MaxSearchCallsPerTurn` into `WebSearchTool`'s intrinsic
+`MaxCallsPerTurn`. **Token budgets (section 4b) and steering (section 4c) remain open design.**
+Written after the 2026-06-07 runaway-loop incident and a survey of how
+[pi](https://pi.dev) and Open WebUI handle the same problem.
 
 ---
 
@@ -145,6 +150,12 @@ Enforcement is cheap and degrades gracefully through the machinery that now exis
 This is ~30 lines in `TurnRunner` because the wind-down brake already exists; the budget
 just becomes a second trigger for it. `MaxToolRounds` then *demotes* to pure runaway
 protection (default high, e.g. 64 - only degenerate loops hit it).
+
+A narrower, per-tool token seam already exists but is **unenforced**: each tool's
+`ToolBounds.TokenBudget` rides onto its per-call host as `IToolHost.Limits.TokenBudget`
+(the loop wraps the host in `BudgetedToolHost`), so a tool that runs nested work can read its
+allowance - but nothing clamps against it yet. That is the per-call analogue of this section's
+turn-wide budget; both stay open until there is a measured default to enforce.
 
 ### 4c. Steering instead of 409 - proposed, larger
 

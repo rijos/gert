@@ -52,32 +52,12 @@ public sealed class TurnOptions
     public int MaxTokensPerRound { get; set; } = 16384;
 
     /// <summary>
-    /// Per-turn cap on <c>web_search</c> calls - searches dominate tool-loop
-    /// runaway (each one costs an upstream SearXNG round-trip and floods the
-    /// prompt with results), so they get a budget tighter than
-    /// <see cref="MaxToolRounds"/>. Past the cap, further searches fail with a
-    /// synthetic "budget exhausted" result the model can read - visible on the
-    /// tool card; the turn continues. <c>0</c> or negative disables the cap.
-    /// </summary>
-    public int MaxSearchCallsPerTurn { get; set; } = 5;
-
-    /// <summary>
-    /// Generic wall-clock backstop on ONE tool execution. Individual tools keep
-    /// their own tighter limits (the sandbox wall clock, the search timeouts);
-    /// this catches the ones that hang outside them - a wedged database open, a
-    /// stuck embedding call's retry chain. A timed-out call fails with a
-    /// visible card error and the turn continues; it never kills the turn.
-    /// <see cref="TimeSpan.Zero"/> disables the backstop.
-    /// </summary>
-    public TimeSpan ToolCallTimeout { get; set; } = TimeSpan.FromSeconds(60);
-
-    /// <summary>
     /// How long one <c>ask_user</c> question waits for the user before the tool
     /// returns its graceful "user did not respond" result. The effective wait
     /// is min(this, remaining turn budget - a small grace slice) so the
     /// graceful path always beats the <see cref="MaxTurnDuration"/> error
-    /// finalize; the wait is exempt from <see cref="ToolCallTimeout"/>
-    /// (<c>ToolType.Modal</c>) or it could never exceed that backstop
+    /// finalize; the wait is exempt from the per-tool <c>ToolBounds.CallTimeout</c>
+    /// backstop (<c>ToolType.Modal</c>) or it could never exceed that backstop
     /// (chat-and-tools.md section Ask the user).
     /// </summary>
     public TimeSpan AskUserTimeout { get; set; } = TimeSpan.FromMinutes(5);

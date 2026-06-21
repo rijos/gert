@@ -64,6 +64,7 @@ public sealed class TurnRunner : ITurnRunner
     private readonly IRagIndexProvider _ragProvider;
     private readonly IEmbeddingClient _embeddings;
     private readonly TurnOptions _options;
+    private readonly ToolsOptions _toolsOptions;
     private readonly TimeProvider _clock;
     private readonly ITurnCancellation _cancellation;
     private readonly ITurnQuestions _questions;
@@ -78,6 +79,7 @@ public sealed class TurnRunner : ITurnRunner
         IRagIndexProvider ragProvider,
         IEmbeddingClient embeddings,
         IOptions<TurnOptions> options,
+        IOptions<ToolsOptions> toolsOptions,
         TimeProvider clock,
         ITurnCancellation cancellation,
         ITurnQuestions questions,
@@ -92,6 +94,7 @@ public sealed class TurnRunner : ITurnRunner
         _ragProvider = ragProvider ?? throw new ArgumentNullException(nameof(ragProvider));
         _embeddings = embeddings ?? throw new ArgumentNullException(nameof(embeddings));
         _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
+        _toolsOptions = toolsOptions?.Value ?? throw new ArgumentNullException(nameof(toolsOptions));
         _clock = clock ?? throw new ArgumentNullException(nameof(clock));
         _cancellation = cancellation ?? throw new ArgumentNullException(nameof(cancellation));
         _questions = questions ?? throw new ArgumentNullException(nameof(questions));
@@ -255,9 +258,15 @@ public sealed class TurnRunner : ITurnRunner
             delegableIds,
             nestedHost,
             _options.MaxTokensPerRound > 0 ? _options.MaxTokensPerRound : null,
-            _options.MaxSearchCallsPerTurn);
+            _toolsOptions.PerTool);
 
         var host = new ChatToolHost(objects, rag, ui, subAgent, deadline);
+
+        // The per-run tool view: all tools, the advertised specs, the plan-time entitlement
+        // snapshot, and the operator's per-tool bound overrides. Effective bounds are computed once
+        // here (each tool's intrinsic ToolBounds with non-null overrides applied) and tracked for the
+        // run - the loop never fetches config (turn-budgets.md section 1).
+        var toolset = new Toolset(_tools, job.Tools, job.AllowedToolIds, _toolsOptions.PerTool);
 
         // Insert the entitled call's tool_call row LIVE (the tree read model grows
         // as the turn runs) and collect its citations bound to the new row id - the
@@ -293,8 +302,7 @@ public sealed class TurnRunner : ITurnRunner
             new AgentLoopRequest
             {
                 Messages = messages,
-                ToolSpecs = job.Tools,
-                Tools = _tools,
+                Tools = toolset,
                 ModelId = job.ModelId,
                 Model = _clients.ForProvider(job.ModelId),
                 Host = host,
@@ -302,11 +310,8 @@ public sealed class TurnRunner : ITurnRunner
                 ConversationId = job.ConversationId,
                 MessageId = job.AssistantMessageId,
                 ClientTimezone = job.ClientTimezone,
-                AllowedToolIds = job.AllowedToolIds,
                 MaxRounds = _options.MaxToolRounds,
                 MaxTokensPerRound = _options.MaxTokensPerRound,
-                MaxSearchCallsPerTurn = _options.MaxSearchCallsPerTurn,
-                ToolCallTimeout = _options.ToolCallTimeout,
                 DeltaFlushInterval = _options.DeltaFlushInterval,
                 DeltaFlushMaxChars = _options.DeltaFlushMaxChars,
                 Emit = Emit,

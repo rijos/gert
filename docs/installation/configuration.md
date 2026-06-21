@@ -108,6 +108,7 @@ block follow in sections 3-7.
         "FetchTimeoutSeconds": 10,
         "MaxRedirects": 3,
         "SearchTimeoutSeconds": 15,
+        "Limits": { "MaxCallsPerTurn": 5 },   // per-tool budget override (web_search id="search"); partial
         "Parameters": { "BaseUrl": "http://localhost:8080" }
       },
       "Sandbox": {
@@ -115,6 +116,7 @@ block follow in sections 3-7.
         "WallClockSeconds": 10,               // cross-backend per-run caps sit beside Type
         "MemoryMiB": 256,
         "MaxOutputBytes": 65536,
+        // "Limits": { "CallTimeout": "00:02:00" },  // per-tool budget override (run_python id="sandbox")
         // Parameters is the per-backend bag. Monty: { BaseUrl, RequestTimeoutSeconds }.
         // GVisor: { RunscPath, Image, CpuSeconds, PidLimit, TmpSizeMiB, EgressEnabled }.
         "Parameters": { "BaseUrl": "http://localhost:8077" }
@@ -347,6 +349,25 @@ has no processes, filesystem, or network to limit.
 | `TmpSizeMiB` | `32` | no | no | Writable `/tmp`; rootfs stays read-only. |
 | `EgressEnabled` | `false` | no | no | Outbound network - the exfiltration brake. Leave off unless you must. |
 
+### Per-tool budgets - `Gert:Tools:<toolId>:Limits`
+
+Every tool ships **concrete intrinsic bounds** (`ToolBounds`, declared on the `ITool`), so a tool
+always has a budget. `Gert:Tools:<toolId>:Limits` is a **partial** operator override - only the
+fields you set replace the tool's defaults; the section key is the **tool id** (case-insensitive),
+so `web_search`'s budget lives under `Gert:Tools:Search:Limits` and `run_python`'s under
+`Gert:Tools:Sandbox:Limits`. Binds to `ToolBoundsOverride` (`src/Gert.Service/Chat/ToolBoundsOverride.cs`);
+the rationale is in [design/turn-budgets.md](../design/turn-budgets.md).
+
+| Key | Default (`ToolBounds.Default`) | Notes |
+|-----|--------------------------------|-------|
+| `MaxCallsPerTurn` | `64` (`web_search` ships `5`) | Cap on the tool's executed calls per turn; past it each further call is refused with a synthetic budget-exhausted result the model reads (visible on the card), the turn continues. `0` or less disables the cap. |
+| `CallTimeout` | `00:01:00` | Per-call wall-clock backstop, behind each tool's own tighter limits (sandbox wall clock, search timeouts). A trip fails that call with a visible card error; the turn continues. `0` disables. Modal tools (`ask_user`, `run_sub_agent`) are exempt - they carry their own deadline math (`ask_user` waits per `Gert:Turn:AskUserTimeout`; the sub-agent runs under its own nested round cap), with the turn lifetime token the hard wall. |
+| `TokenBudget` | `16384` | Allowance for the tool's nested work, surfaced to the tool as its host's token budget. |
+
+The defaults live on the tool, not in config: an absent `Limits` section, or an absent field within
+one, leaves the tool's intrinsic bounds untouched. `web_search` ships `MaxCallsPerTurn=5` because
+searches dominate tool-loop runaway; `appsettings.json` shows it as the visible default.
+
 ---
 
 ## 7. `Gert:Extractor` - isolated document extraction
@@ -412,16 +433,17 @@ re-prompting starts the next round, so every round costs a full vLLM completion.
 
 The guards are layered (the rationale and survey live in
 [design/turn-budgets.md](../design/turn-budgets.md)): bound every part, brake the loop,
-make every trip visible on its tool card.
+make every trip visible on its tool card. The **per-tool** budgets (the per-turn call cap, the
+per-call timeout, and the nested-work token allowance) no longer live here - each tool ships
+concrete defaults and an operator retunes them under
+[`Gert:Tools:<toolId>:Limits`](#per-tool-budgets---gerttoolstoolidlimits).
 
 | Key | Default | Notes |
 |-----|---------|-------|
 | `MaxTurnDuration` | `00:05:00` | Hard wall-clock cap on one turn (model rounds + tools) - the real budget. Doubles as the orphan horizon: a `streaming` row older than this reads as `error`. |
 | `MaxConcurrentTurns` | `4` | Parallel turn lanes. Turns shard by (user, project, conversation): one conversation never runs concurrently with itself; different conversations may overlap. `1` restores the global serial worker. Must be >= 1 (validated at startup). |
 | `MaxToolRounds` | `64` | **Runaway brake, not a work budget** - sized an order of magnitude above legitimate turns. Past it the runner refuses further calls with budget-exhausted errors (visible on the cards), winds down in one final round, and logs a warning. |
-| `MaxSearchCallsPerTurn` | `5` | Per-turn cap on `web_search` calls - searches dominate tool-loop runaway (each costs a SearXNG round-trip and floods the prompt with results). Past it, further searches fail with a budget-exhausted error the model can read (visible on the card); the turn continues. `0` disables. |
 | `MaxTokensPerRound` | `16384` | Per-round completion bound: the `max_tokens` sent on every upstream request. Reasoning tokens count against it on a thinking provider - keep it generous. `0` disables. |
-| `ToolCallTimeout` | `00:01:00` | Generic wall-clock backstop on one tool execution, behind each tool's own tighter limits (sandbox wall clock, search timeouts). A trip fails that call with a visible card error; the turn continues. `0` disables. Interactive tools (`ask_user`) are exempt - see `AskUserTimeout`. |
 | `AskUserTimeout` | `00:05:00` | How long one `ask_user` question waits for the user before the tool returns its graceful "user did not respond" result. The effective wait is min(this, remaining turn budget - 15 s grace), so it can never outlive `MaxTurnDuration`. |
 | `DeltaFlushInterval` | `00:00:00.150` | Delta coalescing window - buffered model chunks emit as one event per window. `0` disables coalescing. |
 | `DeltaFlushMaxChars` | `512` | Size backstop for the coalescing window. |

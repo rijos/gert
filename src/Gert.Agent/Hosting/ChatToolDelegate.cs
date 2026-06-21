@@ -1,6 +1,7 @@
 using Gert.Agent.Loop;
 using Gert.Chat;
 using Gert.Model.Chat;
+using Gert.Service.Chat;
 using Gert.Tools;
 using Gert.Tools.Hosting;
 
@@ -42,7 +43,7 @@ internal sealed class ChatToolDelegate : IToolDelegate
     private readonly IReadOnlySet<string> _allowedToolIds;
     private readonly IToolHost _nestedHost;
     private readonly int? _maxTokensPerRound;
-    private readonly int _maxSearchCallsPerTurn;
+    private readonly IReadOnlyDictionary<string, ToolBoundsOverride> _perTool;
 
     public ChatToolDelegate(
         IAgentLoop loop,
@@ -52,7 +53,7 @@ internal sealed class ChatToolDelegate : IToolDelegate
         IReadOnlySet<string> allowedToolIds,
         IToolHost nestedHost,
         int? maxTokensPerRound,
-        int maxSearchCallsPerTurn)
+        IReadOnlyDictionary<string, ToolBoundsOverride> perTool)
     {
         _loop = loop ?? throw new ArgumentNullException(nameof(loop));
         _model = model ?? throw new ArgumentNullException(nameof(model));
@@ -61,7 +62,7 @@ internal sealed class ChatToolDelegate : IToolDelegate
         _allowedToolIds = allowedToolIds ?? throw new ArgumentNullException(nameof(allowedToolIds));
         _nestedHost = nestedHost ?? throw new ArgumentNullException(nameof(nestedHost));
         _maxTokensPerRound = maxTokensPerRound;
-        _maxSearchCallsPerTurn = maxSearchCallsPerTurn;
+        _perTool = perTool ?? throw new ArgumentNullException(nameof(perTool));
     }
 
     public async Task<DelegateResult> RunAsync(
@@ -102,12 +103,19 @@ internal sealed class ChatToolDelegate : IToolDelegate
             })
             .ToList();
 
+        // The nested tool view: the delegable tools intersected with the parent's entitlement, the
+        // same operator overrides, but with each effective CallTimeout forced to zero - a non-modal
+        // nested tool keeps no per-call backstop (the turn lifetime token is the hard wall regardless);
+        // call caps + token budgets still apply.
+        var toolset = new Toolset(
+            _delegableTools, specs, _allowedToolIds, _perTool,
+            adjustBounds: bounds => bounds with { CallTimeout = TimeSpan.Zero });
+
         var result = await _loop.RunAsync(
             new AgentLoopRequest
             {
                 Messages = messages,
-                ToolSpecs = specs,
-                Tools = _delegableTools,
+                Tools = toolset,
                 ModelId = _modelId,
                 Model = _model,
                 Host = _nestedHost,
@@ -115,14 +123,8 @@ internal sealed class ChatToolDelegate : IToolDelegate
                 // which the pre-scoped nested host carries; Pid rides each invocation only
                 // for tools that read it (the project RAG resource ignores it).
                 Pid = string.Empty,
-                AllowedToolIds = _allowedToolIds,
                 MaxRounds = MaxRounds,
                 MaxTokensPerRound = _maxTokensPerRound,
-                MaxSearchCallsPerTurn = _maxSearchCallsPerTurn,
-                // Modal tools are never delegable; a non-modal nested tool still honours
-                // the parent's per-call backstop. Zero = the nested host deadline is the
-                // only bound (the turn lifetime token is the hard wall regardless).
-                ToolCallTimeout = TimeSpan.Zero,
                 // No coalescing: the nested loop emits nothing (autonomous, Emit = null),
                 // so the flush thresholds are inert - flush per chunk and keep it simple.
                 DeltaFlushInterval = TimeSpan.Zero,
