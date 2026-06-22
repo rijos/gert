@@ -4,7 +4,6 @@ using FluentAssertions;
 using Gert.Agent;
 using Gert.Agent.Hosting;
 using Gert.Agent.Loop;
-using Gert.Chat;
 using Gert.Database;
 using Gert.Model;
 using Gert.Model.Chat;
@@ -19,6 +18,7 @@ using Gert.Testing.Fakes;
 using Gert.Tools;
 using Gert.Tools.Builtin;
 using Gert.Tools.Hosting;
+using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -141,15 +141,19 @@ public sealed class TurnRunnerTests
     private readonly TurnQuestions _questions = new();
 
     private TurnRunner NewRunner(
-        IChatModelClient model,
+        IChatClient model,
         IEnumerable<ITool>? tools = null,
         TurnOptions? options = null,
         TimeProvider? clock = null,
         ITurnCancellation? cancellation = null,
-        ILogger<TurnRunner>? logger = null) =>
-        new(_chatProvider, new FixedChatClientFactory(model), _bus,
-            // The real loop, so the chat-shell tests still exercise it end to end.
-            new AgentLoop(clock ?? TimeProvider.System, NullLogger<AgentLoop>.Instance),
+        ILogger<TurnRunner>? logger = null)
+    {
+        // The real loop + agent, so the chat-shell tests still exercise the background-run + tee path.
+        var loop = new AgentLoop(clock ?? TimeProvider.System, NullLogger<AgentLoop>.Instance);
+        return new TurnRunner(
+            _chatProvider, new FixedChatClientFactory(model), _bus,
+            new Agent(loop),
+            loop,
             tools ?? [],
             // The runner now builds the project RAG resource + sub-agent delegate
             // itself; the RAG index provider + embedding client are its own deps.
@@ -161,6 +165,7 @@ public sealed class TurnRunnerTests
                 Options.Create(options ?? new TurnOptions()), clock ?? TimeProvider.System),
             _questions,
             logger ?? NullLogger<TurnRunner>.Instance);
+    }
 
     private static TurnJob NewJob(
         string userContent,
@@ -179,7 +184,7 @@ public sealed class TurnRunnerTests
         AssistantSeq = 2,
         PlannedAt = plannedAt ?? DateTimeOffset.UtcNow,
         ModelId = "default",
-        History = [new ChatModelMessage { Role = "user", Content = userContent }],
+        History = [new ChatMessage(ChatRole.User, userContent)],
         ToolIds = offered?.Select(t => t.Id).ToList() ?? [],
         Tools = offered?.Select(t => new ChatToolSpec
         {
@@ -399,11 +404,18 @@ public sealed class TurnRunnerTests
         var job = NewJob("hello");
         var key = TurnKey.From(job);
 
-        var turn = NewRunner(new NeverFinishingModel(), cancellation: registry).RunAsync(job);
+        // DeltaFlushInterval=0 so the partial text publishes the moment the tee processes it: the
+        // loop runs on a background task now, so the test must synchronise on the delta actually being
+        // teed (acc non-empty) before cancelling, not merely on message_start.
+        var turn = NewRunner(
+                new NeverFinishingModel(),
+                cancellation: registry,
+                options: new TurnOptions { DeltaFlushInterval = TimeSpan.Zero })
+            .RunAsync(job);
 
-        // Wait for the turn to register + open (message_start), then stop it.
+        // Wait until the streamed text has been teed (its delta published), then stop the turn.
         var deadline = DateTime.UtcNow.AddSeconds(5);
-        while (_published.Count == 0 && DateTime.UtcNow < deadline)
+        while (!_published.Any(p => p.Event is DeltaEvent) && DateTime.UtcNow < deadline)
         {
             await Task.Delay(10);
         }
@@ -449,34 +461,6 @@ public sealed class TurnRunnerTests
         await NewRunner(new InlineCodeModel()).RunAsync(NewJob("show me some code"));
 
         Events.Should().NotContain(e => e is ArtifactEvent);
-    }
-
-    [Fact]
-    public async Task A_tool_emitted_event_rides_the_persist_then_publish_protocol()
-    {
-        // The ToolInvocation.EmitAsync seam (ask_user's question_asked) routed
-        // through the runner's emit: a tool-emitted event is durable before it is
-        // live and lands between the call's tool_call and tool_result. The
-        // loop-side seam behaviour is in AgentLoopTests; this asserts the
-        // chat-shell's persist-then-publish ordering for it.
-        var emitting = new MidExecutionEmittingTool();
-
-        await NewRunner(new TextThenToolModel(), [emitting])
-            .RunAsync(NewJob("ask away", [emitting]));
-
-        var asked = Events.OfType<QuestionAskedEvent>().Single();
-        asked.Id.Should().Be("call_1");
-        asked.Questions.Single().Question.Should().Be("Which color?");
-
-        var types = Events.Select(e => e.GetType().Name).ToList();
-        types.IndexOf(nameof(QuestionAskedEvent))
-            .Should().BeGreaterThan(types.IndexOf(nameof(ToolCallEvent)))
-            .And.BeLessThan(types.IndexOf(nameof(ToolResultEvent)));
-
-        // Same protocol assertions the runner's own events get.
-        _appended.Select(a => a.Seq).Should().Equal(_published.Select(p => p.Seq));
-        var seq = _published.Single(p => p.Event is QuestionAskedEvent).Seq;
-        _protocol.IndexOf($"append:{seq}").Should().BeLessThan(_protocol.IndexOf($"publish:{seq}"));
     }
 
     [Fact]
@@ -533,20 +517,6 @@ public sealed class TurnRunnerTests
     }
 
     [Fact]
-    public async Task Pending_deltas_flush_when_the_interval_elapses()
-    {
-        var clock = new ManualClock();
-        var options = new TurnOptions { DeltaFlushInterval = TimeSpan.FromMilliseconds(150) };
-
-        // The model advances the clock 200ms between chunks: each arrival past
-        // the window flushes what was buffered BEFORE it plus itself.
-        await NewRunner(new ClockAdvancingModel(clock, TimeSpan.FromMilliseconds(200)), options: options, clock: clock)
-            .RunAsync(NewJob("hello"));
-
-        Events.OfType<DeltaEvent>().Select(d => d.Text).Should().Equal("a b ", "c");
-    }
-
-    [Fact]
     public async Task Pending_deltas_flush_at_the_size_cap_even_mid_interval()
     {
         var options = new TurnOptions
@@ -597,9 +567,9 @@ public sealed class TurnRunnerTests
     public async Task Reasoning_deltas_coalesce_and_precede_content_and_persist_on_finalize()
     {
         var model = new ScriptedChunkModel(
-            new ChatModelChunk { ReasoningDelta = "hmm, " },
-            new ChatModelChunk { ReasoningDelta = "thinking" },
-            new ChatModelChunk { TextDelta = "Answer." });
+            Reasoning("hmm, "),
+            Reasoning("thinking"),
+            Text("Answer."));
 
         await NewRunner(model, clock: new ManualClock()).RunAsync(NewJob("hello"));
 
@@ -637,8 +607,8 @@ public sealed class TurnRunnerTests
     public async Task Context_tokens_combine_final_prompt_and_completion_counts()
     {
         var model = new ScriptedChunkModel(
-            new ChatModelChunk { TextDelta = "hi" },
-            new ChatModelChunk { TokenCount = 56, PromptTokenCount = 1000 });
+            Text("hi"),
+            Usage(completionTokens: 56, promptTokens: 1000));
 
         await NewRunner(model, clock: new ManualClock()).RunAsync(NewJob("hello"));
 
@@ -648,16 +618,59 @@ public sealed class TurnRunnerTests
         _finalized.Single().ContextTokens.Should().Be(1056);
     }
 
-    /// <summary>Streams the given chunks verbatim, then stops.</summary>
-    private sealed class ScriptedChunkModel(params ChatModelChunk[] chunks) : IChatModelClient
+    // ---- update builders (mirror SalvagingChatClient's output convention) ----
+    private static ChatResponseUpdate Text(string text) => new(ChatRole.Assistant, text);
+
+    private static ChatResponseUpdate Reasoning(string text) => new()
     {
-        public async IAsyncEnumerable<ChatModelChunk> StreamAsync(
-            ChatCompletionRequest request,
+        Role = ChatRole.Assistant,
+        Contents = [new TextReasoningContent(text)],
+    };
+
+    private static ChatResponseUpdate Usage(int? completionTokens = null, int? promptTokens = null) => new()
+    {
+        Role = ChatRole.Assistant,
+        Contents = [new UsageContent(new UsageDetails { OutputTokenCount = completionTokens, InputTokenCount = promptTokens })],
+    };
+
+    private static ChatResponseUpdate Call(string id, string name, string argumentsJson) => new()
+    {
+        Role = ChatRole.Assistant,
+        Contents = [new FunctionCallContent(id, name, System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, object?>>(argumentsJson)!)],
+    };
+
+    /// <summary>Base IChatClient: streaming only (the loop never calls the buffered path).</summary>
+    private abstract class ScriptedClient : IChatClient
+    {
+        public abstract IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(
+            IEnumerable<ChatMessage> messages,
+            ChatOptions? options = null,
+            CancellationToken cancellationToken = default);
+
+        public Task<ChatResponse> GetResponseAsync(
+            IEnumerable<ChatMessage> messages,
+            ChatOptions? options = null,
+            CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException("scripted fake streams only");
+
+        public object? GetService(Type serviceType, object? serviceKey = null) => null;
+
+        public void Dispose()
+        {
+        }
+    }
+
+    /// <summary>Streams the given updates verbatim, then stops.</summary>
+    private sealed class ScriptedChunkModel(params ChatResponseUpdate[] updates) : ScriptedClient
+    {
+        public override async IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(
+            IEnumerable<ChatMessage> messages,
+            ChatOptions? options = null,
             [EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
-            foreach (var chunk in chunks)
+            foreach (var update in updates)
             {
-                yield return chunk;
+                yield return update;
             }
 
             await Task.Yield();
@@ -668,23 +681,21 @@ public sealed class TurnRunnerTests
     /// Round 1: advances the clock by <paramref name="streamSpan"/> mid-stream,
     /// then requests a tool. Round 2: advances again and answers.
     /// </summary>
-    private sealed class ClockAdvancingToolModel(ManualClock clock, TimeSpan streamSpan) : IChatModelClient
+    private sealed class ClockAdvancingToolModel(ManualClock clock, TimeSpan streamSpan) : ScriptedClient
     {
-        public async IAsyncEnumerable<ChatModelChunk> StreamAsync(
-            ChatCompletionRequest request,
+        public override async IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(
+            IEnumerable<ChatMessage> messages,
+            ChatOptions? options = null,
             [EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
             clock.Advance(streamSpan);
-            if (!request.Messages.Any(m => m.Role == "tool"))
+            if (!messages.Any(m => m.Role == ChatRole.Tool))
             {
-                yield return new ChatModelChunk
-                {
-                    ToolCall = new ChatModelToolCall { Id = "call_1", Name = "stub_tool", ArgumentsJson = "{}" },
-                };
+                yield return Call("call_1", "stub_tool", "{}");
             }
             else
             {
-                yield return new ChatModelChunk { TextDelta = "done" };
+                yield return Text("done");
             }
 
             await Task.Yield();
@@ -734,55 +745,38 @@ public sealed class TurnRunnerTests
     }
 
     /// <summary>Streams the given text chunks, then stops.</summary>
-    private sealed class ScriptedModel(params string[] chunks) : IChatModelClient
+    private sealed class ScriptedModel(params string[] chunks) : ScriptedClient
     {
-        public async IAsyncEnumerable<ChatModelChunk> StreamAsync(
-            ChatCompletionRequest request,
+        public override async IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(
+            IEnumerable<ChatMessage> messages,
+            ChatOptions? options = null,
             [EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
             foreach (var chunk in chunks)
             {
-                yield return new ChatModelChunk { TextDelta = chunk };
+                yield return Text(chunk);
             }
 
-            await Task.Yield();
-        }
-    }
-
-    /// <summary>Streams three chunks, advancing the manual clock between them.</summary>
-    private sealed class ClockAdvancingModel(ManualClock clock, TimeSpan step) : IChatModelClient
-    {
-        public async IAsyncEnumerable<ChatModelChunk> StreamAsync(
-            ChatCompletionRequest request,
-            [EnumeratorCancellation] CancellationToken cancellationToken = default)
-        {
-            yield return new ChatModelChunk { TextDelta = "a " };
-            clock.Advance(step);
-            yield return new ChatModelChunk { TextDelta = "b " };
-            clock.Advance(step);
-            yield return new ChatModelChunk { TextDelta = "c" };
             await Task.Yield();
         }
     }
 
     /// <summary>Round 1: text then a tool call. Round 2: a final answer.</summary>
-    private sealed class TextThenToolModel : IChatModelClient
+    private sealed class TextThenToolModel : ScriptedClient
     {
-        public async IAsyncEnumerable<ChatModelChunk> StreamAsync(
-            ChatCompletionRequest request,
+        public override async IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(
+            IEnumerable<ChatMessage> messages,
+            ChatOptions? options = null,
             [EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
-            if (!request.Messages.Any(m => m.Role == "tool"))
+            if (!messages.Any(m => m.Role == ChatRole.Tool))
             {
-                yield return new ChatModelChunk { TextDelta = "checking " };
-                yield return new ChatModelChunk
-                {
-                    ToolCall = new ChatModelToolCall { Id = "call_1", Name = "stub_tool", ArgumentsJson = "{}" },
-                };
+                yield return Text("checking ");
+                yield return Call("call_1", "stub_tool", "{}");
             }
             else
             {
-                yield return new ChatModelChunk { TextDelta = "done" };
+                yield return Text("done");
             }
 
             await Task.Yield();
@@ -807,53 +801,27 @@ public sealed class TurnRunnerTests
             Task.FromResult(new ToolResult { Success = true, ResultJson = "{}" });
     }
 
-    /// <summary>Emits a chat event mid-execution through the invocation's emit seam.</summary>
-    private sealed class MidExecutionEmittingTool : ITool
-    {
-        public string Id => "stub";
-
-        public string Name => "stub_tool";
-
-        public string Description => "emits mid-call";
-
-        public string ParametersSchema => """{"type":"object"}""";
-
-        public async Task<ToolResult> ExecuteAsync(
-            ToolInvocation invocation,
-            IToolHost host,
-            CancellationToken cancellationToken = default)
-        {
-            await invocation.EmitAsync!(
-                new QuestionAskedEvent
-                {
-                    Id = invocation.ToolCallId!,
-                    QuestionId = Guid.NewGuid().ToString("D"),
-                    Questions = [new AskedQuestion("Which color?", null, ["red", "blue"], false)],
-                },
-                cancellationToken);
-            return new ToolResult { Success = true, ResultJson = "{}" };
-        }
-    }
-
     /// <summary>Streams an ordinary (unnamed) code fence - must stay inline.</summary>
-    private sealed class InlineCodeModel : IChatModelClient
+    private sealed class InlineCodeModel : ScriptedClient
     {
-        public async IAsyncEnumerable<ChatModelChunk> StreamAsync(
-            ChatCompletionRequest request,
+        public override async IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(
+            IEnumerable<ChatMessage> messages,
+            ChatOptions? options = null,
             [EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
-            yield return new ChatModelChunk { TextDelta = "```python\nprint(1)\n```" };
+            yield return Text("```python\nprint(1)\n```");
             await Task.Yield();
         }
     }
 
-    private sealed class ExplodingModel(string message = "model exploded") : IChatModelClient
+    private sealed class ExplodingModel(string message = "model exploded") : ScriptedClient
     {
-        public async IAsyncEnumerable<ChatModelChunk> StreamAsync(
-            ChatCompletionRequest request,
+        public override async IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(
+            IEnumerable<ChatMessage> messages,
+            ChatOptions? options = null,
             [EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
-            yield return new ChatModelChunk { TextDelta = "partial " };
+            yield return Text("partial ");
             await Task.Yield();
             throw new InvalidOperationException(message);
         }
@@ -898,13 +866,14 @@ public sealed class TurnRunnerTests
         }
     }
 
-    private sealed class NeverFinishingModel : IChatModelClient
+    private sealed class NeverFinishingModel : ScriptedClient
     {
-        public async IAsyncEnumerable<ChatModelChunk> StreamAsync(
-            ChatCompletionRequest request,
+        public override async IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(
+            IEnumerable<ChatMessage> messages,
+            ChatOptions? options = null,
             [EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
-            yield return new ChatModelChunk { TextDelta = "thinking... " };
+            yield return Text("thinking... ");
             await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
         }
     }

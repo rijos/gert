@@ -1,6 +1,5 @@
 using System.Text;
 using FluentAssertions;
-using Gert.Chat;
 using Gert.Ingestion.PlainText;
 using Gert.Model;
 using Gert.Model.Documents;
@@ -15,6 +14,7 @@ using Gert.Testing.Fakes;
 using Gert.Tools;
 using Gert.Validation;
 using Gert.Validation.Rules;
+using Microsoft.Extensions.AI;
 using Xunit;
 
 namespace Gert.Database.Sqlite.Tests;
@@ -267,7 +267,7 @@ public class IngestionPipelineTests
         TempDataRoot root,
         ChunkingOptions? chunking = null,
         IIngestionQueue? queue = null,
-        IEmbeddingClient? embeddings = null)
+        IEmbeddingGenerator<string, Embedding<float>>? embeddings = null)
     {
         var provider = ProviderFixture.ProviderFor(root);
         await provider.EnsureProvisionedAsync(Iss, Sub);
@@ -321,17 +321,18 @@ public class IngestionPipelineTests
     }
 
     /// <summary>
-    /// Failure-injecting <see cref="IEmbeddingClient"/>: delegates the first
+    /// Failure-injecting <see cref="IEmbeddingGenerator{TInput,TEmbedding}"/>: delegates the first
     /// <paramref name="succeedCalls"/> calls to <see cref="FakeEmbeddings"/> (so committed
     /// batches are real, searchable vectors) and throws afterwards.
     /// </summary>
-    private sealed class FailingEmbeddings(int succeedCalls) : IEmbeddingClient
+    private sealed class FailingEmbeddings(int succeedCalls) : IEmbeddingGenerator<string, Embedding<float>>
     {
         private readonly FakeEmbeddings _inner = new();
         private int _calls;
 
-        public Task<IReadOnlyList<float[]>> EmbedAsync(
-            IReadOnlyList<string> texts,
+        public Task<GeneratedEmbeddings<Embedding<float>>> GenerateAsync(
+            IEnumerable<string> values,
+            EmbeddingGenerationOptions? options = null,
             CancellationToken cancellationToken = default)
         {
             if (_calls++ >= succeedCalls)
@@ -339,7 +340,13 @@ public class IngestionPipelineTests
                 throw new InvalidOperationException("embedding backend unavailable (injected test failure)");
             }
 
-            return _inner.EmbedAsync(texts, cancellationToken);
+            return _inner.GenerateAsync(values, options, cancellationToken);
+        }
+
+        public object? GetService(Type serviceType, object? serviceKey = null) => null;
+
+        public void Dispose()
+        {
         }
     }
 

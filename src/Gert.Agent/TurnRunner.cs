@@ -1,10 +1,10 @@
-using System.Text;
 using System.Text.Json;
 using Gert.Agent.Hosting;
 using Gert.Agent.Loop;
 using Gert.Chat;
 using Gert.Database;
 using Gert.Model;
+using Gert.Model.Agent;
 using Gert.Model.Chat;
 using Gert.Model.Events;
 using Gert.Model.Json;
@@ -12,6 +12,7 @@ using Gert.Rag;
 using Gert.Service.Chat;
 using Gert.Service.Chat.Bus;
 using Gert.Tools;
+using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -59,10 +60,11 @@ public sealed class TurnRunner : ITurnRunner
     private readonly IChatDatabaseProvider _databases;
     private readonly IChatClientFactory _clients;
     private readonly IConversationBus _bus;
+    private readonly IAgent _agent;
     private readonly IAgentLoop _loop;
     private readonly IReadOnlyList<ITool> _tools;
     private readonly IRagIndexProvider _ragProvider;
-    private readonly IEmbeddingClient _embeddings;
+    private readonly IEmbeddingGenerator<string, Embedding<float>> _embeddings;
     private readonly TurnOptions _options;
     private readonly ToolsOptions _toolsOptions;
     private readonly TimeProvider _clock;
@@ -74,10 +76,11 @@ public sealed class TurnRunner : ITurnRunner
         IChatDatabaseProvider databases,
         IChatClientFactory clients,
         IConversationBus bus,
+        IAgent agent,
         IAgentLoop loop,
         IEnumerable<ITool> tools,
         IRagIndexProvider ragProvider,
-        IEmbeddingClient embeddings,
+        IEmbeddingGenerator<string, Embedding<float>> embeddings,
         IOptions<TurnOptions> options,
         IOptions<ToolsOptions> toolsOptions,
         TimeProvider clock,
@@ -88,6 +91,7 @@ public sealed class TurnRunner : ITurnRunner
         _databases = databases ?? throw new ArgumentNullException(nameof(databases));
         _clients = clients ?? throw new ArgumentNullException(nameof(clients));
         _bus = bus ?? throw new ArgumentNullException(nameof(bus));
+        _agent = agent ?? throw new ArgumentNullException(nameof(agent));
         _loop = loop ?? throw new ArgumentNullException(nameof(loop));
         ArgumentNullException.ThrowIfNull(tools);
         _tools = tools.ToList();
@@ -140,8 +144,11 @@ public sealed class TurnRunner : ITurnRunner
         var token = registration.Token;
 
         var topic = new ConversationTopic(job.Iss, job.Sub, job.Pid, job.ConversationId);
-        var content = new StringBuilder();
-        var reasoning = new StringBuilder();
+
+        // The partial-content fold: the tee applies each AgentEvent here too, so a fault mid-stream
+        // leaves the error/cancel finalize the content/reasoning that streamed (the loop's own
+        // accumulator is unreachable once it throws). Same fold as DeltaAccumulator everywhere.
+        var acc = new DeltaAccumulator();
 
         try
         {
@@ -149,21 +156,21 @@ public sealed class TurnRunner : ITurnRunner
                 .OpenAsync(job.Iss, job.Sub, job.Pid, token)
                 .ConfigureAwait(false);
 
-            await ExecuteTurnAsync(job, repo, topic, content, reasoning, deadline, token).ConfigureAwait(false);
+            await ExecuteTurnAsync(job, repo, topic, acc, deadline, token).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             // Host shutdown: best-effort error finalise (fresh repo, no token -
             // the orphan rule covers us if even this is cut short), then let the
             // worker observe the shutdown.
-            await FinalizeErrorAsync(job, topic, content, reasoning, "turn interrupted by shutdown").ConfigureAwait(false);
+            await FinalizeErrorAsync(job, topic, acc, "turn interrupted by shutdown").ConfigureAwait(false);
             throw;
         }
         catch (OperationCanceledException) when (registration.IsUserCancelled)
         {
             // User stop: a normal outcome, not a fault - finalise cancelled with
             // the partial content and do NOT rethrow.
-            await FinalizeCancelledAsync(job, topic, content, reasoning).ConfigureAwait(false);
+            await FinalizeCancelledAsync(job, topic, acc).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -189,7 +196,7 @@ public sealed class TurnRunner : ITurnRunner
                     job.ConversationId, job.Pid);
             }
 
-            await FinalizeErrorAsync(job, topic, content, reasoning, reason).ConfigureAwait(false);
+            await FinalizeErrorAsync(job, topic, acc, reason).ConfigureAwait(false);
         }
     }
 
@@ -197,8 +204,7 @@ public sealed class TurnRunner : ITurnRunner
         TurnJob job,
         IChatRepository repo,
         ConversationTopic topic,
-        StringBuilder content,
-        StringBuilder reasoning,
+        DeltaAccumulator acc,
         DateTimeOffset deadline,
         CancellationToken token)
     {
@@ -208,10 +214,10 @@ public sealed class TurnRunner : ITurnRunner
         // The initial conversation sent upstream: optional system prompt (step 0),
         // then history. The loop copies this and appends the tool-call/tool-result
         // pairs onto its own working list.
-        var messages = new List<ChatModelMessage>(job.History.Count + 1);
+        var messages = new List<ChatMessage>(job.History.Count + 1);
         if (!string.IsNullOrWhiteSpace(job.SystemPrompt))
         {
-            messages.Add(new ChatModelMessage { Role = "system", Content = job.SystemPrompt });
+            messages.Add(new ChatMessage(ChatRole.System, job.SystemPrompt));
         }
 
         messages.AddRange(job.History);
@@ -268,11 +274,75 @@ public sealed class TurnRunner : ITurnRunner
         // run - the loop never fetches config (turn-budgets.md section 1).
         var toolset = new Toolset(_tools, job.Tools, job.AllowedToolIds, _toolsOptions.PerTool);
 
-        // Insert the entitled call's tool_call row LIVE (the tree read model grows
-        // as the turn runs) and collect its citations bound to the new row id - the
-        // chat-shell side of the persist seam the loop hands back.
-        async Task OnToolExecuted(ExecutedToolCall executed, CancellationToken ct)
+        // The live-path coalescer: batches the loop's raw text/reasoning deltas into one durable
+        // row each, emitting through the persist-then-publish seam. The accumulator (acc) folds the
+        // same deltas for the progress flush + the fault finalizers; the coalescer for the wire.
+        var coalescer = new DeltaCoalescer(
+            Emit, _options.DeltaFlushInterval, _options.DeltaFlushMaxChars, _clock);
+
+        // The tee: map each AgentEvent the loop emits to the persisted/published ChatEvent(s) and the
+        // live tool_call row + citation collection. This is the ONE place the agent's compute
+        // vocabulary becomes the conversation event log (refactor: split the noun).
+        async ValueTask OnAgentEvent(AgentEvent ev, CancellationToken ct)
         {
+            switch (ev)
+            {
+                case TextDelta t:
+                    acc.Apply(t);
+                    await coalescer.AppendText(t.Text, ct).ConfigureAwait(false);
+                    break;
+                case ReasoningDelta r:
+                    acc.Apply(r);
+                    await coalescer.AppendReasoning(r.Text, ct).ConfigureAwait(false);
+                    break;
+                case ToolStarted ts:
+                    // Deltas precede the card: flush the coalescer boundary first.
+                    await coalescer.FlushBoundary(ct).ConfigureAwait(false);
+                    await Emit(
+                        new ToolCallEvent
+                        {
+                            Id = ts.CallId,
+                            Kind = ts.Kind,
+                            Status = ToolCallStatus.Running,
+                            Request = ts.Request,
+                        },
+                        ct).ConfigureAwait(false);
+                    break;
+                case ToolCompleted tc:
+                    await EmitToolCompletedAsync(tc.Call, ct).ConfigureAwait(false);
+                    break;
+                case RoundCompleted:
+                    // Tool boundary: flush buffered text, then the streaming-row progress flush so
+                    // thread reads see progress.
+                    await coalescer.FlushBoundary(ct).ConfigureAwait(false);
+                    await repo.UpdateMessageStreamAsync(
+                        job.AssistantMessageId, acc.Content, MessageStatus.Streaming, null, ct)
+                        .ConfigureAwait(false);
+                    break;
+                case TurnFinished:
+                    // The terminal finalize runs after the loop returns, off the returned result.
+                    break;
+            }
+        }
+
+        // Render one entitled tool result: the card, the LIVE tool_call row (the tree read model
+        // grows as the turn runs), its citations bound to the new row id, and any canvas artifacts.
+        async Task EmitToolCompletedAsync(ExecutedToolCall executed, CancellationToken ct)
+        {
+            await Emit(
+                new ToolResultEvent
+                {
+                    Id = executed.CallId,
+                    Kind = executed.Kind,
+                    Status = executed.Status,
+                    LatencyMs = executed.LatencyMs,
+                    Hits = executed.Hits,
+                    Stdout = executed.Stdout,
+                    Todos = executed.Todos,
+                    Error = executed.Error,
+                },
+                ct).ConfigureAwait(false);
+
             var rowId = Guid.NewGuid().ToString("D");
             await repo.InsertToolCallAsync(
                 new ToolCall
@@ -289,16 +359,28 @@ public sealed class TurnRunner : ITurnRunner
                 ct).ConfigureAwait(false);
 
             collectedCitations.AddRange(executed.Citations.Select(c => c with { ToolCallId = rowId }));
+
+            if (executed.Artifacts is { Count: > 0 } artifacts)
+            {
+                foreach (var artifact in artifacts)
+                {
+                    await Emit(
+                        new ArtifactEvent
+                        {
+                            Id = artifact.Id,
+                            Kind = artifact.Kind,
+                            Name = artifact.Name,
+                            Content = artifact.Content,
+                        },
+                        ct).ConfigureAwait(false);
+                }
+            }
         }
 
-        // Tool boundary: flush accumulated text so thread reads see progress.
-        Task OnProgress(string streamed, CancellationToken ct) =>
-            repo.UpdateMessageStreamAsync(
-                job.AssistantMessageId, streamed, MessageStatus.Streaming, null, ct);
-
-        // Resolve the client for this conversation's provider once - its connection
-        // + sampling come from Gert:Chat:Providers; the provider is fixed for the turn.
-        var result = await _loop.RunAsync(
+        // Start the agent - compute in the background behind a channel - and tee its events into the
+        // conversation event log as they arrive (while it's busy, I get stuff back). The provider's
+        // connection + sampling come from Gert:Chat:Providers; the provider is fixed for the turn.
+        var run = _agent.Start(
             new AgentLoopRequest
             {
                 Messages = messages,
@@ -312,19 +394,31 @@ public sealed class TurnRunner : ITurnRunner
                 ClientTimezone = job.ClientTimezone,
                 MaxRounds = _options.MaxToolRounds,
                 MaxTokensPerRound = _options.MaxTokensPerRound,
-                DeltaFlushInterval = _options.DeltaFlushInterval,
-                DeltaFlushMaxChars = _options.DeltaFlushMaxChars,
-                Emit = Emit,
-                OnToolExecuted = OnToolExecuted,
-                OnProgress = OnProgress,
-                // The runner's own buffers accumulate per-chunk so the error/cancel
-                // finalizers carry the partial content even when the loop throws
-                // mid-stream (a cancelled token never flushes the tail). On the
-                // happy path they hold exactly result.Content/Reasoning.
-                OnText = text => content.Append(text),
-                OnReasoning = text => reasoning.Append(text),
             },
-            token).ConfigureAwait(false);
+            token);
+
+        AgentResult result;
+        try
+        {
+            // Drain to channel completion (not the token): the loop's finally completes the channel on
+            // success AND on fault/cancel, so the tee always sees every event the loop wrote before it
+            // ended - acc then holds the true partial content for the cancel finalize.
+            await foreach (var ev in run.Events.ConfigureAwait(false))
+            {
+                await OnAgentEvent(ev, token).ConfigureAwait(false);
+            }
+
+            // Observe the loop's outcome (rethrows a fault / cancel to the finalizers above), then
+            // flush the final round's trailing text before the terminal events.
+            result = await run.Completion.ConfigureAwait(false);
+            await coalescer.FlushBoundary(token).ConfigureAwait(false);
+        }
+        finally
+        {
+            // Backstop on a fault mid-stream: flush whatever is still buffered so the durable log
+            // carries it (a cancelled token skips - the cancel finalize writes acc.Content instead).
+            await coalescer.FlushTails(token).ConfigureAwait(false);
+        }
 
         // Canvas artifacts are produced by the make_artifact / edit_artifact tools
         // during the tool loop (emitted above), not extracted from the final text -
@@ -402,8 +496,7 @@ public sealed class TurnRunner : ITurnRunner
     private async Task FinalizeErrorAsync(
         TurnJob job,
         ConversationTopic topic,
-        StringBuilder content,
-        StringBuilder reasoning,
+        DeltaAccumulator acc,
         string reason)
     {
         try
@@ -413,8 +506,8 @@ public sealed class TurnRunner : ITurnRunner
                 .ConfigureAwait(false);
 
             await repo.FinalizeMessageAsync(
-                job.AssistantMessageId, content.ToString(), MessageStatus.Error, null,
-                reasoning.Length > 0 ? reasoning.ToString() : null, null, null, CancellationToken.None)
+                job.AssistantMessageId, acc.Content, MessageStatus.Error, null,
+                acc.Reasoning.Length > 0 ? acc.Reasoning : null, null, null, CancellationToken.None)
                 .ConfigureAwait(false);
 
             await EmitAsync(repo, topic, new ErrorEvent { Message = reason }, CancellationToken.None)
@@ -440,8 +533,7 @@ public sealed class TurnRunner : ITurnRunner
     private async Task FinalizeCancelledAsync(
         TurnJob job,
         ConversationTopic topic,
-        StringBuilder content,
-        StringBuilder reasoning)
+        DeltaAccumulator acc)
     {
         try
         {
@@ -450,8 +542,8 @@ public sealed class TurnRunner : ITurnRunner
                 .ConfigureAwait(false);
 
             await repo.FinalizeMessageAsync(
-                job.AssistantMessageId, content.ToString(), MessageStatus.Cancelled, null,
-                reasoning.Length > 0 ? reasoning.ToString() : null, null, null, CancellationToken.None)
+                job.AssistantMessageId, acc.Content, MessageStatus.Cancelled, null,
+                acc.Reasoning.Length > 0 ? acc.Reasoning : null, null, null, CancellationToken.None)
                 .ConfigureAwait(false);
 
             await EmitAsync(repo, topic, new CancelledEvent(), CancellationToken.None)

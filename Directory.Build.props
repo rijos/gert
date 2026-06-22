@@ -51,6 +51,17 @@
          upstream (vLLM / Claude compat). 2.6.0+ is required for JsonPatch (vendor
          extension fields like chat_template_kwargs / reasoning_content). -->
     <OpenAIVersion>2.11.0</OpenAIVersion>
+    <!-- Microsoft.Extensions.AI: the first-party model abstractions (IChatClient,
+         IEmbeddingGenerator, AIFunction, FunctionInvokingChatClient). The AI packages run
+         their OWN 10.x cadence, version-locked across the three (Abstractions/AI/AI.OpenAI),
+         distinct from the runtime Microsoft.Extensions.* 10.0.x family but interoperating with
+         it (AI 10.7.0 depends on the runtime extensions >= 10.0.9, which our 10.0.9 pins
+         satisfy). AI.OpenAI 10.7.0 is STABLE (no longer preview, contra older guidance) and
+         requires OpenAI >= 2.11.0 - exactly our pin. Abstractions is contracts-safe (Gert.Chat);
+         AI core + AI.OpenAI carry the OpenAI adapter and live only in the Gert.Chat.OpenAI leaf
+         (tech-stack.md Model API; decisions #13). -->
+    <MicrosoftExtensionsAIVersion>10.7.0</MicrosoftExtensionsAIVersion>
+    <MicrosoftExtensionsAIOpenAIVersion>10.7.0</MicrosoftExtensionsAIOpenAIVersion>
     <!-- F7 isolated PDF/DOCX parsers (run only inside the subprocess helper). -->
     <PdfPigVersion>0.1.14</PdfPigVersion>
     <OpenXmlVersion>3.5.1</OpenXmlVersion>

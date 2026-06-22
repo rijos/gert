@@ -6,6 +6,7 @@ using Gert.Tools.Ports;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.IdentityModel.Tokens;
@@ -129,7 +130,7 @@ public sealed class GertApiFactory : WebApplicationFactory<Program>
     {
         ArgumentNullException.ThrowIfNull(services);
 
-        services.Replace(ServiceDescriptor.Singleton<IEmbeddingClient>(Embeddings));
+        services.Replace(ServiceDescriptor.Singleton<IEmbeddingGenerator<string, Embedding<float>>>(Embeddings));
         services.Replace(ServiceDescriptor.Singleton<IChatClientFactory>(new FixedChatClientFactory(ChatModel)));
         services.Replace(ServiceDescriptor.Singleton<IWebSearch>(WebSearch));
         services.Replace(ServiceDescriptor.Singleton<IWebFetcher>(WebFetcher));

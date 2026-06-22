@@ -18,12 +18,11 @@ public sealed class TurnOptions
     public TimeSpan MaxTurnDuration { get; set; } = TimeSpan.FromMinutes(5);
 
     /// <summary>
-    /// Number of parallel turn lanes the host worker drains. Turns are sharded
-    /// by TurnKey hash: one conversation's turns always ride one lane (strictly
-    /// ordered); different conversations may run concurrently. 1 = the old
-    /// global serial worker. The per-conversation streaming gate
-    /// (ux_messages_streaming) is the correctness control; this is only
-    /// throughput (decisions section 11).
+    /// How many turns the host launcher runs concurrently - a global
+    /// <c>SemaphoreSlim</c> cap, not per-conversation lanes. The per-conversation
+    /// streaming gate (ux_messages_streaming) already serializes a conversation
+    /// (a second turn is 409'd at plan time), so this is purely a global
+    /// throughput ceiling; 1 = a global serial worker (decisions section 11).
     /// </summary>
     public int MaxConcurrentTurns { get; set; } = 4;
 

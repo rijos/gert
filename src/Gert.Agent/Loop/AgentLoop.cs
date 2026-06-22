@@ -1,9 +1,9 @@
 using System.Diagnostics;
 using System.Text.Json;
-using Gert.Chat;
+using Gert.Model.Agent;
 using Gert.Model.Chat;
-using Gert.Model.Events;
 using Gert.Tools;
+using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 
 namespace Gert.Agent.Loop;
@@ -12,21 +12,33 @@ namespace Gert.Agent.Loop;
 /// <see cref="IAgentLoop"/> -- the reusable tool loop (chat-and-tools.md section the tool loop) the
 /// chat shell, the sub-agent, and a headless driver all run. <see cref="RunAsync"/> is the
 /// orchestrator; the work splits into a per-run <see cref="Toolset"/> (tool view + effective bounds +
-/// trackers), a <see cref="DeltaSink"/> (the emit channel + coalescing + accumulators),
-/// <see cref="StreamRoundAsync"/> (consume one model stream), and <see cref="ExecuteRoundAsync"/> (run
-/// the round's tool calls). Because nothing here <c>yield</c>s, the model stream is consumed inside
-/// ordinary <c>try/catch</c>.
+/// trackers), a <see cref="DeltaAccumulator"/> (the content/reasoning fold for the returned result and
+/// the round-narration slice), <see cref="StreamRoundAsync"/> (consume one model stream), and
+/// <see cref="ExecuteRoundAsync"/> (run the round's tool calls). Because nothing here <c>yield</c>s,
+/// the model stream is consumed inside ordinary <c>try/catch</c>.
 ///
 /// <para>
-/// The loop knows nothing of <c>IChatRepository</c> / <c>IConversationBus</c>: it talks only through
-/// the request's <see cref="DeltaSink.Emit"/> (the in-loop events AND the seam tools emit through),
-/// <see cref="AgentLoopRequest.OnToolExecuted"/> (the driver persists the tool_call row + collects
-/// citations), and <see cref="AgentLoopRequest.OnProgress"/> (the streaming-row flush), plus the host
-/// and the model client. Stateless beyond the clock - safe as a singleton.
+/// The model is a Microsoft.Extensions.AI <see cref="IChatClient"/> (decisions #13): the loop builds
+/// a working <see cref="ChatMessage"/> list + a per-round <see cref="ChatOptions"/> and consumes the
+/// <see cref="ChatResponseUpdate"/> stream, folding it into <see cref="AgentEvent"/>s. Sampling rides
+/// the provider inside the client; the options carry only the advertised tools + the per-round token
+/// cap. A streamed <see cref="FunctionCallContent"/> with null <see cref="FunctionCallContent.Arguments"/>
+/// is a live name-first intent (the running card); a non-null arguments dictionary is a completed call.
+/// </para>
+///
+/// <para>
+/// The loop's only output is <see cref="AgentEvent"/>, emitted through the one
+/// <see cref="IAgentEventSink"/>: it knows nothing of <c>IChatRepository</c> / <c>IConversationBus</c>
+/// / coalescing / persistence. Text and reasoning ride as raw per-chunk deltas (the consumer
+/// coalesces); tool started/completed, round, and finish are discrete. Stateless beyond the clock -
+/// safe as a singleton.
 /// </para>
 /// </summary>
 public sealed class AgentLoop : IAgentLoop
 {
+    private static readonly JsonElement EmptyObjectSchema =
+        JsonDocument.Parse("""{"type":"object"}""").RootElement.Clone();
+
     private readonly TimeProvider _clock;
     private readonly ILogger<AgentLoop> _logger;
 
@@ -37,151 +49,163 @@ public sealed class AgentLoop : IAgentLoop
     }
 
     /// <inheritdoc />
-    public async Task<AgentLoopResult> RunAsync(AgentLoopRequest request, CancellationToken cancellationToken = default)
+    public async Task<AgentResult> RunAsync(
+        AgentLoopRequest request,
+        IAgentEventSink sink,
+        CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(sink);
 
         // The growing conversation sent upstream: the caller's initial messages (system + history)
         // copied into the loop's own working list, then the tool-call/tool-result pairs it appends.
-        var messages = new List<ChatModelMessage>(request.Messages.Count + 4);
+        var messages = new List<ChatMessage>(request.Messages.Count + 4);
         messages.AddRange(request.Messages);
 
         var toolset = request.Tools;
-        var sink = new DeltaSink(request, _clock);
+
+        // The pure fold: builds Content/Reasoning for the returned result and gives each round the
+        // mark to slice its own narration. Coalescing into durable rows is the consumer's job.
+        var acc = new DeltaAccumulator();
 
         int? tokenCount = null;
         int? promptTokens = null;
         long genElapsedTicks = 0;
         var round = 0;
 
-        try
+        while (true)
         {
-            while (true)
+            // Mark this round's start in the accumulated content so its narration can be sliced
+            // out for the assistant tool-calls message (qwen narrates while it calls tools).
+            var roundContentStart = acc.Length;
+
+            var options = BuildOptions(request, toolset.AdvertisedSpecs);
+            var draft = await StreamRoundAsync(request.Model, messages, options, toolset, acc, sink, cancellationToken)
+                .ConfigureAwait(false);
+
+            genElapsedTicks += draft.GenTicks;
+            if (draft.TokenCount is not null)
             {
-                // Mark this round's start in the accumulated content so its narration can be sliced
-                // out for the assistant tool-calls message (qwen narrates while it calls tools).
-                var roundContentStart = sink.Length;
-
-                var completion = NewCompletion(request, messages, toolset.AdvertisedSpecs);
-                var draft = await StreamRoundAsync(request.Model, completion, toolset, sink, cancellationToken)
-                    .ConfigureAwait(false);
-
-                genElapsedTicks += draft.GenTicks;
-                if (draft.TokenCount is not null)
-                {
-                    tokenCount = draft.TokenCount;
-                }
-
-                if (draft.PromptTokens is not null)
-                {
-                    // Last round wins - the largest prompt is the turn's real context footprint.
-                    promptTokens = draft.PromptTokens;
-                }
-
-                // No tool calls -> the model produced its final answer; leave the loop.
-                if (draft.ToolCalls.Count == 0)
-                {
-                    break;
-                }
-
-                // The wind-down brake decides whether this round runs at all (false = hard stop).
-                if (!AdvanceRound(ref round, request.MaxRounds, toolset, draft, out var budgetExhausted))
-                {
-                    break;
-                }
-
-                await ExecuteRoundAsync(
-                    draft, toolset, request, sink, messages, roundContentStart, budgetExhausted, cancellationToken)
-                    .ConfigureAwait(false);
+                tokenCount = draft.TokenCount;
             }
-        }
-        finally
-        {
-            await sink.FlushTails(cancellationToken).ConfigureAwait(false);
+
+            if (draft.PromptTokens is not null)
+            {
+                // Last round wins - the largest prompt is the turn's real context footprint.
+                promptTokens = draft.PromptTokens;
+            }
+
+            // No tool calls -> the model produced its final answer; leave the loop.
+            if (draft.ToolCalls.Count == 0)
+            {
+                break;
+            }
+
+            // The wind-down brake decides whether this round runs at all (false = hard stop).
+            if (!AdvanceRound(ref round, request.MaxRounds, toolset, draft, out var budgetExhausted))
+            {
+                break;
+            }
+
+            await ExecuteRoundAsync(
+                draft, toolset, request, acc, sink, messages, roundContentStart, budgetExhausted, cancellationToken)
+                .ConfigureAwait(false);
+
+            // The tool boundary: a discrete beat the consumer maps to the streaming-row progress flush.
+            await sink.EmitAsync(new RoundCompleted(round, tokenCount ?? 0), cancellationToken).ConfigureAwait(false);
         }
 
-        return new AgentLoopResult
+        var result = new AgentResult
         {
-            Content = sink.Content,
-            Reasoning = sink.Reasoning,
+            Content = acc.Content,
+            Reasoning = acc.Reasoning,
             TokenCount = tokenCount,
             PromptTokens = promptTokens,
             GenElapsedTicks = genElapsedTicks,
             ToolRounds = round,
         };
+
+        await sink.EmitAsync(new TurnFinished(result), cancellationToken).ConfigureAwait(false);
+        return result;
     }
 
     /// <summary>
-    /// Consume ONE model stream into <paramref name="sink"/>: pump text/reasoning deltas, emit the
-    /// entitled tool-call-start card (live intent), collect the round's tool calls, and track the
+    /// Consume ONE model stream: pump text/reasoning deltas through the sink, emit the entitled
+    /// tool-call-start card (live intent), collect the round's completed tool calls, and track the
     /// token counts + the pure generation span (stream consumption only - tool execution happens
-    /// between rounds, outside this span).
+    /// between rounds, outside this span). The accumulator folds each delta for the returned result +
+    /// round narration.
     /// </summary>
     private async Task<RoundDraft> StreamRoundAsync(
-        IChatModelClient model,
-        ChatCompletionRequest completion,
+        IChatClient model,
+        IReadOnlyList<ChatMessage> messages,
+        ChatOptions options,
         Toolset toolset,
-        DeltaSink sink,
+        DeltaAccumulator acc,
+        IAgentEventSink sink,
         CancellationToken cancellationToken)
     {
-        var toolCalls = new List<ChatModelToolCall>();
+        var toolCalls = new List<FunctionCallContent>();
         int? tokenCount = null;
         int? promptTokens = null;
 
         var roundStart = _clock.GetTimestamp();
-        await foreach (var chunk in model.StreamAsync(completion, cancellationToken).ConfigureAwait(false))
+        await foreach (var update in model.GetStreamingResponseAsync(messages, options, cancellationToken).ConfigureAwait(false))
         {
-            if (!string.IsNullOrEmpty(chunk.ReasoningDelta))
+            foreach (var content in update.Contents)
             {
-                await sink.AppendReasoning(chunk.ReasoningDelta, cancellationToken).ConfigureAwait(false);
-            }
+                switch (content)
+                {
+                    case TextReasoningContent { Text: { Length: > 0 } reasoning }:
+                        {
+                            var ev = new ReasoningDelta(reasoning);
+                            acc.Apply(ev);
+                            await sink.EmitAsync(ev, cancellationToken).ConfigureAwait(false);
+                            break;
+                        }
 
-            if (!string.IsNullOrEmpty(chunk.TextDelta))
-            {
-                await sink.AppendText(chunk.TextDelta, cancellationToken).ConfigureAwait(false);
-            }
+                    case TextContent { Text: { Length: > 0 } text }:
+                        {
+                            var ev = new TextDelta(text);
+                            acc.Apply(ev);
+                            await sink.EmitAsync(ev, cancellationToken).ConfigureAwait(false);
+                            break;
+                        }
 
-            // Live intent: the model has named a tool but is still streaming its arguments. Flush
-            // streamed text first so the card lands after it, then emit a Running card NOW so the user
-            // sees what's coming (e.g. "Creating a file") instead of staring at the pulse while a
-            // whole-file argument streams. The full call + its parsed request arrive at end-of-round
-            // below (same id -> the card updates in place). An unentitled call never announces: its
-            // card stays off-screen (the refusal is fed to the model below, not shown to the user).
-            if (chunk.ToolCallStart is { } toolStart && toolset.Resolve(toolStart.Name) is { Entitled: true } startEntry)
-            {
-                await sink.FlushBoundary(cancellationToken).ConfigureAwait(false);
-                await sink.Emit(
-                    new ToolCallEvent
-                    {
-                        Id = toolStart.Id,
-                        Kind = startEntry.Kind,
-                        Status = ToolCallStatus.Running,
-                        Request = null,
-                    },
-                    cancellationToken).ConfigureAwait(false);
-            }
+                    // Null arguments = live intent: the model has named a tool but is still streaming
+                    // its arguments. Emit a Running card NOW so the user sees what's coming (e.g.
+                    // "Creating a file") instead of staring at the pulse. The full call + parsed
+                    // request arrive at end-of-round below (same id -> the card updates in place). An
+                    // unentitled call never announces: its card stays off-screen (the refusal is fed to
+                    // the model below, not shown to the user).
+                    case FunctionCallContent { Arguments: null } intent
+                        when toolset.Resolve(intent.Name) is { Entitled: true } startEntry:
+                        await sink.EmitAsync(new ToolStarted(intent.CallId, startEntry.Kind, null), cancellationToken)
+                            .ConfigureAwait(false);
+                        break;
 
-            if (chunk.ToolCall is not null)
-            {
-                toolCalls.Add(chunk.ToolCall);
-            }
+                    // A completed call (non-null arguments dictionary, possibly empty).
+                    case FunctionCallContent { Arguments: not null } call:
+                        toolCalls.Add(call);
+                        break;
 
-            if (chunk.TokenCount is not null)
-            {
-                tokenCount = chunk.TokenCount;
-            }
+                    case UsageContent usage:
+                        if (usage.Details.OutputTokenCount is { } completion)
+                        {
+                            tokenCount = (int)completion;
+                        }
 
-            if (chunk.PromptTokenCount is not null)
-            {
-                promptTokens = chunk.PromptTokenCount;
+                        if (usage.Details.InputTokenCount is { } prompt)
+                        {
+                            promptTokens = (int)prompt;
+                        }
+
+                        break;
+                }
             }
         }
 
         var genTicks = _clock.GetElapsedTime(roundStart).Ticks;
-
-        // Boundary flush: all of a round's text precedes its tool events, and the final round's text
-        // precedes citations/message_end.
-        await sink.FlushBoundary(cancellationToken).ConfigureAwait(false);
 
         return new RoundDraft
         {
@@ -198,11 +222,11 @@ public sealed class AgentLoop : IAgentLoop
     /// round whole would also drop the narration the model must see next round), tools stop being
     /// advertised, and the model gets ONE wind-down round to answer with what it has. (Clearing the
     /// tools array re-renders the templated system/tools region upstream and so invalidates the vLLM
-    /// prefix cache for this final round - acceptable for a runaway loop; tool_choice:"none" would
-    /// preserve the prefix if vLLM support is ever confirmed.) If the wind-down round STILL emits tool
-    /// calls - a tool-heavy history invites imitation even with nothing advertised - this returns
-    /// false: stop calling upstream and finalise with what already streamed. <paramref name="budgetExhausted"/>
-    /// is set so <see cref="ExecuteRoundAsync"/> refuses the round's calls.
+    /// prefix cache for this final round - acceptable for a runaway loop.) If the wind-down round STILL
+    /// emits tool calls - a tool-heavy history invites imitation even with nothing advertised - this
+    /// returns false: stop calling upstream and finalise with what already streamed.
+    /// <paramref name="budgetExhausted"/> is set so <see cref="ExecuteRoundAsync"/> refuses the round's
+    /// calls.
     /// </summary>
     private bool AdvanceRound(
         ref int round,
@@ -241,28 +265,33 @@ public sealed class AgentLoop : IAgentLoop
     /// assistant message carrying the whole round's calls + this round's narration as content, so a
     /// model that narrates while it calls tools sees its own words next round), then per call -
     /// entitlement card gating, the per-tool call ceiling, execution under the effective bounds, the
-    /// result card + persist + artifacts, and the tool-role message.
+    /// <see cref="ToolCompleted"/> event (the consumer renders the result card + persists the row +
+    /// citations + artifacts), and the tool-role message.
     /// </summary>
     private async Task ExecuteRoundAsync(
         RoundDraft draft,
         Toolset toolset,
         AgentLoopRequest request,
-        DeltaSink sink,
-        List<ChatModelMessage> messages,
+        DeltaAccumulator acc,
+        IAgentEventSink sink,
+        List<ChatMessage> messages,
         int roundContentStart,
         bool budgetExhausted,
         CancellationToken cancellationToken)
     {
         // The text the model streamed THIS round rides along as content - a model that narrates while
         // it calls tools (qwen does) must see its own words next round, or it believes the work never
-        // happened and restarts the answer ("oops, I jumped the gun"). Content stays null otherwise.
-        var roundContent = sink.ContentSince(roundContentStart);
-        messages.Add(new ChatModelMessage
+        // happened and restarts the answer ("oops, I jumped the gun"). A tool-call-only assistant turn
+        // carries no TextContent (the adapter then omits `content`).
+        var roundContent = acc.ContentSince(roundContentStart);
+        var assistantContents = new List<AIContent>(draft.ToolCalls.Count + 1);
+        if (roundContent.Length > 0)
         {
-            Role = "assistant",
-            Content = roundContent.Length > 0 ? roundContent : null,
-            ToolCalls = draft.ToolCalls,
-        });
+            assistantContents.Add(new TextContent(roundContent));
+        }
+
+        assistantContents.AddRange(draft.ToolCalls);
+        messages.Add(new ChatMessage(ChatRole.Assistant, assistantContents));
 
         foreach (var call in draft.ToolCalls)
         {
@@ -271,6 +300,7 @@ public sealed class AgentLoop : IAgentLoop
             cancellationToken.ThrowIfCancellationRequested();
 
             var entry = toolset.Resolve(call.Name);
+            var argumentsJson = SerializeArguments(call.Arguments);
 
             // The plan-time ceiling decides visibility: an unentitled call (a tool the model was never
             // offered but emitted anyway) still gets a synthetic refusal in the upstream history, but
@@ -280,14 +310,8 @@ public sealed class AgentLoop : IAgentLoop
 
             if (entitled)
             {
-                await sink.Emit(
-                    new ToolCallEvent
-                    {
-                        Id = call.Id,
-                        Kind = kind,
-                        Status = ToolCallStatus.Running,
-                        Request = ParseArgs(call.ArgumentsJson),
-                    },
+                await sink.EmitAsync(
+                    new ToolStarted(call.CallId, kind, DisplayArguments(call.Arguments)),
                     cancellationToken).ConfigureAwait(false);
             }
 
@@ -301,79 +325,34 @@ public sealed class AgentLoop : IAgentLoop
                     ? ToolOutcome.Failure(
                         kind,
                         $"tool '{entry.Tool.Id}' call budget exhausted ({entry.Effective.MaxCallsPerTurn} per turn) - no further '{entry.Tool.Name}' calls will run this turn; answer with what you already have")
-                    : await ExecuteToolAsync(entry, call, request, cancellationToken).ConfigureAwait(false);
+                    : await ExecuteToolAsync(entry, call, argumentsJson, request, cancellationToken).ConfigureAwait(false);
 
             // The result card, the durable tool row, its citations, and any canvas artifacts are all
-            // the entitled call's visible/persistent footprint - skipped wholesale for an unentitled
-            // call (a refusal never produces hits/artifacts anyway, and must leave no trace).
+            // the entitled call's visible/persistent footprint, carried in ONE event the consumer
+            // unpacks - skipped wholesale for an unentitled call (a refusal never produces
+            // hits/artifacts anyway, and must leave no trace).
             if (entitled)
             {
-                await sink.Emit(
-                    new ToolResultEvent
+                await sink.EmitAsync(
+                    new ToolCompleted(new ExecutedToolCall
                     {
-                        Id = call.Id,
+                        CallId = call.CallId,
                         Kind = outcome.Kind,
                         Status = outcome.Status,
+                        RequestJson = argumentsJson,
+                        ResponseJson = outcome.ResponseJson,
                         LatencyMs = outcome.LatencyMs,
+                        Citations = outcome.Citations,
+                        Artifacts = outcome.Artifacts,
                         Hits = outcome.Hits,
                         Stdout = outcome.Stdout,
                         Todos = outcome.Todos,
                         Error = outcome.Error,
-                    },
+                    }),
                     cancellationToken).ConfigureAwait(false);
-
-                // Tool rows persist LIVE (the tree read model grows as the turn runs), and citations
-                // keep their provenance: which call made them. The driver owns the row id so it can
-                // bind citations to it.
-                if (request.OnToolExecuted is { } onToolExecuted)
-                {
-                    await onToolExecuted(
-                        new ExecutedToolCall
-                        {
-                            CallId = call.Id,
-                            Kind = outcome.Kind,
-                            Status = outcome.Status,
-                            RequestJson = call.ArgumentsJson,
-                            ResponseJson = outcome.ResponseJson,
-                            LatencyMs = outcome.LatencyMs,
-                            Citations = outcome.Citations,
-                            Artifacts = outcome.Artifacts,
-                        },
-                        cancellationToken).ConfigureAwait(false);
-                }
-
-                // Canvas artifacts the call created/updated (make/edit tools): the tool already
-                // persisted them; emit one ArtifactEvent each so the live canvas opens/updates. An
-                // existing id updates the tab in place.
-                if (outcome.Artifacts is { Count: > 0 } artifacts)
-                {
-                    foreach (var artifact in artifacts)
-                    {
-                        await sink.Emit(
-                            new ArtifactEvent
-                            {
-                                Id = artifact.Id,
-                                Kind = artifact.Kind,
-                                Name = artifact.Name,
-                                Content = artifact.Content,
-                            },
-                            cancellationToken).ConfigureAwait(false);
-                    }
-                }
             }
 
-            messages.Add(new ChatModelMessage
-            {
-                Role = "tool",
-                Content = outcome.ResponseJson ?? string.Empty,
-                ToolCallId = call.Id,
-            });
-        }
-
-        // Tool boundary: flush accumulated text so thread reads see progress.
-        if (request.OnProgress is { } onProgress)
-        {
-            await onProgress(sink.Content, cancellationToken).ConfigureAwait(false);
+            messages.Add(new ChatMessage(ChatRole.Tool, [new FunctionResultContent(call.CallId, outcome.ResponseJson ?? string.Empty)]));
         }
     }
 
@@ -386,7 +365,8 @@ public sealed class AgentLoop : IAgentLoop
     /// </summary>
     private async Task<ToolOutcome> ExecuteToolAsync(
         ToolEntry? entry,
-        ChatModelToolCall call,
+        FunctionCallContent call,
+        string argumentsJson,
         AgentLoopRequest request,
         CancellationToken cancellationToken)
     {
@@ -407,16 +387,11 @@ public sealed class AgentLoop : IAgentLoop
         var invocation = new ToolInvocation
         {
             Pid = request.Pid,
-            ArgumentsJson = call.ArgumentsJson,
+            ArgumentsJson = argumentsJson,
             // The artifact tools key/persist canvas artifacts on the conversation.
             ConversationId = request.ConversationId,
             MessageId = request.MessageId,
-            ToolCallId = call.Id,
-            // The mid-execution emit seam (ask_user's question_asked): the driver's own
-            // persist-then-publish protocol, so a tool-emitted event is durable before it is live and
-            // replays like any other. No per-tool branch here - any tool may emit; null on an
-            // autonomous driver (the tool fails closed rather than waiting invisibly).
-            EmitAsync = request.Emit,
+            ToolCallId = call.CallId,
             Deadline = request.Host.Limits.Deadline,
             ClientTimezone = request.ClientTimezone,
             // The sub-agent's provider + nested-entitlement ceiling: delegation talks to the turn's
@@ -452,7 +427,7 @@ public sealed class AgentLoop : IAgentLoop
             stopwatch.Stop();
             _logger.LogWarning(
                 "Tool '{ToolId}' timed out after {TimeoutSeconds}s (call {CallId}).",
-                tool.Id, timeout.TotalSeconds, call.Id);
+                tool.Id, timeout.TotalSeconds, call.CallId);
             return ToolOutcome.Failure(
                 tool.Id,
                 $"tool timed out after {timeout.TotalSeconds:0}s",
@@ -472,20 +447,43 @@ public sealed class AgentLoop : IAgentLoop
         return ToolOutcome.From(tool.Id, result, stopwatch.ElapsedMilliseconds);
     }
 
-    /// <summary>Build the next completion request: the working messages + the currently advertised specs + the per-round cap.</summary>
-    private static ChatCompletionRequest NewCompletion(
-        AgentLoopRequest request,
-        IReadOnlyList<ChatModelMessage> messages,
-        IReadOnlyList<ChatToolSpec> specs) =>
-        new()
+    /// <summary>Build the next completion's options: the currently advertised specs (as AIFunction declarations) + the per-round cap.</summary>
+    private static ChatOptions BuildOptions(AgentLoopRequest request, IReadOnlyList<ChatToolSpec> specs) => new()
+    {
+        // Advertise-only declarations: the loop dispatches the ITool itself (Movement A), so these
+        // carry no body. M.E.AI maps tool_choice:"auto" when tools are present and omits it when not.
+        Tools = specs.Count > 0 ? specs.Select(ToAITool).ToList() : null,
+
+        // The per-round completion cap is the only sampling field the request carries; the rest rides
+        // the provider (inside the IChatClient).
+        MaxOutputTokens = MaxTokensThisRound(request),
+    };
+
+    private static AITool ToAITool(ChatToolSpec spec) =>
+        AIFunctionFactory.CreateDeclaration(spec.Name, spec.Description, ParseSchema(spec.ParametersSchema));
+
+    /// <summary>
+    /// Parse a tool's parameter-schema string into a <see cref="JsonElement"/>. A malformed/empty
+    /// schema degrades to an empty object schema rather than throwing - a bad tool spec must not
+    /// crash the whole turn.
+    /// </summary>
+    private static JsonElement ParseSchema(string schema)
+    {
+        if (!string.IsNullOrWhiteSpace(schema))
         {
-            ModelId = request.ModelId,
-            Messages = messages,
-            Tools = specs,
-            // The per-round completion cap is the only sampling field the request carries; the rest
-            // rides the provider (Gert:Chat:Providers).
-            MaxTokens = MaxTokensThisRound(request),
-        };
+            try
+            {
+                using var doc = JsonDocument.Parse(schema);
+                return doc.RootElement.Clone();
+            }
+            catch (JsonException)
+            {
+                // fall through to the empty object schema
+            }
+        }
+
+        return EmptyObjectSchema;
+    }
 
     /// <summary>
     /// The per-round completion bound: <see cref="AgentLoopRequest.MaxTokensPerRound"/> when set
@@ -494,39 +492,47 @@ public sealed class AgentLoop : IAgentLoop
     private static int? MaxTokensThisRound(AgentLoopRequest request) =>
         request.MaxTokensPerRound is { } cap && cap > 0 ? cap : null;
 
-    private static IReadOnlyDictionary<string, object?>? ParseArgs(string argumentsJson)
+    /// <summary>Serialize the model's parsed arguments back to JSON for the tool invocation + the row's request (compact; the values round-trip the model's bytes).</summary>
+    private static string SerializeArguments(IDictionary<string, object?>? arguments) =>
+        arguments is null ? "{}" : JsonSerializer.Serialize(arguments);
+
+    /// <summary>
+    /// Project the parsed arguments into the display map the running card shows. Request is
+    /// display-only - long strings are capped so a whole-file argument (make_artifact content) doesn't
+    /// bloat the event payload; the tool itself gets the full <c>ArgumentsJson</c>.
+    /// </summary>
+    private static IReadOnlyDictionary<string, object?>? DisplayArguments(IDictionary<string, object?>? arguments)
     {
-        try
-        {
-            using var doc = JsonDocument.Parse(argumentsJson);
-            if (doc.RootElement.ValueKind != JsonValueKind.Object)
-            {
-                return null;
-            }
-
-            var map = new Dictionary<string, object?>(StringComparer.Ordinal);
-            foreach (var prop in doc.RootElement.EnumerateObject())
-            {
-                map[prop.Name] = prop.Value.ValueKind switch
-                {
-                    // Request is display-only (the tool card) - cap long strings so a whole-file
-                    // argument (make_artifact content) doesn't bloat the event payload; the tool
-                    // itself gets the full ArgumentsJson.
-                    JsonValueKind.String => Cap(prop.Value.GetString()),
-                    JsonValueKind.Number => prop.Value.TryGetInt64(out var l) ? l : prop.Value.GetDouble(),
-                    JsonValueKind.True => true,
-                    JsonValueKind.False => false,
-                    JsonValueKind.Null => null,
-                    _ => prop.Value.GetRawText(),
-                };
-            }
-
-            return map;
-        }
-        catch (JsonException)
+        if (arguments is null)
         {
             return null;
         }
+
+        var map = new Dictionary<string, object?>(StringComparer.Ordinal);
+        foreach (var (key, value) in arguments)
+        {
+            map[key] = DisplayValue(value);
+        }
+
+        return map;
+    }
+
+    private static object? DisplayValue(object? value)
+    {
+        if (value is not JsonElement element)
+        {
+            return value is string s ? Cap(s) : value;
+        }
+
+        return element.ValueKind switch
+        {
+            JsonValueKind.String => Cap(element.GetString()),
+            JsonValueKind.Number => element.TryGetInt64(out var l) ? l : element.GetDouble(),
+            JsonValueKind.True => true,
+            JsonValueKind.False => false,
+            JsonValueKind.Null => null,
+            _ => element.GetRawText(),
+        };
 
         static string? Cap(string? value) =>
             value is { Length: > 240 } ? value[..240] + "..." : value;

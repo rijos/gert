@@ -10,8 +10,8 @@ namespace Gert.Chat;
 /// no implementation - the composition root adds the chat plugins it wants available (each
 /// <c>AddGertChat&lt;Impl&gt;</c>, e.g. <c>AddGertChatOpenAI</c>), and configuration selects which
 /// plugin builds a given provider at runtime. The service layer keeps talking only to the ports
-/// (<see cref="IChatModelClient"/>/<see cref="IChatClientFactory"/>,
-/// <see cref="IEmbeddingClient"/>, <see cref="IChatProviderCatalog"/>).
+/// (<see cref="IChatClientFactory"/> returning Microsoft.Extensions.AI <c>IChatClient</c>,
+/// the <c>IEmbeddingGenerator</c> a plugin registers, and <see cref="IChatProviderCatalog"/>).
 /// </summary>
 public static class ServiceCollectionExtensions
 {

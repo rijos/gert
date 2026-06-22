@@ -106,12 +106,12 @@ builder.Services.AddHostedService<IngestionWorker>();
 
 builder.Services.AddGertServices();
 
-// Turn/agent execution engine (chat-and-tools.md section detached turns): the worker +
-// queue, the planner/runner, the reusable agent loop, and the ask_user/cancel registries.
+// Turn/agent execution engine (chat-and-tools.md section detached turns): the launcher,
+// the planner/runner, the agent + reusable loop, and the ask_user/cancel registries.
 // Gert.Agent is the layer between the host and the service layer; AddGertAgent registers the
-// Channel-backed queue + TurnWorker (POST plans + enqueues and responds 202; the worker drives
-// the tool loop off-thread, so generation survives client disconnects). The TurnJob carries
-// (iss, sub, entitlement snapshot); TurnWorker seeds DetachedUserContext per scope.
+// TurnLauncher (POST plans + enqueues and responds 202; the launcher runs the turn off-thread
+// under a global concurrency cap, so generation survives client disconnects). The TurnJob carries
+// (iss, sub, entitlement snapshot); the launcher seeds DetachedUserContext per scope.
 builder.Services.AddGertAgent();
 
 // Detached turn pipeline tunables (chat-and-tools.md section detached turns). The service
@@ -156,7 +156,7 @@ builder.Services.AddOptions<Gert.Service.Chat.PromptOptions>()
 // id checks (auth.md section tool entitlements) AND the built-in tool implementations
 // (rag/search/sandbox/...) as scoped ITool; the
 // orchestrator resolves the tool instances via IEnumerable<ITool>. The external ports
-// each tool needs (IChatModelClient / IEmbeddingClient / IWebSearch / IPythonSandbox)
+// each tool needs (IChatClient / IEmbeddingGenerator / IWebSearch / IPythonSandbox)
 // are registered by the Gert.Chat/Tools/Ingestion adapters (or a Testing host's fakes).
 
 // Auth (auth.md section ASP.NET Core wiring).
@@ -164,8 +164,8 @@ builder.Services.AddOptions<Gert.Service.Chat.PromptOptions>()
 builder.Services.AddGertJwtAuth(builder.Configuration);
 builder.Services.AddGertAuthorization();
 
-// IUserContext routing: requests resolve the JWT-backed HttpUserContext; worker
-// scopes (no HttpContext) resolve the DetachedUserContext that TurnWorker seeds
+// IUserContext routing: requests resolve the JWT-backed HttpUserContext; launcher
+// scopes (no HttpContext) resolve the DetachedUserContext that TurnLauncher seeds
 // from the job's plan-time identity + entitlement snapshot. Without this, the
 // scoped tools (rag) would throw "no HTTP context" off-thread.
 builder.Services.Replace(ServiceDescriptor.Scoped<IUserContext>(sp =>
@@ -299,7 +299,7 @@ builder.Services.AddGertStorageLocal(builder.Configuration);
 // GENERIC layer (AddGertChat: the impl-agnostic provider catalog + keyed-plugin chat-client
 // factory + IChatProviderCatalog) and the IMPLEMENTATION plugins the composition root makes
 // available (AddGertChatOpenAI: the OpenAI chat-client builder + per-provider transports +
-// IEmbeddingClient). Configuration selects which registered plugin builds each provider
+// IEmbeddingGenerator). Configuration selects which registered plugin builds each provider
 // (Gert:Chat:Providers:<slug>:Type). Search and the run_python sandbox follow the same keyed
 // capability-plugin pattern: AddGertTools registers the GENERIC selectors over the IWebSearch /
 // IWebFetcher / IPythonSandbox ports, and the composition root makes the shipped plugins

@@ -10,6 +10,7 @@ using Gert.Testing.Fakes;
 using Gert.Tools;
 using Gert.Tools.Hosting;
 using Gert.Tools.Ports;
+using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
 using Xunit;
@@ -36,7 +37,7 @@ public sealed class ToolRegistrationTests
         // nothing executes here.
         services.AddSingleton(Substitute.For<IChatDatabaseProvider>());
         services.AddSingleton(Substitute.For<IRagIndexProvider>());
-        services.AddSingleton(Substitute.For<IEmbeddingClient>());
+        services.AddSingleton(Substitute.For<IEmbeddingGenerator<string, Embedding<float>>>());
         services.AddSingleton(Substitute.For<IWebSearch>());
         services.AddSingleton(Substitute.For<IWebFetcher>());
         services.AddSingleton(Substitute.For<IPythonSandbox>());

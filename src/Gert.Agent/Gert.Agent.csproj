@@ -36,9 +36,16 @@
     <!-- ILogger<T> for the turn pipeline's operational logging (round counts, the tool-budget brake). -->
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions"
                       Version="$(MicrosoftExtensionsLoggingVersion)" />
-    <!-- IHostedService/BackgroundService for the TurnWorker. Abstractions only - the host owns the runtime. -->
+    <!-- IHostedService for the TurnLauncher's shutdown coordination. Abstractions only - the host owns the runtime. -->
     <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions"
                       Version="$(MicrosoftExtensionsHostingAbstractionsVersion)" />
+    <!-- Microsoft.Extensions.AI core: the agent loop drives IChatClient directly and builds
+         the advertised tools as AIFunctions (AIFunctionFactory); Movement C's loop is a
+         FunctionInvokingChatClient subclass. The Abstractions ride transitively via Gert.Chat;
+         the OpenAI adapter (AI.OpenAI) stays out of the engine - it is the impl leaf's alone
+         (an architecture test pins that edge). -->
+    <PackageReference Include="Microsoft.Extensions.AI"
+                      Version="$(MicrosoftExtensionsAIVersion)" />
   </ItemGroup>
 
 </Project>

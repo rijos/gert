@@ -1,11 +1,12 @@
-namespace Gert.Agent.Loop;
+namespace Gert.Model.Agent;
 
 /// <summary>
-/// The loop's final answer + metrics, for the driver's terminal finalize:
+/// The agent loop's final answer + metrics, for the caller's terminal finalize:
 /// accumulated content/reasoning, the last-round token counts, and the pure
-/// generation time (stream spans only - tool execution excluded).
+/// generation time (stream spans only - tool execution excluded). Carried by
+/// <see cref="TurnFinished"/>.
 /// </summary>
-public sealed record AgentLoopResult
+public sealed record AgentResult
 {
     /// <summary>The full assistant text streamed across all rounds.</summary>
     public required string Content { get; init; }

@@ -99,18 +99,36 @@ with open items it says "N step(s) remain - continue in this same reply",
 because qwen's instruct mode otherwise yields to the user after one step;
 when all items are done it says to wrap up.
 
-**Loop structure.** The reusable loop (`Gert.Agent`'s `AgentLoop`, run by the
-chat shell, the sub-agent, and any headless driver alike) decomposes into small
-units the regression tests guard: a per-run **`Toolset`** (the offered tools, the
-advertised specs, the entitlement ceiling, and each tool's *effective bounds* -
-below), a **`DeltaSink`** (the single emit channel plus the delta/reasoning
-coalescing and the content/reasoning accumulators), **`StreamRoundAsync`** (consume
-one model stream into the sink, emit the live tool-call-start card, collect the
-round's calls + token counts), and **`ExecuteRoundAsync`** (append the assistant
-tool-calls message, then per call: gate the entitlement card, consume the per-tool
-call budget, run under the tool's timeout, emit/persist the result). `RunAsync` is
-the thin orchestrator over them, with the wind-down brake between the stream and the
-execute step.
+**Loop structure: split the noun.** The engine separates two lifecycles that the
+old "turn" conflated - a **compute** run that streams and ends, and a **durable**
+record that replays. They meet at exactly one seam.
+
+- **The agent (compute).** The reusable loop (`Gert.Agent`'s `AgentLoop`, run by
+  the chat shell, the sub-agent, and any headless driver alike) decomposes into
+  small units the regression tests guard: a per-run **`Toolset`** (the offered
+  tools, the advertised specs, the entitlement ceiling, and each tool's *effective
+  bounds* - below), **`StreamRoundAsync`** (consume one model stream, fold deltas
+  into the run's content via a **`DeltaAccumulator`**, emit the live
+  tool-call-start card, collect the round's calls + token counts), and
+  **`ExecuteRoundAsync`** (append the assistant tool-calls message, then per call:
+  gate the entitlement card, consume the per-tool call budget, run under the tool's
+  timeout, emit the completed call). `RunAsync` is the thin orchestrator, with the
+  wind-down brake between the stream and the execute step. The loop's **only**
+  output is an `AgentEvent` (`Gert.Model.Agent`: `TextDelta`, `ReasoningDelta`,
+  `ToolStarted`, `ToolCompleted`, `RoundCompleted`, `TurnFinished`) emitted through
+  one **`IAgentEventSink`** - it knows nothing of logs, buses, persistence, or
+  coalescing. `IAgent.Start` runs it on a background task behind a channel (`Agent`
+  + `ChannelSink`); the caller reads the bridged event stream while it's busy. Sink
+  inside, stream out.
+- **The conversation event log (durability).** The chat driver (`TurnRunner`) is
+  the thin **tee** that turns the agent's compute vocabulary into the durable log:
+  it reads the event stream and maps each `AgentEvent` to the persisted/published
+  `ChatEvent` - text/reasoning through a **`DeltaCoalescer`** (`Gert.Service.Chat`,
+  the live-only batching that cuts `turn_events` write amplification), tool
+  started/completed into the `tool_call`/`tool_result` cards plus the live
+  `tool_calls` row + citations, and the terminal finalize off the returned
+  `AgentResult`. The accumulate half (`DeltaAccumulator`) and the coalesce half
+  (`DeltaCoalescer`) are the two halves the old single `DeltaSink` conflated.
 
 **Per-tool bounds.** Every `ITool` declares concrete `ToolBounds`
 (`MaxCallsPerTurn`, `CallTimeout`, `TokenBudget`) - `web_search` ships a tight call
@@ -227,22 +245,23 @@ stay inline in the bubble; nothing is ever extracted from prose.
 
 ### Detached turns
 
-**Where it lives.** The turn/agent EXECUTION engine - the `TurnWorker` + `ChannelTurnQueue`, the `TurnPlanner`/`TurnRunner`, the reusable `IAgentLoop`, the ask_user/cancel registries, and the chat tool-host wiring - is its own project **`Gert.Agent`**, a layer between the host and the service layer (host -> `Gert.Agent` -> `Gert.Service`, registered by `AddGertAgent`). The **request-facing read side** - the `ConversationBus`, `ConversationReader`, and `ConversationStreamer`, plus the shared turn vocabulary the readers also consume (`TurnOptions`, `MessageStatusRules`, `PromptOptions`, `TurnInProgressException`) - stays in `Gert.Service` (`Gert.Service.Chat`). `Gert.Service` does not reference `Gert.Agent` back; both edges are pinned by architecture tests ([tech-stack.md section Architecture](tech-stack.md#architecture)).
+**Where it lives.** The turn/agent EXECUTION engine - the `TurnLauncher`, the `TurnPlanner`/`TurnRunner`, the `IAgent` + reusable `IAgentLoop`, the ask_user/cancel registries, and the chat tool-host wiring - is its own project **`Gert.Agent`**, a layer between the host and the service layer (host -> `Gert.Agent` -> `Gert.Service`, registered by `AddGertAgent`). The **request-facing read side** - the `ConversationBus`, `ConversationReader`, and `ConversationStreamer`, plus the shared turn vocabulary the readers also consume (`TurnOptions`, `MessageStatusRules`, `PromptOptions`, `TurnInProgressException`) - stays in `Gert.Service` (`Gert.Service.Chat`). `Gert.Service` does not reference `Gert.Agent` back; both edges are pinned by architecture tests ([tech-stack.md section Architecture](tech-stack.md#architecture)).
 
 A turn is **detached from the request that started it**: `POST .../messages` only
 *plans* (validate -> materialize the conversation if new -> persist the user
 message and a `streaming` assistant placeholder -> snapshot identity +
-entitlements into a `TurnJob`) and enqueues; a `TurnWorker`
-(`BackgroundService`, mirroring ingestion) runs the tool loop off-thread.
-**The database is the source of truth and transports are just delivery** - the
-runner's emit protocol is *persist, then publish*: allocate a per-conversation
-monotonic `seq` (`conversations.next_seq`), append the event to the durable
-`turn_events` log, then publish to the in-process `ConversationBus`. Clients
-attach over SSE / range-polling (rest-api.md section receiving a turn) through
-one splice (`ConversationStreamer`): subscribe first, replay `seq > cursor`
-from the log, then drain live deduping by the seq watermark - no gaps, no
-duplicates, and **generation survives the client disconnecting** (a reload
-mid-turn resubscribes from the assistant row's `seq` and loses nothing).
+entitlements into a `TurnJob`) and enqueues; the `TurnLauncher` runs the turn
+off-thread under a global concurrency cap. The launcher starts the **agent**
+(`IAgent.Start` - the loop on a background task) and the driver tees its
+`AgentEvent` stream into the durable log. **The database is the source of truth
+and transports are just delivery** - the tee's emit protocol is *persist, then
+publish*: allocate a per-conversation monotonic `seq` (`conversations.next_seq`),
+append the event to the durable `turn_events` log, then publish to the in-process
+`ConversationBus`. Clients attach over SSE / range-polling (rest-api.md section
+receiving a turn) through one splice (`ConversationStreamer`): subscribe first,
+replay `seq > cursor` from the log, then drain live deduping by the seq watermark -
+no gaps, no duplicates, and **generation survives the client disconnecting** (a
+reload mid-turn resubscribes from the assistant row's `seq` and loses nothing).
 
 Plan phase (request scope):
 
@@ -263,7 +282,7 @@ Plan phase (request scope):
 3. Enqueue; respond 202 { ids, seq } - the subscribe cursor.
 ```
 
-Run phase (worker scope, `DetachedUserContext` seeded from the job's snapshot):
+Run phase (launcher scope, `DetachedUserContext` seeded from the job's snapshot):
 
 ```
 2. Call vLLM (stream). Every text delta is emitted LIVE as it arrives
@@ -287,8 +306,8 @@ Run phase (worker scope, `DetachedUserContext` seeded from the job's snapshot):
    `error` event. (A failed turn persists.)
 ```
 
-**The orphan rule.** The turn queue is in-memory and non-durable: a crashed
-worker leaves rows stuck at `streaming` forever. Every *reader*
+**The orphan rule.** The launcher is in-memory and non-durable: a crashed
+process leaves rows stuck at `streaming` forever. Every *reader*
 (`MessageStatusRules`) maps a `streaming` row older than
 `Gert:Turn:MaxTurnDuration` to `error` - stateless and multi-instance-safe -
 and the planner's 409 check goes through the same rule, so an abandoned turn
@@ -304,18 +323,31 @@ queue therefore counts against the turn, and a running turn always self-cancels
 at or before the moment readers would start reporting its row as `error` - a
 queue wait can never open a window where a healthy turn reads as dead and the
 409 gate reopens against incomplete history
-([decisions section 11](decisions.md#11-turn-execution---keyed-lanes-over-an-atomic-per-conversation-gate)).
+([decisions section 11](decisions.md#11-turn-execution---a-global-concurrency-cap-over-an-atomic-per-conversation-gate)).
 
-**Worker topology.** `TurnWorker` drains `Gert:Turn:MaxConcurrentTurns`
-(default 4) keyed lanes: jobs shard by the full `TurnKey` hash, so one
-conversation's turns ride one lane in strict FIFO while different
-conversations may run concurrently - the gate index is the correctness
-control, the lane count only throughput
-([decisions section 11](decisions.md#11-turn-execution---keyed-lanes-over-an-atomic-per-conversation-gate)).
+**Launcher topology.** `TurnLauncher` runs each planned turn on a TPL Dataflow
+`ActionBlock`, bounding how many run at once with the block's
+`MaxDegreeOfParallelism` (`Gert:Turn:MaxConcurrentTurns`, default 4). Per-conversation
+serialization is NOT the launcher's job: the `ux_messages_streaming` gate index
+already admits at most one live turn per conversation (a second is 409'd at plan
+time), so a global concurrency cap is all that is left - no per-conversation FIFO
+lanes ([decisions section 11](decisions.md#11-turn-execution---a-global-concurrency-cap-over-an-atomic-per-conversation-gate)).
+A job that waits for a slot still ages from `PlannedAt`, so queue wait counts
+against the turn exactly as before. On shutdown the launcher (an
+`IHostedService`) cancels in-flight runners (they error-finalise) and drains them
+within the shutdown window.
 
 **Scale-out.** The bus is per-process (live push is a latency optimization);
 the `turn_events` log + range endpoint are the cross-instance truth, so a
-client on another instance still sees everything - just less live.
+client on another instance still sees everything - just less live. The
+*back-channel* (cancel, `ask_user` answers) is still in-process: the launcher is
+in-process, so the addressed turn always lives in this process, and the cancel /
+ask_user registries reach it directly (instant, no DB round-trip). A future
+multi-instance deployment would route the back-channel through a `chat.db`
+control table observed on the turn's sync beat - the same persist-then-publish
+substrate as the forward stream, at the cost of eventually-consistent (poll-cadence)
+cancellation; until Gert runs more than one API instance, the in-process path is
+correct and snappier.
 
 Only tools that are **(a) granted to the user by the `gert_tools` JWT entitlement, (b) enabled on the conversation, (c) requested in the body, and (d) usable by the model** (a catalog entry without tool capability is never advertised tools, whatever the toggles say) are offered - the entitlement is the hard ceiling (see [Auth -> Tool entitlements](auth.md#tool-entitlements-allowed-tools-in-the-jwt)), enforced at advertise time in the planner and re-checked at execution time against the job's plan-time snapshot. So flipping "Use my docs" off removes `search_documents` for that turn, and a user without the `sandbox` entitlement never gets `run_python` advertised regardless of toggles. The request's toggles ride each send and a changed set persists onto the conversation before the intersection is computed - so flipping a tool ON mid-conversation takes effect that very turn; the conversation set is the *reload-restore* state, not a creation-time ceiling.
 

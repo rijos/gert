@@ -1,5 +1,3 @@
-using Gert.Model.Events;
-
 namespace Gert.Tools;
 
 /// <summary>
@@ -24,20 +22,11 @@ public sealed record ToolInvocation
     public string? MessageId { get; init; }
 
     /// <summary>
-    /// The model's id for THIS call (the <c>tool_call</c> event's <c>Id</c>), so
-    /// a mid-execution event a tool emits can fold onto the same card. Null for
-    /// callers outside the turn loop.
+    /// The model's id for THIS call (the <c>tool_call</c> event's <c>Id</c>), so a
+    /// mid-execution event a tool emits through <see cref="IToolHost.Ui"/> can fold
+    /// onto the same card. Null for callers outside the turn loop.
     /// </summary>
     public string? ToolCallId { get; init; }
-
-    /// <summary>
-    /// Mid-execution event channel - the runner's persist-then-publish
-    /// <c>EmitAsync</c> (seq -> durable log -> bus), so a tool-emitted event
-    /// replays exactly like any other. Null for hosts that don't stream; tools
-    /// must tolerate null (<c>AskUserTool</c> errors rather than waiting
-    /// invisibly).
-    /// </summary>
-    public Func<ChatEvent, CancellationToken, Task>? EmitAsync { get; init; }
 
     /// <summary>
     /// The turn's wall-clock deadline (<c>PlannedAt + MaxTurnDuration</c>, the

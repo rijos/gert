@@ -100,9 +100,11 @@ Where a new type goes (full map: [tech-stack section solution layout](tech-stack
   }
   ```
 - **No sync-over-async** (`.Result`, `.Wait()`, `GetAwaiter().GetResult()`) anywhere.
-- **No fire-and-forget without an owner.** Detached work rides a `Channel` queue drained by a
-  host `BackgroundService` (`TurnWorker`, `IngestionWorker`) whose loop catches, logs, and
-  survives - that worker *is* the owner. Never bare `Task.Run` / discarded tasks.
+- **No fire-and-forget without an owner.** Detached work has a host owner that tracks it,
+  catches, logs, and survives: ingestion rides a `Channel` queue drained by a
+  `BackgroundService` (`IngestionWorker`); the `TurnLauncher` (an `IHostedService`) tracks each
+  turn's background task and cancels/drains them on shutdown - that owner bounds and finalises
+  the work. Never a bare `Task.Run` / discarded task with no owner.
   (`ConversationBus.Publish` is deliberately a non-async `TryWrite` with documented drop
   semantics - the exception that proves the rule.)
 - Streams are `IAsyncEnumerable<T>` end to end; hosts render them (SSE / stdout). Argument

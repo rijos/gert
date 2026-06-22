@@ -19,9 +19,10 @@ namespace Gert.Service;
 /// hub, and the validation seam. The host/adapters supply the ports the services
 /// depend on - <see cref="IUserContext"/> (auth host), the database providers
 /// (<see cref="Database.IUserDatabaseProvider"/> / <see cref="Database.IChatDatabaseProvider"/>),
-/// the RAG index provider (<see cref="global::Gert.Rag.IRagIndexProvider"/>), and
-/// <see cref="External.IChatModelClient"/> (an adapter assembly) - so this method does
-/// not register them.
+/// the RAG index provider (<see cref="global::Gert.Rag.IRagIndexProvider"/>), and the
+/// chat/embeddings ports (<see cref="global::Gert.Chat.IChatClientFactory"/> + the
+/// Microsoft.Extensions.AI <c>IEmbeddingGenerator</c>, from an adapter assembly) - so this
+/// method does not register them.
 /// </summary>
 public static class ServiceCollectionExtensions
 {

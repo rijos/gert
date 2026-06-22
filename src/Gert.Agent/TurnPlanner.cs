@@ -7,6 +7,7 @@ using Gert.Service;
 using Gert.Service.Chat;
 using Gert.Tools;
 using Gert.Validation;
+using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -406,18 +407,18 @@ public sealed class TurnPlanner : ITurnPlanner
     /// Re-render the tail user message with a tool's revival reminder appended. The
     /// reminder exists ONLY in this turn's rendered prompt: prior turns keep their
     /// exact bytes (prefix-cache reuse up to the previous tail), and the persisted
-    /// user row stays clean for the UI.
+    /// user row stays clean for the UI. Any image parts on the tail message are
+    /// preserved; only its text grows.
     /// </summary>
-    private static IReadOnlyList<ChatModelMessage> AppendTailReminder(
-        IReadOnlyList<ChatModelMessage> history,
+    private static IReadOnlyList<ChatMessage> AppendTailReminder(
+        IReadOnlyList<ChatMessage> history,
         string reminder)
     {
         var rendered = history.ToList();
         var last = rendered[^1];
-        rendered[^1] = last with
-        {
-            Content = last.Content + "\n\n" + reminder,
-        };
+        var contents = new List<AIContent> { new TextContent(last.Text + "\n\n" + reminder) };
+        contents.AddRange(last.Contents.Where(c => c is not TextContent));
+        rendered[^1] = new ChatMessage(last.Role, contents);
         return rendered;
     }
 
@@ -429,28 +430,48 @@ public sealed class TurnPlanner : ITurnPlanner
     };
 
     /// <summary>
-    /// Map persisted chat rows to the OpenAI-style upstream message list. Assistant
-    /// rows always carry their persisted thinking as <c>reasoning_content</c>; the
-    /// adapter forwards it upstream only when the selected provider has
-    /// preserve_thinking on. With <paramref name="includeImages"/>, user rows carry
-    /// their persisted image attachments as vision content parts.
+    /// Map persisted chat rows to the Microsoft.Extensions.AI upstream message list. Assistant
+    /// rows always carry their persisted thinking as a <see cref="TextReasoningContent"/>; the
+    /// adapter forwards it upstream as <c>reasoning_content</c> only when the selected provider has
+    /// preserve_thinking on (the SalvagingChatClient gates it; an instruct provider's adapter drops
+    /// it). With <paramref name="includeImages"/>, user rows carry their persisted image attachments
+    /// as <see cref="DataContent"/> vision parts.
     /// </summary>
-    private static IReadOnlyList<ChatModelMessage> ToModelMessages(
+    private static IReadOnlyList<ChatMessage> ToModelMessages(
         IEnumerable<Message> messages,
         bool includeImages = true) =>
-        messages.Select(m => new ChatModelMessage
+        messages.Select(m => ToChatMessage(m, includeImages)).ToList();
+
+    private static ChatMessage ToChatMessage(Message m, bool includeImages)
+    {
+        var role = ToChatRole(m.Role);
+        var content = m.Content ?? string.Empty;
+
+        // User vision input: a text part (when present) followed by one image part per attachment;
+        // the adapter renders each DataContent as an OpenAI image_url base64 data URL.
+        if (m.Role == MessageRole.User && includeImages && m.Attachments is { Count: > 0 } attachments)
         {
-            Role = ToOpenAiRole(m.Role),
-            Content = m.Content,
-            Images = includeImages && m.Role == MessageRole.User && m.Attachments is { Count: > 0 }
-                ? m.Attachments
-                    .Select(a => new ChatModelImage { MimeType = a.MimeType, DataBase64 = a.Data })
-                    .ToList()
-                : null,
-            ReasoningContent = m.Role == MessageRole.Assistant && !string.IsNullOrEmpty(m.Reasoning)
-                ? m.Reasoning
-                : null,
-        }).ToList();
+            var parts = new List<AIContent>();
+            if (!string.IsNullOrEmpty(content))
+            {
+                parts.Add(new TextContent(content));
+            }
+
+            foreach (var attachment in attachments)
+            {
+                parts.Add(new DataContent(Convert.FromBase64String(attachment.Data), attachment.MimeType));
+            }
+
+            return new ChatMessage(role, parts);
+        }
+
+        if (m.Role == MessageRole.Assistant && !string.IsNullOrEmpty(m.Reasoning))
+        {
+            return new ChatMessage(role, [new TextReasoningContent(m.Reasoning), new TextContent(content)]);
+        }
+
+        return new ChatMessage(role, content);
+    }
 
     /// <summary>The title cap in UTF-16 code units; cuts land on grapheme boundaries.</summary>
     private const int MaxTitleLength = 60;
@@ -490,12 +511,12 @@ public sealed class TurnPlanner : ITurnPlanner
         return end > 0 ? text[..end] : "New chat";
     }
 
-    private static string ToOpenAiRole(MessageRole role) => role switch
+    private static ChatRole ToChatRole(MessageRole role) => role switch
     {
-        MessageRole.User => "user",
-        MessageRole.Assistant => "assistant",
-        MessageRole.System => "system",
-        MessageRole.Tool => "tool",
-        _ => "user",
+        MessageRole.User => ChatRole.User,
+        MessageRole.Assistant => ChatRole.Assistant,
+        MessageRole.System => ChatRole.System,
+        MessageRole.Tool => ChatRole.Tool,
+        _ => ChatRole.User,
     };
 }

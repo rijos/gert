@@ -3,9 +3,7 @@ using System.Net.Http.Headers;
 using System.Text;
 using FluentAssertions;
 using Gert.Chat.OpenAI;
-using Gert.Model;
-using Gert.Model.Chat;
-using Gert.Tools;
+using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
@@ -76,17 +74,14 @@ public sealed class OpenAIWireLoggerTests
         });
         var wire = new OpenAIWireLogger(log) { InnerHandler = sse };
         using var http = new HttpClient(wire) { BaseAddress = new Uri("http://vllm.test") };
-        var client = new OpenAIChatModelClient(
-            http,
-            new ChatProviderParameters { BaseUrl = "http://vllm.test", Model = "qwen36" },
-            NullLogger<OpenAIChatModelClient>.Instance);
+        var parameters = new ChatProviderParameters { BaseUrl = "http://vllm.test", Model = "qwen36" };
+        var inner = OpenAISdkClient
+            .CreateSdkClient(http, parameters.BaseUrl, parameters.ApiKey)
+            .GetChatClient(parameters.Model)
+            .AsIChatClient();
+        var client = new SalvagingChatClient(inner, parameters, NullLogger<SalvagingChatClient>.Instance);
 
-        var request = new ChatCompletionRequest
-        {
-            ModelId = "default",
-            Messages = [new ChatModelMessage { Role = "user", Content = "hi" }],
-        };
-        await foreach (var _ in client.StreamAsync(request, CancellationToken.None))
+        await foreach (var _ in client.GetStreamingResponseAsync([new ChatMessage(ChatRole.User, "hi")]))
         {
             // drain
         }

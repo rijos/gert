@@ -1,9 +1,9 @@
 using Gert.Agent.Loop;
-using Gert.Chat;
 using Gert.Model.Chat;
 using Gert.Service.Chat;
 using Gert.Tools;
 using Gert.Tools.Hosting;
+using Microsoft.Extensions.AI;
 
 namespace Gert.Agent.Hosting;
 
@@ -37,7 +37,7 @@ internal sealed class ChatToolDelegate : IToolDelegate
         + "preamble, no questions back, no offers of further help.";
 
     private readonly IAgentLoop _loop;
-    private readonly IChatModelClient _model;
+    private readonly IChatClient _model;
     private readonly string _modelId;
     private readonly IReadOnlyList<ITool> _delegableTools;
     private readonly IReadOnlySet<string> _allowedToolIds;
@@ -47,7 +47,7 @@ internal sealed class ChatToolDelegate : IToolDelegate
 
     public ChatToolDelegate(
         IAgentLoop loop,
-        IChatModelClient model,
+        IChatClient model,
         string modelId,
         IReadOnlyList<ITool> delegableTools,
         IReadOnlySet<string> allowedToolIds,
@@ -82,16 +82,14 @@ internal sealed class ChatToolDelegate : IToolDelegate
             return new DelegateResult { Success = false, Error = "task or context too long" };
         }
 
-        var messages = new List<ChatModelMessage>
+        var messages = new List<ChatMessage>
         {
-            new() { Role = "system", Content = SystemPrompt },
-            new()
-            {
-                Role = "user",
-                Content = string.IsNullOrWhiteSpace(request.Context)
+            new(ChatRole.System, SystemPrompt),
+            new(
+                ChatRole.User,
+                string.IsNullOrWhiteSpace(request.Context)
                     ? task
-                    : $"{task}\n\nContext:\n{request.Context}",
-            },
+                    : $"{task}\n\nContext:\n{request.Context}"),
         };
 
         var specs = _delegableTools
@@ -111,6 +109,8 @@ internal sealed class ChatToolDelegate : IToolDelegate
             _delegableTools, specs, _allowedToolIds, _perTool,
             adjustBounds: bounds => bounds with { CallTimeout = TimeSpan.Zero });
 
+        // Autonomous: the nested loop emits into the discard sink (no log, no bus); only its
+        // returned final text matters. The parent turn's lifetime token is the hard wall.
         var result = await _loop.RunAsync(
             new AgentLoopRequest
             {
@@ -125,16 +125,8 @@ internal sealed class ChatToolDelegate : IToolDelegate
                 Pid = string.Empty,
                 MaxRounds = MaxRounds,
                 MaxTokensPerRound = _maxTokensPerRound,
-                // No coalescing: the nested loop emits nothing (autonomous, Emit = null),
-                // so the flush thresholds are inert - flush per chunk and keep it simple.
-                DeltaFlushInterval = TimeSpan.Zero,
-                DeltaFlushMaxChars = int.MaxValue,
-                Emit = null,
-                OnToolExecuted = null,
-                OnProgress = null,
-                OnText = null,
-                OnReasoning = null,
             },
+            NullAgentEventSink.Instance,
             cancellationToken).ConfigureAwait(false);
 
         // The loop's MaxRounds wind-down already bounds a runaway nested loop and

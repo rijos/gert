@@ -1,6 +1,6 @@
-using Gert.Chat;
 using Gert.Rag;
 using Gert.Storage;
+using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -25,7 +25,7 @@ public sealed class IngestionService : IIngestionService
     private readonly IRagIndexProvider _databases;
     private readonly IObjectStore _objects;
     private readonly ITextExtractor _extractor;
-    private readonly IEmbeddingClient _embeddings;
+    private readonly IEmbeddingGenerator<string, Embedding<float>> _embeddings;
     private readonly ChunkingOptions _chunking;
     private readonly ILogger<IngestionService> _logger;
 
@@ -33,7 +33,7 @@ public sealed class IngestionService : IIngestionService
         IRagIndexProvider databases,
         IObjectStore objects,
         ITextExtractor extractor,
-        IEmbeddingClient embeddings,
+        IEmbeddingGenerator<string, Embedding<float>> embeddings,
         ChunkingOptions? chunking = null,
         ILogger<IngestionService>? logger = null)
     {
@@ -125,13 +125,13 @@ public sealed class IngestionService : IIngestionService
 
             var batch = chunks.Skip(offset).Take(batchSize).ToList();
             var vectors = await _embeddings
-                .EmbedAsync(batch.Select(c => c.Content).ToList(), cancellationToken)
+                .GenerateAsync(batch.Select(c => c.Content).ToList(), cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
 
             if (vectors.Count != batch.Count)
             {
                 throw new InvalidOperationException(
-                    $"Embedding client returned {vectors.Count} vectors for {batch.Count} chunks.");
+                    $"Embedding generator returned {vectors.Count} vectors for {batch.Count} chunks.");
             }
 
             var inserts = new List<ChunkInsert>(batch.Count);
@@ -145,7 +145,7 @@ public sealed class IngestionService : IIngestionService
                     Content = chunk.Content,
                     Page = chunk.Locator,
                     TokenCount = chunk.TokenCount,
-                    Embedding = vectors[i],
+                    Embedding = vectors[i].Vector.ToArray(),
                 });
             }
 

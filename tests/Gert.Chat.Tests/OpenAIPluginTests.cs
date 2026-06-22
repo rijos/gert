@@ -13,7 +13,8 @@ namespace Gert.Chat.Tests;
 /// connection + sampling bind as NAMED <see cref="ChatProviderParameters"/> options (keyed by
 /// the slug); the zero-config default slug takes its base URL from <c>Gert:Embeddings</c>; and
 /// the generic keyed <see cref="IChatClientFactory"/> dispatches to this plugin by the provider's
-/// <c>Type</c> - building an <see cref="OpenAIChatModelClient"/> with no central switch over Type.
+/// <c>Type</c> - building a <see cref="SalvagingChatClient"/> over the OpenAI adapter with no central
+/// switch over Type.
 /// </summary>
 public sealed class OpenAIPluginTests
 {
@@ -78,6 +79,6 @@ public sealed class OpenAIPluginTests
 
         var client = provider.GetRequiredService<IChatClientFactory>().ForProvider(null);
 
-        client.Should().BeOfType<OpenAIChatModelClient>();
+        client.Should().BeOfType<SalvagingChatClient>();
     }
 }

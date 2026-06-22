@@ -1,8 +1,8 @@
-using Gert.Chat;
 using Gert.Rag;
 using Gert.Service.Documents;
 using Gert.Tools;
 using Gert.Tools.Resources;
+using Microsoft.Extensions.AI;
 
 namespace Gert.Agent.Hosting;
 
@@ -17,14 +17,14 @@ namespace Gert.Agent.Hosting;
 internal sealed class ProjectRagResource : IRagResource
 {
     private readonly IRagIndexProvider _databases;
-    private readonly IEmbeddingClient _embeddings;
+    private readonly IEmbeddingGenerator<string, Embedding<float>> _embeddings;
     private readonly string _iss;
     private readonly string _sub;
     private readonly string _pid;
 
     public ProjectRagResource(
         IRagIndexProvider databases,
-        IEmbeddingClient embeddings,
+        IEmbeddingGenerator<string, Embedding<float>> embeddings,
         string iss,
         string sub,
         string pid)
@@ -49,10 +49,10 @@ internal sealed class ProjectRagResource : IRagResource
             throw new NotSupportedException($"unsupported RAG scope: {scope.Kind}");
         }
 
-        var embeddings = await _embeddings.EmbedAsync([query], cancellationToken).ConfigureAwait(false);
+        var embeddings = await _embeddings.GenerateAsync([query], cancellationToken: cancellationToken).ConfigureAwait(false);
         if (embeddings.Count != 1)
         {
-            // Contract violation by the embedding client (one vector per input text):
+            // Contract violation by the embedding generator (one vector per input text):
             // throw so the loop's per-call catch surfaces this to the model, rather
             // than silently degrading to a BM25-only search with an empty vector.
             throw new InvalidOperationException(
@@ -63,7 +63,7 @@ internal sealed class ProjectRagResource : IRagResource
             .OpenAsync(_iss, _sub, _pid, cancellationToken)
             .ConfigureAwait(false);
 
-        var hits = await store.HybridSearchAsync(query, embeddings[0], k, cancellationToken).ConfigureAwait(false);
+        var hits = await store.HybridSearchAsync(query, embeddings[0].Vector.ToArray(), k, cancellationToken).ConfigureAwait(false);
 
         var mapped = new List<RagSearchHit>(hits.Count);
         foreach (var hit in hits)

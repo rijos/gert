@@ -23,7 +23,7 @@ The codebase is a **host-agnostic service layer** with a single host on top of i
 deliberately decoupled so the host stays swappable:
 
 - **`Gert.Service`** holds all business logic and references nothing host-specific - no `HttpContext`, no JWT, no SSE. It depends only on abstractions: `IUserContext` (who is the current user + their tool entitlement), the persistence contracts in **`Gert.Database`** (the per-database providers `IUserDatabaseProvider` / `IChatDatabaseProvider` and their repositories - this user's connections + migrations), the RAG index contracts in **`Gert.Rag`** (`IRagIndexProvider` / `IRagStore`), and the tool/validation interfaces. The request-facing read side of chat (the conversation bus + reader/streamer) stays here; the turn EXECUTION engine does not.
-- **`Gert.Agent`** is the turn/agent execution engine, a layer between the host and `Gert.Service` (host -> `Gert.Agent` -> `Gert.Service`): the `TurnWorker` + `ChannelTurnQueue`, the `TurnPlanner`/`TurnRunner`, the reusable `IAgentLoop`, the ask_user/cancel registries, the worker-scope `DetachedUserContext`, and the chat tool-host wiring (`ChatToolHost`/`ProjectRagResource`/`ChatToolDelegate`). It references `Gert.Service` + the capability contracts, never the host or an adapter impl; `Gert.Service` must not reference it back. Registered by `AddGertAgent` (the host calls it right after `AddGertServices`).
+- **`Gert.Agent`** is the turn/agent execution engine, a layer between the host and `Gert.Service` (host -> `Gert.Agent` -> `Gert.Service`): the `TurnLauncher`, the `TurnPlanner`/`TurnRunner`, the `IAgent` + reusable `IAgentLoop` (the loop runs on a background task behind a channel, emitting `AgentEvent`s the `TurnRunner` tee maps to the conversation event log), the ask_user/cancel registries, the launcher-scope `DetachedUserContext`, and the chat tool-host wiring (`ChatToolHost`/`ProjectRagResource`/`ChatToolDelegate`). It references `Gert.Service` + the capability contracts, never the host or an adapter impl; `Gert.Service` must not reference it back. Registered by `AddGertAgent` (the host calls it right after `AddGertServices`).
 - **`Gert.Api`** drives the engine + services over HTTP (controllers, JWT auth, SSE, the ingestion `BackgroundService`, SPA hosting).
 
 Because the service layer can't see the host, its independence from any transport is **structural** (compiler-enforced reference direction), not a convention. Services that stream - chat - return `IAsyncEnumerable<ChatEvent>`; the Api renders those as SSE. Transport never leaks into the service.
@@ -42,7 +42,7 @@ Arrows are project references. Everything points inward to `Gert.Service` -> `Ge
        ▼
   ── turn/agent execution engine ──────────────────────────────────────────────
      Gert.Agent       refs: Service + the capability contracts (Database, Rag, Chat, Tools, Validation)
-       (TurnWorker/queue, TurnPlanner/TurnRunner, IAgentLoop, the chat tool-host wiring)
+       (TurnLauncher, TurnPlanner/TurnRunner, IAgent/IAgentLoop, the chat tool-host wiring)
        │
        ▼
   ── impl adapters (per-impl leaves) ──────────────────────────────────────────
@@ -94,9 +94,10 @@ Gert.sln
 │  └─ Provisioning/           # UserProvisioner - username refresh + default-project seed (user.db)
 │
 ├─ Gert.Agent/                # turn/agent EXECUTION engine - layer between host and Service - refs Service + the capability contracts + Validation
-│  ├─ TurnPlanner / TurnRunner / TurnWorker / ChannelTurnQueue  # the detached turn pipeline
-│  ├─ TurnQuestions / TurnCancellation / DetachedUserContext    # ask_user + cancel + worker IUserContext
-│  ├─ Loop/                   #   IAgentLoop + AgentLoop - the reusable tool loop
+│  ├─ TurnPlanner / TurnRunner / TurnLauncher                   # the detached turn pipeline (plan -> launch -> tee)
+│  ├─ Agent / ChannelSink     #   IAgent - the loop on a background task, events bridged over a channel
+│  ├─ TurnQuestions / TurnCancellation / DetachedUserContext    # ask_user + cancel + launcher IUserContext
+│  ├─ Loop/                   #   IAgentLoop + AgentLoop + IAgentEventSink - the reusable tool loop, AgentEvent out
 │  └─ Hosting/                #   ChatToolHost / ProjectRagResource / ChatToolDelegate - the IToolHost wiring
 │
 ├─ Gert.Validation/           # fail-closed validation sub-layer - IValidationProvider + Validated<T> proof + per-DTO validators - refs Model + Tools(contracts)

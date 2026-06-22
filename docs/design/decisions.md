@@ -126,13 +126,13 @@ server-side default set, or nothing?
     *explicit-but-present* (still an exception to the one-source rule - the objection was the
     exception itself, not its visibility).
 
-## 11. Turn execution - keyed lanes over an atomic per-conversation gate
+## 11. Turn execution - a global concurrency cap over an atomic per-conversation gate
 
 How are queued `TurnJob`s executed: one global serial consumer, or per-conversation keyed
 parallelism? See [chat-and-tools section detached turns](chat-and-tools.md#detached-turns).
 
-- **Decision (settled - shipped as one combined change):** **an engine-enforced per-conversation
-  gate plus bounded keyed parallelism.**
+- **Decision (settled):** **an engine-enforced per-conversation gate plus a bounded global
+  concurrency cap.**
   - **(a) The atomic gate.** A partial unique index
     `ux_messages_streaming ON messages(conversation_id) WHERE status='streaming'` makes the
     streaming-placeholder insert itself the gate: the planner persists the user row + the
@@ -145,13 +145,15 @@ parallelism? See [chat-and-tools section detached turns](chat-and-tools.md#detac
     a dead turn's row frees the index instead of locking the conversation forever. Both
     invariants - the **seq single-writer invariant** and the **409 rule** - are explicit
     controls in the database, not properties of a serial worker.
-  - **(b) Keyed lanes.** The one `TurnWorker` hosted service drains
-    `Gert:Turn:MaxConcurrentTurns` (default 4) internal lanes of the sharded
-    `ChannelTurnQueue`; jobs shard by the full `TurnKey` (iss, sub, pid, conversation) hash,
-    so one conversation's turns ride one lane in strict FIFO - per-conversation ordering is
-    structural, not timing - while different conversations may overlap. `1` reproduces the
-    old global serial worker exactly. The gate is the correctness control; the lane count is
-    only throughput.
+  - **(b) A global concurrency cap.** The `TurnLauncher` runs each planned turn on a TPL Dataflow
+    `ActionBlock` and bounds how many run at once with the block's `MaxDegreeOfParallelism`
+    (`Gert:Turn:MaxConcurrentTurns`, default 4). Per-conversation serialization is
+    the gate index's job, not the launcher's: the gate already admits at most one live turn per
+    conversation (a second is 409'd at plan time), so per-conversation FIFO lanes were redundant
+    alongside it - the launcher carries no `TurnKey` sharding. `1` reproduces a global serial
+    worker. The gate is the correctness control; the cap is only throughput. (This superseded
+    the original sharded keyed-lane `ChannelTurnQueue` + `TurnWorker`, which serialized per
+    conversation in vain alongside the gate.)
   - **SQLite under two lanes:** the only genuinely new concurrency is *same user, same
     project, two conversations* hitting one `chat.db` (per-user/per-project databases make
     everything else disjoint). Open-per-use connections with WAL + `busy_timeout=5000` mean
@@ -165,13 +167,11 @@ parallelism? See [chat-and-tools section detached turns](chat-and-tools.md#detac
     `MaxTurnDuration` *remaining* from that instant, so a job that waited behind its lane
     can never outlive the reader-facing orphan/409 horizon and read as `error` while
     healthily running.
-  - *Rejected:* unbounded `Task.Run` per turn (no ordering, no owner - violates the
-    worker-owns-detached-work rule in the style guide); a channel per conversation created
-    eagerly (unbounded channel count, no backpressure story); N hosted services instead of N
-    lanes (DI churn, N owners for one queue - the style guide wants one worker owning the
-    detached work); parallelising without the gate (a duplicate streaming turn corrupts seq
-    ordering and history - fail-closed loses), or shipping the gate without the lanes (closes
-    a race nobody can hit and changes nothing user-visible).
+  - *Rejected:* per-conversation FIFO lanes (the sharded `ChannelTurnQueue` + `TurnWorker` the
+    cap superseded) - the gate index already serializes a conversation, so the lanes closed a
+    race nobody can hit and only added a `TurnKey`-hash sharding layer; an unbounded `Task.Run`
+    per turn with no cap (no concurrency ceiling, no shutdown owner); parallelising without the
+    gate (a duplicate streaming turn corrupts seq ordering and history - fail-closed loses).
 
 ## 12. Deletion crash-consistency - a journal + idempotent forward recovery
 

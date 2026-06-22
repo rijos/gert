@@ -1,13 +1,13 @@
 using System.Text;
 using FluentAssertions;
 using Gert.Agent.Hosting;
-using Gert.Chat;
 using Gert.Model;
 using Gert.Model.Rag;
 using Gert.Rag;
 using Gert.Testing.Fakes;
 using Gert.Tools;
 using Gert.Tools.Resources;
+using Microsoft.Extensions.AI;
 using NSubstitute;
 using Xunit;
 
@@ -97,10 +97,10 @@ public sealed class ProjectRagResourceTests
         // silent BM25-only degrade with an empty vector.
         var store = StoreReturning();
         var provider = ProviderFor(store);
-        var embeddings = Substitute.For<IEmbeddingClient>();
+        var embeddings = Substitute.For<IEmbeddingGenerator<string, Embedding<float>>>();
         embeddings
-            .EmbedAsync(Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
-            .Returns(Array.Empty<float[]>());
+            .GenerateAsync(Arg.Any<IEnumerable<string>>(), Arg.Any<EmbeddingGenerationOptions?>(), Arg.Any<CancellationToken>())
+            .Returns(new GeneratedEmbeddings<Embedding<float>>());
 
         var resource = new ProjectRagResource(provider, embeddings, Iss, Sub, Pid);
 

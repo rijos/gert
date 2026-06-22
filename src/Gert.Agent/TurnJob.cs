@@ -3,6 +3,7 @@ using Gert.Model.Chat;
 using Gert.Service;
 using Gert.Service.Chat;
 using Gert.Tools;
+using Microsoft.Extensions.AI;
 
 namespace Gert.Agent;
 
@@ -65,7 +66,7 @@ public sealed record TurnJob
     public required string ModelId { get; init; }
 
     /// <summary>Prior turns (system prompt excluded), ending with the user message.</summary>
-    public required IReadOnlyList<ChatModelMessage> History { get; init; }
+    public required IReadOnlyList<ChatMessage> History { get; init; }
 
     /// <summary>Offered tool capability ids (requested AND enabled AND entitled AND registry).</summary>
     public IReadOnlyList<string> ToolIds { get; init; } = [];

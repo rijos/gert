@@ -45,9 +45,12 @@ public static class ServiceCollectionExtensions
         // via IUserContext), so they must be scoped - a singleton would capture one caller's
         // identity and serve their data to everyone (a captive-dependency cross-user leak).
         services.TryAddScoped<ITurnPlanner, TurnPlanner>();
-        // The reusable tool loop the chat shell (and later the sub-agent / headless
-        // driver) run: stateless beyond the clock, so a process-wide singleton.
+        // The reusable tool loop the chat shell (and the sub-agent / headless driver) run:
+        // stateless beyond the clock, so a process-wide singleton.
         services.TryAddSingleton<IAgentLoop, AgentLoop>();
+        // The agent: runs the loop on a background task behind a channel (compute in your name, in
+        // the background). Stateless beyond a counter, so a process-wide singleton.
+        services.TryAddSingleton<IAgent, Agent>();
         services.TryAddScoped<ITurnRunner, TurnRunner>();
         // The worker-scope IUserContext: seeded from the TurnJob before anything
         // else resolves in the scope. The host's IUserContext registration picks
@@ -65,13 +68,14 @@ public static class ServiceCollectionExtensions
         // reads it), so the engine references it from the service layer.
         services.AddOptions<PromptOptions>();
 
-        // Turn worker (chat-and-tools.md section detached turns): same shape as ingestion -
-        // POST plans + enqueues and responds 202; the worker drives the tool loop off-thread,
-        // so generation survives client disconnects. Singleton queue shared between the message
-        // controller (writer) and the worker (one reader loop per shard).
-        services.AddSingleton<ChannelTurnQueue>();
-        services.AddSingleton<ITurnQueue>(sp => sp.GetRequiredService<ChannelTurnQueue>());
-        services.AddHostedService<TurnWorker>();
+        // Turn launcher (chat-and-tools.md section detached turns): same shape as ingestion -
+        // POST plans + enqueues and responds 202; the launcher runs the turn off-thread (so
+        // generation survives client disconnects), bounding concurrency with a global semaphore.
+        // One singleton, shared as the message controller's ITurnQueue and registered as the
+        // hosted service that cancels in-flight turns on shutdown.
+        services.AddSingleton<TurnLauncher>();
+        services.AddSingleton<ITurnQueue>(sp => sp.GetRequiredService<TurnLauncher>());
+        services.AddHostedService(sp => sp.GetRequiredService<TurnLauncher>());
 
         return services;
     }

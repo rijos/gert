@@ -1,37 +1,45 @@
 using System.Buffers.Binary;
 using System.Security.Cryptography;
 using System.Text;
-using Gert.Chat;
-using Gert.Model;
+using Microsoft.Extensions.AI;
 
 namespace Gert.Testing.Fakes;
 
 /// <summary>
-/// Deterministic <see cref="IEmbeddingClient"/> double (testing.md Appendix A.2).
-/// Maps text -> a stable 1024-dim L2-unit vector, hash-seeded, so KNN/RRF order
-/// is identical across runs and across the .NET fake and the Python mock. The
+/// Deterministic Microsoft.Extensions.AI <see cref="IEmbeddingGenerator{TInput,TEmbedding}"/>
+/// double (testing.md Appendix A.2). Maps text -> a stable 1024-dim L2-unit vector, hash-seeded, so
+/// KNN/RRF order is identical across runs and across the .NET fake and the Python mock. The
 /// algorithm is specified to the byte; see <see cref="Embed"/>.
 /// </summary>
-public sealed class FakeEmbeddings : IEmbeddingClient
+public sealed class FakeEmbeddings : IEmbeddingGenerator<string, Embedding<float>>
 {
-    /// <summary>The embedding dimension - bge-m3 = 1024 (see <see cref="IEmbeddingClient"/>).</summary>
+    /// <summary>The embedding dimension - bge-m3 = 1024.</summary>
     public const int Dimensions = 1024;
 
     /// <inheritdoc />
-    public Task<IReadOnlyList<float[]>> EmbedAsync(
-        IReadOnlyList<string> texts,
+    public Task<GeneratedEmbeddings<Embedding<float>>> GenerateAsync(
+        IEnumerable<string> values,
+        EmbeddingGenerationOptions? options = null,
         CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(texts);
+        ArgumentNullException.ThrowIfNull(values);
 
-        var vectors = new float[texts.Count][];
-        for (var i = 0; i < texts.Count; i++)
+        var result = new GeneratedEmbeddings<Embedding<float>>();
+        foreach (var text in values)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            vectors[i] = Embed(texts[i]);
+            result.Add(new Embedding<float>(Embed(text)));
         }
 
-        return Task.FromResult<IReadOnlyList<float[]>>(vectors);
+        return Task.FromResult(result);
+    }
+
+    /// <inheritdoc />
+    public object? GetService(Type serviceType, object? serviceKey = null) => null;
+
+    /// <inheritdoc />
+    public void Dispose()
+    {
     }
 
     /// <summary>

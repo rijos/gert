@@ -1,6 +1,7 @@
 using System.Net.Http.Headers;
 using Gert.Chat;
 using Gert.Model.Chat;
+using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Http.Resilience;
@@ -97,7 +98,7 @@ public static class ServiceCollectionExtensions
             // wall clock (turn-budgets.md section 4a). The Polly pipeline completes at the
             // response headers, so it bounds only the pre-stream phase. The explicit Timeout is
             // set AFTER the resilience handler, which pins it to InfiniteTimeSpan itself.
-            var chat = services.AddHttpClient(OpenAIChatModelClient.HttpClientNameFor(slug));
+            var chat = services.AddHttpClient(OpenAISdkClient.HttpClientNameFor(slug));
             chat.AddStandardResilienceHandler().Configure((options, sp) =>
             {
                 var parameters = sp.GetRequiredService<IOptionsMonitor<ChatProviderParameters>>().Get(slug);
@@ -134,7 +135,7 @@ public static class ServiceCollectionExtensions
         // pipeline's total so it covers the buffered body read while the pipeline's timeouts -
         // not this CTS - decide the pre-stream outcomes. After the handler for the same
         // registration-order reason as the chat client (last write wins on Timeout).
-        var embeddings = services.AddHttpClient(OpenAIEmbeddingClient.HttpClientName);
+        var embeddings = services.AddHttpClient(OpenAIEmbeddingGenerator.HttpClientName);
         embeddings.AddStandardResilienceHandler().Configure((options, sp) =>
         {
             var p = sp.GetRequiredService<IOptions<EmbeddingsOptions>>().Value.Parameters;
@@ -153,10 +154,10 @@ public static class ServiceCollectionExtensions
             client.Timeout = TotalTransportTimeout(p.RequestTimeoutSeconds, p.RetryCount) + TimeSpan.FromSeconds(1);
         });
 
-        services.AddSingleton<IEmbeddingClient>(sp => new OpenAIEmbeddingClient(
-            sp.GetRequiredService<IHttpClientFactory>().CreateClient(OpenAIEmbeddingClient.HttpClientName),
-            sp.GetRequiredService<IOptions<EmbeddingsOptions>>(),
-            sp.GetRequiredService<ILogger<OpenAIEmbeddingClient>>()));
+        services.AddSingleton<IEmbeddingGenerator<string, Embedding<float>>>(sp => new OpenAIEmbeddingGenerator(
+            sp.GetRequiredService<IHttpClientFactory>().CreateClient(OpenAIEmbeddingGenerator.HttpClientName),
+            sp.GetRequiredService<IOptions<EmbeddingsOptions>>().Value.Parameters,
+            sp.GetRequiredService<ILogger<OpenAIEmbeddingGenerator>>()));
     }
 
     /// <summary>

@@ -11,6 +11,7 @@ using Gert.Tools;
 using Gert.Tools.Builtin;
 using Gert.Tools.Hosting;
 using Gert.Validation;
+using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Options;
 using NSubstitute;
 using Xunit;
@@ -208,6 +209,15 @@ public sealed class TurnPlannerTests
         job.PlannedAt.Should().Be(_persisted.Single(m => m.Role == MessageRole.User).CreatedAt);
     }
 
+    // ---- history projections (the M.E.AI ChatMessage shape the planner builds) ----
+    private static string? Reasoning(ChatMessage m) =>
+        m.Contents.OfType<TextReasoningContent>().FirstOrDefault()?.Text;
+
+    private static IReadOnlyList<DataContent> Images(ChatMessage m) =>
+        m.Contents.OfType<DataContent>().ToList();
+
+    private static string Base64(DataContent image) => Convert.ToBase64String(image.Data.ToArray());
+
     [Fact]
     public async Task History_carries_prior_complete_turns_plus_the_new_user_message_only()
     {
@@ -222,9 +232,9 @@ public sealed class TurnPlannerTests
 
         var job = await NewPlanner().PlanAsync(Pid, Conv, Valid(new SendMessageRequest { Content = "follow-up" }));
 
-        job.History.Select(m => m.Content)
+        job.History.Select(m => m.Text)
             .Should().Equal("earlier question", "earlier answer", "follow-up");
-        job.History.Last().Role.Should().Be("user");
+        job.History.Last().Role.Should().Be(ChatRole.User);
     }
 
     [Fact]
@@ -267,8 +277,8 @@ public sealed class TurnPlannerTests
 
         var job = await NewPlanner().PlanAsync(Pid, Conv, Valid(new SendMessageRequest { Content = "next" }));
 
-        job.History.Single(m => m.Role == "assistant").ReasoningContent.Should().Be("17*23 = 391.");
-        job.History.Single(m => m.Content == "q").ReasoningContent.Should().BeNull();
+        Reasoning(job.History.Single(m => m.Role == ChatRole.Assistant)).Should().Be("17*23 = 391.");
+        Reasoning(job.History.Single(m => m.Text == "q")).Should().BeNull();
     }
 
     [Fact]
@@ -302,13 +312,14 @@ public sealed class TurnPlannerTests
         userRow.Attachments.Should().ContainSingle()
             .Which.MimeType.Should().Be("image/png");
 
-        var prior = job.History.Single(m => m.Content == "earlier image");
-        prior.Images.Should().ContainSingle().Which.DataBase64.Should().Be("b2xk");
+        var prior = job.History.Single(m => m.Text == "earlier image");
+        Images(prior).Should().ContainSingle();
+        Base64(Images(prior)[0]).Should().Be("b2xk");
 
         var tail = job.History[^1];
-        tail.Images.Should().ContainSingle();
-        tail.Images![0].MimeType.Should().Be("image/png");
-        tail.Images[0].DataBase64.Should().Be("aGVsbG8=");
+        Images(tail).Should().ContainSingle();
+        Images(tail)[0].MediaType.Should().Be("image/png");
+        Base64(Images(tail)[0]).Should().Be("aGVsbG8=");
     }
 
     [Fact]
@@ -329,8 +340,8 @@ public sealed class TurnPlannerTests
         // The row keeps the attachment (UI truth) but the prompt degrades to
         // text-only rather than erroring the turn - mirror of the tools gate.
         _persisted.Single(m => m.Role == MessageRole.User).Attachments.Should().NotBeNull();
-        job.History[^1].Images.Should().BeNull();
-        job.History[^1].Content.Should().Be("what is this?");
+        Images(job.History[^1]).Should().BeEmpty();
+        job.History[^1].Text.Should().Be("what is this?");
     }
 
     [Fact]
@@ -434,8 +445,8 @@ public sealed class TurnPlannerTests
         // The reminder rides at the TAIL of the rendered prompt; prior history
         // keeps its exact bytes (prefix cache) and the persisted user row keeps
         // the user's actual words (UI truth).
-        job.History[^1].Content.Should().Be("continue\n\n" + TodoTool.CrossTurnReminder(snapshot));
-        job.History[0].Content.Should().Be("earlier turn");
+        job.History[^1].Text.Should().Be("continue\n\n" + TodoTool.CrossTurnReminder(snapshot));
+        job.History[0].Text.Should().Be("earlier turn");
         _persisted.Single(m => m.Role == MessageRole.User).Content.Should().Be("continue");
     }
 
@@ -455,7 +466,7 @@ public sealed class TurnPlannerTests
         var job = await NewPlanner(user, [new TodoTool(Gert.Testing.Proof.Validation)]).PlanAsync(Pid, Conv, Valid(request));
 
         // A finished list needs no revival - no prompt tokens spent on it.
-        job.History[^1].Content.Should().Be("thanks!");
+        job.History[^1].Text.Should().Be("thanks!");
     }
 
     [Fact]
@@ -476,7 +487,7 @@ public sealed class TurnPlannerTests
 
         var job = await NewPlanner(user, [new TodoTool(Gert.Testing.Proof.Validation)]).PlanAsync(Pid, Conv, Valid(request));
 
-        job.History[^1].Content.Should().Be("continue");
+        job.History[^1].Text.Should().Be("continue");
     }
 
     [Fact]
@@ -496,7 +507,7 @@ public sealed class TurnPlannerTests
         var job = await NewPlanner(user, [new TodoTool(Gert.Testing.Proof.Validation)]).PlanAsync(Pid, Conv, Valid(request));
 
         // Best-effort: the reminder is a nicety, never a turn-blocker.
-        job.History[^1].Content.Should().Be("continue");
+        job.History[^1].Text.Should().Be("continue");
     }
 
     [Fact]
@@ -526,7 +537,7 @@ public sealed class TurnPlannerTests
 
         var job = await NewPlanner(user, [new StubRevivableTool()]).PlanAsync(Pid, Conv, Valid(request));
 
-        job.History[^1].Content.Should().Be("go\n\n<revived>STATE</revived>");
+        job.History[^1].Text.Should().Be("go\n\n<revived>STATE</revived>");
     }
 
     /// <summary>

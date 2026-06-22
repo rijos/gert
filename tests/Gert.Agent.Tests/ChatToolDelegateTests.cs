@@ -1,15 +1,14 @@
 using System.Runtime.CompilerServices;
+using System.Text.Json;
 using FluentAssertions;
-using Gert.Agent;
 using Gert.Agent.Hosting;
 using Gert.Agent.Loop;
-using Gert.Chat;
-using Gert.Model.Chat;
 using Gert.Service.Chat;
 using Gert.Testing.Fakes;
 using Gert.Tools;
 using Gert.Tools.Builtin;
 using Gert.Tools.Hosting;
+using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
@@ -33,7 +32,7 @@ public sealed class ChatToolDelegateTests
     private static IToolHost AutonomousHost() => new FakeToolHost { Ui = null };
 
     private static ChatToolDelegate NewDelegate(
-        IChatModelClient model,
+        IChatClient model,
         IReadOnlyList<ITool>? delegable = null,
         IToolHost? nestedHost = null)
     {
@@ -49,17 +48,17 @@ public sealed class ChatToolDelegateTests
             perTool: new Dictionary<string, ToolBoundsOverride>());
     }
 
-    private static ChatModelChunk[] FinalText(string text) =>
-        [new ChatModelChunk { TextDelta = text, FinishReason = "stop" }];
+    private static ChatResponseUpdate[] FinalText(string text) => [Text(text)];
 
-    private static ChatModelChunk[] CallClock(string callId) =>
-    [
-        new ChatModelChunk
-        {
-            ToolCall = new ChatModelToolCall { Id = callId, Name = "get_datetime", ArgumentsJson = "{}" },
-            FinishReason = "tool_calls",
-        },
-    ];
+    private static ChatResponseUpdate[] CallClock(string callId) => [Call(callId, "get_datetime", "{}")];
+
+    private static ChatResponseUpdate Text(string text) => new(ChatRole.Assistant, text);
+
+    private static ChatResponseUpdate Call(string id, string name, string argumentsJson) => new()
+    {
+        Role = ChatRole.Assistant,
+        Contents = [new FunctionCallContent(id, name, JsonSerializer.Deserialize<Dictionary<string, object?>>(argumentsJson)!)],
+    };
 
     private static ClockTool NewClock() => new(Gert.Testing.Proof.Validation, TimeProvider.System);
 
@@ -76,8 +75,8 @@ public sealed class ChatToolDelegateTests
         // A fresh nested conversation: system prompt + the task, nothing of the parent.
         var first = model.Requests.Single();
         first.Messages.Should().HaveCount(2);
-        first.Messages[0].Role.Should().Be("system");
-        first.Messages[1].Content.Should().Be("digest this");
+        first.Messages[0].Role.Should().Be(ChatRole.System);
+        first.Messages[1].Text.Should().Be("digest this");
     }
 
     [Fact]
@@ -86,7 +85,7 @@ public sealed class ChatToolDelegateTests
         var model = new ScriptedModel(FinalText("ok"));
         await NewDelegate(model).RunAsync(new DelegateRequest("summarize", "raw material"));
 
-        model.Requests.Single().Messages[1].Content
+        model.Requests.Single().Messages[1].Text
             .Should().Contain("summarize").And.Contain("raw material");
     }
 
@@ -102,7 +101,8 @@ public sealed class ChatToolDelegateTests
 
         // Round 2 carries the assistant tool-calls message + the clock's result.
         var second = model.Requests[1];
-        second.Messages.Should().Contain(m => m.Role == "tool" && m.ToolCallId == "c1");
+        second.Messages.Should().Contain(m =>
+            m.Role == ChatRole.Tool && m.Contents.OfType<FunctionResultContent>().Any(r => r.CallId == "c1"));
     }
 
     [Fact]
@@ -147,32 +147,46 @@ public sealed class ChatToolDelegateTests
         result.Text.Should().Be("done");
     }
 
-    /// <summary>Scripted client: replays the given rounds; captures every request.</summary>
-    private sealed class ScriptedModel : IChatModelClient
+    /// <summary>Scripted client: replays the given rounds; captures every request's messages + tools.</summary>
+    private sealed class ScriptedModel : IChatClient
     {
-        private readonly Queue<ChatModelChunk[]> _rounds;
+        private readonly Queue<ChatResponseUpdate[]> _rounds;
 
-        public ScriptedModel(params ChatModelChunk[][] rounds)
+        public ScriptedModel(params ChatResponseUpdate[][] rounds)
         {
-            _rounds = new Queue<ChatModelChunk[]>(rounds);
+            _rounds = new Queue<ChatResponseUpdate[]>(rounds);
         }
 
-        public List<ChatCompletionRequest> Requests { get; } = [];
+        public List<Captured> Requests { get; } = [];
 
-        public async IAsyncEnumerable<ChatModelChunk> StreamAsync(
-            ChatCompletionRequest request,
+        public async IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(
+            IEnumerable<ChatMessage> messages,
+            ChatOptions? options = null,
             [EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
-            Requests.Add(request);
-            var round = _rounds.Count > 0
-                ? _rounds.Dequeue()
-                : [new ChatModelChunk { TextDelta = "default answer", FinishReason = "stop" }];
-            foreach (var chunk in round)
+            Requests.Add(new Captured(messages.ToList(), options?.Tools?.ToList() ?? []));
+            var round = _rounds.Count > 0 ? _rounds.Dequeue() : [Text("default answer")];
+            foreach (var update in round)
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 await Task.Yield();
-                yield return chunk;
+                yield return update;
             }
         }
+
+        public Task<ChatResponse> GetResponseAsync(
+            IEnumerable<ChatMessage> messages,
+            ChatOptions? options = null,
+            CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException("scripted fake streams only");
+
+        public object? GetService(Type serviceType, object? serviceKey = null) => null;
+
+        public void Dispose()
+        {
+        }
+
+        /// <summary>One captured round: the working messages and the advertised tools.</summary>
+        public sealed record Captured(IReadOnlyList<ChatMessage> Messages, IReadOnlyList<AITool> Tools);
     }
 }
