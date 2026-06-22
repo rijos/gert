@@ -209,3 +209,69 @@ A crash between steps would leave a partial state, worst case **blobs (PII) left
     journal** (relies on a human re-issuing the delete and silently orphans an abandoned partial).
     Project deletion has the same shape and can adopt the same journal when needed; account
     deletion carries the PII-residue stakes, so it goes first.
+
+## 13. Model API on Microsoft.Extensions.AI - scrap the custom wire layer
+
+Gert maintained a hand-rolled model-wire abstraction (`IChatModelClient`/`ChatModelChunk`/
+`ChatCompletionRequest`/`ChatModelMessage`/`ChatToolSpec`/`ChatModelToolCall`/`ToolCallStart`/
+`ChatModelImage`, `IEmbeddingClient`, `OpenAIChatRequestBuilder`, the `OpenAIStreamParser` feeding
+those DTOs) on top of the OpenAI SDK. The first-party **Microsoft.Extensions.AI** stack
+(`IChatClient`, `IEmbeddingGenerator`, `AIFunction`) now covers the wire translation we were
+maintaining by hand. Should we adopt it, and how far? See
+[tech-stack section Model API](tech-stack.md#tech-stack), [chat-and-tools section the tool loop](chat-and-tools.md#chat-orchestration-the-tool-loop).
+
+- **Decision:** **Adopt M.E.AI at the chat + embeddings ports; delete the custom wire DTOs; keep
+  the Gert-specific behavior M.E.AI has no analog for, re-homed into thin wrappers.**
+  `IChatClientFactory`/`IChatModelClientBuilder` now return a M.E.AI `IChatClient`; the embeddings
+  port is `IEmbeddingGenerator<string, Embedding<float>>`. `IChatClient`/`ChatMessage`/`ChatOptions`/
+  `ChatResponseUpdate`/`AIFunction` flow directly into the agent loop - **not** hidden under the old
+  port (the cheap "wrap underneath" path was explicitly rejected).
+  - **Versions.** `Microsoft.Extensions.AI{,.Abstractions,.OpenAI}` are pinned at **10.7.0**, which
+    is **stable** (the OpenAI adapter is no longer preview, contra older guidance) and requires
+    `OpenAI >= 2.11.0` - exactly our existing pin. The AI packages run their own 10.x cadence,
+    distinct from the runtime `Microsoft.Extensions.*` 10.0.9 family but interoperating with it
+    (they depend on the runtime extensions at `>= 10.0.9`). Abstractions is contracts-safe (in
+    `Gert.Chat`); AI core + AI.OpenAI carry the SDK and live only in the `Gert.Chat.OpenAI` leaf;
+    an architecture test keeps the OpenAI adapter out of `Gert.Agent`/`Gert.Service`.
+  - **Keep (no M.E.AI analog), re-homed into `SalvagingChatClient`** (a `DelegatingChatClient` over
+    `chatClient.AsIChatClient()` in `Gert.Chat.OpenAI`): the `<tool_call>` leak salvage, the vLLM
+    `reasoning`/`reasoning_content` extraction (the adapter surfaces only the latter), the
+    truncated-argument degrade-to-`{}` guard, the name-first live-intent signal, the provider's
+    sampling, and the off-spec vendor fields (`top_k`/`min_p`/`repetition_penalty`/
+    `chat_template_kwargs`) via `ChatOptions.RawRepresentationFactory` seeding an OpenAI SDK
+    `ChatCompletionOptions` + JsonPatch. Interleaved-thinking replay (`preserve_thinking`) rides a
+    native `AssistantChatMessage` on the message's `RawRepresentation` - the one thing the adapter
+    cannot express. Embeddings keep order-by-index reassembly + the dimension/count assertions
+    (M.E.AI's `GeneratedEmbeddings` drops the source index), so `OpenAIEmbeddingGenerator` runs over
+    the SDK `EmbeddingClient` directly rather than `.AsIEmbeddingGenerator()`.
+  - **Keep the multi-provider catalog + the keyed plugin seam.** "Scrap the wire layer" is the wire,
+    not multi-provider config: `IChatProviderCatalog`/`ConfigChatProviderCatalog`/`ChatProviderOptions`/
+    `IDefaultChatProvider` and the `IChatModelClientBuilder` keyed-by-`Type` plugin stay (the
+    thinking-vs-instruct provider selection rides them; `PluginArchitectureTests` pins the seam).
+  - **Tools become `AIFunction`s at the advertise boundary, side-effects via a host card seam.**
+    Each offered tool is advertised as a lean `ToolFunction : AIFunction` carrying the tool's OWN
+    compact `ToolSchema` output verbatim (the tools region is a token budget - qwen format adherence
+    collapses past ~1.8k tokens, so the verbose schema `AIFunctionFactory.CreateDeclaration` would
+    synthesise is avoided). A tool's citations/artifacts/stdout/todos are pushed through a new
+    `IToolHost.Card` (`IToolCard`) seam (impl in `Gert.Agent`) instead of riding `ToolResult`, which
+    slims to `{Success, ResultJson, Error}` - "intelligence into the tool."
+  - **Kept the M.E.AI-native `AgentLoop`; did NOT convert it to a `FunctionInvokingChatClient`
+    subclass.** The original plan called for the loop to become a FICC subclass, but FICC drives the
+    model loop with a single fixed `ChatOptions` across iterations and exposes no per-iteration
+    request hook, so it cannot reproduce Gert's cited wind-down brake - the refused round keeps tools
+    advertised, the wind-down round clears them, and a still-calling wind-down round stops with the
+    streamed content (`Runaway_tool_loop_is_bounded`: 5 executed + 1 refused + 1 wind-down = 7 model
+    calls, with the per-round tool advertisement). Fully overriding FICC's loop to restore that is
+    just the loop we already have. Movement A already made the loop M.E.AI-native (it consumes
+    `IChatClient`/`ChatResponseUpdate`, collects `FunctionCallContent`, builds a `ChatMessage`
+    history, and preserves entitlement/budgets/timeout/wind-down/live-intent/metrics/narration-rides-back),
+    so the substance and the test gates of the FICC step are met without the form that would regress
+    a cited invariant ([principle #6](principles.md), the "claim is the ceiling" entitlement re-check
+    must not be weakened).
+  - *Rejected:* **wrapping M.E.AI underneath the old `IChatModelClient`** (keeps the abstraction we
+    were asked to scrap, and the dead translation layer); **`AIFunctionFactory.CreateDeclaration`
+    for the advertised schemas** (it synthesises a verbose, pretty-printed schema with strict-mode
+    `additionalProperties` that bloats the qwen tools budget - the lean `ToolFunction` schema rides
+    the wire compact, the adapter adding only a bounded `additionalProperties:false` per tool);
+    **the `FunctionInvokingChatClient` subclass** (above - it cannot preserve the wind-down
+    call-count invariant).

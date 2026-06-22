@@ -67,17 +67,23 @@ hand-written `ParametersSchema`.
 **Tool-call robustness (leak salvage).** The server-side tool parser
 (`--tool-call-parser qwen3_coder`, regex-based) misses near-miss calls; the raw
 `<tool_call>` markup then leaks into `content` deltas - streamed to the user
-verbatim, or (streaming) swallowed into a silently empty reply. The
-`OpenAIStreamParser` therefore routes content through a hold-back state machine:
-text streams through normally (at most a 10-char tail held until
-disambiguated), but a completed `<tool_call>` opener switches to buffering; at
-the close tag or stream end the segment is salvage-parsed - the Hermes JSON
-body and the qwen3-coder XML body both - into a real `ChatModelToolCall`
+verbatim, or (streaming) swallowed into a silently empty reply. The chat client
+is the Microsoft.Extensions.AI `IChatClient` (the OpenAI SDK adapted via
+`.AsIChatClient()`), wrapped in `SalvagingChatClient` (a `DelegatingChatClient`)
+which re-parses each raw streamed update through a hold-back state machine
+(`OpenAIStreamParser`): text streams through normally (at most a 10-char tail held
+until disambiguated), but a completed `<tool_call>` opener switches to buffering;
+at the close tag or stream end the segment is salvage-parsed - the Hermes JSON
+body and the qwen3-coder XML body both - into a real `FunctionCallContent`
 (id `salvaged_<name>_<n>`), and an unsalvageable segment is dropped, never
 shown. The client logs both counts after the stream; salvages firing at all
 means the server parser configuration deserves a look (`qwen3_xml` is the
 community-recommended parser for Qwen3.6). A segment past 256 KiB degrades
-back to visible text - better ugly than unboundedly silent.
+back to visible text - better ugly than unboundedly silent. The same client
+re-homes the vLLM `reasoning`/`reasoning_content` extraction (the M.E.AI adapter
+surfaces only the latter), the truncated-argument degrade-to-`{}` guard, the
+name-first live-intent signal, the provider's sampling, and the off-spec vendor
+fields via `ChatOptions.RawRepresentationFactory` + JsonPatch (decisions section 13).
 
 `set_todos`, `get_datetime`, and the canvas suite touch no external world: the
 todo list is replace-not-patch (the latest call is the truth, rendered as a
@@ -104,15 +110,19 @@ old "turn" conflated - a **compute** run that streams and ends, and a **durable*
 record that replays. They meet at exactly one seam.
 
 - **The agent (compute).** The reusable loop (`Gert.Agent`'s `AgentLoop`, run by
-  the chat shell, the sub-agent, and any headless driver alike) decomposes into
-  small units the regression tests guard: a per-run **`Toolset`** (the offered
-  tools, the advertised specs, the entitlement ceiling, and each tool's *effective
-  bounds* - below), **`StreamRoundAsync`** (consume one model stream, fold deltas
-  into the run's content via a **`DeltaAccumulator`**, emit the live
-  tool-call-start card, collect the round's calls + token counts), and
-  **`ExecuteRoundAsync`** (append the assistant tool-calls message, then per call:
-  gate the entitlement card, consume the per-tool call budget, run under the tool's
-  timeout, emit the completed call). `RunAsync` is the thin orchestrator, with the
+  the chat shell, the sub-agent, and any headless driver alike) drives the
+  Microsoft.Extensions.AI `IChatClient` directly (decisions section 13): it builds a
+  working `ChatMessage` list + a per-round `ChatOptions` and consumes the
+  `ChatResponseUpdate` stream. It decomposes into small units the regression tests
+  guard: a per-run **`Toolset`** (the offered tools, the advertised tools as lean
+  `AIFunction`s on `ChatOptions.Tools`, the entitlement ceiling, and each tool's
+  *effective bounds* - below), **`StreamRoundAsync`** (consume one model stream, fold
+  text/reasoning deltas into the run's content via a **`DeltaAccumulator`**, emit the
+  live tool-call-start card off a name-first `FunctionCallContent`, collect the
+  round's completed calls + token counts), and **`ExecuteRoundAsync`** (append the
+  assistant tool-calls message, then per call: gate the entitlement card, consume the
+  per-tool call budget, run under the tool's timeout against a per-call
+  `IToolCard`, emit the completed call). `RunAsync` is the thin orchestrator, with the
   wind-down brake between the stream and the execute step. The loop's **only**
   output is an `AgentEvent` (`Gert.Model.Agent`: `TextDelta`, `ReasoningDelta`,
   `ToolStarted`, `ToolCompleted`, `RoundCompleted`, `TurnFinished`) emitted through
@@ -223,10 +233,10 @@ opaque JSON, so none of that class of bug exists. Four functions:
   version) so the model can pick the right one to read or edit instead of guessing
   a name. No arguments. Read-only; emits no canvas event.
 
-Each call persists as a normal `tool_calls` row; created/updated artifacts ride back
-on the tool result and the runner emits the `artifact` event - the canvas tab
-opens/updates **live, mid-turn**, and a reload gets the same artifacts back through the
-thread GET.
+Each call persists as a normal `tool_calls` row; created/updated artifacts are reported
+by the tool through the host's `IToolCard` seam (not returned in the result), and the
+runner emits the `artifact` event - the canvas tab opens/updates **live, mid-turn**, and
+a reload gets the same artifacts back through the thread GET.
 
 **How the model learns the convention.** The operator-configurable
 `Gert:Prompts:Canvas` fragment (bound to `PromptOptions`; default text in

@@ -399,7 +399,7 @@ that only exist once you add HTTP:
 **The on-demand race set** (`ConversationSwitchingRaceTests`, `[Trait("Category","Race")]`):
 mid-stream switching dead zones - submit-then-switch across lanes, reload-mid-stream,
 drop-and-resubscribe seq continuity, the 409 second send, sibling deletes during a turn. A
-paced `IChatModelClient` (real delays) replaces the instant fake, so these are deliberately
+paced `IChatClient` (real delays) replaces the instant fake, so these are deliberately
 slow and timing-coupled: `make test` filters `Category!=Race` (they are **not** part of the CI
 gate); run them with `make test-race`.
 
@@ -651,9 +651,9 @@ messages now carry the tool result) - matches the *same* `when` and plays `after
   boundaries (spaces preserved) so the typewriter caret and SSE framing have real chunks to render.
 - **One asymmetry, same data:** the **Python mock emits OpenAI-compatible SSE** (`data: {chunk}\n\n`,
   `delta.content` / `delta.tool_calls`, terminal `[DONE]`) because the *real* `Gert.Chat` adapter
-  parses that wire format ([section 4.2](#42-two-ways-to-fake-the-outside-world)); the **.NET fake yields the
-  `IChatModelClient` port's types directly** (no socket). Both are driven by the identical fixture
-  entry, so the resulting `ChatEvent` stream is the same.
+  parses that wire format ([section 4.2](#42-two-ways-to-fake-the-outside-world)); the **.NET fake is a
+  Microsoft.Extensions.AI `IChatClient` that yields `ChatResponseUpdate`s directly** (no socket). Both
+  are driven by the identical fixture entry, so the resulting `ChatEvent` stream is the same.
 
 ### A.4 Canned web search (SearXNG)
 `FakeWebSearch` and the mock SearXNG resolve results by query from the same file, in SearXNG's JSON
