@@ -1,3 +1,4 @@
+using Gert.Model.Chat;
 using Gert.Tools;
 using Gert.Tools.Hosting;
 using Gert.Tools.Resources;
@@ -32,10 +33,39 @@ public sealed class FakeToolHost : IToolHost
     /// <inheritdoc />
     public ToolLimits Limits { get; set; } = new(Deadline: null, TokenBudget: null);
 
+    /// <summary>Captures the side-effects a tool reports (citations/artifacts/stdout/todos) for assertions.</summary>
+    public CapturingToolCard Captured { get; } = new();
+
+    /// <inheritdoc />
+    public IToolCard Card => Captured;
+
     /// <inheritdoc />
     public IToolResources Resources => new Bundle(ObjectStore, RagIndex);
 
     private sealed record Bundle(IObjectResource Objects, IRagResource Rag) : IToolResources;
+
+    /// <summary>An <see cref="IToolCard"/> that records what a tool reports, for test assertions.</summary>
+    public sealed class CapturingToolCard : IToolCard
+    {
+        private readonly List<Citation> _citations = [];
+        private readonly List<Artifact> _artifacts = [];
+
+        public IReadOnlyList<Citation> Citations => _citations;
+
+        public IReadOnlyList<Artifact> Artifacts => _artifacts;
+
+        public string? Stdout { get; private set; }
+
+        public IReadOnlyList<TodoItem>? Todos { get; private set; }
+
+        public void ReportCitations(IReadOnlyList<Citation> citations) => _citations.AddRange(citations);
+
+        public void ReportArtifact(Artifact artifact) => _artifacts.Add(artifact);
+
+        public void ReportStdout(string stdout) => Stdout = stdout;
+
+        public void ReportTodos(IReadOnlyList<TodoItem> todos) => Todos = todos;
+    }
 
     private sealed class NoOpDelegate : IToolDelegate
     {

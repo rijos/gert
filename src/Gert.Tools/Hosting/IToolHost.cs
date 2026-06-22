@@ -23,6 +23,13 @@ public interface IToolHost
     /// <summary>Delegation to a nested agent loop (run_sub_agent).</summary>
     IToolDelegate Delegate { get; }
 
+    /// <summary>
+    /// The output seam: where a tool reports its side-effects (citations, artifacts, stdout, todos)
+    /// instead of returning them in <see cref="ToolResult"/>. Per-call on the loop's host; a no-op
+    /// (<see cref="NullToolCard"/>) on an autonomous driver.
+    /// </summary>
+    IToolCard Card { get; }
+
     /// <summary>The per-invocation budget (deadline, token allowance) the tool honours.</summary>
     ToolLimits Limits { get; }
 }

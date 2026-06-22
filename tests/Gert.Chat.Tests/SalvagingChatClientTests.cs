@@ -120,6 +120,28 @@ public sealed class SalvagingChatClientTests
     }
 
     [Fact]
+    public async Task A_lean_tool_schema_rides_the_wire_compact_without_catastrophic_bloat()
+    {
+        // The tools region is a token budget (qwen ~1.8k). A tool advertised with its own compact
+        // schema must reach the wire COMPACT (the catastrophic bloat is a verbose, pretty-printed
+        // schema, e.g. what AIFunctionFactory.CreateDeclaration produces). The M.E.AI OpenAI adapter
+        // does add OpenAI strict-mode "additionalProperties":false (one bounded key, harmless to vLLM)
+        // and reorders members - acceptable; what must not happen is multi-line / verbose growth.
+        const string schema = """{"type":"object","properties":{"q":{"type":"string"}},"required":["q"]}""";
+        var (client, handler) = NewClient();
+        var options = new ChatOptions { Tools = [new LeanFunction("web_search", "search the web", schema)] };
+
+        var body = await WireBodyAsync(client, handler, [new ChatMessage(ChatRole.User, "hi")], options);
+        var parameters = body["tools"]!.AsArray()[0]!["function"]!["parameters"]!;
+
+        var paramsJson = parameters.ToJsonString();
+        paramsJson.Should().NotContain("\n", "the schema must stay compact, not pretty-printed");
+        paramsJson.Length.Should().BeLessThan(
+            schema.Length + 40, "only the bounded strict-mode additionalProperties suffix may be added");
+        parameters["properties"]!["q"]!["type"]!.GetValue<string>().Should().Be("string");
+    }
+
+    [Fact]
     public async Task OmitsToolsAndToolChoiceWhenNone()
     {
         var (client, handler) = NewClient();
@@ -393,6 +415,20 @@ public sealed class SalvagingChatClientTests
 
         (await act.Should().ThrowAsync<HttpRequestException>())
             .Which.Message.Should().Contain("400").And.Contain("chat template");
+    }
+
+    /// <summary>An AIFunction that advertises a hand-written compact schema verbatim (no synthesis).</summary>
+    private sealed class LeanFunction(string name, string description, string schema) : AIFunction
+    {
+        public override string Name => name;
+
+        public override string Description => description;
+
+        public override JsonElement JsonSchema { get; } = JsonDocument.Parse(schema).RootElement.Clone();
+
+        protected override ValueTask<object?> InvokeCoreAsync(
+            AIFunctionArguments arguments, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
     }
 
     /// <summary>A read-only stream that, like a network stream, cannot seek.</summary>

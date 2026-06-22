@@ -1,39 +1,19 @@
-using Gert.Model.Chat;
-
 namespace Gert.Tools;
 
 /// <summary>
-/// A tool's outcome - what the orchestrator feeds back to the model and renders
-/// as a <c>tool_result</c>. <see cref="ResultJson"/> is the opaque payload;
-/// <see cref="Citations"/> seeds the message footnotes (RAG / web hits).
+/// A tool's MODEL-FACING outcome - what the orchestrator feeds back to the model and renders as a
+/// <c>tool_result</c>: just whether it succeeded, the opaque JSON payload the model reads, and a
+/// model-correctable error. Everything else a call produces (footnote citations, canvas artifacts,
+/// plain-text card output, the todo checklist) is "pushed into the tool" and emitted through the
+/// <see cref="Hosting.IToolCard"/> seam on the host, not returned here (decisions #13).
 /// </summary>
 public sealed record ToolResult
 {
     public required bool Success { get; init; }
 
-    /// <summary>Result payload as JSON (hits / results / stdout).</summary>
+    /// <summary>Result payload as JSON - what the model sees (a FAILED call may still carry one, e.g. the sandbox's exit_code/stderr).</summary>
     public string? ResultJson { get; init; }
 
-    /// <summary>Citations derived from this result, if any.</summary>
-    public IReadOnlyList<Citation> Citations { get; init; } = [];
-
-    /// <summary>
-    /// Plain-text display output for the tool card (sandbox stdout, the clock
-    /// reading) - presentation only; the model sees <see cref="ResultJson"/>.
-    /// </summary>
-    public string? Stdout { get; init; }
-
-    /// <summary>The todo list for the todo card (the <c>set_todos</c> tool).</summary>
-    public IReadOnlyList<TodoItem>? Todos { get; init; }
-
-    /// <summary>
-    /// Artifacts this call created or updated (the make/edit canvas tools). The
-    /// orchestrator persists nothing here - the tool already did - it only emits
-    /// one <c>ArtifactEvent</c> per entry so the live canvas opens/updates. An
-    /// entry re-using an existing artifact <c>Id</c> updates that tab in place.
-    /// </summary>
-    public IReadOnlyList<Artifact>? Artifacts { get; init; }
-
-    /// <summary>Error message when <see cref="Success"/> is false.</summary>
+    /// <summary>Error message when <see cref="Success"/> is false (model-correctable).</summary>
     public string? Error { get; init; }
 }

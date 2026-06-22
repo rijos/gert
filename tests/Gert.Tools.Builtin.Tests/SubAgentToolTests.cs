@@ -30,7 +30,7 @@ public sealed class SubAgentToolTests
     public async Task Parses_task_and_context_and_calls_the_delegate()
     {
         var del = new FakeToolDelegate();
-        await new SubAgentTool().ExecuteAsync(
+        await new SubAgentTool().RunAsync(
             Invocation("""{"task":"summarize","context":"raw material"}"""), HostWith(del));
 
         del.LastRequest.Should().NotBeNull();
@@ -46,7 +46,7 @@ public sealed class SubAgentToolTests
             Result = new DelegateResult { Success = true, Text = "the digested result", Rounds = 3 },
         };
 
-        var result = await new SubAgentTool().ExecuteAsync(
+        var result = await new SubAgentTool().RunAsync(
             Invocation("""{"task":"digest this"}"""), HostWith(del));
 
         result.Success.Should().BeTrue();
@@ -64,7 +64,7 @@ public sealed class SubAgentToolTests
             Result = new DelegateResult { Success = false, Error = "sub-agent ran out of time" },
         };
 
-        var result = await new SubAgentTool().ExecuteAsync(
+        var result = await new SubAgentTool().RunAsync(
             Invocation("""{"task":"t"}"""), HostWith(del));
 
         result.Success.Should().BeFalse();
@@ -78,7 +78,7 @@ public sealed class SubAgentToolTests
     public async Task Bad_arguments_are_model_correctable_errors_and_never_delegate(string args)
     {
         var del = new FakeToolDelegate();
-        var result = await new SubAgentTool().ExecuteAsync(Invocation(args), HostWith(del));
+        var result = await new SubAgentTool().RunAsync(Invocation(args), HostWith(del));
 
         result.Success.Should().BeFalse();
         result.Error.Should().NotBeNullOrEmpty();
@@ -95,7 +95,7 @@ public sealed class SubAgentToolTests
         var context = contextLen > 0 ? new string('x', contextLen) : null;
         var args = JsonSerializer.Serialize(new { task, context });
 
-        var result = await new SubAgentTool().ExecuteAsync(Invocation(args), HostWith(del));
+        var result = await new SubAgentTool().RunAsync(Invocation(args), HostWith(del));
 
         result.Success.Should().BeFalse();
         del.LastRequest.Should().BeNull();

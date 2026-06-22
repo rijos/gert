@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Gert.Agent.Loop;
 using Gert.Model;
 using Gert.Model.Chat;
 using Gert.Model.Events;
@@ -39,9 +40,16 @@ internal sealed record ToolOutcome
     /// <summary>Artifacts the call created/updated, for the canvas (make/edit tools).</summary>
     public IReadOnlyList<Artifact>? Artifacts { get; init; }
 
-    /// <summary>Build an outcome from a successful or failed tool execution.</summary>
-    public static ToolOutcome From(string kind, ToolResult result, long latencyMs)
+    /// <summary>
+    /// Build an outcome from a tool execution: the model-facing <paramref name="result"/> (status +
+    /// payload) plus the side-effects the tool pushed to its per-call <paramref name="card"/>
+    /// (citations/artifacts/stdout/todos). A failed call carries no card side-effects (its payload, if
+    /// any, rides <see cref="ResponseJson"/> - e.g. the sandbox's exit_code/stderr).
+    /// </summary>
+    public static ToolOutcome From(string kind, ToolResult result, ToolCardCollector card, long latencyMs)
     {
+        ArgumentNullException.ThrowIfNull(card);
+
         if (!result.Success)
         {
             var error = result.Error ?? "tool failed";
@@ -63,11 +71,11 @@ internal sealed record ToolOutcome
             Status = ToolCallStatus.Done,
             LatencyMs = latencyMs,
             ResponseJson = result.ResultJson,
-            Citations = result.Citations,
-            Hits = ToolResultHit.FromCitations(result.Citations),
-            Stdout = result.Stdout,
-            Todos = result.Todos,
-            Artifacts = result.Artifacts,
+            Citations = card.Citations,
+            Hits = ToolResultHit.FromCitations(card.Citations),
+            Stdout = card.Stdout,
+            Todos = card.Todos,
+            Artifacts = card.Artifacts,
         };
     }
 

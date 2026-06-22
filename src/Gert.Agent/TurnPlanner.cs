@@ -257,7 +257,6 @@ public sealed class TurnPlanner : ITurnPlanner
             ModelId = assistantMessage.ModelId!,
             History = history,
             ToolIds = offered.Select(t => t.Id).ToList(),
-            Tools = offered.Select(ToSpec).ToList(),
             SystemPrompt = systemPrompt,
             ClientTimezone = dto.Timezone,
         };
@@ -421,13 +420,6 @@ public sealed class TurnPlanner : ITurnPlanner
         rendered[^1] = new ChatMessage(last.Role, contents);
         return rendered;
     }
-
-    private static ChatToolSpec ToSpec(ITool tool) => new()
-    {
-        Name = tool.Name,
-        Description = tool.Description,
-        ParametersSchema = tool.ParametersSchema,
-    };
 
     /// <summary>
     /// Map persisted chat rows to the Microsoft.Extensions.AI upstream message list. Assistant

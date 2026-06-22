@@ -1,45 +1,51 @@
-using Gert.Model.Chat;
 using Gert.Service.Chat;
 using Gert.Tools;
+using Microsoft.Extensions.AI;
 
 namespace Gert.Agent.Loop;
 
 /// <summary>
 /// The loop's per-run view of the offered tools (chat-and-tools.md section the tool loop): the
-/// advertised specs sent upstream, an O(1) <see cref="Resolve(string)"/> from a model function name
-/// to its <see cref="ToolEntry"/> (tool + entitlement + effective bounds), and a per-id call tally
-/// the loop consumes against each tool's <c>MaxCallsPerTurn</c>. Built once by the driver from all
-/// tools, the advertised <see cref="ChatToolSpec"/>s, the entitlement snapshot, and the operator's
-/// <see cref="ToolsOptions.PerTool"/> overrides; <b>effective bounds are computed here</b> (the tool's
-/// intrinsic <see cref="ITool.Bounds"/> with each non-null override applied) and copied into the
-/// tracker, so the shared singleton tool is never mutated and the loop never fetches config.
+/// advertised <see cref="AITool"/>s sent upstream on <see cref="ChatOptions.Tools"/>, an O(1)
+/// <see cref="Resolve(string)"/> from a model function name to its <see cref="ToolEntry"/> (tool +
+/// entitlement + effective bounds), and a per-id call tally the loop consumes against each tool's
+/// <c>MaxCallsPerTurn</c>. Built once by the driver from all resolvable tools, the offered subset's
+/// ids, the entitlement snapshot, and the operator's <see cref="ToolsOptions.PerTool"/> overrides;
+/// <b>effective bounds are computed here</b> (the tool's intrinsic <see cref="ITool.Bounds"/> with each
+/// non-null override applied) and copied into the tracker, so the shared singleton tool is never
+/// mutated and the loop never fetches config. The advertised tools are lean
+/// <see cref="ToolFunction"/>s (the tool's own compact schema), not M.E.AI-synthesised declarations -
+/// the tools region is a token budget.
 /// </summary>
 public sealed class Toolset
 {
     private readonly Dictionary<string, ToolEntry> _byName;
     private readonly Dictionary<string, int> _callsUsed = new(StringComparer.Ordinal);
-    private IReadOnlyList<ChatToolSpec> _advertisedSpecs;
+    private IReadOnlyList<AITool> _advertisedTools;
 
     /// <param name="tools">All resolvable tools (the loop matches model calls against <see cref="ITool.Name"/>).</param>
-    /// <param name="advertisedSpecs">The specs sent upstream this run (entitled+enabled+requested subset).</param>
+    /// <param name="offeredToolIds">The ids advertised upstream this run (entitled+enabled+requested subset).</param>
     /// <param name="allowedToolIds">The plan-time entitlement ceiling - the per-call re-check uses it (auth.md).</param>
     /// <param name="perTool">Operator bound overrides by tool id; null = every tool keeps its intrinsic bounds.</param>
     /// <param name="adjustBounds">An optional last-step transform on each effective bounds (the nested sub-agent forces <c>CallTimeout = Zero</c>).</param>
     public Toolset(
         IEnumerable<ITool> tools,
-        IReadOnlyList<ChatToolSpec> advertisedSpecs,
+        IReadOnlySet<string> offeredToolIds,
         IReadOnlySet<string> allowedToolIds,
         IReadOnlyDictionary<string, ToolBoundsOverride>? perTool = null,
         Func<ToolBounds, ToolBounds>? adjustBounds = null)
     {
         ArgumentNullException.ThrowIfNull(tools);
-        ArgumentNullException.ThrowIfNull(advertisedSpecs);
+        ArgumentNullException.ThrowIfNull(offeredToolIds);
         ArgumentNullException.ThrowIfNull(allowedToolIds);
 
-        _advertisedSpecs = advertisedSpecs;
         AllowedToolIds = allowedToolIds;
         _byName = new Dictionary<string, ToolEntry>(StringComparer.Ordinal);
 
+        // Advertise in the tools' own order (registry order from the driver), filtered to the offered
+        // subset; resolve over ALL tools so a non-offered call still maps to its entry for the
+        // entitlement re-check (it is then refused, never silently run).
+        var advertised = new List<AITool>();
         foreach (var tool in tools)
         {
             var effective = Effective(tool.Bounds, perTool, tool.Id);
@@ -49,11 +55,17 @@ public sealed class Toolset
             }
 
             _byName[tool.Name] = new ToolEntry(tool, allowedToolIds.Contains(tool.Id), effective);
+            if (offeredToolIds.Contains(tool.Id))
+            {
+                advertised.Add(new ToolFunction(tool));
+            }
         }
+
+        _advertisedTools = advertised;
     }
 
-    /// <summary>The specs sent on each completion - withdrawn to <c>[]</c> by <see cref="WindDown"/> on the brake.</summary>
-    public IReadOnlyList<ChatToolSpec> AdvertisedSpecs => _advertisedSpecs;
+    /// <summary>The tools advertised on each completion - withdrawn to <c>[]</c> by <see cref="WindDown"/> on the brake.</summary>
+    public IReadOnlyList<AITool> AdvertisedTools => _advertisedTools;
 
     /// <summary>The plan-time entitlement snapshot - rides each <see cref="ToolInvocation"/> as the nested ceiling.</summary>
     public IReadOnlySet<string> AllowedToolIds { get; }
@@ -87,7 +99,7 @@ public sealed class Toolset
     }
 
     /// <summary>Withdraw the advertised tools (the prefix-cache wind-down brake re-renders the tools region empty).</summary>
-    public void WindDown() => _advertisedSpecs = [];
+    public void WindDown() => _advertisedTools = [];
 
     /// <summary>Effective bounds: the tool's intrinsic <see cref="ITool.Bounds"/> with each non-null override field applied.</summary>
     private static ToolBounds Effective(

@@ -1,5 +1,4 @@
 using Gert.Model;
-using Gert.Model.Chat;
 using Gert.Service;
 using Gert.Service.Chat;
 using Gert.Tools;
@@ -68,11 +67,12 @@ public sealed record TurnJob
     /// <summary>Prior turns (system prompt excluded), ending with the user message.</summary>
     public required IReadOnlyList<ChatMessage> History { get; init; }
 
-    /// <summary>Offered tool capability ids (requested AND enabled AND entitled AND registry).</summary>
+    /// <summary>
+    /// Offered tool capability ids (requested AND enabled AND entitled AND registry), in registry
+    /// order. The runner resolves these against its registered <see cref="ITool"/> instances and
+    /// builds the advertised lean <c>AIFunction</c>s from them - no serialized spec rides the job.
+    /// </summary>
     public IReadOnlyList<string> ToolIds { get; init; } = [];
-
-    /// <summary>Model-facing specs for the offered tools, same order as <see cref="ToolIds"/>.</summary>
-    public IReadOnlyList<ChatToolSpec> Tools { get; init; } = [];
 
     /// <summary>The project's pinned instructions (step 0), or null.</summary>
     public string? SystemPrompt { get; init; }

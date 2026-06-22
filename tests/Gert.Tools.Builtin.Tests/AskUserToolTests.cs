@@ -46,7 +46,7 @@ public sealed class AskUserToolTests
     [InlineData("""{"questions":[{"question":"q","allow_free_text":false}]}""", "allow_free_text=false requires options")]
     public async Task Bad_arguments_are_tool_errors_the_model_can_correct(string args, string expected)
     {
-        var result = await new AskUserTool().ExecuteAsync(Invocation(args), _host);
+        var result = await new AskUserTool().RunAsync(Invocation(args), _host);
 
         result.Success.Should().BeFalse();
         result.Error.Should().Contain(expected);
@@ -57,7 +57,7 @@ public sealed class AskUserToolTests
     public async Task More_than_four_questions_are_refused()
     {
         var five = string.Join(",", Enumerable.Range(1, 5).Select(i => $$"""{"question":"q{{i}}"}"""));
-        var result = await new AskUserTool().ExecuteAsync(Invocation($$"""{"questions":[{{five}}]}"""), _host);
+        var result = await new AskUserTool().RunAsync(Invocation($$"""{"questions":[{{five}}]}"""), _host);
 
         result.Success.Should().BeFalse();
         result.Error.Should().Contain("too many questions");
@@ -68,13 +68,13 @@ public sealed class AskUserToolTests
     public async Task Too_many_or_too_long_options_are_refused()
     {
         var nine = string.Join(",", Enumerable.Range(1, 9).Select(i => $"\"opt{i}\""));
-        var many = await new AskUserTool().ExecuteAsync(
+        var many = await new AskUserTool().RunAsync(
             Invocation($$"""{"questions":[{"question":"q","options":[{{nine}}]}]}"""), _host);
         many.Success.Should().BeFalse();
         many.Error.Should().Contain("too many options");
 
         var longOption = new string('x', AskUserTool.MaxOptionChars + 1);
-        var tooLong = await new AskUserTool().ExecuteAsync(
+        var tooLong = await new AskUserTool().RunAsync(
             Invocation($$"""{"questions":[{"question":"q","options":["{{longOption}}"]}]}"""), _host);
         tooLong.Success.Should().BeFalse();
         tooLong.Error.Should().Contain("option is too long");
@@ -86,7 +86,7 @@ public sealed class AskUserToolTests
     public async Task A_too_long_header_is_refused()
     {
         var longHeader = new string('h', AskUserTool.MaxHeaderChars + 1);
-        var result = await new AskUserTool().ExecuteAsync(
+        var result = await new AskUserTool().RunAsync(
             Invocation($$"""{"questions":[{"question":"q","header":"{{longHeader}}"}]}"""), _host);
 
         result.Success.Should().BeFalse();
@@ -99,7 +99,7 @@ public sealed class AskUserToolTests
     {
         var host = new FakeToolHost { Ui = null };
 
-        var result = await new AskUserTool().ExecuteAsync(
+        var result = await new AskUserTool().RunAsync(
             Invocation("""{"questions":[{"question":"q"}]}"""), host);
 
         result.Success.Should().BeFalse();
@@ -111,7 +111,7 @@ public sealed class AskUserToolTests
     {
         _ui.Result = new InteractionResult { Answered = true, Answers = ["blue"] };
 
-        var result = await new AskUserTool().ExecuteAsync(
+        var result = await new AskUserTool().RunAsync(
             Invocation("""{"questions":[{"question":"Which color?","options":["red","blue"]}]}"""), _host);
 
         // The request the tool built carries the parsed prompt.
@@ -142,7 +142,7 @@ public sealed class AskUserToolTests
               {"question":"Ship it?","options":["yes","no"],"allow_free_text":true}
             ]}
             """);
-        var result = await new AskUserTool().ExecuteAsync(invocation, _host);
+        var result = await new AskUserTool().RunAsync(invocation, _host);
 
         var prompts = _ui.CapturedRequest!.Prompts;
         prompts.Select(p => p.Text).Should().Equal("Which color?", "Anything else?", "Ship it?");
@@ -162,7 +162,7 @@ public sealed class AskUserToolTests
     {
         _ui.Result = new InteractionResult { Answered = false };
 
-        var result = await new AskUserTool().ExecuteAsync(
+        var result = await new AskUserTool().RunAsync(
             Invocation("""{"questions":[{"question":"q"}]}"""), _host);
 
         result.Success.Should().BeTrue("a silent user is an outcome the model continues from");
@@ -179,7 +179,7 @@ public sealed class AskUserToolTests
             Error = "a question is already pending for this turn",
         };
 
-        var result = await new AskUserTool().ExecuteAsync(
+        var result = await new AskUserTool().RunAsync(
             Invocation("""{"questions":[{"question":"q"}]}"""), _host);
 
         result.Success.Should().BeFalse();

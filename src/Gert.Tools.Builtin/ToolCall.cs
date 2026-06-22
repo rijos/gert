@@ -105,26 +105,49 @@ public abstract class ToolCall<TArgs, TResult> : IToolCall<TArgs, TResult>
         }
 
         var result = await CallAsync(validated, invocation, host, cancellationToken).ConfigureAwait(false);
-        return ToToolResult(result);
-    }
 
-    private static ToolResult ToToolResult(ToolCallResult<TResult> result)
-    {
-        ArgumentNullException.ThrowIfNull(result);
+        // Push the tool's side-effects to the host card seam (decisions #13): the typed
+        // ToolCallResult still DECLARES them (so each tool + its unit tests stay simple), and this
+        // one bridge routes them to the card the driver persists/renders - the model-facing
+        // ToolResult carries only the payload.
+        Emit(host.Card, result);
+
         return new ToolResult
         {
             Success = result.Success,
             Error = result.Error,
-            // Serialize whenever a typed value is present - a FAILED call may still
-            // carry one (the sandbox ships its exit_code/stderr payload on a non-zero
-            // exit or timeout), so this is gated on the value, not on Success.
+            // Serialize whenever a typed value is present - a FAILED call may still carry one (the
+            // sandbox ships its exit_code/stderr payload on a non-zero exit or timeout), so this is
+            // gated on the value, not on Success.
             ResultJson = result.Value is not null
                 ? JsonSerializer.Serialize(result.Value, GertJsonOptions.Default)
                 : null,
-            Citations = result.Citations,
-            Stdout = result.Stdout,
-            Todos = result.Todos,
-            Artifacts = result.Artifacts,
         };
+    }
+
+    private static void Emit(IToolCard card, ToolCallResult<TResult> result)
+    {
+        if (result.Citations.Count > 0)
+        {
+            card.ReportCitations(result.Citations);
+        }
+
+        if (result.Stdout is { Length: > 0 } stdout)
+        {
+            card.ReportStdout(stdout);
+        }
+
+        if (result.Todos is { Count: > 0 } todos)
+        {
+            card.ReportTodos(todos);
+        }
+
+        if (result.Artifacts is { Count: > 0 } artifacts)
+        {
+            foreach (var artifact in artifacts)
+            {
+                card.ReportArtifact(artifact);
+            }
+        }
     }
 }

@@ -140,11 +140,11 @@ public sealed class AskUserTool : ToolCallModal
         {
             // Timeout is an ordinary tool_result, no extra event; the model is
             // told to continue with its best judgement.
+            host.Card.ReportStdout("The user did not respond.");
             return new ToolResult
             {
                 Success = true,
                 ResultJson = JsonSerializer.Serialize(new { answered = false, reason = "timeout" }),
-                Stdout = "The user did not respond.",
             };
         }
 
@@ -154,13 +154,11 @@ public sealed class AskUserTool : ToolCallModal
             .Select((p, i) => new { question = p.Text, answer = result.Answers[i] })
             .ToList();
 
+        host.Card.ReportStdout(string.Join("\n", pairs.Select(p => $"{p.question} {p.answer}")));
         return new ToolResult
         {
             Success = true,
             ResultJson = JsonSerializer.Serialize(new { answered = true, answers = pairs }),
-            Stdout = string.Join(
-                "\n",
-                pairs.Select(p => $"{p.question} {p.answer}")),
         };
     }
 

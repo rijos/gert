@@ -36,7 +36,7 @@ public sealed class WebFetchToolTests
     {
         var tool = new WebFetchTool(Gert.Testing.Proof.Validation, new FakeWebFetcher());
 
-        var result = await tool.ExecuteAsync(
+        var result = await tool.RunAsync(
             Invoke("{\"url\":\"https://example.test/sqlite-vec\"}"));
 
         result.Success.Should().BeTrue();
@@ -54,7 +54,7 @@ public sealed class WebFetchToolTests
     {
         var tool = new WebFetchTool(Gert.Testing.Proof.Validation, new FakeWebFetcher());
 
-        var result = await tool.ExecuteAsync(
+        var result = await tool.RunAsync(
             Invoke("{\"url\":\"http://169.254.169.254/latest/meta-data/\"}"));
 
         result.Success.Should().BeFalse();
@@ -70,7 +70,7 @@ public sealed class WebFetchToolTests
             .Returns(new WebFetchResult { Success = false, Error = "fetch failed (404)" });
         var tool = new WebFetchTool(Gert.Testing.Proof.Validation, fetcher);
 
-        var result = await tool.ExecuteAsync(Invoke("{\"url\":\"https://example.test/missing\"}"));
+        var result = await tool.RunAsync(Invoke("{\"url\":\"https://example.test/missing\"}"));
 
         result.Success.Should().BeFalse();
         result.Error.Should().Be("fetch failed (404)");
@@ -83,7 +83,7 @@ public sealed class WebFetchToolTests
             "<!doctype html><html><head><title>Docs</title><script>spy()</script></head>"
             + "<body><h1>Guide</h1><p>Useful body text.</p></body></html>"));
 
-        var result = await tool.ExecuteAsync(Invoke("{\"url\":\"https://example.test/docs\"}"));
+        var result = await tool.RunAsync(Invoke("{\"url\":\"https://example.test/docs\"}"));
 
         result.Success.Should().BeTrue();
         result.ResultJson.Should().Contain("\"extracted\":true");
@@ -97,7 +97,7 @@ public sealed class WebFetchToolTests
     {
         var tool = new WebFetchTool(Gert.Testing.Proof.Validation, FetcherReturning("{\"version\":\"1.2.3\"}"));
 
-        var result = await tool.ExecuteAsync(Invoke("{\"url\":\"https://example.test/api\"}"));
+        var result = await tool.RunAsync(Invoke("{\"url\":\"https://example.test/api\"}"));
 
         result.Success.Should().BeTrue();
         result.ResultJson.Should().Contain("\"extracted\":false");
@@ -109,7 +109,7 @@ public sealed class WebFetchToolTests
     {
         var tool = new WebFetchTool(Gert.Testing.Proof.Validation, FetcherReturning(new string('x', 100)));
 
-        var result = await tool.ExecuteAsync(
+        var result = await tool.RunAsync(
             Invoke("{\"url\":\"https://example.test/long\",\"max_chars\":10}"));
 
         result.Success.Should().BeTrue();
@@ -124,7 +124,7 @@ public sealed class WebFetchToolTests
     {
         var tool = new WebFetchTool(Gert.Testing.Proof.Validation, FetcherReturning(new string('y', WebFetchTool.DefaultMaxChars + 5)));
 
-        var result = await tool.ExecuteAsync(Invoke("{\"url\":\"https://example.test/long\"}"));
+        var result = await tool.RunAsync(Invoke("{\"url\":\"https://example.test/long\"}"));
 
         result.Success.Should().BeTrue();
         result.ResultJson.Should().Contain("\"truncated\":true");
@@ -136,7 +136,7 @@ public sealed class WebFetchToolTests
     {
         var tool = new WebFetchTool(Gert.Testing.Proof.Validation, FetcherReturning(new string('z', WebFetchTool.MaxCharsCeiling + 5)));
 
-        var result = await tool.ExecuteAsync(
+        var result = await tool.RunAsync(
             Invoke($"{{\"url\":\"https://example.test/long\",\"max_chars\":{int.MaxValue}}}"));
 
         result.Success.Should().BeTrue();
@@ -149,7 +149,7 @@ public sealed class WebFetchToolTests
     {
         var tool = new WebFetchTool(Gert.Testing.Proof.Validation, Substitute.For<IWebFetcher>());
 
-        var result = await tool.ExecuteAsync(Invoke("{}"));
+        var result = await tool.RunAsync(Invoke("{}"));
 
         result.Success.Should().BeFalse();
         result.Error.Should().Contain("url");
@@ -164,7 +164,7 @@ public sealed class WebFetchToolTests
         var fetcher = Substitute.For<IWebFetcher>();
         var tool = new WebFetchTool(Gert.Testing.Proof.Validation, fetcher);
 
-        var result = await tool.ExecuteAsync(Invoke($"{{\"url\":{urlJson}}}"));
+        var result = await tool.RunAsync(Invoke($"{{\"url\":{urlJson}}}"));
 
         result.Success.Should().BeFalse();
         result.Error.Should().Contain("http");
@@ -176,7 +176,7 @@ public sealed class WebFetchToolTests
     {
         var tool = new WebFetchTool(Gert.Testing.Proof.Validation, Substitute.For<IWebFetcher>());
 
-        var result = await tool.ExecuteAsync(Invoke("{not json"));
+        var result = await tool.RunAsync(Invoke("{not json"));
 
         result.Success.Should().BeFalse();
         result.Error.Should().Contain("invalid arguments");
@@ -187,7 +187,7 @@ public sealed class WebFetchToolTests
     {
         var tool = new WebFetchTool(Gert.Testing.Proof.Validation, Substitute.For<IWebFetcher>());
 
-        var result = await tool.ExecuteAsync(
+        var result = await tool.RunAsync(
             Invoke("{\"url\":\"https://example.test/\",\"max_chars\":\"lots\"}"));
 
         result.Success.Should().BeFalse();

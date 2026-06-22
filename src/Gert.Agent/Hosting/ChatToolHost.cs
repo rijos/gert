@@ -38,6 +38,13 @@ internal sealed class ChatToolHost : IToolHost
 
     public IToolDelegate Delegate { get; }
 
+    /// <summary>
+    /// The turn host carries no card: the loop's per-call <c>BudgetedToolHost</c> binds the real
+    /// <see cref="ToolCardCollector"/> the tool reports to, so a tool only ever sees that per-call
+    /// card. (A direct host call - e.g. a sub-agent's autonomous host - discards side-effects.)
+    /// </summary>
+    public IToolCard Card => NullToolCard.Instance;
+
     public ToolLimits Limits { get; }
 
     private sealed class ChatResources(IObjectResource objects, IRagResource rag) : IToolResources

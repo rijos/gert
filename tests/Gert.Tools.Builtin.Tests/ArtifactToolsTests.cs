@@ -39,7 +39,7 @@ public sealed class ArtifactToolsTests
         var host = new FakeToolHost();
         var tool = new MakeArtifactTool(Gert.Testing.Proof.Validation);
 
-        var result = await tool.ExecuteAsync(
+        var result = await tool.RunAsync(
             Inv("{\"name\":\"index.html\",\"format\":\"html\",\"content\":\"<h1>hi</h1>\"}"), host);
 
         result.Success.Should().BeTrue();
@@ -66,7 +66,7 @@ public sealed class ArtifactToolsTests
         var seeded = await SeedAsync(host, "notes.md", "old");
 
         var tool = new MakeArtifactTool(Gert.Testing.Proof.Validation);
-        var result = await tool.ExecuteAsync(
+        var result = await tool.RunAsync(
             Inv("{\"name\":\"notes.md\",\"format\":\"markdown\",\"content\":\"# new\"}"), host);
 
         result.Success.Should().BeTrue();
@@ -87,7 +87,7 @@ public sealed class ArtifactToolsTests
         var host = new FakeToolHost();
         var tool = new MakeArtifactTool(Gert.Testing.Proof.Validation);
 
-        var result = await tool.ExecuteAsync(
+        var result = await tool.RunAsync(
             Inv("{\"name\":\"a.cob\",\"format\":\"cobol\",\"content\":\"DISPLAY 1.\"}"), host);
 
         result.Success.Should().BeFalse();
@@ -102,7 +102,7 @@ public sealed class ArtifactToolsTests
         var tool = new MakeArtifactTool(Gert.Testing.Proof.Validation);
 
         // The fail-closed validator (not the tool) rejects empty content.
-        var result = await tool.ExecuteAsync(
+        var result = await tool.RunAsync(
             Inv("{\"name\":\"a.md\",\"format\":\"markdown\",\"content\":\"\"}"), host);
 
         result.Success.Should().BeFalse();
@@ -116,7 +116,7 @@ public sealed class ArtifactToolsTests
         var host = new FakeToolHost();
         var tool = new MakeArtifactTool(Gert.Testing.Proof.Validation);
 
-        var result = await tool.ExecuteAsync(Inv("{\"name\":\"s.py\",\"format\":\"py\",\"content\":\"print(1)\"}"), host);
+        var result = await tool.RunAsync(Inv("{\"name\":\"s.py\",\"format\":\"py\",\"content\":\"print(1)\"}"), host);
 
         result.Success.Should().BeTrue();
         var stored = await host.ObjectStore.GetAsync(ResourceScope.Chat, "s.py");
@@ -131,7 +131,7 @@ public sealed class ArtifactToolsTests
         var seeded = await SeedAsync(host, "page.html", "<h1>Old Title</h1>", "html");
 
         var tool = new EditArtifactTool(Gert.Testing.Proof.Validation);
-        var result = await tool.ExecuteAsync(
+        var result = await tool.RunAsync(
             Inv("{\"name\":\"page.html\",\"old_str\":\"Old Title\",\"new_str\":\"New Title\"}"), host);
 
         result.Success.Should().BeTrue();
@@ -152,7 +152,7 @@ public sealed class ArtifactToolsTests
         await SeedAsync(host, "page.html", "<h1>Title</h1>", "html");
 
         var tool = new EditArtifactTool(Gert.Testing.Proof.Validation);
-        var result = await tool.ExecuteAsync(
+        var result = await tool.RunAsync(
             Inv("{\"name\":\"page.html\",\"old_str\":\"absent\",\"new_str\":\"x\"}"), host);
 
         result.Success.Should().BeFalse();
@@ -170,7 +170,7 @@ public sealed class ArtifactToolsTests
         await SeedAsync(host, "a.md", "x\nx\n");
 
         var tool = new EditArtifactTool(Gert.Testing.Proof.Validation);
-        var result = await tool.ExecuteAsync(Inv("{\"name\":\"a.md\",\"old_str\":\"x\",\"new_str\":\"y\"}"), host);
+        var result = await tool.RunAsync(Inv("{\"name\":\"a.md\",\"old_str\":\"x\",\"new_str\":\"y\"}"), host);
 
         result.Success.Should().BeFalse();
         result.Error.Should().Contain("2");
@@ -185,7 +185,7 @@ public sealed class ArtifactToolsTests
         var host = new FakeToolHost();
         var tool = new EditArtifactTool(Gert.Testing.Proof.Validation);
 
-        var result = await tool.ExecuteAsync(Inv("{\"name\":\"ghost.md\",\"old_str\":\"a\",\"new_str\":\"b\"}"), host);
+        var result = await tool.RunAsync(Inv("{\"name\":\"ghost.md\",\"old_str\":\"a\",\"new_str\":\"b\"}"), host);
 
         result.Success.Should().BeFalse();
         result.Error.Should().Contain("no artifact named 'ghost.md'");
@@ -198,7 +198,7 @@ public sealed class ArtifactToolsTests
         await SeedAsync(host, "a.md", "first\nsecond\nthird");
 
         var tool = new ReadArtifactTool(Gert.Testing.Proof.Validation);
-        var result = await tool.ExecuteAsync(Inv("{\"name\":\"a.md\"}"), host);
+        var result = await tool.RunAsync(Inv("{\"name\":\"a.md\"}"), host);
 
         result.Success.Should().BeTrue();
         result.ResultJson.Should().Contain("1\\tfirst").And.Contain("3\\tthird")
@@ -212,7 +212,7 @@ public sealed class ArtifactToolsTests
         await SeedAsync(host, "a.md", "l1\nl2\nl3\nl4");
 
         var tool = new ReadArtifactTool(Gert.Testing.Proof.Validation);
-        var result = await tool.ExecuteAsync(Inv("{\"name\":\"a.md\",\"range\":[2,3]}"), host);
+        var result = await tool.RunAsync(Inv("{\"name\":\"a.md\",\"range\":[2,3]}"), host);
 
         result.Success.Should().BeTrue();
         result.ResultJson.Should().Contain("2\\tl2").And.Contain("3\\tl3")
@@ -228,7 +228,7 @@ public sealed class ArtifactToolsTests
         var host = new FakeToolHost();
         var tool = new ReadArtifactTool(Gert.Testing.Proof.Validation);
 
-        var result = await tool.ExecuteAsync(Inv(argsJson), host);
+        var result = await tool.RunAsync(Inv(argsJson), host);
 
         result.Success.Should().BeFalse();
         result.Error.Should().Contain("range");
@@ -240,7 +240,7 @@ public sealed class ArtifactToolsTests
         var host = new FakeToolHost();
         var tool = new ReadArtifactTool(Gert.Testing.Proof.Validation);
 
-        var result = await tool.ExecuteAsync(Inv("{\"name\":\"ghost.md\"}"), host);
+        var result = await tool.RunAsync(Inv("{\"name\":\"ghost.md\"}"), host);
 
         result.Success.Should().BeFalse();
         result.Error.Should().Contain("no artifact named 'ghost.md'");
@@ -256,7 +256,7 @@ public sealed class ArtifactToolsTests
         await SeedAsync(host, "notes.md", "v2");
 
         var tool = new ListArtifactsTool(Gert.Testing.Proof.Validation);
-        var result = await tool.ExecuteAsync(Inv("{}"), host);
+        var result = await tool.RunAsync(Inv("{}"), host);
 
         result.Success.Should().BeTrue();
         // The format word is the canonical one (html/markdown), not the on-disk token.
@@ -273,7 +273,7 @@ public sealed class ArtifactToolsTests
         var host = new FakeToolHost();
         var tool = new ListArtifactsTool(Gert.Testing.Proof.Validation);
 
-        var result = await tool.ExecuteAsync(Inv("{}"), host);
+        var result = await tool.RunAsync(Inv("{}"), host);
 
         result.Success.Should().BeTrue();
         result.ResultJson.Should().Contain("\"artifacts\":[]");

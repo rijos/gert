@@ -27,7 +27,7 @@ public sealed class ToolsTests
             Hit("doc-2", "notes.md", null, "single-file stack", 0.77),
         ]);
 
-        var result = await new RagTool(Gert.Testing.Proof.Validation).ExecuteAsync(
+        var result = await new RagTool(Gert.Testing.Proof.Validation).RunAsync(
             new ToolInvocation { Pid = "default", ArgumentsJson = "{\"query\":\"qdrant\",\"k\":5}" },
             host);
 
@@ -52,7 +52,7 @@ public sealed class ToolsTests
         var host = new FakeToolHost();
         host.RagIndex.Hits.Add(Hit("doc-1", "brewery-notes.md", null, "tripel ferments at 21C", 0.9));
 
-        var result = await new RagTool(Gert.Testing.Proof.Validation).ExecuteAsync(
+        var result = await new RagTool(Gert.Testing.Proof.Validation).RunAsync(
             new ToolInvocation { Pid = "default", ArgumentsJson = "{\"query\":\"tripel\"}" },
             host);
 
@@ -65,7 +65,7 @@ public sealed class ToolsTests
     public async Task RagTool_rejects_missing_query()
     {
         var host = new FakeToolHost();
-        var result = await new RagTool(Gert.Testing.Proof.Validation).ExecuteAsync(
+        var result = await new RagTool(Gert.Testing.Proof.Validation).RunAsync(
             new ToolInvocation { Pid = "default", ArgumentsJson = "{}" }, host);
 
         // The empty query now fails arg validation (the typed-args base), so the
@@ -81,7 +81,7 @@ public sealed class ToolsTests
     {
         var tool = new WebSearchTool(Gert.Testing.Proof.Validation, new FakeWebSearch());
 
-        var result = await tool.ExecuteAsync(new ToolInvocation
+        var result = await tool.RunAsync(new ToolInvocation
         {
             Pid = "default",
             ArgumentsJson = "{\"query\":\"sqlite-vec benchmarks\"}",
@@ -101,7 +101,7 @@ public sealed class ToolsTests
     {
         var tool = new WebSearchTool(Gert.Testing.Proof.Validation, new FakeWebSearch());
 
-        var result = await tool.ExecuteAsync(new ToolInvocation { Pid = "default", ArgumentsJson = "{}" });
+        var result = await tool.RunAsync(new ToolInvocation { Pid = "default", ArgumentsJson = "{}" });
 
         // The empty query now fails arg validation (the typed-args base): the call
         // fails before the search port is touched; the message is the validator's.
@@ -113,7 +113,7 @@ public sealed class ToolsTests
     {
         var tool = new PythonSandboxTool(Gert.Testing.Proof.Validation, StubPythonSandbox.WithStdout("4\n"));
 
-        var result = await tool.ExecuteAsync(new ToolInvocation
+        var result = await tool.RunAsync(new ToolInvocation
         {
             Pid = "default",
             ArgumentsJson = "{\"code\":\"print(2 + 2)\"}",
@@ -130,7 +130,7 @@ public sealed class ToolsTests
     {
         var tool = new PythonSandboxTool(Gert.Testing.Proof.Validation, StubPythonSandbox.ThatFails("Traceback: boom", exitCode: 1));
 
-        var result = await tool.ExecuteAsync(new ToolInvocation
+        var result = await tool.RunAsync(new ToolInvocation
         {
             Pid = "default",
             ArgumentsJson = "{\"code\":\"raise Exception()\"}",
@@ -147,7 +147,7 @@ public sealed class ToolsTests
     {
         var tool = new PythonSandboxTool(Gert.Testing.Proof.Validation, StubPythonSandbox.ThatThrows(new InvalidOperationException("runsc spawn failed")));
 
-        var result = await tool.ExecuteAsync(new ToolInvocation
+        var result = await tool.RunAsync(new ToolInvocation
         {
             Pid = "default",
             ArgumentsJson = "{\"code\":\"print(1)\"}",
@@ -162,7 +162,7 @@ public sealed class ToolsTests
     {
         var tool = new PythonSandboxTool(Gert.Testing.Proof.Validation, StubPythonSandbox.ThatTimesOut());
 
-        var result = await tool.ExecuteAsync(new ToolInvocation
+        var result = await tool.RunAsync(new ToolInvocation
         {
             Pid = "default",
             ArgumentsJson = "{\"code\":\"while True: pass\"}",
@@ -178,7 +178,7 @@ public sealed class ToolsTests
     {
         var tool = new PythonSandboxTool(Gert.Testing.Proof.Validation, StubPythonSandbox.WithStdout("4\n"));
 
-        var result = await tool.ExecuteAsync(new ToolInvocation
+        var result = await tool.RunAsync(new ToolInvocation
         {
             Pid = "default",
             ArgumentsJson = "{\"code\":\"print(2 + 2)\"}",
@@ -200,7 +200,7 @@ public sealed class ToolsTests
             Hit("doc-2", "second.md", null, "beta", 0.5),
         ]);
 
-        var result = await new RagTool(Gert.Testing.Proof.Validation).ExecuteAsync(
+        var result = await new RagTool(Gert.Testing.Proof.Validation).RunAsync(
             new ToolInvocation { Pid = "default", ArgumentsJson = "{\"query\":\"x\",\"k\":5}" },
             host);
 
@@ -215,7 +215,7 @@ public sealed class ToolsTests
     {
         var tool = new TodoTool(Gert.Testing.Proof.Validation);
 
-        var result = await tool.ExecuteAsync(new ToolInvocation
+        var result = await tool.RunAsync(new ToolInvocation
         {
             Pid = "default",
             ArgumentsJson =
@@ -241,7 +241,7 @@ public sealed class ToolsTests
         result.ResultJson.Should().Contain("2 step(s) remain");
 
         // ...and a finished list says to wrap up instead.
-        var done = await tool.ExecuteAsync(new ToolInvocation
+        var done = await tool.RunAsync(new ToolInvocation
         {
             Pid = "default",
             ArgumentsJson = "{\"todos\":[{\"text\":\"Order the new SSD\",\"status\":\"done\"}]}",
@@ -254,11 +254,11 @@ public sealed class ToolsTests
     {
         var tool = new TodoTool(Gert.Testing.Proof.Validation);
 
-        var missing = await tool.ExecuteAsync(new ToolInvocation { Pid = "default", ArgumentsJson = "{}" });
+        var missing = await tool.RunAsync(new ToolInvocation { Pid = "default", ArgumentsJson = "{}" });
         missing.Success.Should().BeFalse();
         missing.Error.Should().Contain("todos");
 
-        var blankText = await tool.ExecuteAsync(new ToolInvocation
+        var blankText = await tool.RunAsync(new ToolInvocation
         {
             Pid = "default",
             ArgumentsJson = "{\"todos\":[{\"text\":\"  \",\"status\":\"pending\"}]}",
@@ -266,7 +266,7 @@ public sealed class ToolsTests
         blankText.Success.Should().BeFalse();
         blankText.Error.Should().Contain("text");
 
-        var badStatus = await tool.ExecuteAsync(new ToolInvocation
+        var badStatus = await tool.RunAsync(new ToolInvocation
         {
             Pid = "default",
             ArgumentsJson = "{\"todos\":[{\"text\":\"x\",\"status\":\"someday\"}]}",
@@ -280,7 +280,7 @@ public sealed class ToolsTests
     {
         var tool = new TodoTool(Gert.Testing.Proof.Validation);
 
-        var result = await tool.ExecuteAsync(new ToolInvocation { Pid = "default", ArgumentsJson = "{not json" });
+        var result = await tool.RunAsync(new ToolInvocation { Pid = "default", ArgumentsJson = "{not json" });
 
         result.Success.Should().BeFalse();
         result.Error.Should().Contain("invalid arguments");
@@ -319,7 +319,7 @@ public sealed class ToolsTests
         var instant = new DateTimeOffset(2026, 6, 5, 12, 30, 0, TimeSpan.Zero);
         var tool = new ClockTool(Gert.Testing.Proof.Validation, new FixedTime(instant));
 
-        var result = await tool.ExecuteAsync(new ToolInvocation { Pid = "default", ArgumentsJson = "{}" });
+        var result = await tool.RunAsync(new ToolInvocation { Pid = "default", ArgumentsJson = "{}" });
 
         result.Success.Should().BeTrue();
         result.ResultJson.Should().Contain("2026-06-05T12:30:00")
@@ -336,7 +336,7 @@ public sealed class ToolsTests
         var instant = new DateTimeOffset(2026, 6, 5, 12, 30, 0, TimeSpan.Zero);
         var tool = new ClockTool(Gert.Testing.Proof.Validation, new FixedTime(instant));
 
-        var result = await tool.ExecuteAsync(new ToolInvocation
+        var result = await tool.RunAsync(new ToolInvocation
         {
             Pid = "default",
             ArgumentsJson = "{\"timezone\":\"Europe/Amsterdam\"}",
@@ -357,7 +357,7 @@ public sealed class ToolsTests
 
         // No timezone argument: the browser-supplied snapshot on the invocation
         // makes the answer user-local.
-        var result = await tool.ExecuteAsync(new ToolInvocation
+        var result = await tool.RunAsync(new ToolInvocation
         {
             Pid = "default",
             ArgumentsJson = "{}",
@@ -375,7 +375,7 @@ public sealed class ToolsTests
         var instant = new DateTimeOffset(2026, 6, 5, 12, 30, 0, TimeSpan.Zero);
         var tool = new ClockTool(Gert.Testing.Proof.Validation, new FixedTime(instant));
 
-        var result = await tool.ExecuteAsync(new ToolInvocation
+        var result = await tool.RunAsync(new ToolInvocation
         {
             Pid = "default",
             ArgumentsJson = "{\"timezone\":\"UTC\"}",
@@ -392,7 +392,7 @@ public sealed class ToolsTests
     {
         var tool = new ClockTool(Gert.Testing.Proof.Validation, new FixedTime(DateTimeOffset.UnixEpoch));
 
-        var result = await tool.ExecuteAsync(new ToolInvocation
+        var result = await tool.RunAsync(new ToolInvocation
         {
             Pid = "default",
             ArgumentsJson = "{\"timezone\":\"Mars/Olympus_Mons\"}",

@@ -99,14 +99,17 @@ public sealed class SubAgentTool : ToolCallModal
             .RunAsync(new DelegateRequest(task, context), cancellationToken)
             .ConfigureAwait(false);
 
-        return result.Success
-            ? new ToolResult
-            {
-                Success = true,
-                ResultJson = JsonSerializer.Serialize(new { result = result.Text, rounds = result.Rounds }),
-                Stdout = result.Text,
-            }
-            : new ToolResult { Success = false, Error = result.Error };
+        if (!result.Success)
+        {
+            return new ToolResult { Success = false, Error = result.Error };
+        }
+
+        host.Card.ReportStdout(result.Text ?? string.Empty);
+        return new ToolResult
+        {
+            Success = true,
+            ResultJson = JsonSerializer.Serialize(new { result = result.Text, rounds = result.Rounds }),
+        };
     }
 
     private static ToolResult Fail(string error) => new() { Success = false, Error = error };

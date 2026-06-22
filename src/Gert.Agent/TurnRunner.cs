@@ -272,7 +272,8 @@ public sealed class TurnRunner : ITurnRunner
         // snapshot, and the operator's per-tool bound overrides. Effective bounds are computed once
         // here (each tool's intrinsic ToolBounds with non-null overrides applied) and tracked for the
         // run - the loop never fetches config (turn-budgets.md section 1).
-        var toolset = new Toolset(_tools, job.Tools, job.AllowedToolIds, _toolsOptions.PerTool);
+        var toolset = new Toolset(
+            _tools, job.ToolIds.ToHashSet(StringComparer.Ordinal), job.AllowedToolIds, _toolsOptions.PerTool);
 
         // The live-path coalescer: batches the loop's raw text/reasoning deltas into one durable
         // row each, emitting through the persist-then-publish seam. The accumulator (acc) folds the

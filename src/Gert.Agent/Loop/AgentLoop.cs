@@ -1,7 +1,6 @@
 using System.Diagnostics;
 using System.Text.Json;
 using Gert.Model.Agent;
-using Gert.Model.Chat;
 using Gert.Tools;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
@@ -36,9 +35,6 @@ namespace Gert.Agent.Loop;
 /// </summary>
 public sealed class AgentLoop : IAgentLoop
 {
-    private static readonly JsonElement EmptyObjectSchema =
-        JsonDocument.Parse("""{"type":"object"}""").RootElement.Clone();
-
     private readonly TimeProvider _clock;
     private readonly ILogger<AgentLoop> _logger;
 
@@ -79,7 +75,7 @@ public sealed class AgentLoop : IAgentLoop
             // out for the assistant tool-calls message (qwen narrates while it calls tools).
             var roundContentStart = acc.Length;
 
-            var options = BuildOptions(request, toolset.AdvertisedSpecs);
+            var options = BuildOptions(request, toolset);
             var draft = await StreamRoundAsync(request.Model, messages, options, toolset, acc, sink, cancellationToken)
                 .ConfigureAwait(false);
 
@@ -238,7 +234,7 @@ public sealed class AgentLoop : IAgentLoop
         budgetExhausted = round >= maxRounds;
         if (budgetExhausted)
         {
-            if (toolset.AdvertisedSpecs.Count == 0)
+            if (toolset.AdvertisedTools.Count == 0)
             {
                 _logger.LogWarning(
                     "Wind-down round still produced {CallCount} tool call(s) - stopping upstream calls and finalising with the streamed content.",
@@ -384,6 +380,10 @@ public sealed class AgentLoop : IAgentLoop
             return ToolOutcome.Failure(tool.Id, $"tool '{tool.Id}' is not permitted");
         }
 
+        // The per-call card: where the tool pushes its side-effects (citations/artifacts/stdout/todos)
+        // instead of returning them; the loop folds them onto the ExecutedToolCall below.
+        var card = new ToolCardCollector();
+
         var invocation = new ToolInvocation
         {
             Pid = request.Pid,
@@ -400,8 +400,9 @@ public sealed class AgentLoop : IAgentLoop
             AllowedToolIds = request.Tools.AllowedToolIds,
         };
 
-        // Per-tool nested-work allowance: feed the existing (unconsumed) token-budget seam.
-        var host = new BudgetedToolHost(request.Host, entry.Effective.TokenBudget);
+        // Per-tool nested-work allowance: feed the existing (unconsumed) token-budget seam; carry the
+        // per-call card the tool reports its side-effects to.
+        var host = new BudgetedToolHost(request.Host, entry.Effective.TokenBudget, card);
 
         // The generic per-call backstop: tools carry their own tighter limits (sandbox wall clock,
         // search timeouts); this catches a hang outside them. A trip fails THIS call with a visible
@@ -444,46 +445,21 @@ public sealed class AgentLoop : IAgentLoop
         }
 
         stopwatch.Stop();
-        return ToolOutcome.From(tool.Id, result, stopwatch.ElapsedMilliseconds);
+        return ToolOutcome.From(tool.Id, result, card, stopwatch.ElapsedMilliseconds);
     }
 
-    /// <summary>Build the next completion's options: the currently advertised specs (as AIFunction declarations) + the per-round cap.</summary>
-    private static ChatOptions BuildOptions(AgentLoopRequest request, IReadOnlyList<ChatToolSpec> specs) => new()
+    /// <summary>Build the next completion's options: the currently advertised tools (lean AIFunctions) + the per-round cap.</summary>
+    private static ChatOptions BuildOptions(AgentLoopRequest request, Toolset toolset) => new()
     {
-        // Advertise-only declarations: the loop dispatches the ITool itself (Movement A), so these
-        // carry no body. M.E.AI maps tool_choice:"auto" when tools are present and omits it when not.
-        Tools = specs.Count > 0 ? specs.Select(ToAITool).ToList() : null,
+        // The advertised lean ToolFunctions (the tool's own compact schema). M.E.AI maps
+        // tool_choice:"auto" when tools are present and omits it when not; null withdraws them
+        // entirely (the wind-down round).
+        Tools = toolset.AdvertisedTools.Count > 0 ? toolset.AdvertisedTools.ToList() : null,
 
         // The per-round completion cap is the only sampling field the request carries; the rest rides
         // the provider (inside the IChatClient).
         MaxOutputTokens = MaxTokensThisRound(request),
     };
-
-    private static AITool ToAITool(ChatToolSpec spec) =>
-        AIFunctionFactory.CreateDeclaration(spec.Name, spec.Description, ParseSchema(spec.ParametersSchema));
-
-    /// <summary>
-    /// Parse a tool's parameter-schema string into a <see cref="JsonElement"/>. A malformed/empty
-    /// schema degrades to an empty object schema rather than throwing - a bad tool spec must not
-    /// crash the whole turn.
-    /// </summary>
-    private static JsonElement ParseSchema(string schema)
-    {
-        if (!string.IsNullOrWhiteSpace(schema))
-        {
-            try
-            {
-                using var doc = JsonDocument.Parse(schema);
-                return doc.RootElement.Clone();
-            }
-            catch (JsonException)
-            {
-                // fall through to the empty object schema
-            }
-        }
-
-        return EmptyObjectSchema;
-    }
 
     /// <summary>
     /// The per-round completion bound: <see cref="AgentLoopRequest.MaxTokensPerRound"/> when set

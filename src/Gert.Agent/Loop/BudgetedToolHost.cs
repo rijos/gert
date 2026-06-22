@@ -15,9 +15,10 @@ internal sealed class BudgetedToolHost : IToolHost
 {
     private readonly IToolHost _inner;
 
-    public BudgetedToolHost(IToolHost inner, int tokenBudget)
+    public BudgetedToolHost(IToolHost inner, int tokenBudget, IToolCard card)
     {
         _inner = inner ?? throw new ArgumentNullException(nameof(inner));
+        Card = card ?? throw new ArgumentNullException(nameof(card));
         Limits = new ToolLimits(inner.Limits.Deadline, tokenBudget);
     }
 
@@ -26,6 +27,9 @@ internal sealed class BudgetedToolHost : IToolHost
     public IToolUi? Ui => _inner.Ui;
 
     public IToolDelegate Delegate => _inner.Delegate;
+
+    /// <summary>The per-call card the loop binds (where the tool's side-effects land), not the inner host's.</summary>
+    public IToolCard Card { get; }
 
     public ToolLimits Limits { get; }
 }

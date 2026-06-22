@@ -257,7 +257,6 @@ public sealed class TurnPlannerTests
 
         // The flip applies to THIS turn...
         job.ToolIds.Should().Contain("sandbox");
-        job.Tools.Select(t => t.Name).Should().Contain("run_python");
         // ...and persists onto the conversation so a reload restores it.
         await _repo.Received(1).UpdateConversationAsync(
             Arg.Is<Conversation>(c => c.Tools.IsEnabled("sandbox")),
@@ -583,7 +582,6 @@ public sealed class TurnPlannerTests
 
         // Offered = requested AND enabled AND entitlement AND registry.
         job.ToolIds.Should().Contain("rag").And.NotContain("sandbox");
-        job.Tools.Select(t => t.Name).Should().Contain("search_documents").And.NotContain("run_python");
 
         // The snapshot is the claim, captured for the off-thread re-check.
         job.AllowedToolIds.Should().BeEquivalentTo(["rag"]);
@@ -612,7 +610,6 @@ public sealed class TurnPlannerTests
         // Requested + enabled + entitled - but the model can't call tools, so
         // nothing is advertised upstream.
         job.ToolIds.Should().BeEmpty();
-        job.Tools.Should().BeEmpty();
     }
 
     [Fact]

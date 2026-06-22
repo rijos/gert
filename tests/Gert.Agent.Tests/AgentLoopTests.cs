@@ -60,17 +60,12 @@ public sealed class AgentLoopTests
     {
         options ??= new TurnOptions();
         tools ??= [];
-        var specs = tools.Select(t => new ChatToolSpec
-        {
-            Name = t.Name,
-            Description = t.Description,
-            ParametersSchema = t.ParametersSchema,
-        }).ToList();
+        var offeredIds = tools.Select(t => t.Id).ToHashSet(StringComparer.Ordinal);
         var allowedIds = allowed ?? tools.Select(t => t.Id).ToHashSet(StringComparer.Ordinal);
         return new AgentLoopRequest
         {
             Messages = [new ChatMessage(ChatRole.User, userContent)],
-            Tools = new Toolset(tools, specs, allowedIds, toolsOptions?.PerTool),
+            Tools = new Toolset(tools, offeredIds, allowedIds, toolsOptions?.PerTool),
             ModelId = "default",
             Model = model,
             Host = host ?? new FakeToolHost(),
@@ -806,7 +801,10 @@ public sealed class AgentLoopTests
         public Task<ToolResult> ExecuteAsync(
             ToolInvocation invocation,
             IToolHost host,
-            CancellationToken cancellationToken = default) =>
-            Task.FromResult(new ToolResult { Success = true, ResultJson = "{}", Artifacts = [artifact] });
+            CancellationToken cancellationToken = default)
+        {
+            host.Card.ReportArtifact(artifact);
+            return Task.FromResult(new ToolResult { Success = true, ResultJson = "{}" });
+        }
     }
 }

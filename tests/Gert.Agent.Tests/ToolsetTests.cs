@@ -1,6 +1,5 @@
 using FluentAssertions;
 using Gert.Agent.Loop;
-using Gert.Model.Chat;
 using Gert.Service.Chat;
 using Gert.Tools;
 using Gert.Tools.Hosting;
@@ -18,12 +17,8 @@ public sealed class ToolsetTests
     private static readonly IReadOnlySet<string> All =
         new HashSet<string>(["search", "rag"], StringComparer.Ordinal);
 
-    private static ChatToolSpec Spec(ITool tool) => new()
-    {
-        Name = tool.Name,
-        Description = tool.Description,
-        ParametersSchema = tool.ParametersSchema,
-    };
+    private static IReadOnlySet<string> Offered(params string[] ids) =>
+        new HashSet<string>(ids, StringComparer.Ordinal);
 
     [Fact]
     public void A_partial_override_replaces_only_its_named_fields()
@@ -40,7 +35,7 @@ public sealed class ToolsetTests
             ["search"] = new() { MaxCallsPerTurn = 2 },
         };
 
-        var set = new Toolset([tool], [Spec(tool)], All, perTool);
+        var set = new Toolset([tool], Offered("search"), All, perTool);
 
         var effective = set.Resolve("web_search")!.Effective;
         effective.MaxCallsPerTurn.Should().Be(2);
@@ -54,7 +49,7 @@ public sealed class ToolsetTests
         var bounds = ToolBounds.Default with { MaxCallsPerTurn = 7 };
         var tool = new FakeTool("search", "web_search", bounds);
 
-        var set = new Toolset([tool], [Spec(tool)], All);
+        var set = new Toolset([tool], Offered("search"), All);
 
         set.Resolve("web_search")!.Effective.Should().Be(bounds);
     }
@@ -70,7 +65,7 @@ public sealed class ToolsetTests
         ToolBounds.Default.TokenBudget.Should().Be(16384);
 
         var tool = new FakeTool("rag", "search_documents");
-        var set = new Toolset([tool], [], All);
+        var set = new Toolset([tool], Offered(), All);
 
         set.Resolve("search_documents")!.Effective.Should().Be(ToolBounds.Default);
     }
@@ -82,7 +77,7 @@ public sealed class ToolsetTests
         var notEntitled = new FakeTool("rag", "search_documents");
         var allowed = new HashSet<string>(["search"], StringComparer.Ordinal);
 
-        var set = new Toolset([entitled, notEntitled], [], allowed);
+        var set = new Toolset([entitled, notEntitled], Offered(), allowed);
 
         set.Resolve("web_search")!.Entitled.Should().BeTrue();
         set.Resolve("search_documents")!.Entitled.Should().BeFalse();
@@ -92,7 +87,7 @@ public sealed class ToolsetTests
     [Fact]
     public void Resolve_returns_null_for_an_unknown_name()
     {
-        var set = new Toolset([new FakeTool("search", "web_search")], [], All);
+        var set = new Toolset([new FakeTool("search", "web_search")], Offered(), All);
 
         set.Resolve("not_a_tool").Should().BeNull();
     }
@@ -101,7 +96,7 @@ public sealed class ToolsetTests
     public void TryConsumeCall_enforces_the_cap_then_refuses()
     {
         var tool = new FakeTool("search", "web_search", ToolBounds.Default with { MaxCallsPerTurn = 2 });
-        var set = new Toolset([tool], [], All);
+        var set = new Toolset([tool], Offered(), All);
         var entry = set.Resolve("web_search")!;
 
         set.TryConsumeCall(entry).Should().BeTrue();
@@ -113,21 +108,21 @@ public sealed class ToolsetTests
     public void A_non_positive_cap_is_unlimited()
     {
         var tool = new FakeTool("search", "web_search", ToolBounds.Default with { MaxCallsPerTurn = 0 });
-        var set = new Toolset([tool], [], All);
+        var set = new Toolset([tool], Offered(), All);
         var entry = set.Resolve("web_search")!;
 
         Enumerable.Range(0, 100).Should().OnlyContain(_ => set.TryConsumeCall(entry));
     }
 
     [Fact]
-    public void WindDown_withdraws_the_advertised_specs()
+    public void WindDown_withdraws_the_advertised_tools()
     {
         var tool = new FakeTool("search", "web_search");
-        var set = new Toolset([tool], [Spec(tool)], All);
+        var set = new Toolset([tool], Offered("search"), All);
 
-        set.AdvertisedSpecs.Should().ContainSingle();
+        set.AdvertisedTools.Should().ContainSingle();
         set.WindDown();
-        set.AdvertisedSpecs.Should().BeEmpty();
+        set.AdvertisedTools.Should().BeEmpty();
     }
 
     [Fact]
@@ -137,7 +132,7 @@ public sealed class ToolsetTests
         var tool = new FakeTool("search", "web_search", ToolBounds.Default with { CallTimeout = TimeSpan.FromSeconds(30) });
         var perTool = new Dictionary<string, ToolBoundsOverride> { ["search"] = new() { CallTimeout = TimeSpan.FromSeconds(10) } };
 
-        var set = new Toolset([tool], [], All, perTool, adjustBounds: b => b with { CallTimeout = TimeSpan.Zero });
+        var set = new Toolset([tool], Offered(), All, perTool, adjustBounds: b => b with { CallTimeout = TimeSpan.Zero });
 
         set.Resolve("web_search")!.Effective.CallTimeout.Should().Be(TimeSpan.Zero);
     }

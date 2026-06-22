@@ -186,12 +186,6 @@ public sealed class TurnRunnerTests
         ModelId = "default",
         History = [new ChatMessage(ChatRole.User, userContent)],
         ToolIds = offered?.Select(t => t.Id).ToList() ?? [],
-        Tools = offered?.Select(t => new ChatToolSpec
-        {
-            Name = t.Name,
-            Description = t.Description,
-            ParametersSchema = t.ParametersSchema,
-        }).ToList() ?? [],
     };
 
     [Fact]

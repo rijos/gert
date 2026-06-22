@@ -1,5 +1,4 @@
 using Gert.Agent.Loop;
-using Gert.Model.Chat;
 using Gert.Service.Chat;
 using Gert.Tools;
 using Gert.Tools.Hosting;
@@ -92,21 +91,13 @@ internal sealed class ChatToolDelegate : IToolDelegate
                     : $"{task}\n\nContext:\n{request.Context}"),
         };
 
-        var specs = _delegableTools
-            .Select(t => new ChatToolSpec
-            {
-                Name = t.Name,
-                Description = t.Description,
-                ParametersSchema = t.ParametersSchema,
-            })
-            .ToList();
-
-        // The nested tool view: the delegable tools intersected with the parent's entitlement, the
-        // same operator overrides, but with each effective CallTimeout forced to zero - a non-modal
-        // nested tool keeps no per-call backstop (the turn lifetime token is the hard wall regardless);
-        // call caps + token budgets still apply.
+        // The nested tool view: the delegable tools (all offered) intersected with the parent's
+        // entitlement, the same operator overrides, but with each effective CallTimeout forced to
+        // zero - a non-modal nested tool keeps no per-call backstop (the turn lifetime token is the
+        // hard wall regardless); call caps + token budgets still apply.
+        var offeredIds = _delegableTools.Select(t => t.Id).ToHashSet(StringComparer.Ordinal);
         var toolset = new Toolset(
-            _delegableTools, specs, _allowedToolIds, _perTool,
+            _delegableTools, offeredIds, _allowedToolIds, _perTool,
             adjustBounds: bounds => bounds with { CallTimeout = TimeSpan.Zero });
 
         // Autonomous: the nested loop emits into the discard sink (no log, no bus); only its
