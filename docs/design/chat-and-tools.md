@@ -110,26 +110,38 @@ old "turn" conflated - a **compute** run that streams and ends, and a **durable*
 record that replays. They meet at exactly one seam.
 
 - **The agent (compute).** The reusable loop (`Gert.Agent`'s `AgentLoop`, run by
-  the chat shell, the sub-agent, and any headless driver alike) drives the
-  Microsoft.Extensions.AI `IChatClient` directly (decisions section 13): it builds a
-  working `ChatMessage` list + a per-round `ChatOptions` and consumes the
-  `ChatResponseUpdate` stream. It decomposes into small units the regression tests
-  guard: a per-run **`Toolset`** (the offered tools, the advertised tools as lean
-  `AIFunction`s on `ChatOptions.Tools`, the entitlement ceiling, and each tool's
-  *effective bounds* - below), **`StreamRoundAsync`** (consume one model stream, fold
-  text/reasoning deltas into the run's content via a **`DeltaAccumulator`**, emit the
-  live tool-call-start card off a name-first `FunctionCallContent`, collect the
-  round's completed calls + token counts), and **`ExecuteRoundAsync`** (append the
-  assistant tool-calls message, then per call: gate the entitlement card, consume the
-  per-tool call budget, run under the tool's timeout against a per-call
-  `IToolCard`, emit the completed call). `RunAsync` is the thin orchestrator, with the
-  wind-down brake between the stream and the execute step. The loop's **only**
-  output is an `AgentEvent` (`Gert.Model.Agent`: `TextDelta`, `ReasoningDelta`,
-  `ToolStarted`, `ToolCompleted`, `RoundCompleted`, `TurnFinished`) emitted through
-  one **`IAgentEventSink`** - it knows nothing of logs, buses, persistence, or
-  coalescing. `IAgent.Start` runs it on a background task behind a channel (`Agent`
-  + `ChannelSink`); the caller reads the bridged event stream while it's busy. Sink
-  inside, stream out.
+  the chat shell, the sub-agent, and any headless driver alike) is a
+  `FunctionInvokingChatClient` (FICC) subclass (decisions section 13): `RunAsync`
+  assembles a per-turn two-layer Microsoft.Extensions.AI pipeline over the run's
+  `IChatClient` and drives its `ChatResponseUpdate` stream to completion, reading the
+  final metrics back off a shared **`TurnAccumulators`**. The middleware owns the round
+  loop, the streamed-response-to-`ChatMessage`-history shaping, and the wind-down; the
+  Gert-specific behavior decomposes into the units the regression tests guard:
+  - a per-run **`Toolset`** (the offered tools, the advertised tools as lean
+    `AIFunction`s on `ChatOptions.Tools`, the entitlement ceiling, and each tool's
+    *effective bounds* - below);
+  - **`LiveIntentChatClient`** (a `DelegatingChatClient` in FRONT of the inner client):
+    folds text/reasoning deltas into the run's content via a **`DeltaAccumulator`**,
+    tracks the token counts and the pure generation span (stream consumption only),
+    emits the live tool-call-start card off a name-first `FunctionCallContent`, then
+    drops that null-args signal from the forwarded stream (the middleware doesn't
+    coalesce a name-first/args-later pair and would otherwise invoke the call twice);
+  - **`GertFunctionInvokingChatClient`**: overrides `InvokeFunctionAsync` (the per-call
+    hook) for - in order - the entitlement card gate (an unentitled call is refused
+    invisibly), the round budget, the per-tool call budget, the per-call timeout against
+    a per-call `IToolCard`, and the completed-call event; the tool's model-facing JSON is
+    returned to the middleware (refusals return a value, never throw). It overrides
+    `CreateResponseMessages` to keep one tool-role message per result. The wind-down is
+    the native iteration cap: `MaximumIterationsPerRequest = MaxRounds + 1` yields the
+    executed rounds + one refused round, then the middleware runs one tools-cleared
+    answer-only round and stops even if it still calls.
+
+  The loop's **only** output is an `AgentEvent` (`Gert.Model.Agent`: `TextDelta`,
+  `ReasoningDelta`, `ToolStarted`, `ToolCompleted`, `RoundCompleted`, `TurnFinished`)
+  emitted through one **`IAgentEventSink`** - it knows nothing of logs, buses,
+  persistence, or coalescing. `IAgent.Start` runs it on a background task behind a
+  channel (`Agent` + `ChannelSink`); the caller reads the bridged event stream while
+  it's busy. Sink inside, stream out.
 - **The conversation event log (durability).** The chat driver (`TurnRunner`) is
   the thin **tee** that turns the agent's compute vocabulary into the durable log:
   it reads the event stream and maps each `AgentEvent` to the persisted/published

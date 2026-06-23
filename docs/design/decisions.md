@@ -255,23 +255,40 @@ maintaining by hand. Should we adopt it, and how far? See
     synthesise is avoided). A tool's citations/artifacts/stdout/todos are pushed through a new
     `IToolHost.Card` (`IToolCard`) seam (impl in `Gert.Agent`) instead of riding `ToolResult`, which
     slims to `{Success, ResultJson, Error}` - "intelligence into the tool."
-  - **Kept the M.E.AI-native `AgentLoop`; did NOT convert it to a `FunctionInvokingChatClient`
-    subclass.** The original plan called for the loop to become a FICC subclass, but FICC drives the
-    model loop with a single fixed `ChatOptions` across iterations and exposes no per-iteration
-    request hook, so it cannot reproduce Gert's cited wind-down brake - the refused round keeps tools
-    advertised, the wind-down round clears them, and a still-calling wind-down round stops with the
-    streamed content (`Runaway_tool_loop_is_bounded`: 5 executed + 1 refused + 1 wind-down = 7 model
-    calls, with the per-round tool advertisement). Fully overriding FICC's loop to restore that is
-    just the loop we already have. Movement A already made the loop M.E.AI-native (it consumes
-    `IChatClient`/`ChatResponseUpdate`, collects `FunctionCallContent`, builds a `ChatMessage`
-    history, and preserves entitlement/budgets/timeout/wind-down/live-intent/metrics/narration-rides-back),
-    so the substance and the test gates of the FICC step are met without the form that would regress
-    a cited invariant ([principle #6](principles.md), the "claim is the ceiling" entitlement re-check
-    must not be weakened).
+  - **The agent loop is a `FunctionInvokingChatClient` (FICC) subclass.** `AgentLoop.RunAsync` is now
+    a thin assembler: per turn it builds a two-layer M.E.AI pipeline over the run's `IChatClient` and
+    drives its streamed response to completion (the metrics are read back off a shared
+    `TurnAccumulators`). The middleware owns the round loop, the streamed-response-to-history shaping
+    (the assistant tool-calls message carries the round's narration back for free), and the wind-down;
+    the Gert-specific behavior it does not model is re-homed into two seams:
+    - `GertFunctionInvokingChatClient` overrides **`InvokeFunctionAsync`** (the per-call hook) for, in
+      order, the plan-time entitlement re-check (an unentitled call is refused INVISIBLY - synthetic
+      result fed upstream, no card, no row), the round budget, the per-tool call ceiling, the per-call
+      timeout (Modal-exempt) under a per-call `BudgetedToolHost`/`IToolCard`, and the
+      `ToolStarted`(args)/`ToolCompleted`/`RoundCompleted` events; a Gert `ITool` is run directly
+      through its host (its `ToolFunction` advertise shape is never invoked) and its model-facing JSON
+      is RETURNED to the middleware (refusals return a value too, never throw, so the consecutive-error
+      brake never trips). It also overrides **`CreateResponseMessages`** to keep the hand-rolled
+      history shape (one tool-role message per result, not the middleware's combined message).
+    - `LiveIntentChatClient` (a `DelegatingChatClient` in FRONT of the inner client) folds the streamed
+      content/reasoning, the last-round token counts, and the pure generation span (stream consumption
+      only - tool execution runs in the override between inner calls), emits the `TextDelta`/
+      `ReasoningDelta` deltas and the name-first live-intent `ToolStarted` (the running card the
+      middleware can't give - it sees only completed calls), then DROPS the null-args live-intent signal
+      from the forwarded stream (the middleware does not coalesce a name-first/args-later pair and would
+      otherwise invoke the call twice).
+    - **Wind-down via the native iteration cap.** `MaximumIterationsPerRequest = MaxRounds + 1` gives
+      the executed rounds plus ONE refused round (the override turns its calls into synthetic
+      budget-exhausted results, tools still advertised), after which the middleware runs ONE final
+      tools-cleared answer-only round and stops even if that round still emits calls - reproducing the
+      cited brake exactly (`Runaway_tool_loop_is_bounded`: 5 executed + 1 refused + 1 wind-down = 7
+      model calls). The "claim is the ceiling" re-check ([principle #6](principles.md)) lives in the
+      `InvokeFunctionAsync` override, off-thread, unweakened.
   - *Rejected:* **wrapping M.E.AI underneath the old `IChatModelClient`** (keeps the abstraction we
     were asked to scrap, and the dead translation layer); **`AIFunctionFactory.CreateDeclaration`
     for the advertised schemas** (it synthesises a verbose, pretty-printed schema with strict-mode
     `additionalProperties` that bloats the qwen tools budget - the lean `ToolFunction` schema rides
     the wire compact, the adapter adding only a bounded `additionalProperties:false` per tool);
-    **the `FunctionInvokingChatClient` subclass** (above - it cannot preserve the wind-down
-    call-count invariant).
+    **forwarding the null-args live-intent signal to the middleware** (FICC does not coalesce a
+    name-first/args-later pair into one call, so it would double-invoke - the interceptor emits the
+    running card and drops the signal instead).
