@@ -490,6 +490,8 @@ public sealed class SqliteRagStore : IRagStore
         public required string CreatedAt { get; init; }
     }
 
+    // Distance/Score are not read after mapping (ChunkId carries the join), but the
+    // SELECT/ORDER BY needs the columns; retained on the row records for debugging.
     private sealed record VecHit
     {
         public long ChunkId { get; init; }

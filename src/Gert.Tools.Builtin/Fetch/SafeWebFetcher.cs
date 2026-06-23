@@ -11,8 +11,8 @@ namespace Gert.Tools.Fetch;
 /// page pulls already use) and maps its exceptions to the port's never-throws
 /// contract so policy refusals and failures surface as readable tool errors, never
 /// server errors. The caller's own cancellation still throws (the turn owns that
-/// signal). The size/time/redirect caps are the fetcher's <see cref="SearXngOptions"/>
-/// knobs (<c>Gert:Search</c>), shared with the search summarize step on purpose
+/// signal). The size/time/redirect caps are the fetcher's <c>SearXngOptions</c>
+/// knobs (<c>Gert:Tools:Search</c>), shared with the search summarize step on purpose
 /// rather than growing a parallel set.
 /// </summary>
 public sealed class SafeWebFetcher : IWebFetcher

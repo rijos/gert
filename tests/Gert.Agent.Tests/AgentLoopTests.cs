@@ -450,7 +450,7 @@ public sealed class AgentLoopTests
         result.Content.Should().Be("checking done");
     }
 
-    // ----- model fakes (loop-local IChatClient; the chat-shell fakes live in TurnRunnerTests) -----
+    // model fakes (loop-local IChatClient; the chat-shell fakes live in TurnRunnerTests)
 
     /// <summary>Base IChatClient: streaming only (the loop never calls the buffered path).</summary>
     private abstract class ScriptedClient : IChatClient

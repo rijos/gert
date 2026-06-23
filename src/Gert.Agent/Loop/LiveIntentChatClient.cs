@@ -18,8 +18,9 @@ namespace Gert.Agent.Loop;
 ///   <see cref="FunctionCallContent.Arguments"/>), gated by the entitlement snapshot so an unentitled
 ///   call never announces (the args-carrying second <see cref="ToolStarted"/> with the same call id
 ///   arrives at invocation time from the override);</item>
-///   <item>the round's token counts (last-wins) and the pure generation span (the time spent consuming
-///   this round's inner stream - tool execution runs in the override between inner calls, outside it).</item>
+///   <item>the round's token counts (TokenCount is summed across rounds; PromptTokens is last non-null
+///   wins) and the pure generation span (the time spent consuming this round's inner stream - tool
+///   execution runs in the override between inner calls, outside it).</item>
 /// </list>
 /// One instance per run; the middleware calls <see cref="GetStreamingResponseAsync"/> once per round.
 /// </summary>

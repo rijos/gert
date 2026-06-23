@@ -115,17 +115,6 @@ public sealed class ToolsetTests
     }
 
     [Fact]
-    public void WindDown_withdraws_the_advertised_tools()
-    {
-        var tool = new FakeTool("search", "web_search");
-        var set = new Toolset([tool], Offered("search"), All);
-
-        set.AdvertisedTools.Should().ContainSingle();
-        set.WindDown();
-        set.AdvertisedTools.Should().BeEmpty();
-    }
-
-    [Fact]
     public void AdjustBounds_runs_last_over_the_effective_bounds()
     {
         // The nested sub-agent forces CallTimeout=Zero after overrides are applied.

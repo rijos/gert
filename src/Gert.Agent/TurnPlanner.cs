@@ -75,7 +75,7 @@ public sealed class TurnPlanner : ITurnPlanner
         var conversation = await repo.GetConversationAsync(conversationId, cancellationToken)
             .ConfigureAwait(false);
 
-        // 2. Serialize turns per conversation (the 409 rule): a second turn while
+        // 1. Serialize turns per conversation (the 409 rule): a second turn while
         // one is streaming would race the seq counter and read incomplete history.
         // The ux_messages_streaming INDEX is the truth (the gated insert below);
         // this read is an optimization - it rejects before allocating seqs, with
@@ -93,7 +93,7 @@ public sealed class TurnPlanner : ITurnPlanner
             throw new TurnInProgressException(conversationId);
         }
 
-        // 2.5 Orphan write-back: every streaming row left here is one the fast path
+        // 1.5 Orphan write-back: every streaming row left here is one the fast path
         // just proved expired (it didn't throw, so MessageStatusRules.Effective maps
         // it to error) - make that durable so the dead turn's row frees the gate index.
         // Without this the partial unique index turns the self-healing lazy orphan rule
@@ -106,6 +106,15 @@ public sealed class TurnPlanner : ITurnPlanner
         {
             _ = await repo.TryExpireStreamingMessageAsync(orphan.Id, cancellationToken).ConfigureAwait(false);
         }
+
+        // 2. Bound an inline TEXT-file attachment against the model's context window BEFORE this
+        // turn's conversation or message rows persist (principles.md #6): a file too big to fit
+        // (leaving room for the prompt + reply) is refused with a clean 400 steering the user to the
+        // Knowledge panel (RAG). Allowlisted images ride their own count/size caps; a provider with
+        // an unknown context (the synthesized zero-config default) is not gated. Resolve the turn's
+        // model first - the same value the assistant placeholder carries below.
+        var turnModelId = dto.ModelId ?? conversation?.ModelId ?? ChatProviderInfo.DefaultId;
+        EnsureInlineAttachmentsFit(dto.Attachments, turnModelId);
 
         // 3. First message to a not-yet-created conversation materialises it (the
         // SPA's "new chat -> type -> send" sends a fresh client id). Title seeds
@@ -168,19 +177,12 @@ public sealed class TurnPlanner : ITurnPlanner
             ConversationId = conversationId,
             Role = MessageRole.Assistant,
             Content = string.Empty,
-            ModelId = dto.ModelId ?? conversation.ModelId ?? ChatProviderInfo.DefaultId,
+            ModelId = turnModelId,
             TokenCount = null,
             Seq = assistantSeq,
             Status = MessageStatus.Streaming,
             CreatedAt = now,
         };
-
-        // Bound an inline TEXT-file attachment against the model's context window: a file too big
-        // to fit (leaving room for the prompt + reply) is refused here with a clean 400 that steers
-        // the user to the Knowledge panel (RAG) instead - fail-closed, before any row is persisted.
-        // Images are excluded (their own count/size caps apply); a provider with an unknown context
-        // (the synthesized zero-config default) is not gated.
-        EnsureInlineAttachmentsFit(dto.Attachments, assistantMessage.ModelId!);
 
         if (!await repo.TryInsertTurnMessagesAsync(userMessage, assistantMessage, cancellationToken)
                 .ConfigureAwait(false))
@@ -203,11 +205,11 @@ public sealed class TurnPlanner : ITurnPlanner
             priorMessages.Where(m => m.Status == MessageStatus.Complete).Append(userMessage),
             includeImages: _catalog.SupportsVision(assistantMessage.ModelId!));
 
-        // Step 0: the project's pinned instructions (best-effort; a missing reader
+        // 6. The project's pinned instructions (best-effort; a missing reader
         // or project means "no instructions", never a failed turn).
         var systemPrompt = await ResolveSystemPromptAsync(pid, cancellationToken).ConfigureAwait(false);
 
-        // 6. The offered tool set: requested AND conversation-enabled AND entitlement
+        // 7. The offered tool set: requested AND conversation-enabled AND entitlement
         // AND registry (auth.md section the claim is the ceiling) AND MODEL CAPABILITY -
         // a model the catalog marks as not tool-capable is never advertised
         // tools, whatever the toggles say. Plus the entitlement SNAPSHOT for
@@ -216,7 +218,7 @@ public sealed class TurnPlanner : ITurnPlanner
             ? ResolveOfferedTools(dto, conversation)
             : Array.Empty<ITool>();
 
-        // 6.5 Cross-turn state revival: the history above is role+content only, so
+        // 7.5 Cross-turn state revival: the history above is role+content only, so
         // state a tool set in an earlier turn has already vanished from the prompt.
         // Every offered tool that implements IToolReminder gets its newest accepted
         // result snapshot and decides whether to re-inject it; any reminder it returns
@@ -241,7 +243,7 @@ public sealed class TurnPlanner : ITurnPlanner
             }
         }
 
-        // 7. Hand the prepared turn off. Sampling + the thinking template kwargs are
+        // 8. Hand the prepared turn off. Sampling + the thinking template kwargs are
         // not resolved here - they ride the selected provider (ModelId), applied by
         // the adapter from Gert:Chat:Providers. The job carries only what the runner needs.
         return new TurnJob
@@ -446,11 +448,12 @@ public sealed class TurnPlanner : ITurnPlanner
         var role = ToChatRole(m.Role);
         var content = m.Content ?? string.Empty;
 
-        // User attachments: the text part (when present), then one part per attachment. An image
-        // becomes a vision DataContent (only for vision-capable models; otherwise dropped). A
-        // text-file attachment is decoded and injected as a fenced block - no vision needed, so it
-        // rides regardless of model capability; non-text bytes are skipped (the model just doesn't
-        // see them). The adapter renders each DataContent as an OpenAI image_url base64 data URL.
+        // User attachments: the text part (when present), then one part per attachment. An
+        // ALLOWLISTED image becomes a vision DataContent (only for vision-capable models; otherwise
+        // dropped). Everything else - text files AND non-allowlisted image/* (e.g. svg) - is decoded
+        // and injected as a fenced block (no vision needed, so it rides regardless of model
+        // capability); non-text bytes are skipped (the model just doesn't see them). The adapter
+        // renders each DataContent as an OpenAI image_url base64 data URL.
         if (m.Role == MessageRole.User && m.Attachments is { Count: > 0 } attachments)
         {
             var parts = new List<AIContent>();
@@ -461,7 +464,7 @@ public sealed class TurnPlanner : ITurnPlanner
 
             foreach (var attachment in attachments)
             {
-                if (AttachmentKinds.IsImage(attachment.MimeType))
+                if (AttachmentKinds.IsAllowedImageMime(attachment.MimeType))
                 {
                     if (includeImages)
                     {
@@ -512,8 +515,9 @@ public sealed class TurnPlanner : ITurnPlanner
     /// <summary>
     /// Refuse an inline text-file attachment that would not fit the model's context (leaving room
     /// for the prompt + reply): a <see cref="ValidationException"/> -> 400 steering the user to the
-    /// Knowledge panel. Images are excluded (their own caps apply); when the provider declares no
-    /// context (the zero-config default) there is nothing to gate against, so it passes.
+    /// Knowledge panel. Allowlisted images are excluded (their own caps apply); a non-allowlisted
+    /// image/* counts as inline text. When the provider declares no context (the zero-config
+    /// default) there is nothing to gate against, so it passes.
     /// </summary>
     private void EnsureInlineAttachmentsFit(IReadOnlyList<MessageAttachment>? attachments, string modelId)
     {
@@ -524,7 +528,7 @@ public sealed class TurnPlanner : ITurnPlanner
 
         var budget = (long)(contextTokens * _options.MaxInlineAttachmentContextFraction);
         var inlineTokens = attachments
-            .Where(a => !AttachmentKinds.IsImage(a.MimeType))
+            .Where(a => !AttachmentKinds.IsAllowedImageMime(a.MimeType))
             .Sum(a => EstimateBase64TextTokens(a.Data));
 
         if (inlineTokens <= budget)

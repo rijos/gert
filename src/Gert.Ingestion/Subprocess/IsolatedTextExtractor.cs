@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text;
 using System.Text.Json;
 using Gert.Service.Ingestion;
 using Microsoft.Extensions.Logging;
@@ -34,7 +35,8 @@ public sealed class IsolatedTextExtractor : ITextExtractor
 
     public IsolatedTextExtractor(IOptions<ExtractorOptions> options, ILogger<IsolatedTextExtractor> logger)
     {
-        _options = options?.Value.Parameters ?? throw new ArgumentNullException(nameof(options));
+        ArgumentNullException.ThrowIfNull(options);
+        _options = options.Value.Parameters;
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -168,7 +170,7 @@ public sealed class IsolatedTextExtractor : ITextExtractor
     private async Task<ExtractionResult> RunHelperAsync(string extension, string inputPath, CancellationToken cancellationToken)
     {
         // The helper applies the rlimits + drops privs + sets no-network, then parses
-        // with PdfPig (pdf) or OpenXML (docx) using HardenedXml + ZipBombGuard, and emits
+        // with PdfPig (pdf) or OpenXML (docx/xlsx) using HardenedXml + ZipBombGuard, and emits
         // {"pages":[...]}.
         // TODO: ship the `gert-extract` helper executable; until then the
         // PdfPig/OpenXML parse lives behind this subprocess boundary (stubbed here).
@@ -189,8 +191,13 @@ public sealed class IsolatedTextExtractor : ITextExtractor
         using var process = new Process { StartInfo = psi };
         process.Start();
 
-        var stdoutTask = process.StandardOutput.ReadToEndAsync(cancellationToken);
-        var stderrTask = process.StandardError.ReadToEndAsync(cancellationToken);
+        // Bounded reads: a flooding or compromised helper must not balloon host memory (F7 - helper
+        // misbehaviour cannot harm the host). Stop after MaxOutputBytes from stdout (a smaller cap on
+        // stderr); the helper self-caps via --max-output, this is the host-side enforcement. The
+        // unread remainder fills the OS pipe and the helper blocks on write; the wall-clock timeout
+        // below then reaps it.
+        var stdoutTask = ReadCappedAsync(process.StandardOutput.BaseStream, _options.MaxOutputBytes, cancellationToken);
+        var stderrTask = ReadCappedAsync(process.StandardError.BaseStream, StderrMaxBytes, cancellationToken);
 
         using var wall = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         wall.CancelAfter(TimeSpan.FromSeconds(_options.WallClockSeconds));
@@ -207,17 +214,35 @@ public sealed class IsolatedTextExtractor : ITextExtractor
 
         var stdout = await stdoutTask.ConfigureAwait(false);
         var stderr = await stderrTask.ConfigureAwait(false);
-        return ParseHelperOutput(process.ExitCode, Cap(stdout), stderr);
+        return ParseHelperOutput(process.ExitCode, stdout, stderr);
     }
 
-    private string Cap(string text)
+    /// <summary>Stderr is just an error reason; cap it well below the stdout budget.</summary>
+    private const int StderrMaxBytes = 64 * 1024;
+
+    /// <summary>
+    /// Read at most <paramref name="maxBytes"/> bytes from a helper output stream, then stop - so a
+    /// flooding/compromised helper cannot balloon host memory (security F7); the cap is enforced
+    /// DURING the read, never after a full buffer. Bytes, not chars, is the unit (matching
+    /// <c>MaxOutputBytes</c> and the helper's <c>--max-output</c>); the captured bytes decode as
+    /// UTF-8 - a truncated multi-byte tail degrades to a replacement char, which
+    /// <see cref="ParseHelperOutput"/> then rejects as invalid JSON (that document fails, the host is fine).
+    /// </summary>
+    private static async Task<string> ReadCappedAsync(Stream stream, long maxBytes, CancellationToken cancellationToken)
     {
-        if (text.Length <= _options.MaxOutputBytes)
+        var cap = (int)Math.Min(maxBytes, int.MaxValue);
+        using var buffer = new MemoryStream();
+        var chunk = new byte[8192];
+        int read;
+        while (buffer.Length < cap &&
+               (read = await stream
+                   .ReadAsync(chunk.AsMemory(0, (int)Math.Min(chunk.Length, cap - buffer.Length)), cancellationToken)
+                   .ConfigureAwait(false)) > 0)
         {
-            return text;
+            buffer.Write(chunk, 0, read);
         }
 
-        return text[..(int)Math.Min(_options.MaxOutputBytes, int.MaxValue)];
+        return Encoding.UTF8.GetString(buffer.GetBuffer(), 0, (int)buffer.Length);
     }
 
     private static void TryKill(Process process)

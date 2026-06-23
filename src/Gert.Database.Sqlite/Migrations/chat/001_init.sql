@@ -53,7 +53,7 @@ CREATE UNIQUE INDEX ux_messages_streaming ON messages(conversation_id) WHERE sta
 CREATE TABLE tool_calls (
     id            TEXT PRIMARY KEY,
     message_id    TEXT NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
-    kind          TEXT NOT NULL,            -- rag | web_search | sandbox
+    kind          TEXT NOT NULL,            -- the tool Name: rag | web_search | sandbox | todo | clock
     status        TEXT NOT NULL,            -- running | done | error
     request_json  TEXT,                     -- query / code
     response_json TEXT,                     -- hits / results / stdout
@@ -83,7 +83,7 @@ CREATE INDEX ix_citations_msg ON citations(message_id, ordinal);
 CREATE TABLE chat_objects (
     id              TEXT PRIMARY KEY,
     conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
-    kind            TEXT NOT NULL,          -- md | html | svg | py  (the canvas tabs)
+    kind            TEXT NOT NULL,          -- md | html | svg | py | cs | cpp | js | rs  (the canvas tabs)
     name            TEXT NOT NULL,          -- decision.md, status.html, ...
     content         TEXT NOT NULL,
     version         INTEGER NOT NULL DEFAULT 1,

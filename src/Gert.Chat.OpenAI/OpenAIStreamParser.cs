@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.AI;
 using OpenAI.Chat;
@@ -302,6 +303,6 @@ internal sealed class OpenAIStreamParser
         /// <summary>True once the name has been announced as a live intent.</summary>
         public bool Announced { get; set; }
 
-        public System.Text.StringBuilder Arguments { get; } = new();
+        public StringBuilder Arguments { get; } = new();
     }
 }

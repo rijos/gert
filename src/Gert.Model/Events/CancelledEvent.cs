@@ -7,7 +7,7 @@ namespace Gert.Model.Events;
 /// </summary>
 public sealed record CancelledEvent : ChatEvent
 {
-    /// <inheritdoc cref="MessageEndEvent.TokenCount"/>
+    /// <summary>Completion token count at the point the turn was stopped; null if none reported.</summary>
     public int? TokenCount { get; init; }
 
     public override ChatEventType Type => ChatEventType.Cancelled;

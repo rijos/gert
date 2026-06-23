@@ -27,7 +27,7 @@ namespace Gert.Chat.OpenAI;
 /// </para>
 ///
 /// <para>
-/// <b>Resilience is per item</b> (configuration.md section 4): there is no shared
+/// <b>Resilience is per item</b> (configuration.md intro; section 3): there is no shared
 /// <c>Gert:Http</c> section. Each chat provider's <c>Parameters</c> and the embeddings
 /// <c>Parameters</c> carry their own <c>RequestTimeoutSeconds</c>/<c>RetryCount</c>; the
 /// <see cref="ConfigureTransportResilience"/>/<see cref="TotalTransportTimeout"/> helpers take
@@ -213,7 +213,7 @@ public static class ServiceCollectionExtensions
 
     /// <summary>
     /// Fail-closed <see cref="EmbeddingsOptions.Type"/> discriminator (configuration.md
-    /// section 4): only <c>OpenAI</c> ships today, so an unknown Type fails fast at startup
+    /// section 3): only <c>OpenAI</c> ships today, so an unknown Type fails fast at startup
     /// rather than silently using defaults.
     /// </summary>
     private sealed class EmbeddingsTypeValidator : IValidateOptions<EmbeddingsOptions>

@@ -1,7 +1,7 @@
 -- rag.db schema v1 (storage-and-data.md section rag.db).
 --
 -- The vec0 / fts5 virtual tables below require the native sqlite-vec extension,
--- which the provider loads on every rag.db connection (OpenRagAsync) before this
+-- which the provider loads on every rag.db connection (SqliteRagConnectionFactory.OpenAsync) before this
 -- migration runs. The three indexes share an integer rowid (chunks.id ==
 -- vec_chunks.chunk_id == fts_chunks rowid), so they join cheaply.
 --

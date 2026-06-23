@@ -7,7 +7,8 @@ namespace Gert.Agent.Loop;
 /// an <see cref="AgentResult"/> (decisions #13). <see cref="FunctionInvokingChatClient"/> orchestrates
 /// the rounds and shapes the upstream history, but it computes none of Gert's turn metrics, so the two
 /// pipeline halves accumulate them here: the <see cref="LiveIntentChatClient"/> (in front of the inner
-/// client) folds the streamed content/reasoning, the last-round token counts, and the pure generation
+/// client) folds the streamed content/reasoning, the completion token count summed across rounds (the
+/// prompt token count is last-non-null-wins), and the pure generation
 /// span (stream consumption only - tool execution happens between the inner calls, outside any stream
 /// span); the <see cref="GertFunctionInvokingChatClient"/> override records the executed tool-round
 /// count. Built once per run, shared by reference between both halves; never touched off-thread (the
@@ -21,7 +22,7 @@ internal sealed class TurnAccumulators
     /// <summary>Pure generation time in stopwatch ticks - the sum of the per-round stream-consumption spans, no tool gaps.</summary>
     public long GenTicks { get; set; }
 
-    /// <summary>The last round's completion token count (null until the provider reports one).</summary>
+    /// <summary>The completion token count summed across rounds (null until the provider reports one).</summary>
     public int? TokenCount { get; set; }
 
     /// <summary>The last non-null round prompt token count (the turn's real context footprint).</summary>

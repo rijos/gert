@@ -6,12 +6,15 @@ namespace Gert.Validation.Validators;
 
 /// <summary>
 /// Validates one inline attachment (testing.md section 5: untrusted bytes at the boundary). Two
-/// kinds, by MIME (<see cref="AttachmentKinds.IsImage"/>):
+/// kinds, by MIME (<see cref="AttachmentKinds.IsAllowedImageMime"/> - the same gate
+/// <c>TurnPlanner</c> routes on, so the validator and the prompt path agree):
 /// <list type="bullet">
-///   <item><b>Image</b> - MIME from the image allowlist (<see cref="ValidationRules.IsAllowedImageMime"/>).</item>
-///   <item><b>Text file</b> - any non-image MIME, but it <b>must carry a filename</b> (so an arbitrary
-///   binary cannot pose as an untyped attachment); whether the bytes are really text is decided at
-///   prompt-injection (the server-side text gate), not here.</item>
+///   <item><b>Image</b> - an allowlisted image MIME (<see cref="ValidationRules.IsAllowedImageMime"/>),
+///   the only kind that rides to a vision model as a binary part.</item>
+///   <item><b>Text file</b> - any non-allowlisted MIME (including a non-allowlisted <c>image/*</c>
+///   like <c>image/svg+xml</c>), but it <b>must carry a filename</b> (so an arbitrary binary cannot
+///   pose as an untyped attachment); whether the bytes are really text is decided at prompt-injection
+///   (the server-side text gate), not here.</item>
 /// </list>
 /// In both cases the base64 <see cref="MessageAttachment.Data"/> is well-formed and bounded by
 /// <see cref="ValidationRules.AttachmentDataMaxChars"/> (the per-attachment DoS brake).

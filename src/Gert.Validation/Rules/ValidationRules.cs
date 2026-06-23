@@ -1,5 +1,6 @@
 using System.Globalization;
 using FluentValidation;
+using Gert.Model.Chat;
 
 namespace Gert.Validation.Rules;
 
@@ -36,18 +37,12 @@ public static class ValidationRules
     /// </summary>
     public const int AttachmentDataMaxChars = 8_000_000;
 
-    /// <summary>Image MIME types an attachment may declare (the composer's paste set).</summary>
-    private static readonly HashSet<string> AllowedImageMimeTypes = new(StringComparer.Ordinal)
-    {
-        "image/png",
-        "image/jpeg",
-        "image/webp",
-        "image/gif",
-    };
-
-    /// <summary>True if <paramref name="value"/> is an allowed attachment image MIME type.</summary>
-    public static bool IsAllowedImageMime(string? value) =>
-        value is not null && AllowedImageMimeTypes.Contains(value);
+    /// <summary>
+    /// True if <paramref name="value"/> is an allowed attachment image MIME type. Delegates to the
+    /// single source - <see cref="AttachmentKinds.IsAllowedImageMime"/> - so the validator and the
+    /// prompt path can never disagree on which images ride to a vision model.
+    /// </summary>
+    public static bool IsAllowedImageMime(string? value) => AttachmentKinds.IsAllowedImageMime(value);
 
     /// <summary>
     /// True if <paramref name="value"/> is non-empty, well-formed base64 - checked

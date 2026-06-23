@@ -86,7 +86,7 @@ public sealed class DocumentsController : ControllerBase
             OpenReadStream = file.OpenReadStream,
         };
 
-        // Prove at the boundary (extension allowlist + size + mime): invalid -> 400.
+        // Prove at the boundary (size + mime + filename length, no type allowlist - F7): invalid -> 400.
         var document = await _documents
             .UploadAsync(pid, _validation.Prove(upload), cancellationToken)
             .ConfigureAwait(false);

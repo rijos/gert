@@ -1,7 +1,7 @@
 namespace Gert.Model.Documents;
 
 /// <summary>
-/// A pending upload handed to <see cref="IDocumentService.UploadAsync"/>. The
+/// A pending upload handed to <c>IDocumentService.UploadAsync</c>. The
 /// host adapts its transport (multipart form / file path) into this shape so the
 /// service stays transport-agnostic.
 /// </summary>

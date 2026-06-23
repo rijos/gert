@@ -88,17 +88,8 @@ export const seedToolDefaults = (ids: string[]) => {
   for (const id of ids) if (!(id in tools)) tools[id] = true;
 };
 
-// make/edit/read artifact are one feature ("Canvas"); the menu shows one switch flipping all
-// three together. Module-init fallback only - the live set is derived from the catalog's
-// group==="canvas" rows (state/tools), so a renamed/added canvas tool needs no change here.
-export const CANVAS_TOOL_IDS: string[] = ["make_artifact", "edit_artifact", "read_artifact"];
 // An unseeded id (catalog not yet loaded) reads as enabled - the default-on contract.
 const enabled = (id: string) => tools[id] ?? true;
-export const canvasOn = () => CANVAS_TOOL_IDS.every((id) => enabled(id));
-export const toggleCanvas = () => {
-  const on = !canvasOn();
-  CANVAS_TOOL_IDS.forEach((id) => (tools[id] = on));
-};
 
 // Thinking is a property of the selected chat provider, not a per-conversation
 // toggle (pick a thinking-vs-instruct provider in the picker). The model's

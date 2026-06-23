@@ -5,7 +5,7 @@ namespace Gert.Tools.Ports;
 
 /// <summary>
 /// Port for fetching one model-named URL (chat-and-tools.md section web fetch). The
-/// real adapter (<c>Gert.Tools</c>'s <c>SafeWebFetcher</c>) wraps the same
+/// real adapter (<c>Gert.Tools.Builtin</c>'s <c>SafeWebFetcher</c>) wraps the same
 /// SSRF-guarded fetcher the web-search summarize step uses (security F5);
 /// tests use a fake. Reached only server-side, never proxied to the browser.
 /// </summary>

@@ -4,8 +4,9 @@ namespace Gert.Tools.Args;
 
 /// <summary>
 /// Arguments for the canvas create tool (<c>make_artifact</c>): the file
-/// <see cref="Name"/>, the model-facing <see cref="Format"/> word (validated for
-/// membership against the canonical set), and the entire file <see cref="Content"/>.
+/// <see cref="Name"/>, the model-facing <see cref="Format"/> word (required, then
+/// resolved with aliases by MakeArtifactTool rather than membership-validated by the
+/// validator), and the entire file <see cref="Content"/>.
 /// </summary>
 public sealed record MakeArtifactArgs
 {

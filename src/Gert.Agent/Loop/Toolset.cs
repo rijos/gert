@@ -21,7 +21,7 @@ public sealed class Toolset
 {
     private readonly Dictionary<string, ToolEntry> _byName;
     private readonly Dictionary<string, int> _callsUsed = new(StringComparer.Ordinal);
-    private IReadOnlyList<AITool> _advertisedTools;
+    private readonly IReadOnlyList<AITool> _advertisedTools;
 
     /// <param name="tools">All resolvable tools (the loop matches model calls against <see cref="ITool.Name"/>).</param>
     /// <param name="offeredToolIds">The ids advertised upstream this run (entitled+enabled+requested subset).</param>
@@ -64,7 +64,11 @@ public sealed class Toolset
         _advertisedTools = advertised;
     }
 
-    /// <summary>The tools advertised on each completion - withdrawn to <c>[]</c> by <see cref="WindDown"/> on the brake.</summary>
+    /// <summary>
+    /// The tools advertised on each completion. The wind-down to <c>[]</c> on the final round is
+    /// handled by M.E.AI's <c>FunctionInvokingChatClient.MaximumIterationsPerRequest</c> (it clears
+    /// the advertised tools on its tools-cleared iteration), not by this type.
+    /// </summary>
     public IReadOnlyList<AITool> AdvertisedTools => _advertisedTools;
 
     /// <summary>The plan-time entitlement snapshot - rides each <see cref="ToolInvocation"/> as the nested ceiling.</summary>
@@ -97,9 +101,6 @@ public sealed class Toolset
         _callsUsed[entry.Tool.Id] = used + 1;
         return true;
     }
-
-    /// <summary>Withdraw the advertised tools (the prefix-cache wind-down brake re-renders the tools region empty).</summary>
-    public void WindDown() => _advertisedTools = [];
 
     /// <summary>Effective bounds: the tool's intrinsic <see cref="ITool.Bounds"/> with each non-null override field applied.</summary>
     private static ToolBounds Effective(

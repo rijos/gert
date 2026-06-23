@@ -422,7 +422,7 @@ export const Composer = component({
       if ((!text.trim() && !pending.length) || chat.streaming.val) return;
       chatSvc.send(
         text,
-        pending.map(({ mime_type, data, name }) => ({ mime_type, data, name })),
+        pending.map(({ mime_type, data, name }) => ({ mime_type, data, name: name ?? null })),
       );
       pending.length = 0;
       ta.value = "";

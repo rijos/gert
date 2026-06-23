@@ -96,7 +96,10 @@ public sealed class WebFetchTool : ToolCall<WebFetchArgs, WebFetchResultPayload>
         var truncated = content.Length > maxChars;
         if (truncated)
         {
-            content = content[..maxChars];
+            // Back off one unit when the cut would land between a surrogate pair, so the clip never
+            // ends on a lone high surrogate (a mangled trailing glyph).
+            var cut = char.IsHighSurrogate(content[maxChars - 1]) ? maxChars - 1 : maxChars;
+            content = content[..cut];
         }
 
         var payload = new WebFetchResultPayload

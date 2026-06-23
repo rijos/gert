@@ -32,5 +32,3 @@ export const addArtifact = (a: Artifact): Artifact => {
 };
 
 export const clear = () => (artifacts.length = 0);
-
-export const byId = (id: string): Artifact | null => artifacts.find((a) => a.id === id) || null;

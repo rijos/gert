@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <!-- Tool capability CONTRACTS: the ports the turn pipeline drives (ITool, ToolRegistry,
-       ToolResult, ToolInvocation, IInteractiveTool, ITailReminder) plus the external-world
+       ToolResult, ToolInvocation, IToolReminder, ToolType/ToolCallModal) plus the external-world
        ports (IWebSearch, IWebFetcher, IPythonSandbox). The built-in implementations live in
        the per-impl leaf Gert.Tools.Builtin (tech-stack.md section Architecture). Depends only
        on Gert.Model, so the service layer can reference it without seeing any adapter. -->

@@ -2,6 +2,7 @@ using FluentAssertions;
 using Gert.Database;
 using Gert.Model.Chat;
 using Gert.Model.Dtos;
+using Gert.Service.Chat;
 using Gert.Service.Conversations;
 using Gert.Testing.Fakes;
 using Gert.Tools;
@@ -10,6 +11,7 @@ using Gert.Tools.Ports;
 using Gert.Validation;
 using Gert.Validation.Rules;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using NSubstitute;
 using Xunit;
 
@@ -44,7 +46,11 @@ public sealed class ConversationServiceTests
             .Returns(_repo);
     }
 
-    private ConversationService NewService() => new(_provider, _user, TimeProvider.System);
+    // A valid destination project id (UUID); the move's TargetPid validator requires a pid shape.
+    private const string TargetPid = "11111111-1111-1111-1111-111111111111";
+
+    private ConversationService NewService(TurnOptions? options = null) =>
+        new(_provider, _user, TimeProvider.System, Options.Create(options ?? new TurnOptions()));
 
     [Fact]
     public async Task Create_sets_id_timestamps_and_inserts()
@@ -232,6 +238,54 @@ public sealed class ConversationServiceTests
 
         await _repo.Received(1).DisposeAsync();
     }
+
+    [Fact]
+    public async Task Move_is_not_blocked_by_an_orphaned_streaming_row()
+    {
+        // A crashed worker leaves an assistant row stuck at Streaming. Past MaxTurnDuration the orphan
+        // rule (MessageStatusRules) ages it to error, so it must NOT block a move - a long-dead turn
+        // once blocked the move forever (regression: MoveAsync checked raw Status, not the orphan rule).
+        var options = new TurnOptions { MaxTurnDuration = TimeSpan.FromMinutes(5) };
+        var orphan = StreamingMessage("c1", DateTimeOffset.UtcNow - TimeSpan.FromHours(1));
+        _repo.GetThreadAsync("c1", Arg.Any<CancellationToken>())
+            .Returns(new ConversationThread { Conversation = Conv("c1"), Messages = [orphan] });
+        _repo.GetConversationAsync("c1", Arg.Any<CancellationToken>()).Returns((Conversation?)null);
+        _repo.AllocateSeqAsync("c1", Arg.Any<CancellationToken>()).Returns(1L);
+
+        var result = await NewService(options).MoveAsync(
+            "default", "c1", _validation.Prove(new MoveConversationRequest { TargetPid = TargetPid }));
+
+        result.Should().NotBeNull();
+        await _repo.Received(1).InsertConversationAsync(
+            Arg.Is<Conversation>(c => c.Id == "c1"), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task Move_is_rejected_while_a_turn_is_genuinely_streaming()
+    {
+        // A live streaming row (younger than MaxTurnDuration) still owns the conversation: 409.
+        var options = new TurnOptions { MaxTurnDuration = TimeSpan.FromMinutes(5) };
+        var live = StreamingMessage("c1", DateTimeOffset.UtcNow);
+        _repo.GetThreadAsync("c1", Arg.Any<CancellationToken>())
+            .Returns(new ConversationThread { Conversation = Conv("c1"), Messages = [live] });
+
+        var act = () => NewService(options).MoveAsync(
+            "default", "c1", _validation.Prove(new MoveConversationRequest { TargetPid = TargetPid }));
+
+        await act.Should().ThrowAsync<TurnInProgressException>();
+        await _repo.DidNotReceive().InsertConversationAsync(Arg.Any<Conversation>(), Arg.Any<CancellationToken>());
+    }
+
+    private static Message StreamingMessage(string conversationId, DateTimeOffset createdAt) => new()
+    {
+        Id = Guid.NewGuid().ToString("D"),
+        ConversationId = conversationId,
+        Role = MessageRole.Assistant,
+        Content = string.Empty,
+        Seq = 1,
+        Status = MessageStatus.Streaming,
+        CreatedAt = createdAt,
+    };
 
     private static Conversation Conv(string id) => new()
     {

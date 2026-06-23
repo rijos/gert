@@ -8,8 +8,9 @@ namespace Gert.Database.Sqlite;
 /// map without per-query aliases. With property binding Dapper also narrows SQLite's
 /// Int64 to the property type (<c>int?</c>/<c>int</c>) automatically - so no
 /// <c>long</c> columns and no casts in the mappers. Invoked from each repository's
-/// static constructor; idempotent (a plain flag assignment), so the three call
-/// sites cannot race or disagree.
+/// static constructor; idempotent (a plain flag assignment), so the two call
+/// sites (the user + chat repositories) cannot race or disagree. The RAG engine
+/// bootstraps Dapper separately via its own RagDapperBootstrap.
 /// </summary>
 internal static class DapperBootstrap
 {
