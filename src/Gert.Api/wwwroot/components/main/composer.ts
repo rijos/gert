@@ -1,7 +1,8 @@
 // components/main/composer.js - autogrow textarea + attach + tools dropdown +
-// send + hint. Pasted images queue as pending attachments (thumbnail strip)
-// and ride the next send for vision models. Calls services/chat.send; never
-// fetches directly.
+// send + hint. Pasted/dropped/picked files queue as pending INLINE attachments (thumbnail
+// strip for images, a chip for text files) and ride the next send: an image as a vision part,
+// a text file as full inline text (bounded by the model's context). The knowledge-base upload
+// is the canvas drop-zone, not here. Calls services/chat.send; never fetches directly.
 import van from "/lib/van.js";
 import type { State } from "/lib/van.js";
 import { reactive } from "/lib/van-x.js";
@@ -13,11 +14,12 @@ import * as chatSvc from "../../services/chat.js";
 import * as chat from "../../state/chat.js";
 import type { Attachment } from "../../state/chat.js";
 import * as ui from "../../state/ui.js";
-import * as docsSvc from "../../services/documents.js";
+import { selected } from "../../state/models.js";
 import { attempt } from "../../lib/action.js";
+import { toast } from "../ui/toast.js";
 import { t } from "../../lib/i18n.js";
 
-const { div, textarea, button, img } = van.tags;
+const { div, textarea, button, img, span } = van.tags;
 
 const autogrow = (t: HTMLTextAreaElement) => {
   t.style.height = "auto";
@@ -27,6 +29,10 @@ const autogrow = (t: HTMLTextAreaElement) => {
 const MAX_IMAGES = 6; // server cap (attachments.too_many)
 const MAX_DIM = 1568; // longest edge sent upstream
 const KEEP_BYTES = 512 * 1024; // small originals keep their exact bytes
+// Inline text-file budget: must mirror the server's TurnOptions.MaxInlineAttachmentContextFraction
+// (default 0.5) and its chars/token estimate, so the client pre-check and the server gate agree.
+const MAX_INLINE_CONTEXT_FRACTION = 0.5;
+const CHARS_PER_TOKEN = 4;
 
 const readAsDataUrl = (blob: Blob): Promise<string> =>
   new Promise((res, rej) => {
@@ -37,10 +43,10 @@ const readAsDataUrl = (blob: Blob): Promise<string> =>
     r.readAsDataURL(blob);
   });
 
-// A pending pasted image: the two wire fields (Attachment) plus the preview
-// data URL the thumbnail strip binds to.
-interface PendingImage extends Attachment {
-  url: string;
+// A pending attachment: the wire fields (Attachment) plus, for an image, the preview
+// data URL the thumbnail strip binds to. A text file has no `url` (it renders as a chip).
+interface PendingAttachment extends Attachment {
+  url?: string;
 }
 
 // Bound a pasted image for the wire: a small original keeps its exact bytes
@@ -48,7 +54,7 @@ interface PendingImage extends Attachment {
 // over a white matte (transparency would otherwise go black). Returns
 // { mime_type, data, url } - wire fields + the preview data URL - or null
 // when the blob can't be decoded as an image.
-const processImage = async (file: File): Promise<PendingImage | null> => {
+const processImage = async (file: File): Promise<PendingAttachment | null> => {
   let bmp: ImageBitmap;
   try {
     bmp = await createImageBitmap(file);
@@ -73,6 +79,18 @@ const processImage = async (file: File): Promise<PendingImage | null> => {
   bmp.close?.();
   const url = canvas.toDataURL("image/jpeg", 0.85);
   return { mime_type: "image/jpeg", data: url.slice(url.indexOf(",") + 1), url };
+};
+
+// Bound a dropped text file for the wire: its bytes ride inline (base64) with the filename,
+// no preview url (it renders as a downloadable chip). Read via a data URL so any encoding maps
+// to base64 uniformly; the server decodes + gates text-ness.
+const processTextFile = async (file: File): Promise<PendingAttachment> => {
+  const url = await readAsDataUrl(file);
+  return {
+    mime_type: file.type || "text/plain",
+    data: url.slice(url.indexOf(",") + 1),
+    name: file.name,
+  };
 };
 
 export const Composer = component({
@@ -111,6 +129,12 @@ export const Composer = component({
     }
     .composer:focus-within {
       border-color: var(--coral-line);
+      box-shadow: var(--lift), 0 0 0 3px var(--coral-soft);
+    }
+    /* file dragged over the composer: same affordance as focus, plus a dashed cue */
+    .composer-wrap.drag-over .composer {
+      border-color: var(--coral-line);
+      border-style: dashed;
       box-shadow: var(--lift), 0 0 0 3px var(--coral-soft);
     }
     /* outline:none opts out of the global :focus-visible ring - the
@@ -248,6 +272,27 @@ export const Composer = component({
       object-fit: cover;
       display: block;
     }
+    .att-file {
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      max-width: 220px;
+      height: 56px;
+      box-sizing: border-box;
+      padding: 0 30px 0 11px;
+      border-radius: 10px;
+      border: 1px solid var(--line);
+      background: var(--surface);
+      box-shadow: var(--lift);
+      font-size: var(--fs-sm);
+      color: var(--text);
+    }
+    .att-file span {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
     .att-x {
       position: absolute;
       top: 3px;
@@ -276,8 +321,10 @@ export const Composer = component({
   setup: () => {
     // mirror the textarea's emptiness reactively so the send button can grey out.
     const empty = van.state(true);
-    // images pasted into the textarea, pending on the next send
-    const pending = reactive<PendingImage[]>([]);
+    // attachments pasted/dropped into the composer, pending on the next send
+    const pending = reactive<PendingAttachment[]>([]);
+    // true while a file is dragged over the composer (drop-target highlight)
+    const dragOver = van.state(false);
 
     // the chord hint reads Cmd+Enter only where the command key exists
     // (macOS/iOS); Ctrl+Enter elsewhere. userAgentData is a newer Navigator
@@ -288,17 +335,44 @@ export const Composer = component({
     );
     const modChord = isMac ? "Cmd+Enter" : "Ctrl+Enter";
 
-    return { empty, pending, modChord };
+    return { empty, pending, modChord, dragOver };
   },
   view: ({
     empty,
     pending,
     modChord,
+    dragOver,
   }: {
     empty: State<boolean>;
-    pending: PendingImage[];
+    pending: PendingAttachment[];
     modChord: string;
+    dragOver: State<boolean>;
   }) => {
+    // A dropped (or picked) file queues as a pending INLINE attachment on the next message
+    // (not the knowledge base - that's the canvas drop-zone). An image becomes a vision part;
+    // any other file rides as full inline text. A text file too big for the selected model's
+    // context is refused here (the server re-checks) and the user is pointed at the Knowledge panel.
+    const acceptFiles = (files: FileList | null | undefined) =>
+      attempt(async () => {
+        for (const f of [...(files || [])]) {
+          if (pending.length >= MAX_IMAGES) continue;
+          if (f.type.startsWith("image/")) {
+            const image = await processImage(f);
+            if (image) pending.push(image);
+          } else {
+            const ctx = selected.val?.context;
+            if (ctx && f.size / CHARS_PER_TOKEN > ctx * MAX_INLINE_CONTEXT_FRACTION) {
+              toast(
+                t(`"{name}" is too large to attach inline - add it to the knowledge panel instead.`)
+                  .replace("{name}", f.name),
+                "err",
+              );
+              continue;
+            }
+            pending.push(await processTextFile(f));
+          }
+        }
+      }, "Couldn't add that file");
     const ta = textarea({
       rows: 1,
       // The placeholder is a hint, not a name (WCAG 3.3.2): give the textarea a stable label.
@@ -348,7 +422,7 @@ export const Composer = component({
       if ((!text.trim() && !pending.length) || chat.streaming.val) return;
       chatSvc.send(
         text,
-        pending.map(({ mime_type, data }) => ({ mime_type, data })),
+        pending.map(({ mime_type, data, name }) => ({ mime_type, data, name })),
       );
       pending.length = 0;
       ta.value = "";
@@ -358,24 +432,46 @@ export const Composer = component({
 
     const fileInput = van.tags.input({
       type: "file",
+      multiple: true,
       style: "display:none",
       onchange: (e: Event) => {
         const input = e.target as HTMLInputElement;
-        const f = input.files?.[0];
-        if (f) attempt(() => docsSvc.upload(f), "Upload failed");
+        acceptFiles(input.files);
         input.value = "";
       },
     });
 
-    const wrap = div({ class: "composer-wrap" },
+    const wrap = div({
+        class: () => "composer-wrap" + (dragOver.val ? " drag-over" : ""),
+        // Drop a file anywhere on the composer: it queues as an inline attachment for the
+        // next message (image -> vision part, other -> inline text) via acceptFiles.
+        ondragover: (e: DragEvent) => {
+          e.preventDefault();
+          dragOver.val = true;
+        },
+        ondragleave: () => {
+          dragOver.val = false;
+        },
+        ondrop: (e: DragEvent) => {
+          e.preventDefault();
+          dragOver.val = false;
+          acceptFiles(e.dataTransfer?.files);
+        },
+      },
       div({ class: "composer" },
         () => pending.length
           ? div({ class: "att-strip" },
               ...pending.map((p, i) =>
-                div({ class: "att-thumb" },
-                  img({ src: p.url, alt: "pasted image" }),
-                  button({ class: "att-x", title: t("Remove image"), "aria-label": t("Remove image"), onclick: () => pending.splice(i, 1) }, "x"),
-                ),
+                p.url
+                  ? div({ class: "att-thumb" },
+                      img({ src: p.url, alt: "pasted image" }),
+                      button({ class: "att-x", title: t("Remove"), "aria-label": t("Remove"), onclick: () => pending.splice(i, 1) }, "x"),
+                    )
+                  : div({ class: "att-file" },
+                      Icon("file", { size: 14, strokeWidth: 2 }),
+                      span(p.name || t("file")),
+                      button({ class: "att-x", title: t("Remove"), "aria-label": t("Remove"), onclick: () => pending.splice(i, 1) }, "x"),
+                    ),
               ),
             )
           : div(),

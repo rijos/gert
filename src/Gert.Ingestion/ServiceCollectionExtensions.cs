@@ -9,8 +9,8 @@ namespace Gert.Ingestion;
 
 /// <summary>
 /// One-call DI registration for the document ingestion adapter (tech-stack.md section
-/// Architecture: <c>AddGertIngestion(cfg)</c>): the md/txt <see cref="PlainTextExtractor"/>
-/// and the isolated PDF/DOCX text extractor (<c>Gert:Extractor</c>; security F7). The
+/// Architecture: <c>AddGertIngestion(cfg)</c>): the universal-text <see cref="PlainTextExtractor"/>
+/// and the isolated PDF/DOCX/XLSX text extractor (<c>Gert:Extractor</c>; security F7). The
 /// service layer keeps talking only to the <see cref="ITextExtractor"/> port - this
 /// registers both leaves under the same key the <c>CompositeTextExtractor</c> enumerates.
 /// </summary>
@@ -29,11 +29,13 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IValidateOptions<ExtractorOptions>, ExtractorTypeValidator>();
 
         // Register both leaves under the SAME key the CompositeTextExtractor
-        // enumerates (Gert.Service.ServiceCollectionExtensions.LeafExtractorKey): the
-        // composite routes md/txt to the plain extractor and pdf/docx to the isolated one.
-        services.AddKeyedSingleton<ITextExtractor, PlainTextExtractor>(
-            Gert.Service.ServiceCollectionExtensions.LeafExtractorKey);
+        // enumerates (Gert.Service.ServiceCollectionExtensions.LeafExtractorKey). Order
+        // matters: the isolated extractor is registered FIRST so the composite (which picks
+        // the first CanExtract match) routes the binary document formats (pdf/docx/xlsx) to
+        // it, leaving the plain-text extractor as the universal fallback for every other type.
         services.AddKeyedSingleton<ITextExtractor, IsolatedTextExtractor>(
+            Gert.Service.ServiceCollectionExtensions.LeafExtractorKey);
+        services.AddKeyedSingleton<ITextExtractor, PlainTextExtractor>(
             Gert.Service.ServiceCollectionExtensions.LeafExtractorKey);
 
         return services;

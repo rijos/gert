@@ -186,9 +186,9 @@ Gert.sln
 │  └─ ServiceCollectionExtensions.cs  # AddGertTools(cfg): generic search/sandbox selectors + fetch + AddBuiltinTools (id-only ToolRegistry + the impls)
 │
 ├─ Gert.Ingestion/            # text-extractor adapter - references Service, Model
-│  ├─ PlainText/              #   PlainTextExtractor - the md/txt ITextExtractor leaf
-│  ├─ Subprocess/             #   IsolatedTextExtractor - unprivileged subprocess for PDF/DOCX parsing (security F7)
-│  └─ ServiceCollectionExtensions.cs  # AddGertIngestion(cfg): both keyed ITextExtractor leaves (md/txt + pdf/docx)
+│  ├─ PlainText/              #   PlainTextExtractor - universal text ITextExtractor leaf (any non-binary type; UTF-8 decode + text-ness gate)
+│  ├─ Subprocess/             #   IsolatedTextExtractor - unprivileged subprocess for PDF/DOCX/XLSX parsing (security F7)
+│  └─ ServiceCollectionExtensions.cs  # AddGertIngestion(cfg): both keyed ITextExtractor leaves (isolated pdf/docx/xlsx + plain-text fallback)
 │
 ├─ Gert.Api/                  # HTTP host - refs Agent, Service, Authentication, Database.Sqlite, Storage(+Local), Chat(+OpenAI), Tools.Builtin, Ingestion
 │  ├─ Program.cs              # DI, JwtBearer, static files + SPA fallback, SSE, BackgroundService

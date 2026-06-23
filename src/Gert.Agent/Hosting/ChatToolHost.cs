@@ -19,14 +19,16 @@ internal sealed class ChatToolHost : IToolHost
     public ChatToolHost(
         IObjectResource objects,
         IRagResource rag,
+        IDocumentResource documents,
         IToolUi? ui,
         IToolDelegate @delegate,
         DateTimeOffset? deadline)
     {
         ArgumentNullException.ThrowIfNull(objects);
         ArgumentNullException.ThrowIfNull(rag);
+        ArgumentNullException.ThrowIfNull(documents);
         ArgumentNullException.ThrowIfNull(@delegate);
-        Resources = new ChatResources(objects, rag);
+        Resources = new ChatResources(objects, rag, documents);
         Ui = ui;
         Delegate = @delegate;
         Limits = new ToolLimits(deadline, null);
@@ -47,10 +49,13 @@ internal sealed class ChatToolHost : IToolHost
 
     public ToolLimits Limits { get; }
 
-    private sealed class ChatResources(IObjectResource objects, IRagResource rag) : IToolResources
+    private sealed class ChatResources(IObjectResource objects, IRagResource rag, IDocumentResource documents)
+        : IToolResources
     {
         public IObjectResource Objects { get; } = objects;
 
         public IRagResource Rag { get; } = rag;
+
+        public IDocumentResource Documents { get; } = documents;
     }
 }

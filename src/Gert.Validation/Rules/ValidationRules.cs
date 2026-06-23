@@ -24,8 +24,11 @@ public static class ValidationRules
     /// <summary>Hard upper bound on an identifier-shaped string (model id, language tag).</summary>
     public const int IdentifierMax = 128;
 
-    /// <summary>Max inline image attachments on one message.</summary>
+    /// <summary>Max inline attachments (images + text files) on one message.</summary>
     public const int AttachmentMaxCount = 6;
+
+    /// <summary>Max filename length on a text-file attachment (metadata/DoS brake; mirrors the upload cap).</summary>
+    public const int AttachmentNameMaxChars = 255;
 
     /// <summary>
     /// Max base64 length of one attachment (~6 MB decoded - far above what the

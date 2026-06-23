@@ -318,8 +318,8 @@ Four things get tested:
 
    | User input | Threat | Rule under test |
    |------------|--------|-----------------|
-   | Upload filename | path traversal / overwrite | reject separators & `..`; **extension allowlist** (pdf/docx/md/txt) |
-   | Upload bytes / type | DoS, oversized payload | max size; content-type allowlist; reject empty |
+   | Upload filename | metadata, not a path (blob key is server-generated `files/{doc-id}`) | length cap; non-empty; **no extension allowlist** (any type accepted - exotic names preserved) |
+   | Upload bytes / type | DoS, oversized payload; binary fed to a parser | max size; reject empty; **type safety at extraction** (UTF-8-decode any non-binary type, fail if not text; pdf/docx/xlsx parsed only in the isolated F7 subprocess) |
    | Message / title text | DoS via huge payload; control chars | max length; reject null/whitespace-only; refuse control & bidi-override chars |
    | Model id | steering to an unintended model | must be in the **known-model allowlist** |
    | Tool name / toggles | invoking an unknown tool | must be a **registered** tool name (entitlement itself is authz - `Gert.Authentication.Tests` + [section 6](#6-api-integration-tests---gertapitests)) |

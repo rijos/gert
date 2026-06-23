@@ -38,8 +38,27 @@ public sealed class ConfigChatProviderCatalogTests
         Dictionary<string, string?>? settings = null,
         string baseUrl = "http://localhost:8000") =>
         new(
-            new ConfigurationBuilder().AddInMemoryCollection(settings ?? []).Build(),
+            new ConfigurationBuilder().AddInMemoryCollection(WithDefaultContext(settings ?? [])).Build(),
             new StubDefault(baseUrl));
+
+    // Context is now required per configured provider (fail-closed). These tests exercise other
+    // metadata, so default a context for any slug that doesn't set one; the requirement itself is
+    // covered by Configured_provider_without_a_context_fails_closed.
+    private static Dictionary<string, string?> WithDefaultContext(Dictionary<string, string?> settings)
+    {
+        const string prefix = "Gert:Chat:Providers:";
+        var merged = new Dictionary<string, string?>(settings);
+        var slugs = settings.Keys
+            .Where(k => k.StartsWith(prefix, StringComparison.Ordinal))
+            .Select(k => k[prefix.Length..].Split(':')[0])
+            .Distinct(StringComparer.Ordinal);
+        foreach (var slug in slugs)
+        {
+            merged.TryAdd($"{prefix}{slug}:Context", "8192");
+        }
+
+        return merged;
+    }
 
     [Fact]
     public void Empty_config_falls_back_to_the_synthesized_default_provider_with_tools()
@@ -87,6 +106,35 @@ public sealed class ConfigChatProviderCatalogTests
         info.Id.Should().Be("qwen36-thinking");
         info.Type.Should().Be("openai");
         info.Endpoint.Should().Be("http://vllm:8000");
+    }
+
+    [Fact]
+    public void Configured_provider_without_a_context_fails_closed()
+    {
+        // Raw builder (not the auto-context helper): a configured provider lacking a positive
+        // Context must fail at construction, naming the offender.
+        var build = () => new ConfigChatProviderCatalog(
+            new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Gert:Chat:Providers:nocxt:Name"] = "No context",
+                ["Gert:Chat:Providers:nocxt:Parameters:BaseUrl"] = "http://vllm:8000",
+            }).Build(),
+            new StubDefault("http://localhost:8000"));
+
+        build.Should().Throw<InvalidOperationException>().WithMessage("*nocxt*Context*");
+    }
+
+    [Fact]
+    public void Configured_provider_context_is_exposed()
+    {
+        var catalog = Catalog(new Dictionary<string, string?>
+        {
+            ["Gert:Chat:Providers:big:Name"] = "Big",
+            ["Gert:Chat:Providers:big:Context"] = "262144",
+            ["Gert:Chat:Providers:big:Parameters:BaseUrl"] = "http://vllm:8000",
+        });
+
+        catalog.ContextSize("big").Should().Be(262144);
     }
 
     [Fact]

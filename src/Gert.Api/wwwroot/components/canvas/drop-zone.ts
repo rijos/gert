@@ -82,7 +82,7 @@ export const DropZone = component({
     },
     Icon("upload", { size: 20, strokeWidth: 1.9 }),
     div({ class: "dz1" }, "Drop files or click to upload"),
-    div({ class: "dz2" }, "pdf - docx - md - txt"),
+    div({ class: "dz2" }, "any text file - pdf - docx - xlsx"),
     fileInput,
   ),
 });

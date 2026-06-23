@@ -1,19 +1,27 @@
 namespace Gert.Model.Chat;
 
 /// <summary>
-/// One inline image attached to a (user) message - pasted into the composer and
-/// sent upstream to vision-capable models as an OpenAI-style <c>image_url</c>
-/// data URL. Persisted as JSON in <c>messages.attachments_json</c> and surfaced
-/// verbatim on the thread GET so the SPA can re-render the bubble after reload.
-/// Inline base64 (no separate blob store) keeps the row self-contained: every
-/// upstream call needs the full bytes anyway, and the composer downscales
-/// before sending so rows stay small.
+/// One inline attachment on a (user) message. Two kinds, distinguished by
+/// <see cref="MimeType"/> (<see cref="AttachmentKinds.IsImage"/>):
+/// <list type="bullet">
+///   <item><b>Image</b> (<c>image/*</c>) - pasted/dropped into the composer and sent upstream to
+///   vision-capable models as an OpenAI-style <c>image_url</c> data URL; <see cref="Name"/> is null.</item>
+///   <item><b>Text file</b> (any other type) - a text file dropped into the composer for a one-off
+///   task ("pretty-format this json"); injected into the prompt as a fenced text block (no vision
+///   needed), carrying its <see cref="Name"/>, and rendered as a downloadable chip in history.</item>
+/// </list>
+/// Persisted as JSON in <c>messages.attachments_json</c> and surfaced verbatim on the thread GET so
+/// the SPA can re-render the bubble (and re-offer the file download) after reload. Inline base64
+/// (no separate blob store) keeps the row self-contained.
 /// </summary>
 public sealed record MessageAttachment
 {
-    /// <summary>Image MIME type (<c>image/png</c>, <c>image/jpeg</c>, <c>image/webp</c>, <c>image/gif</c>).</summary>
+    /// <summary>The MIME type. <c>image/*</c> -> an image (vision); anything else -> a text file.</summary>
     public required string MimeType { get; init; }
 
-    /// <summary>The image bytes as plain base64 (no <c>data:</c> prefix).</summary>
+    /// <summary>The raw bytes as plain base64 (no <c>data:</c> prefix).</summary>
     public required string Data { get; init; }
+
+    /// <summary>The original filename for a text-file attachment (display + model context); null for an image.</summary>
+    public string? Name { get; init; }
 }

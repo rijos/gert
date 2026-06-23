@@ -76,4 +76,14 @@ public sealed class TurnOptions
     /// can't grow unbounded delta events.
     /// </summary>
     public int DeltaFlushMaxChars { get; set; } = 512;
+
+    /// <summary>
+    /// The largest share of the selected provider's context window (tokens) an inline
+    /// <b>text-file</b> attachment may consume - the rest is reserved for the system prompt,
+    /// history, and the model's reply. A drop that estimates over this is refused at plan time with
+    /// a 400 steering the user to the Knowledge panel (RAG) instead (chat-and-tools.md section
+    /// attachments). Gated only when the provider declares a context (configured providers must;
+    /// the zero-config default does not, so it is not gated). Default 0.5.
+    /// </summary>
+    public double MaxInlineAttachmentContextFraction { get; set; } = 0.5;
 }

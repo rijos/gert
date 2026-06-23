@@ -76,6 +76,9 @@ public static class ServiceCollectionExtensions
         });
 
         services.AddScoped<ITool, RagTool>();
+        // read_document returns a whole document's text (the host's IDocumentResource reads the
+        // original blob) - the full-file counterpart to RagTool's passage search.
+        services.AddScoped<ITool, ReadDocumentTool>();
         services.AddScoped<ITool, WebSearchTool>();
         services.AddScoped<ITool, PythonSandboxTool>();
         services.AddScoped<ITool, TodoTool>();

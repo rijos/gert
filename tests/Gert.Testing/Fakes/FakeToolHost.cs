@@ -24,6 +24,9 @@ public sealed class FakeToolHost : IToolHost
     /// <summary>The scripted RAG index backing <see cref="Resources"/>.Rag.</summary>
     public ScriptedRagResource RagIndex { get; } = new();
 
+    /// <summary>The scripted documents backing <see cref="Resources"/>.Documents (read_document).</summary>
+    public ScriptedDocumentResource Documents { get; } = new();
+
     /// <inheritdoc />
     public IToolUi? Ui { get; set; }
 
@@ -40,9 +43,9 @@ public sealed class FakeToolHost : IToolHost
     public IToolCard Card => Captured;
 
     /// <inheritdoc />
-    public IToolResources Resources => new Bundle(ObjectStore, RagIndex);
+    public IToolResources Resources => new Bundle(ObjectStore, RagIndex, Documents);
 
-    private sealed record Bundle(IObjectResource Objects, IRagResource Rag) : IToolResources;
+    private sealed record Bundle(IObjectResource Objects, IRagResource Rag, IDocumentResource Documents) : IToolResources;
 
     /// <summary>An <see cref="IToolCard"/> that records what a tool reports, for test assertions.</summary>
     public sealed class CapturingToolCard : IToolCard
@@ -135,6 +138,65 @@ public sealed class FakeToolHost : IToolHost
         {
             Searches++;
             return Task.FromResult<IReadOnlyList<RagSearchHit>>(Hits.Take(k).ToList());
+        }
+    }
+
+    /// <summary>
+    /// An <see cref="IDocumentResource"/> backed by a settable name -> full-text map: lists those
+    /// names and serves paged slices of the matching text (read_document). An unknown reference
+    /// returns null (the tool then lists the candidates).
+    /// </summary>
+    public sealed class ScriptedDocumentResource : IDocumentResource
+    {
+        /// <summary>Title -> full text. Tests seed this; binary docs are modelled by seeding via <see cref="Binary"/>.</summary>
+        public Dictionary<string, string> Texts { get; } = new(StringComparer.Ordinal);
+
+        /// <summary>Titles whose read should report a binary (non-text) document.</summary>
+        public HashSet<string> Binary { get; } = new(StringComparer.Ordinal);
+
+        public Task<IReadOnlyList<DocumentSummary>> ListAsync(CancellationToken cancellationToken = default)
+        {
+            IReadOnlyList<DocumentSummary> docs = Texts.Keys.Concat(Binary)
+                .Distinct(StringComparer.Ordinal)
+                .Select(name => new DocumentSummary
+                {
+                    Id = name,
+                    Title = name,
+                    Mime = "text/plain",
+                    SizeBytes = Texts.TryGetValue(name, out var t) ? t.Length : 0,
+                })
+                .ToList();
+            return Task.FromResult(docs);
+        }
+
+        public Task<DocumentContent?> ReadAsync(
+            string docRef, int offset, int maxChars, CancellationToken cancellationToken = default)
+        {
+            if (Binary.Contains(docRef))
+            {
+                return Task.FromResult<DocumentContent?>(new DocumentContent
+                {
+                    Title = docRef, IsText = false, Content = string.Empty,
+                    TotalChars = 0, Offset = 0, HasMore = false,
+                });
+            }
+
+            if (!Texts.TryGetValue(docRef, out var text))
+            {
+                return Task.FromResult<DocumentContent?>(null);
+            }
+
+            var from = Math.Clamp(offset, 0, text.Length);
+            var take = Math.Clamp(maxChars, 0, text.Length - from);
+            return Task.FromResult<DocumentContent?>(new DocumentContent
+            {
+                Title = docRef,
+                IsText = true,
+                Content = text.Substring(from, take),
+                TotalChars = text.Length,
+                Offset = from,
+                HasMore = from + take < text.Length,
+            });
         }
     }
 }

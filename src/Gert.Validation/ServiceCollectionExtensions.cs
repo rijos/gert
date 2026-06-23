@@ -57,6 +57,7 @@ public static class ServiceCollectionExtensions
         // IValidator<TArgs> - the base proves args fail-closed before CallAsync, and
         // FailClosedMetaTest's tool-args check keeps this list complete.
         AddValidator<RagArgs, RagArgsValidator>(services);
+        AddValidator<ReadDocumentArgs, ReadDocumentArgsValidator>(services);
         AddValidator<WebSearchArgs, WebSearchArgsValidator>(services);
         AddValidator<WebFetchArgs, WebFetchArgsValidator>(services);
         AddValidator<PythonSandboxArgs, PythonSandboxArgsValidator>(services);

@@ -100,6 +100,8 @@ export interface WireThread extends WireConversation {
 export interface WireAttachment {
   mime_type: string;
   data: string;
+  // Filename for a dropped text-file attachment (null/absent for a pasted image).
+  name?: string | null;
 }
 
 export interface WireCitation {

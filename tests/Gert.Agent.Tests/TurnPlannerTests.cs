@@ -344,6 +344,84 @@ public sealed class TurnPlannerTests
     }
 
     [Fact]
+    public async Task Text_file_attachment_is_injected_into_the_prompt_as_a_fenced_block()
+    {
+        SeedConversation();
+        var data = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes("{\"hello\":\"world\"}"));
+        var request = new SendMessageRequest
+        {
+            Content = "pretty format this",
+            Attachments = [new MessageAttachment { MimeType = "application/json", Data = data, Name = "data.json" }],
+        };
+
+        var job = await NewPlanner().PlanAsync(Pid, Conv, Valid(request));
+
+        var tail = job.History[^1];
+        Images(tail).Should().BeEmpty(); // a text file is not a vision part
+        tail.Text.Should().Contain("pretty format this");
+        tail.Text.Should().Contain("data.json");
+        tail.Text.Should().Contain("{\"hello\":\"world\"}");
+    }
+
+    [Fact]
+    public async Task Text_file_attachment_rides_even_a_non_vision_model()
+    {
+        var catalog = Substitute.For<IChatProviderCatalog>();
+        catalog.SupportsTools(Arg.Any<string>()).Returns(true);
+        catalog.SupportsVision(Arg.Any<string>()).Returns(false);
+
+        var data = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes("col1,col2\n1,2"));
+        var request = new SendMessageRequest
+        {
+            Content = "summarise",
+            Attachments = [new MessageAttachment { MimeType = "text/csv", Data = data, Name = "rows.csv" }],
+        };
+
+        var job = await NewPlanner(catalog: catalog).PlanAsync(Pid, Conv, Valid(request));
+
+        job.History[^1].Text.Should().Contain("rows.csv");
+        job.History[^1].Text.Should().Contain("col1,col2");
+    }
+
+    [Fact]
+    public async Task Oversized_inline_text_attachment_is_refused_with_a_validation_error()
+    {
+        var catalog = Substitute.For<IChatProviderCatalog>();
+        catalog.SupportsTools(Arg.Any<string>()).Returns(true);
+        catalog.SupportsVision(Arg.Any<string>()).Returns(true);
+        catalog.ContextSize(Arg.Any<string>()).Returns(1000); // cap = 1000 * 0.5 = 500 tokens
+
+        // ~4000 base64 chars -> ~750 estimated tokens, over the 500 cap.
+        var big = Convert.ToBase64String(new byte[3000]);
+        var request = new SendMessageRequest
+        {
+            Content = "format",
+            Attachments = [new MessageAttachment { MimeType = "application/json", Data = big, Name = "huge.json" }],
+        };
+
+        var act = () => NewPlanner(catalog: catalog).PlanAsync(Pid, Conv, Valid(request));
+
+        (await act.Should().ThrowAsync<Gert.Validation.ValidationException>())
+            .WithMessage("*Knowledge panel*");
+    }
+
+    [Fact]
+    public async Task Inline_attachment_is_not_gated_when_the_provider_context_is_unknown()
+    {
+        SeedConversation();
+        // Default catalog reports no context -> the gate cannot enforce, so even a large file passes.
+        var big = Convert.ToBase64String(new byte[3000]);
+        var request = new SendMessageRequest
+        {
+            Content = "format",
+            Attachments = [new MessageAttachment { MimeType = "application/json", Data = big, Name = "huge.json" }],
+        };
+
+        var act = () => NewPlanner().PlanAsync(Pid, Conv, Valid(request));
+        await act.Should().NotThrowAsync();
+    }
+
+    [Fact]
     public async Task A_cancelled_turn_does_not_block_new_turns()
     {
         SeedConversation();

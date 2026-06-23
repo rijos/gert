@@ -154,9 +154,10 @@ public sealed class TurnRunnerTests
             _chatProvider, new FixedChatClientFactory(model), _bus,
             loop,
             tools ?? [],
-            // The runner now builds the project RAG resource + sub-agent delegate
-            // itself; the RAG index provider + embedding client are its own deps.
-            _ragProvider, new FakeEmbeddings(),
+            // The runner now builds the project RAG + document resources + sub-agent
+            // delegate itself; the RAG index provider, object store, and embedding client
+            // are its own deps.
+            _ragProvider, new FakeObjectStore(), new FakeEmbeddings(),
             Options.Create(options ?? new TurnOptions()),
             Options.Create(new ToolsOptions()),
             clock ?? TimeProvider.System,

@@ -47,6 +47,20 @@ public sealed class ConfigChatProviderCatalog : IChatProviderCatalog
             })
             .ToList();
 
+        // Every CONFIGURED provider must declare its context window (tokens) - the planner needs it
+        // to bound an inline attachment against the model's context. Fail closed and name the
+        // offenders + the key, like the default-selection check below. (The synthesized zero-config
+        // default is exempt: it has no config entry to carry a Context, and the inline gate simply
+        // skips when the size is unknown.)
+        var missingContext = entries.Where(e => e.Context is null or <= 0).Select(e => e.Id).ToList();
+        if (missingContext.Count > 0)
+        {
+            throw new InvalidOperationException(
+                $"Chat provider(s) {string.Join(", ", missingContext)} are missing a positive "
+                + $"'Context' (context window in tokens). Set {ChatProviderOptions.SectionName}:<slug>:Context "
+                + "for each.");
+        }
+
         if (entries.Count == 0 && defaultProvider?.Synthesize() is { } synthesized)
         {
             entries = [synthesized];
@@ -93,6 +107,9 @@ public sealed class ConfigChatProviderCatalog : IChatProviderCatalog
 
     /// <inheritdoc />
     public bool SupportsVision(string id) => (Get(id) ?? Default())?.SupportsVision ?? true;
+
+    /// <inheritdoc />
+    public int? ContextSize(string id) => (Get(id) ?? Default())?.Context;
 
     /// <summary>
     /// Resolve the provider (its id + Type) for the chat-client factory. The

@@ -206,7 +206,7 @@ under `Parameters`:**
 | `Name` | no | Display name in the picker. Defaults to the slug. |
 | `Type` | no | Selects the chat-client implementation. `"openai"` (default) is the only one implemented - an OpenAI-compatible / vLLM endpoint; the schema is open for others (`"anthropic"`, ...). |
 | `Capabilities` | no | Capability tokens, shown as badges. `"tools"` is **load-bearing**: it gates tool calling. **Unset (null) means permissive** - the provider is assumed tool-capable; an explicit list *without* `"tools"` (e.g. `["text only"]`) disables tools for that provider. Other tokens (`"vision"`, ...) are display-only today. |
-| `Context` | no | Context window in tokens - the "128K ctx" badge. vLLM reports it as `max_model_len` on `GET /v1/models`. Unset hides the badge. |
+| `Context` | **yes** | Context window in tokens - the "128K ctx" badge, **and** the budget the server gates an inline message attachment against (`Gert:Turn:MaxInlineAttachmentContextFraction`). vLLM reports it as `max_model_len` on `GET /v1/models`. **A configured provider with no positive `Context` fails closed at startup** (naming the slug); the zero-config synthesized default is exempt. |
 | `Fast` | no | Display-only "- fast" marker. |
 | `Parameters` | yes | The `Type`-specific connection + sampling + resilience bag - see below. (The picker's `endpoint` hint is taken from `Parameters.BaseUrl`.) |
 
@@ -447,6 +447,7 @@ concrete defaults and an operator retunes them under
 | `AskUserTimeout` | `00:05:00` | How long one `ask_user` question waits for the user before the tool returns its graceful "user did not respond" result. The effective wait is min(this, remaining turn budget - 15 s grace), so it can never outlive `MaxTurnDuration`. |
 | `DeltaFlushInterval` | `00:00:00.150` | Delta coalescing window - buffered model chunks emit as one event per window. `0` disables coalescing. |
 | `DeltaFlushMaxChars` | `512` | Size backstop for the coalescing window. |
+| `MaxInlineAttachmentContextFraction` | `0.5` | Largest share of the selected provider's `Context` (tokens) an inline **text-file** attachment (dropped into the composer) may consume; the rest is reserved for the prompt, history, and reply. A drop estimated over this is refused at send with a 400 steering the user to the Knowledge panel (RAG). Only enforced when the provider declares a `Context`. |
 
 `MaxTokensPerRound` is the single per-round `max_tokens` for every turn - sampling is no
 longer a user/conversation cascade (it rides the selected provider -

@@ -33,7 +33,7 @@ public sealed class ToolsApiTests : IClassFixture<GertApiFactory>
     // a blanket grant (gert_tools = "*") entitles exactly this set. This is the catalog pin;
     // the id-only ToolRegistry is now derived from the registered ITools, not a hand-list.
     private static readonly string[] AllBuiltInToolIds =
-        ["rag", "search", "sandbox", "todo", "clock", "make_artifact", "edit_artifact", "read_artifact", "list_artifacts", "ask_user", "fetch", "sub_agent"];
+        ["rag", "read_document", "search", "sandbox", "todo", "clock", "make_artifact", "edit_artifact", "read_artifact", "list_artifacts", "ask_user", "fetch", "sub_agent"];
 
     private static readonly JsonSerializerOptions Json = GertJsonOptions.Default;
 

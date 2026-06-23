@@ -40,10 +40,12 @@ export interface Citation {
   locator?: string | null;
 }
 
-// A pasted image attachment (base64), user rows only.
+// An inline attachment (base64), user rows only: a pasted/dropped image, or a dropped
+// text file (then `name` carries the filename and the mime is non-image).
 export interface Attachment {
   mime_type: string;
   data: string;
+  name?: string | null;
 }
 
 // van-x reactive object pushed onto `messages`; reactiveMessage below builds it from a wire row.

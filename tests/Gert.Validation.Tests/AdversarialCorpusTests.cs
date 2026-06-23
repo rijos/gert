@@ -46,15 +46,15 @@ public sealed class AdversarialCorpusTests
     /// <summary>
     /// Filenames: the upload name is display metadata, not a storage
     /// path (it is base64'd into <c>documents.filename</c>; the blob lives under a fully
-    /// server-generated <c>files/{doc-id}</c> key, no extension), so the gate is extension
-    /// allowlist + length + non-empty only - it does NOT sanitize the name for traversal/bidi.
-    /// The contract here: validation never crashes, and a name is rejected exactly
-    /// when its extension is disallowed, it is empty, or it is overlong. Path-shaped
-    /// or bidi-laden names with an allowed extension are preserved.
+    /// server-generated <c>files/{doc-id}</c> key, no extension), so the gate is length +
+    /// non-empty only - Gert accepts any file type (type safety is enforced at extraction),
+    /// and this gate does NOT sanitize the name for traversal/bidi. The contract here:
+    /// validation never crashes, and a name is rejected exactly when it is empty or overlong.
+    /// Path-shaped or bidi-laden names of any extension are preserved.
     /// </summary>
     [Theory]
     [MemberData(nameof(All))]
-    public void Upload_filename_gate_is_extension_length_and_nonempty_only(string payload)
+    public void Upload_filename_gate_is_length_and_nonempty_only(string payload)
     {
         var v = _sp.Validator<DocumentUpload>();
         var upload = new DocumentUpload
@@ -67,12 +67,10 @@ public sealed class AdversarialCorpusTests
 
         var result = v.Validate(upload); // never throws
 
-        var ext = ValidationRules.ExtensionOf(payload);
-        var extAllowed = UploadConstraints.AllowedExtensions.Contains(ext);
         var lengthOk = !string.IsNullOrEmpty(payload)
                        && payload.Length <= Gert.Validation.Validators.DocumentUploadValidator.MaxFilenameLength;
 
-        if (!extAllowed || !lengthOk)
+        if (!lengthOk)
         {
             Assert.False(result.IsValid, $"filename should have been rejected: {Describe(payload)}");
         }

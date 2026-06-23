@@ -5,12 +5,15 @@ using Gert.Validation.Rules;
 namespace Gert.Validation.Validators;
 
 /// <summary>
-/// Validates a <see cref="DocumentUpload"/>: extension allowlist + size + length +
-/// non-empty + content-type only. The filename is display metadata, not a storage path -
-/// the blob lands under a server-generated <c>files/{doc-id}</c> key (no extension) and
-/// the original name is base64'd into <c>documents.filename</c>. Because the filename
-/// never reaches a storage path, this gate does <b>not</b> sanitize it for path traversal:
-/// exotic names are preserved and display safety is the SPA's job (text node + bidi-isolate).
+/// Validates a <see cref="DocumentUpload"/>: filename present + length, content-type present,
+/// size, non-empty - <b>no type allowlist</b>. Gert accepts any file; type safety is enforced
+/// where the bytes are read (the plain-text extractor UTF-8-decodes and fails non-text; binary
+/// document formats parse only in the isolated F7 subprocess), not guessed from a filename here.
+/// The filename is display metadata, not a storage path - the blob lands under a server-generated
+/// <c>files/{doc-id}</c> key (no extension) and the original name is base64'd into
+/// <c>documents.filename</c>. Because the filename never reaches a storage path, this gate does
+/// <b>not</b> sanitize it for path traversal: exotic names are preserved and display safety is the
+/// SPA's job (text node + bidi-isolate).
 /// </summary>
 public sealed class DocumentUploadValidator : AbstractValidator<DocumentUpload>
 {
@@ -25,21 +28,12 @@ public sealed class DocumentUploadValidator : AbstractValidator<DocumentUpload>
                 .WithErrorCode("upload.filename_missing")
             .Must(f => f is null || f.Length <= MaxFilenameLength)
                 .WithMessage($"Filename must be at most {MaxFilenameLength} characters.")
-                .WithErrorCode("upload.filename_too_long")
-            .Must(f => UploadConstraints.AllowedExtensions.Contains(ValidationRules.ExtensionOf(f)))
-                .WithMessage("File type not allowed (pdf, docx, md, txt only).")
-                .WithErrorCode("upload.extension")
-                // Only meaningful once a non-empty name exists; gate ONLY this rule.
-                .When(u => !string.IsNullOrEmpty(u.Filename), ApplyConditionTo.CurrentValidator);
+                .WithErrorCode("upload.filename_too_long");
 
         RuleFor(u => u.Mime)
             .NotEmpty()
                 .WithMessage("Content-type is required.")
-                .WithErrorCode("upload.mime_missing")
-            .Must(m => UploadConstraints.AllowedMimeTypes.Contains(m.Trim().ToLowerInvariant()))
-                .WithMessage("Content-type not allowed.")
-                .WithErrorCode("upload.mime")
-                .When(u => !string.IsNullOrWhiteSpace(u.Mime), ApplyConditionTo.CurrentValidator);
+                .WithErrorCode("upload.mime_missing");
 
         // Size: when the host knows it up front, reject empty and over-cap before reading.
         RuleFor(u => u.SizeBytes!.Value)

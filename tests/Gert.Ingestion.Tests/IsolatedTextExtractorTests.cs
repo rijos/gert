@@ -8,7 +8,7 @@ using Xunit;
 namespace Gert.Ingestion.Tests;
 
 /// <summary>
-/// Unit tests for the isolated PDF/DOCX extractor's pure surfaces (security F7): the
+/// Unit tests for the isolated PDF/DOCX/XLSX extractor's pure surfaces (security F7): the
 /// command/arg builder caps, the XML-hardening flags, the zip-bomb guard, and the
 /// helper-output -> graceful-result mapping. No subprocess.
 /// </summary>
@@ -17,9 +17,11 @@ public sealed class IsolatedTextExtractorTests
     [Theory]
     [InlineData("pdf", true)]
     [InlineData("docx", true)]
+    [InlineData("xlsx", true)]
     [InlineData("txt", false)]
     [InlineData("md", false)]
-    public void CanExtract_PdfDocxOnly(string ext, bool expected)
+    [InlineData("json", false)]
+    public void CanExtract_BinaryDocumentFormatsOnly(string ext, bool expected)
     {
         var extractor = new IsolatedTextExtractor(
             Microsoft.Extensions.Options.Options.Create(new ExtractorOptions()),

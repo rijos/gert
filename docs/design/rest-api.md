@@ -236,7 +236,7 @@ Scoped to a project - a document belongs to exactly one project's `rag.db`.
 | Method | Path | Notes |
 |--------|------|-------|
 | `GET` | `/api/projects/{pid}/documents` | List for the doclist: name, size, chunk_count, status, error. |
-| `POST` | `/api/projects/{pid}/documents` | `multipart/form-data` upload. Stores the file, inserts `documents` row with `status='processing'`, enqueues ingestion, returns immediately. |
+| `POST` | `/api/projects/{pid}/documents` | `multipart/form-data` upload. **Any file type is accepted** (no extension/MIME allowlist - gate is non-empty + size + filename length); text-ness is decided at extraction (see [chat-and-tools](chat-and-tools.md#document-ingestion-pipeline)). Stores the file, inserts `documents` row with `status='processing'`, enqueues ingestion, returns immediately. |
 | `GET` | `/api/projects/{pid}/documents/{id}` | **Polled** by the client while processing -> drives `processing -> ready/failed` pills and "embedding 12 / 19 chunks...". Returns `status` and a progress field (e.g. `chunk_count` / chunks embedded). |
 | `DELETE` | `/api/projects/{pid}/documents/{id}` | Deletes chunks + vec rows + fts rows + the original file. |
 | `GET` | `/api/projects/{pid}/documents/events` | *(deferred - see [decisions.md section 6](decisions.md#6-live-ingestion-progress))* SSE stream of ingestion progress; additive future upgrade over polling. |

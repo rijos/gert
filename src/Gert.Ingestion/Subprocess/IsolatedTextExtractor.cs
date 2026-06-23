@@ -7,7 +7,7 @@ using Microsoft.Extensions.Options;
 namespace Gert.Ingestion.Subprocess;
 
 /// <summary>
-/// Real PDF/DOCX <see cref="ITextExtractor"/> (security F7): extraction runs in an
+/// Real PDF/DOCX/XLSX <see cref="ITextExtractor"/> (security F7): extraction runs in an
 /// <b>unprivileged, resource-capped subprocess</b> - dropped privs, no network,
 /// <c>RLIMIT_AS</c>/<c>CPU</c>/<c>NPROC</c> + a wall-clock kill - so a memory-corruption
 /// or resource-exhaustion bug in PdfPig/OpenXML cannot take down the host. DTD /
@@ -23,8 +23,11 @@ namespace Gert.Ingestion.Subprocess;
 /// </summary>
 public sealed class IsolatedTextExtractor : ITextExtractor
 {
-    private static readonly IReadOnlySet<string> Handled =
-        new HashSet<string>(StringComparer.Ordinal) { "pdf", "docx" };
+    // The binary document formats parsed in the isolated subprocess (the single source of
+    // truth: DocumentFormats.IsolatedExtensions - pdf/docx/xlsx). xlsx is recognised here but
+    // only extracts once the gert-extract helper ships (see RunHelperAsync); until then it
+    // fails the document cleanly, as pdf/docx already do.
+    private static readonly IReadOnlySet<string> Handled = Gert.Model.Documents.DocumentFormats.IsolatedExtensions;
 
     private readonly ExtractorParameters _options;
     private readonly ILogger<IsolatedTextExtractor> _logger;

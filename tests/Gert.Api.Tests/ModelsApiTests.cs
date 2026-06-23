@@ -64,7 +64,7 @@ public sealed class ModelsApiTests : IClassFixture<GertApiFactory>
                 b.UseSetting("Gert:Chat:Providers:echo-only:Name", "Echo Server");
                 b.UseSetting("Gert:Chat:Providers:echo-only:Fast", "true");
                 b.UseSetting("Gert:Chat:Providers:echo-only:Capabilities:0", "text only");
-                b.UseSetting("Gert:Chat:Providers:echo-only:Context", "0");
+                b.UseSetting("Gert:Chat:Providers:echo-only:Context", "8192");
             })
             .CreateClient();
         client.DefaultRequestHeaders.Authorization =

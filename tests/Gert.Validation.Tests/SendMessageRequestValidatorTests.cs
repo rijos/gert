@@ -135,6 +135,47 @@ public sealed class SendMessageRequestValidatorTests
         }).ShouldNotHaveAnyValidationErrors();
     }
 
+    private static MessageAttachment TextFile(string name = "data.json", string mime = "application/json", string data = "aGVsbG8=") =>
+        new() { MimeType = mime, Data = data, Name = name };
+
+    [Fact]
+    public void Named_text_file_attachment_of_any_mime_passes()
+    {
+        // Inline text-file drop ("pretty format this json"): any non-image mime is fine as long
+        // as it carries a filename; text-ness itself is decided at prompt-injection.
+        _validator.TestValidate(new SendMessageRequest { Content = "format this", Attachments = [TextFile()] })
+            .ShouldNotHaveAnyValidationErrors();
+
+        _validator.TestValidate(new SendMessageRequest
+        {
+            Content = string.Empty,
+            Attachments = [TextFile("notes.csv", "text/csv"), TextFile("app.log", "text/plain")],
+        }).ShouldNotHaveAnyValidationErrors();
+    }
+
+    [Fact]
+    public void Non_image_attachment_without_a_filename_fails()
+    {
+        // A non-image attachment must be a named file - an untyped/unnamed blob is rejected.
+        var result = _validator.TestValidate(new SendMessageRequest
+        {
+            Content = "x",
+            Attachments = [new MessageAttachment { MimeType = "application/octet-stream", Data = "aGVsbG8=" }],
+        });
+        Assert.False(result.IsValid);
+    }
+
+    [Fact]
+    public void Text_attachment_with_an_overlong_filename_fails()
+    {
+        var name = new string('a', ValidationRules.AttachmentNameMaxChars + 1) + ".json";
+        _validator.TestValidate(new SendMessageRequest
+        {
+            Content = "x",
+            Attachments = [TextFile(name: name)],
+        }).ShouldHaveValidationErrorFor("Attachments[0].Name");
+    }
+
     [Fact]
     public void Malformed_base64_attachment_fails()
     {

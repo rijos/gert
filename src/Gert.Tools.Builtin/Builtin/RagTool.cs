@@ -51,7 +51,8 @@ public sealed class RagTool : ToolCall<RagArgs, RagResult>
         // section tool specs are a token budget) - keep every description to one or
         // two short sentences that carry only the behavioural contract.
         "Search this project's private documents; returns the most relevant "
-        + "passages with their source and score.";
+        + "passages (excerpts, not whole files) with their source and score. To read or "
+        + "transform an entire file, use read_document.";
 
     /// <inheritdoc />
     public override async Task<ToolCallResult<RagResult>> CallAsync(

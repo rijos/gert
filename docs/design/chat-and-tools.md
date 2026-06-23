@@ -417,6 +417,15 @@ The result becomes the `tool_result` SSE and seeds the citations.
 
 ## Document ingestion pipeline
 
+Gert accepts **any file**. There is no upload-time extension/MIME allowlist - type safety is decided
+where the bytes are read: anything that is not a known **binary document format** (`pdf`/`docx`/`xlsx`,
+the single set `Gert.Model.Documents.DocumentFormats.IsolatedExtensions`) is treated as a candidate
+text file and UTF-8 decoded by the plain-text extractor, which **fails** the document if the bytes are
+not text (a NUL byte, or a decode dominated by U+FFFD). The upload gate keeps only the
+content-agnostic brakes: non-empty, size cap, filename length. (`xlsx` is recognised by the isolated
+extractor but, like `pdf`/`docx`, only extracts once the `gert-extract` helper binary ships; until
+then it fails that document cleanly.)
+
 Upload returns immediately; the heavy work runs in a background worker fed by an in-process queue (`System.Threading.Channels` + a `BackgroundService`).
 
 ```
@@ -427,7 +436,8 @@ POST /api/projects/{pid}/documents
   └─ 202 -> { id, status:"processing" }
 
 IngestionWorker (per job):
-  1. extract text   (PDF -> PdfPig, DOCX -> OpenXML, md/txt -> read)
+  1. extract text   (PDF -> PdfPig, DOCX/XLSX -> OpenXML [isolated]; any other type -> UTF-8 decode,
+                     fail if not text)
   2. if no text     -> status='failed', error='no extractable text'   <- old-scan.pdf
   3. chunk          (token-aware windows w/ overlap; record page/section )
   4. embed          (batch chunks -> vLLM embeddings endpoint)
@@ -437,7 +447,7 @@ IngestionWorker (per job):
 ```
 
 > **Hardened extraction (step 1) - isolated subprocess.** Uploads are untrusted bytes fed to large
-> native/managed parsers (OpenXML: DOCX = a zip of XML; PdfPig), so step 1 runs **out-of-process in
+> native/managed parsers (OpenXML: DOCX/XLSX = a zip of XML; PdfPig), so step 1 runs **out-of-process in
 > an unprivileged, resource-capped helper** - not the worker process. Dropped privileges, no network,
 > read-only access to the one input file, hard `RLIMIT_AS`/`RLIMIT_CPU`/`RLIMIT_NPROC` + a wall-clock
 > timeout, and in-process XML hardening inside it (**DTD/external-entity off** for XXE,
@@ -470,6 +480,47 @@ driver's `ProjectRagResource` is the impl: pre-scoped to the turn's validated `(
 it embeds the query, opens **this** project's `rag.db`, runs the hybrid search, and decodes each
 hit's filename into the display title. Identity is the host's, so a query structurally cannot
 reach another user's or project's documents ([principles](principles.md)).
+
+### Read document (`read_document`)
+
+`search_documents` returns ranked **passages**; it cannot hand the model a whole file. For tasks that
+need the entire document - "turn this JSON into an HTML page", "summarise the whole report" -
+`read_document(doc, offset?, max_chars?)` returns a document's **full** text. It reads the
+**original stored blob** and UTF-8-decodes it (exact bytes - chunk reassembly is lossy: chunks are
+whitespace-tokenised, re-joined, and overlapped), paging a large file through `offset`/`max_chars`
+(the tool caps each read and returns `total_chars` + `has_more` + `next_offset`). An empty or
+unresolved `doc` returns the list of available titles; a binary document points the model back to
+`search_documents`.
+
+**Port, not impl.** Like RAG, the tool owns only schema + shaping; access sits behind the
+`IDocumentResource` port (`host.Resources.Documents.ListAsync()` / `.ReadAsync(docRef, offset,
+maxChars)`, in `Gert.Tools`). The chat driver's `ProjectDocumentResource` is the impl: pre-scoped to
+the turn's `(iss, sub, pid)`, it lists ready documents from `rag.db` and reads the blob via
+`IObjectStore` under `files/{doc-id}` - the tool never sees an identity or a storage key.
+
+**Two ways a file enters a chat - by intent.**
+
+- **Knowledge panel (RAG).** A file added to the project corpus is ingested (extract -> chunk ->
+  embed) and reaches the model as **search passages** (`search_documents`) or, on demand, in full
+  (`read_document`). Persistent, reusable across turns, scales to large corpora; the cost is
+  ingestion latency (processing -> ready) and that a query only surfaces *relevant* slices.
+- **Composer drop (inline).** A file dropped onto the composer rides **in that one message** as its
+  full text - no ingestion, available immediately, persisted on the message row (base64) so it stays
+  visible and **downloadable** afterwards. This is the path for a one-off "pretty-format this json".
+  It is bounded: an inline text file estimated to exceed `Gert:Turn:MaxInlineAttachmentContextFraction`
+  of the provider's context window is refused at send with a 400 steering the user back to the
+  Knowledge panel - which is why each provider's `Context` is **required** (configuration.md section 4).
+  (Images dropped/pasted here remain vision attachments, gated by model capability.)
+
+**The whole-file nudge (RAG path).** An LLM handed RAG passages does **not** reliably notice they are
+partial - it tends to answer from whatever is in context. So the whole-file path is made explicit
+rather than left to inference, in three reinforcing places: `search_documents`'s description says it
+returns *excerpts, not whole files*; `read_document`'s says to use it for
+reformat/translate/rewrite/summarise of an *entire* file; and the runner appends the project's
+ready-document titles to the **tail** of the prompt (not the system prompt - prefix-cache stable,
+mirroring the tool-reminder revival) with the same nudge, whenever `read_document` is offered and the
+project has documents. (Residual risk: a weak model may still answer from excerpts on a whole-file
+task; the nudge minimises it without an always-inject cost.)
 
 ### Web search (SearXNG)
 Server-side `HttpClient` (via `IHttpClientFactory`) to the SearXNG JSON API. Take the top results, optionally fetch + summarize, keep the few that matter (the mockup shows "1 result kept"), and return titles/URLs as web-type citations.

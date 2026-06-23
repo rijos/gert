@@ -40,6 +40,13 @@ public interface IChatProviderCatalog
     /// prompt rather than erroring the turn.
     /// </summary>
     bool SupportsVision(string id);
+
+    /// <summary>
+    /// The context window (tokens) of <paramref name="id"/>, or null when unknown (an empty
+    /// catalog / the synthesized zero-config default). Configured providers must declare it
+    /// (fail-closed at startup); the planner uses it to bound an inline attachment's size.
+    /// </summary>
+    int? ContextSize(string id);
 }
 
 /// <summary>Empty, permissive catalog - the default when no host wires a real one.</summary>
@@ -59,4 +66,7 @@ public sealed class NullChatProviderCatalog : IChatProviderCatalog
 
     /// <inheritdoc />
     public bool SupportsVision(string id) => true;
+
+    /// <inheritdoc />
+    public int? ContextSize(string id) => null;
 }

@@ -196,10 +196,19 @@ sit under `/data/users/` before any delete. This is the admin analog of the `pid
 covered by [configuration section 2.5](configuration.md#25-path-resolution--why-a-request-supplied-project-id-is-still-idor-safe). -> [rest-api](rest-api.md#admin-requires-admin-policy), tested in [testing section 5/section 6](testing.md#validation---the-input-security-boundary).
 
 ### F7 - Upload parsing in an isolated, unprivileged subprocess (XXE / zip-bomb / memory-corruption)
-PDF and DOCX parsers (PdfPig, OpenXML, and their native/managed internals) are a large attack
+PDF, DOCX, and XLSX parsers (PdfPig, OpenXML, and their native/managed internals) are a large attack
 surface fed **raw untrusted bytes** - a memory-corruption or resource-exhaustion bug there cannot be
 fully neutralised in-process, so it must not run *in* the API/worker process. Extraction runs
-out-of-process in a locked-down helper:
+out-of-process in a locked-down helper.
+
+> **Upload posture (no type allowlist).** Gert accepts any file: the upload gate no longer
+> allowlists by extension/MIME (only non-empty, size cap, and filename length remain). The
+> bounding invariant is that **no in-process binary parser ever runs on an upload** - any type
+> that is not a known binary document format (`pdf`/`docx`/`xlsx`) is only UTF-8-**decoded**
+> in-process (cheap, safe; rejected as "not a text file" if the bytes are not text), and those
+> three binary formats are parsed **only** inside this isolated helper. So widening accepted types
+> does not widen the in-process attack surface. (`xlsx` is wired through this helper but, like
+> `pdf`/`docx`, only extracts once the `gert-extract` helper binary ships.)
 
 - **Separate, short-lived process** per document - not the API/ingestion-worker process.
 - **Dropped privileges:** unprivileged uid (`nobody`-class), no ambient capabilities, empty working
@@ -208,7 +217,7 @@ out-of-process in a locked-down helper:
 - **Hard resource caps:** address space (`RLIMIT_AS`), CPU time (`RLIMIT_CPU`), output/file size,
   and no fork (`RLIMIT_NPROC`), plus a **wall-clock timeout that kills the process**.
 - **In-process XML hardening still applies inside it:** DTD + external-entity resolution **off**
-  (XXE), and **decompressed-size + zip-entry caps** for the DOCX zip (bombs).
+  (XXE), and **decompressed-size + zip-entry caps** for the DOCX/XLSX zip (bombs).
 
 A crash, OOM, or timeout fails **that document** (`status='failed'`), never the host. On Linux this
 can reuse the same **gVisor (`runsc`)** isolation as the sandbox tool, or be a plain

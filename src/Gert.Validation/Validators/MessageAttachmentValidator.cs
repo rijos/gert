@@ -5,19 +5,34 @@ using Gert.Validation.Rules;
 namespace Gert.Validation.Validators;
 
 /// <summary>
-/// Validates one inline image attachment (testing.md section 5: untrusted bytes at the
-/// boundary): MIME from the image allowlist, base64 well-formed (checked without
-/// decoding) and bounded - the per-image DoS brake behind
-/// <see cref="ValidationRules.AttachmentDataMaxChars"/>.
+/// Validates one inline attachment (testing.md section 5: untrusted bytes at the boundary). Two
+/// kinds, by MIME (<see cref="AttachmentKinds.IsImage"/>):
+/// <list type="bullet">
+///   <item><b>Image</b> - MIME from the image allowlist (<see cref="ValidationRules.IsAllowedImageMime"/>).</item>
+///   <item><b>Text file</b> - any non-image MIME, but it <b>must carry a filename</b> (so an arbitrary
+///   binary cannot pose as an untyped attachment); whether the bytes are really text is decided at
+///   prompt-injection (the server-side text gate), not here.</item>
+/// </list>
+/// In both cases the base64 <see cref="MessageAttachment.Data"/> is well-formed and bounded by
+/// <see cref="ValidationRules.AttachmentDataMaxChars"/> (the per-attachment DoS brake).
 /// </summary>
 public sealed class MessageAttachmentValidator : AbstractValidator<MessageAttachment>
 {
     public MessageAttachmentValidator()
     {
-        RuleFor(a => a.MimeType)
-            .Must(ValidationRules.IsAllowedImageMime)
-            .WithMessage("Attachment MIME type must be image/png, image/jpeg, image/webp or image/gif.")
-            .WithErrorCode("attachment.mime.invalid");
+        // Kind gate: an image must use an allowed image MIME; anything else must be a named file.
+        RuleFor(a => a)
+            .Must(a => ValidationRules.IsAllowedImageMime(a.MimeType) || !string.IsNullOrEmpty(a.Name))
+            .WithMessage("Attachment must be an allowed image (image/png, image/jpeg, image/webp, image/gif) "
+                + "or a named text file.")
+            .WithErrorCode("attachment.kind");
+
+        // A text-file attachment's filename is metadata, not a path (length brake only).
+        RuleFor(a => a.Name!)
+            .Must(n => n.Length <= ValidationRules.AttachmentNameMaxChars)
+            .WithMessage($"Attachment filename must be at most {ValidationRules.AttachmentNameMaxChars} characters.")
+            .WithErrorCode("attachment.name.too_long")
+            .When(a => !string.IsNullOrEmpty(a.Name));
 
         RuleFor(a => a.Data)
             .Must(d => d is { Length: > 0 and <= ValidationRules.AttachmentDataMaxChars })

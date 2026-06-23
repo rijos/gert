@@ -10,12 +10,12 @@ using Xunit;
 namespace Gert.Validation.Tests;
 
 /// <summary>
-/// Tests for the relaxed <see cref="DocumentUpload"/> gate: the
-/// filename is display metadata, base64-stored and render-sanitized by the SPA - it
-/// is <b>not</b> a storage path. So the gate is extension allowlist + size + length
-/// + non-empty + content-type only; exotic filenames (separators, <c>..</c>, bidi,
-/// control chars) are <b>preserved</b> as long as the extension is allowed, while a
-/// disallowed extension / empty / oversized upload still fails.
+/// Tests for the relaxed <see cref="DocumentUpload"/> gate: Gert accepts <b>any</b> file type
+/// (type safety is enforced at extraction, not here), and the filename is display metadata -
+/// base64-stored, render-sanitized by the SPA, never a storage path. So the gate is size +
+/// length + non-empty + content-type-present only; exotic filenames (separators, <c>..</c>,
+/// bidi, control chars) and any extension are <b>preserved</b>, while an empty / oversized
+/// upload or a missing filename/content-type still fails.
 /// </summary>
 public sealed class DocumentUploadValidatorTests
 {
@@ -38,34 +38,42 @@ public sealed class DocumentUploadValidatorTests
     public void Valid_pdf_upload_passes() =>
         _validator.TestValidate(Upload()).ShouldNotHaveAnyValidationErrors();
 
+    // Gert accepts any file type: every extension (and no extension) passes the gate.
+    // The formerly-rejected exe/js/noext are now legitimate uploads; text-ness is decided
+    // at extraction, not from the filename.
     [Theory]
     [InlineData("a.pdf")]
     [InlineData("a.docx")]
+    [InlineData("a.xlsx")]
     [InlineData("a.md")]
     [InlineData("a.txt")]
-    public void Allowed_extensions_pass(string filename) =>
+    [InlineData("data.json")]
+    [InlineData("notes.csv")]
+    [InlineData("script.js")]
+    [InlineData("config.yaml")]
+    [InlineData("noext")]
+    public void Any_extension_passes(string filename) =>
         _validator.TestValidate(Upload(filename: filename, mime: "text/plain"))
             .ShouldNotHaveValidationErrorFor(u => u.Filename);
 
-    // The decision: the upload name is metadata, not a path. Exotic names are PRESERVED -
-    // as long as the extension is allowed. (Path traversal is impossible by construction:
-    // the blob is stored under a fully server-generated files/{doc-id} key, no extension,
-    // never this name.)
+    // The decision: the upload name is metadata, not a path. Exotic names are PRESERVED.
+    // (Path traversal is impossible by construction: the blob is stored under a fully
+    // server-generated files/{doc-id} key, no extension, never this name.)
     [Theory]
     [InlineData("../etc/passwd.pdf")]
     [InlineData("foo/bar.pdf")]
     [InlineData("foo\\bar.pdf")]
     [InlineData("..weird...name.txt")]
     [InlineData("C:\\Windows\\system32\\evil.txt")]
-    public void Exotic_filenames_with_an_allowed_extension_are_preserved(string filename) =>
+    [InlineData("../etc/passwd")]
+    public void Exotic_filenames_are_preserved(string filename) =>
         _validator.TestValidate(Upload(filename: filename, mime: "text/plain"))
             .ShouldNotHaveValidationErrorFor(u => u.Filename);
 
     [Fact]
-    public void Bidi_and_control_char_filenames_are_preserved_when_the_extension_is_allowed()
+    public void Bidi_and_control_char_filenames_are_preserved()
     {
-        // RTL-override spoof and an embedded control char: the old gate rejected
-        // these; the new gate preserves them (display safety is the SPA's job).
+        // RTL-override spoof and an embedded control char: preserved (display safety is the SPA's job).
         var rtlSpoof = "apple" + (char)0x202E + "txt.exe.pdf";
         var withControl = "note" + (char)0x0007 + "bell.md";
 
@@ -74,15 +82,6 @@ public sealed class DocumentUploadValidatorTests
         _validator.TestValidate(Upload(filename: withControl, mime: "text/plain"))
             .ShouldNotHaveValidationErrorFor(u => u.Filename);
     }
-
-    [Theory]
-    [InlineData("doc.exe")]
-    [InlineData("doc.js")]
-    [InlineData("noext")]
-    [InlineData("../etc/passwd")] // disallowed because no allowed extension, not because of '..'
-    public void Disallowed_extension_fails(string filename) =>
-        _validator.TestValidate(Upload(filename: filename))
-            .ShouldHaveValidationErrorFor(u => u.Filename);
 
     [Fact]
     public void Empty_filename_fails() =>
@@ -97,9 +96,18 @@ public sealed class DocumentUploadValidatorTests
             .ShouldHaveValidationErrorFor(u => u.Filename);
     }
 
+    [Theory]
+    [InlineData("application/json")]
+    [InlineData("text/csv")]
+    [InlineData("application/x-msdownload")]
+    [InlineData("application/octet-stream")]
+    public void Any_content_type_passes(string mime) =>
+        _validator.TestValidate(Upload(mime: mime))
+            .ShouldNotHaveValidationErrorFor(u => u.Mime);
+
     [Fact]
-    public void Disallowed_mime_fails() =>
-        _validator.TestValidate(Upload(mime: "application/x-msdownload"))
+    public void Missing_content_type_fails() =>
+        _validator.TestValidate(Upload(mime: string.Empty))
             .ShouldHaveValidationErrorFor(u => u.Mime);
 
     [Fact]

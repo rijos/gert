@@ -11,7 +11,9 @@ using Gert.Model.Json;
 using Gert.Rag;
 using Gert.Service.Chat;
 using Gert.Service.Chat.Bus;
+using Gert.Storage;
 using Gert.Tools;
+using Gert.Tools.Resources;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -55,7 +57,7 @@ namespace Gert.Agent;
 public sealed class TurnRunner : ITurnRunner
 {
     /// <summary>Read-only built-ins a sub-agent may use (never itself - delegation cannot recurse).</summary>
-    private static readonly string[] DelegableToolIds = ["rag", "search", "fetch", "clock"];
+    private static readonly string[] DelegableToolIds = ["rag", "read_document", "search", "fetch", "clock"];
 
     private readonly IChatDatabaseProvider _databases;
     private readonly IChatClientFactory _clients;
@@ -63,6 +65,7 @@ public sealed class TurnRunner : ITurnRunner
     private readonly IAgentLoop _loop;
     private readonly IReadOnlyList<ITool> _tools;
     private readonly IRagIndexProvider _ragProvider;
+    private readonly IObjectStore _objects;
     private readonly IEmbeddingGenerator<string, Embedding<float>> _embeddings;
     private readonly TurnOptions _options;
     private readonly ToolsOptions _toolsOptions;
@@ -78,6 +81,7 @@ public sealed class TurnRunner : ITurnRunner
         IAgentLoop loop,
         IEnumerable<ITool> tools,
         IRagIndexProvider ragProvider,
+        IObjectStore objects,
         IEmbeddingGenerator<string, Embedding<float>> embeddings,
         IOptions<TurnOptions> options,
         IOptions<ToolsOptions> toolsOptions,
@@ -93,6 +97,7 @@ public sealed class TurnRunner : ITurnRunner
         ArgumentNullException.ThrowIfNull(tools);
         _tools = tools.ToList();
         _ragProvider = ragProvider ?? throw new ArgumentNullException(nameof(ragProvider));
+        _objects = objects ?? throw new ArgumentNullException(nameof(objects));
         _embeddings = embeddings ?? throw new ArgumentNullException(nameof(embeddings));
         _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
         _toolsOptions = toolsOptions?.Value ?? throw new ArgumentNullException(nameof(toolsOptions));
@@ -232,6 +237,18 @@ public sealed class TurnRunner : ITurnRunner
         Task Emit(ChatEvent ev, CancellationToken ct) => EmitAsync(repo, topic, ev, ct);
         var objects = new ChatObjectResource(repo, job.ConversationId, _clock);
         var rag = new ProjectRagResource(_ragProvider, _embeddings, job.Iss, job.Sub, job.Pid);
+        var documents = new ProjectDocumentResource(_ragProvider, _objects, job.Iss, job.Sub, job.Pid);
+
+        // Document discovery: when read_document is offered and the project has ready documents,
+        // append their titles to the tail of the prompt so the model knows what it can read in
+        // full (and can name one exactly). At the TAIL (not the system prompt) to preserve the
+        // vLLM prefix cache, mirroring the planner's tool-reminder revival. Best-effort: a read
+        // failure must not fail the turn.
+        if (job.ToolIds.Contains("read_document", StringComparer.Ordinal))
+        {
+            await AppendDocumentsReminderAsync(messages, documents, token).ConfigureAwait(false);
+        }
+
         var ui = new ChatToolUi(
             _questions,
             Emit,
@@ -252,7 +269,7 @@ public sealed class TurnRunner : ITurnRunner
             .ToList();
         var delegableIds = delegableTools.Select(t => t.Id).ToHashSet(StringComparer.Ordinal);
         var nestedHost = new ChatToolHost(
-            new NotSupportedObjectResource(), rag, ui: null, new NoOpToolDelegate(), deadline);
+            new NotSupportedObjectResource(), rag, documents, ui: null, new NoOpToolDelegate(), deadline);
         var subAgent = new ChatToolDelegate(
             _loop,
             _clients.ForProvider(job.ModelId),
@@ -263,7 +280,7 @@ public sealed class TurnRunner : ITurnRunner
             _options.MaxTokensPerRound > 0 ? _options.MaxTokensPerRound : null,
             _toolsOptions.PerTool);
 
-        var host = new ChatToolHost(objects, rag, ui, subAgent, deadline);
+        var host = new ChatToolHost(objects, rag, documents, ui, subAgent, deadline);
 
         // The per-run tool view: all tools, the advertised specs, the plan-time entitlement
         // snapshot, and the operator's per-tool bound overrides. Effective bounds are computed once
@@ -450,6 +467,51 @@ public sealed class TurnRunner : ITurnRunner
             DurationMs = durationMs,
             ContextTokens = contextTokens,
         }, token).ConfigureAwait(false);
+    }
+
+    /// <summary>Cap on the document titles listed in the discovery reminder (a prompt-budget brake).</summary>
+    private const int MaxReminderDocuments = 50;
+
+    /// <summary>
+    /// Append the project's ready-document titles to the tail user message so the model knows what
+    /// <c>read_document</c> can read. Tail-only (prefix-cache safe), best-effort: any failure leaves
+    /// the prompt untouched rather than failing the turn.
+    /// </summary>
+    private async Task AppendDocumentsReminderAsync(
+        List<ChatMessage> messages,
+        IDocumentResource documents,
+        CancellationToken token)
+    {
+        try
+        {
+            if (messages.Count == 0)
+            {
+                return;
+            }
+
+            var docs = await documents.ListAsync(token).ConfigureAwait(false);
+            if (docs.Count == 0)
+            {
+                return;
+            }
+
+            var titles = docs.Take(MaxReminderDocuments).Select(d => d.Title);
+            var list = string.Join(", ", titles);
+            var overflow = docs.Count > MaxReminderDocuments ? $", and {docs.Count - MaxReminderDocuments} more" : string.Empty;
+            var reminder =
+                $"Documents in this project: {list}{overflow}. "
+                + "To reformat, translate, rewrite, or summarise an ENTIRE file, read it in full with "
+                + "read_document (search_documents returns only excerpts, not the whole file).";
+
+            var last = messages[^1];
+            var contents = new List<AIContent> { new TextContent(last.Text + "\n\n" + reminder) };
+            contents.AddRange(last.Contents.Where(c => c is not TextContent));
+            messages[^1] = new ChatMessage(last.Role, contents);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogDebug(ex, "document discovery reminder skipped");
+        }
     }
 
     /// <summary>

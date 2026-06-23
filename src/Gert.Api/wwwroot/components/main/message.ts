@@ -11,6 +11,7 @@ import { component } from "../../lib/component.js";
 import { renderMarkdown } from "../../lib/markdown.js";
 import { attachLinkConfirm } from "../../lib/markdown-links.js";
 import { copyText } from "../../lib/clipboard.js";
+import { t } from "../../lib/i18n.js";
 import { Icon } from "../../icons/icons.js";
 import { Citation } from "./citation.js";
 import { Activity } from "./activity.js";
@@ -21,7 +22,7 @@ import { MessageActions } from "./message-actions.js";
 import type { Citation as CitationRow, Message as MessageRow } from "../../state/chat.js";
 import type { Card } from "./tool-card.helpers.js";
 
-const { div, span, button, img } = van.tags;
+const { div, span, button, img, a } = van.tags;
 
 const Caret = () => span({ class: "caret" });
 
@@ -164,6 +165,28 @@ export const Message = component({
       border: 1px solid var(--line);
       cursor: zoom-in;
       display: block;
+    }
+    /* a dropped text file: a download chip carrying the persisted bytes (download attribute) */
+    .msg.user .att-file {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      max-width: 280px;
+      padding: 7px 11px;
+      border-radius: 10px;
+      border: 1px solid var(--line);
+      background: var(--surface);
+      color: var(--text);
+      text-decoration: none;
+      font-size: var(--fs-sm);
+    }
+    .msg.user .att-file span {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .msg.user .att-file:hover {
+      border-color: var(--coral-line);
     }
     .msg.bot .body {
       font-size: var(--fs-base);
@@ -371,31 +394,44 @@ export const Message = component({
     if (!isBot) {
       return div({ class: "msg user" },
         div({ class: "body" },
-          // pasted images (our own data URLs, never model output) above the text
+          // inline attachments (our own data URLs, never model output) above the text:
+          // an image renders as a zoomable thumbnail; a dropped text file renders as a
+          // download chip (the full bytes persisted on the row make it downloadable after reload).
           () =>
             m.attachments?.length
               ? div(
                   { class: "att-grid" },
                   ...m.attachments.map((att) =>
-                    img({
-                      class: "att-img",
-                      src: `data:${att.mime_type};base64,${att.data}`,
-                      alt: "attached image",
-                      // full-size view: blob URL in a new tab (a data: URL
-                      // can't be window.open'd directly). create -> use ->
-                      // revoke (section 11): the timeout outlives the new tab's load,
-                      // and revoking only invalidates the URL, not the
-                      // already-loaded document.
-                      onclick: () =>
-                        fetch(`data:${att.mime_type};base64,${att.data}`)
-                          .then((r) => r.blob())
-                          .then((b) => {
-                            const url = URL.createObjectURL(b);
-                            window.open(url, "_blank");
-                            setTimeout(() => URL.revokeObjectURL(url), 30_000);
-                          })
-                          .catch(() => {}),
-                    }),
+                    att.mime_type.startsWith("image/")
+                      ? img({
+                          class: "att-img",
+                          src: `data:${att.mime_type};base64,${att.data}`,
+                          alt: "attached image",
+                          // full-size view: blob URL in a new tab (a data: URL
+                          // can't be window.open'd directly). create -> use ->
+                          // revoke (section 11): the timeout outlives the new tab's load,
+                          // and revoking only invalidates the URL, not the
+                          // already-loaded document.
+                          onclick: () =>
+                            fetch(`data:${att.mime_type};base64,${att.data}`)
+                              .then((r) => r.blob())
+                              .then((b) => {
+                                const url = URL.createObjectURL(b);
+                                window.open(url, "_blank");
+                                setTimeout(() => URL.revokeObjectURL(url), 30_000);
+                              })
+                              .catch(() => {}),
+                        })
+                      : a(
+                          {
+                            class: "att-file",
+                            href: `data:${att.mime_type};base64,${att.data}`,
+                            download: att.name || "file",
+                            title: t("Download {name}").replace("{name}", att.name || "file"),
+                          },
+                          Icon("download", { size: 14, strokeWidth: 2 }),
+                          span(att.name || t("file")),
+                        ),
                   ),
                 )
               : div(),

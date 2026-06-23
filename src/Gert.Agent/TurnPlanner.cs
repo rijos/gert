@@ -175,6 +175,13 @@ public sealed class TurnPlanner : ITurnPlanner
             CreatedAt = now,
         };
 
+        // Bound an inline TEXT-file attachment against the model's context window: a file too big
+        // to fit (leaving room for the prompt + reply) is refused here with a clean 400 that steers
+        // the user to the Knowledge panel (RAG) instead - fail-closed, before any row is persisted.
+        // Images are excluded (their own count/size caps apply); a provider with an unknown context
+        // (the synthesized zero-config default) is not gated.
+        EnsureInlineAttachmentsFit(dto.Attachments, assistantMessage.ModelId!);
+
         if (!await repo.TryInsertTurnMessagesAsync(userMessage, assistantMessage, cancellationToken)
                 .ConfigureAwait(false))
         {
@@ -439,9 +446,12 @@ public sealed class TurnPlanner : ITurnPlanner
         var role = ToChatRole(m.Role);
         var content = m.Content ?? string.Empty;
 
-        // User vision input: a text part (when present) followed by one image part per attachment;
-        // the adapter renders each DataContent as an OpenAI image_url base64 data URL.
-        if (m.Role == MessageRole.User && includeImages && m.Attachments is { Count: > 0 } attachments)
+        // User attachments: the text part (when present), then one part per attachment. An image
+        // becomes a vision DataContent (only for vision-capable models; otherwise dropped). A
+        // text-file attachment is decoded and injected as a fenced block - no vision needed, so it
+        // rides regardless of model capability; non-text bytes are skipped (the model just doesn't
+        // see them). The adapter renders each DataContent as an OpenAI image_url base64 data URL.
+        if (m.Role == MessageRole.User && m.Attachments is { Count: > 0 } attachments)
         {
             var parts = new List<AIContent>();
             if (!string.IsNullOrEmpty(content))
@@ -451,7 +461,30 @@ public sealed class TurnPlanner : ITurnPlanner
 
             foreach (var attachment in attachments)
             {
-                parts.Add(new DataContent(Convert.FromBase64String(attachment.Data), attachment.MimeType));
+                if (AttachmentKinds.IsImage(attachment.MimeType))
+                {
+                    if (includeImages)
+                    {
+                        parts.Add(new DataContent(Convert.FromBase64String(attachment.Data), attachment.MimeType));
+                    }
+                }
+                else if (Gert.Service.Ingestion.TextContent.TryDecode(
+                    Convert.FromBase64String(attachment.Data), out var fileText))
+                {
+                    parts.Add(new TextContent(FormatFileAttachment(attachment.Name, fileText)));
+                }
+            }
+
+            // Collapse back to a plain string when nothing structured remains (e.g. a non-vision
+            // model with only image attachments, or all attachments unreadable).
+            if (parts.Count == 0)
+            {
+                return new ChatMessage(role, content);
+            }
+
+            if (parts is [TextContent single])
+            {
+                return new ChatMessage(role, single.Text);
             }
 
             return new ChatMessage(role, parts);
@@ -464,6 +497,60 @@ public sealed class TurnPlanner : ITurnPlanner
 
         return new ChatMessage(role, content);
     }
+
+    /// <summary>
+    /// Render a text-file attachment as a fenced block the model reads as data: a header naming the
+    /// file (so a user can say "this json file") and the content in a code fence. The text is
+    /// untrusted document content, not instructions - the fence + header frame it as such.
+    /// </summary>
+    private static string FormatFileAttachment(string? name, string text)
+    {
+        var header = string.IsNullOrEmpty(name) ? "Attached file:" : $"Attached file `{name}`:";
+        return $"{header}\n\n```\n{text}\n```";
+    }
+
+    /// <summary>
+    /// Refuse an inline text-file attachment that would not fit the model's context (leaving room
+    /// for the prompt + reply): a <see cref="ValidationException"/> -> 400 steering the user to the
+    /// Knowledge panel. Images are excluded (their own caps apply); when the provider declares no
+    /// context (the zero-config default) there is nothing to gate against, so it passes.
+    /// </summary>
+    private void EnsureInlineAttachmentsFit(IReadOnlyList<MessageAttachment>? attachments, string modelId)
+    {
+        if (attachments is not { Count: > 0 } || _catalog.ContextSize(modelId) is not (int contextTokens and > 0))
+        {
+            return;
+        }
+
+        var budget = (long)(contextTokens * _options.MaxInlineAttachmentContextFraction);
+        var inlineTokens = attachments
+            .Where(a => !AttachmentKinds.IsImage(a.MimeType))
+            .Sum(a => EstimateBase64TextTokens(a.Data));
+
+        if (inlineTokens <= budget)
+        {
+            return;
+        }
+
+        throw new ValidationException(ValidationResult.Failure(
+        [
+            new ValidationError
+            {
+                Property = "attachments",
+                Message =
+                    $"That file is too large to attach here (~{inlineTokens / 1000}k tokens; the inline "
+                    + $"limit is ~{budget / 1000}k of this model's {contextTokens / 1000}k context). Add it to "
+                    + "the Knowledge panel instead and I'll search or read it for you.",
+                Code = "attachment.too_large_for_context",
+            },
+        ]));
+    }
+
+    /// <summary>
+    /// Rough token estimate for base64-encoded UTF-8 text: base64 decodes ~3 bytes per 4 chars, and
+    /// ~4 chars per token (the repo has no tokenizer; this is the budget brake, not an exact count).
+    /// </summary>
+    private static long EstimateBase64TextTokens(string base64) => (long)base64.Length * 3 / 16;
 
     /// <summary>The title cap in UTF-16 code units; cuts land on grapheme boundaries.</summary>
     private const int MaxTitleLength = 60;
