@@ -58,6 +58,21 @@ export const progress = (card: Card) => {
   return { ts, done, all: ts.length > 0 && done === ts.length };
 };
 
+// Whether the collapsible body would render anything - mirrors the body's render
+// conditions in tool-card.ts one-for-one. A still-running card whose arguments
+// haven't arrived yet has nothing to show, so the header click is a no-op (and
+// the cursor stops inviting it).
+export const hasContent = (card: Card): boolean => {
+  const q = card.question;
+  if (q && (q.answered || q.expired)) return true;
+  if (card.query && !q) return true;
+  if (((card.hits ?? []) as Hit[]).length) return true;
+  if (card.todos && card.todos.length) return true;
+  if (card.stdout) return true;
+  if (card.error) return true;
+  return false;
+};
+
 // The todo card's live header label: the current step while the list is being
 // worked, a quiet past-tense once every box is checked.
 export const todoLabel = (card: Card) => {

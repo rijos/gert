@@ -7,7 +7,7 @@ import { Icon } from "../../icons/icons.js";
 import { ProgressBar } from "../ui/progress-bar.js";
 import { QuestionCard } from "./question-card.js";
 import type { Todo } from "../../state/chat.js";
-import { iconFor, progress, todoLabel } from "./tool-card.helpers.js";
+import { hasContent, iconFor, progress, todoLabel } from "./tool-card.helpers.js";
 import type { Card, Hit } from "./tool-card.helpers.js";
 
 const { div, span, pre } = van.tags;
@@ -47,6 +47,9 @@ export const ToolCard = component({
       gap: 9px;
       padding: 10px 13px;
       cursor: pointer;
+    }
+    .tcard.empty .thead {
+      cursor: default;
     }
     .thead .ic {
       width: 15px;
@@ -266,12 +269,15 @@ export const ToolCard = component({
             (card.status === "done" ? " done" : "") +
             (card.status === "error" ? " err" : "") +
             (all ? " complete" : "") +
-            (all && !card.open ? " collapsed" : "")
+            (all && !card.open ? " collapsed" : "") +
+            (hasContent(card) ? "" : " empty")
           );
         },
       },
       div(
-        { class: "thead", onclick: () => (card.open = !card.open) },
+        // No body content yet (e.g. a tool still streaming its arguments) -> the
+        // header is inert; expanding to an empty body invites nothing.
+        { class: "thead", onclick: () => hasContent(card) && (card.open = !card.open) },
         Icon(iconFor(card.kind), { size: 15, class: "ic", strokeWidth: 2 }),
         span({ class: "lab" }, () =>
           card.kind === "todo" ? todoLabel(card) : card.label || card.kind,
