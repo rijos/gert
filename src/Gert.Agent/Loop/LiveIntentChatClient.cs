@@ -108,7 +108,10 @@ internal sealed class LiveIntentChatClient : DelegatingChatClient
                     case UsageContent usage:
                         if (usage.Details.OutputTokenCount is { } completion)
                         {
-                            _acc.TokenCount = (int)completion;
+                            // Summed across rounds - each tool-call round generates its own output (the
+                            // call's arguments + any narration); last-wins would drop every round but the
+                            // final answer, so a tool turn's throughput undercounts the function-call rounds.
+                            _acc.TokenCount = (_acc.TokenCount ?? 0) + (int)completion;
                         }
 
                         // Last non-null round wins - the largest prompt is the turn's real context footprint.
