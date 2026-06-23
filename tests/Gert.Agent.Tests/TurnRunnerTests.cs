@@ -465,7 +465,7 @@ public sealed class TurnRunnerTests
         // so question_asked is emitted and durable, the registry answer resolves
         // the wait, question_answered + the after_tool reply land, and the
         // persisted row carries {answered, answer} for the thread GET rebuild.
-        var tool = new AskUserTool();
+        var tool = new AskUserTool(Gert.Testing.Proof.Validation);
 
         var turn = NewRunner(new FakeChatModel(), [tool])
             .RunAsync(NewJob("ask me which color", [tool]));

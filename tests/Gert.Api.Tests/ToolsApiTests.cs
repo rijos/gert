@@ -147,10 +147,14 @@ public sealed class ToolsApiTests : IClassFixture<GertApiFactory>
             rh.ValueKind.Should().BeOneOf(JsonValueKind.True, JsonValueKind.False);
         }
 
-        // ask_user is the modal tool; the rest are standard - the popup groups on this.
+        // ask_user and sub_agent are the modal tools (the per-call CallTimeout exemption
+        // in the loop is keyed off tool_type == "modal"); the rest are standard.
         var askUser = rows.Single(r => r.GetProperty("id").GetString() == "ask_user");
         askUser.GetProperty("tool_type").GetString().Should().Be("modal");
         askUser.GetProperty("requires_human").GetBoolean().Should().BeTrue();
+        var subAgent = rows.Single(r => r.GetProperty("id").GetString() == "sub_agent");
+        subAgent.GetProperty("tool_type").GetString().Should().Be("modal");
+        subAgent.GetProperty("requires_human").GetBoolean().Should().BeFalse();
         var rag = rows.Single(r => r.GetProperty("id").GetString() == "rag");
         rag.GetProperty("tool_type").GetString().Should().Be("standard");
     }

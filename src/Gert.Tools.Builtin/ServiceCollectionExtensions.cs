@@ -89,15 +89,16 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ITool, EditArtifactTool>();
         services.AddScoped<ITool, ReadArtifactTool>();
         services.AddScoped<ITool, ListArtifactsTool>();
-        // ask_user drives the host's IToolUi (the chat loop's ChatToolUi wires it
-        // to the question registry + wire events); the tool itself has no deps.
+        // ask_user is a typed modal tool (ToolCallModal<AskUserArgs, _>): the base
+        // ctor-injects IValidationProvider; the question registry + wire events ride
+        // the host's IToolUi (the chat loop's ChatToolUi) at call time.
         services.AddScoped<ITool, AskUserTool>();
         // web_fetch only calls the IWebFetcher port - the SSRF hardening (F5)
         // is the adapter's job, mirroring WebSearchTool.
         services.AddScoped<ITool, WebFetchTool>();
-        // run_sub_agent delegates a task to a fresh nested model loop through the
-        // host's IToolDelegate (the chat driver's ChatToolDelegate over IAgentLoop) -
-        // the tool itself only parses/bounds the args, so it has no deps.
+        // run_sub_agent is a typed modal tool (ToolCallModal<SubAgentArgs, _>): the
+        // base ctor-injects IValidationProvider; it delegates the task to a fresh nested
+        // model loop through the host's IToolDelegate (ChatToolDelegate over IAgentLoop).
         services.AddScoped<ITool, SubAgentTool>();
 
         return services;

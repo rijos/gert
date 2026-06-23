@@ -62,8 +62,11 @@ shape, `required` from non-nullability, and the model-facing strings/bounds from
 the fewest tokens. This keeps the one source of truth - the record - so the schema
 can't drift from the parsed contract; a fidelity test
 (`ToolSchemaFidelityTests`) pins each generated schema to its known-good shape. The
-two **modal** tools (`ask_user`, `sub_agent`) have no `TArgs` and keep a
-hand-written `ParametersSchema`.
+two **modal** tools (`ask_user`, `sub_agent`) are typed the same way: they derive
+from `ToolCallModal<TArgs, TResult>` (the same base, overriding `Type => Modal`), so
+their `ParametersSchema` is generated from `AskUserArgs` / `SubAgentArgs` and pinned
+by the same fidelity test - modality is just an overridden `Type`, not a separate
+hand-written code path.
 
 
 **The provider chat client.** The chat client is the Microsoft.Extensions.AI
@@ -579,8 +582,9 @@ result. That asymmetry is the point: a context-hungry side quest (digest these
 pages, survey this topic) costs the parent one tool result instead of a
 transcript.
 
-**Port, not impl.** The tool owns only the schema + caps (it parses/bounds
-`{task, context}`, where a bad value is a model-correctable error) and the
+**Port, not impl.** The typed base (`ToolCallModal<SubAgentArgs, _>`) parses +
+validates `{task, context}` (the size caps live in `SubAgentArgsValidator`, where a
+bad value is a model-correctable error); the tool's `CallAsync` owns only the
 success/failure result shape; the nested-loop machinery sits behind the
 `IToolDelegate` port (`host.Delegate.RunAsync(DelegateRequest) ->
 DelegateResult`, in `Gert.Tools`), so `run_sub_agent` depends on a contract, not
@@ -615,8 +619,13 @@ allow_free_text? }`; the SPA renders them as **tabs** (one tab per question, the
 `header` as its label, falling back to "Question N"), collects one answer per
 tab, and submits them together once every question has an answer.
 
-**Port, not impl.** The tool owns only the schema + caps and the
-answered/timeout result shape; the human-interaction machinery sits behind the
+**Port, not impl.** The typed base (`ToolCallModal<AskUserArgs, _>`) parses +
+validates the questions - `AskUserArgsValidator` enforces the caps (4 questions, the
+per-question/header/option lengths) and holds the question/header/option text to the
+shared control-char + bidi-override safe-text bar (tab/newline allowed), so a bad
+value is a model-correctable error before the prompt is ever shown; the tool's
+`CallAsync` owns only the answered/timeout result shape; the human-interaction
+machinery sits behind the
 `IToolUi` port (`host.Ui.AskAsync(InteractionRequest) -> InteractionResult`, in
 `Gert.Tools`), so `ask_user` depends on a contract, not the chat layer. The chat
 loop's `ChatToolUi` (constructed per tool call) is the impl that wires the port

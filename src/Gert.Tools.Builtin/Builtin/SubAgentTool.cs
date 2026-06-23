@@ -1,6 +1,8 @@
-using System.Text.Json;
 using Gert.Tools;
+using Gert.Tools.Args;
 using Gert.Tools.Hosting;
+using Gert.Tools.Results;
+using Gert.Validation;
 
 namespace Gert.Tools.Builtin;
 
@@ -9,20 +11,25 @@ namespace Gert.Tools.Builtin;
 /// delegates a self-contained task to a FRESH nested conversation through the host's
 /// <see cref="IToolDelegate"/>; only the sub-agent's final text returns, so the nested rounds never
 /// enter the parent history (a context-hungry side quest costs one tool result, not the whole
-/// transcript). The tool parses + bounds the model's arguments (model-correctable errors stay here);
-/// the nested loop, the delegable-tool intersection, and the autonomous host live behind the delegate
-/// (the chat driver's <c>ChatToolDelegate</c>), so this tool depends on the contract, not the loop.
+/// transcript). The typed-args base (<see cref="ToolCallModal{TArgs, TResult}"/>) parses + bounds
+/// the <see cref="SubAgentArgs"/> (the caps live in <c>SubAgentArgsValidator</c>, so model-correctable
+/// errors never reach the delegate); the nested loop, the delegable-tool intersection, and the
+/// autonomous host live behind the delegate (the chat driver's <c>ChatToolDelegate</c>), so this
+/// tool depends on the contract, not the loop.
 ///
 /// <para>
-/// <see cref="ToolType.Modal"/> (via <see cref="ToolCallModal"/>) exempts the wait from the per-tool
-/// <c>ToolBounds.CallTimeout</c> backstop (a delegated research task legitimately outlives 60 s); the
-/// turn's lifetime token remains the hard wall.
+/// <see cref="ToolType.Modal"/> (via <see cref="ToolCallModal{TArgs, TResult}"/>) exempts the wait
+/// from the per-tool <c>ToolBounds.CallTimeout</c> backstop (a delegated research task legitimately
+/// outlives 60 s); the turn's lifetime token remains the hard wall.
 /// </para>
 /// </summary>
-public sealed class SubAgentTool : ToolCallModal
+public sealed class SubAgentTool : ToolCallModal<SubAgentArgs, SubAgentResult>
 {
-    private const int MaxTaskChars = 8_000;
-    private const int MaxContextChars = 32_000;
+    /// <param name="validation">The fail-closed provider the base uses to prove args.</param>
+    public SubAgentTool(IValidationProvider validation)
+        : base(validation)
+    {
+    }
 
     /// <inheritdoc />
     public override string Id => "sub_agent";
@@ -49,68 +56,26 @@ public sealed class SubAgentTool : ToolCallModal
         + "use it when the intermediate work would crowd this conversation.";
 
     /// <inheritdoc />
-    public override string ParametersSchema =>
-        """
-        {
-          "type": "object",
-          "properties": {
-            "task": { "type": "string", "description": "The complete, self-contained task." },
-            "context": { "type": "string", "description": "Optional background material the task needs." }
-          },
-          "required": ["task"]
-        }
-        """;
-
-    /// <inheritdoc />
-    public override async Task<ToolResult> ExecuteAsync(
+    public override async Task<ToolCallResult<SubAgentResult>> CallAsync(
+        SubAgentArgs args,
         ToolInvocation invocation,
         IToolHost host,
         CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(invocation);
+        ArgumentNullException.ThrowIfNull(args);
         ArgumentNullException.ThrowIfNull(host);
 
-        string? task;
-        string? context;
-        try
-        {
-            using var doc = JsonDocument.Parse(invocation.ArgumentsJson);
-            task = doc.RootElement.TryGetProperty("task", out var t) ? t.GetString() : null;
-            context = doc.RootElement.TryGetProperty("context", out var c) ? c.GetString() : null;
-        }
-        catch (JsonException ex)
-        {
-            return Fail($"invalid arguments: {ex.Message}");
-        }
-
-        // Model-correctable arg errors stay at the tool (the delegate re-checks too,
-        // but a clear message here keeps the failure on the call that caused it).
-        if (string.IsNullOrWhiteSpace(task))
-        {
-            return Fail("'task' is required");
-        }
-
-        if (task.Length > MaxTaskChars || (context?.Length ?? 0) > MaxContextChars)
-        {
-            return Fail("task or context too long");
-        }
-
         var result = await host.Delegate
-            .RunAsync(new DelegateRequest(task, context), cancellationToken)
+            .RunAsync(new DelegateRequest(args.Task, args.Context), cancellationToken)
             .ConfigureAwait(false);
 
         if (!result.Success)
         {
-            return new ToolResult { Success = false, Error = result.Error };
+            return ToolCallResult<SubAgentResult>.Fail(result.Error ?? "the sub-agent failed");
         }
 
-        host.Card.ReportStdout(result.Text ?? string.Empty);
-        return new ToolResult
-        {
-            Success = true,
-            ResultJson = JsonSerializer.Serialize(new { result = result.Text, rounds = result.Rounds }),
-        };
+        return ToolCallResult<SubAgentResult>.Ok(
+            new SubAgentResult { Result = result.Text, Rounds = result.Rounds },
+            stdout: result.Text ?? string.Empty);
     }
-
-    private static ToolResult Fail(string error) => new() { Success = false, Error = error };
 }

@@ -23,7 +23,13 @@ public sealed class TodoArgsValidator : AbstractValidator<TodoArgs>
                 .WithErrorCode("todos.empty")
             .Must(t => t.Count <= MaxItems)
                 .WithMessage($"too many todos (max {MaxItems})")
-                .WithErrorCode("todos.too_many");
+                .WithErrorCode("todos.too_many")
+            // RuleForEach + SetValidator silently skips null list elements, so a null
+            // todo (e.g. {"todos":[null]}) would pass and then NRE when the tool reads
+            // its Text; reject it here as a model-correctable error.
+            .Must(t => t.All(x => x is not null))
+                .WithMessage("each todo must be an object")
+                .WithErrorCode("todos.null");
 
         RuleForEach(a => a.Todos).SetValidator(new TodoArgValidator());
     }

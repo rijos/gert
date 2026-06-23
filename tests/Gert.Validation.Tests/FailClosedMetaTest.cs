@@ -130,8 +130,9 @@ public sealed class FailClosedMetaTest
     public void Tool_args_discovery_finds_the_migrated_tools()
     {
         // Guards the discovery itself: if the filter ever stops seeing these, the check
-        // above could pass vacuously. These are the Standard tools on the typed-args
-        // base (ask_user / sub_agent stay Modal and are excluded).
+        // above could pass vacuously. Covers the Standard typed-args tools AND the modal
+        // ones - ask_user / sub_agent now derive from ToolCallModal<TArgs, _> : ToolCall<TArgs, _>,
+        // so the base-chain walk discovers their args too (and must require validators for them).
         var names = ToolCallArgTypes().Select(t => t.Name).ToHashSet(StringComparer.Ordinal);
 
         names.Should().Contain(new[]
@@ -147,6 +148,8 @@ public sealed class FailClosedMetaTest
             "EditArtifactArgs",
             "ReadArtifactArgs",
             "ListArtifactsArgs",
+            "AskUserArgs",
+            "SubAgentArgs",
         });
     }
 

@@ -8,7 +8,7 @@ using Gert.Validation;
 namespace Gert.Tools.Builtin;
 
 /// <summary>
-/// Base for a <see cref="ToolType.Standard"/> tool with typed arguments + result. It provides the
+/// Base for a typed tool (arguments + result). It provides the
 /// non-generic <see cref="ITool.ExecuteAsync"/> bridge so the runner stays reflection-free: it
 /// deserializes the model's <see cref="ToolInvocation.ArgumentsJson"/> into
 /// <typeparamref name="TArgs"/> (the snake_case wire contract), runs the registered
@@ -17,6 +17,11 @@ namespace Gert.Tools.Builtin;
 /// <see cref="ToolResult"/> (<c>Success=false</c>) - the "auto-correct" loop where the model
 /// retries with fixed args. Only on a clean parse+validate does <see cref="CallAsync"/> run; its
 /// <see cref="ToolCallResult{TResult}"/> is mapped back to a <see cref="ToolResult"/>.
+/// <para>
+/// <see cref="Type"/> defaults to <see cref="ToolType.Standard"/> but is virtual: a modal tool
+/// derives from <see cref="ToolCallModal{TArgs, TResult}"/> (which overrides it to
+/// <see cref="ToolType.Modal"/>) and inherits the same typed parse/validate bridge.
+/// </para>
 /// <para>
 /// This base lives in the impl leaf (not the contracts assembly) precisely because it depends on
 /// <see cref="IValidationProvider"/> - keeping the contracts (<see cref="IToolCall{TArgs, TResult}"/>,
@@ -50,6 +55,12 @@ public abstract class ToolCall<TArgs, TResult> : IToolCall<TArgs, TResult>
     /// can drift. Cached per type by <see cref="ToolSchema"/>.
     /// </remarks>
     public virtual string ParametersSchema => ToolSchema.Generate(typeof(TArgs));
+
+    /// <summary>The tool kind. Re-declared as a virtual class member (the <see cref="ITool"/> default isn't) so a modal tool can override it; defaults to <see cref="ToolType.Standard"/>.</summary>
+    public virtual ToolType Type => ToolType.Standard;
+
+    /// <summary>Whether the tool needs a human in the loop (<c>ask_user</c>). Virtual class member (the <see cref="ITool"/> default isn't), defaults to false.</summary>
+    public virtual bool RequiresHuman => false;
 
     /// <summary>Menu title. Re-declared as a virtual class member (the <see cref="ITool"/> default isn't); defaults to <see cref="Name"/>.</summary>
     public virtual string Title => Name;

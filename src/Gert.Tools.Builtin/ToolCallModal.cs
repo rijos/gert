@@ -1,57 +1,28 @@
 using Gert.Tools;
-using Gert.Tools.Hosting;
+using Gert.Validation;
 
 namespace Gert.Tools.Builtin;
 
 /// <summary>
-/// Base for a <see cref="ToolType.Modal"/> tool - one that legitimately blocks mid-turn on
-/// out-of-band input (<c>ask_user</c>) or runs a long nested flow (<c>run_sub_agent</c>). Setting
-/// <see cref="ITool.Type"/> to <see cref="ToolType.Modal"/> is the single signal the runner keys
-/// off to exempt the call from the per-tool <c>ToolBounds.CallTimeout</c>: the tool owns its own
-/// deadline math (the <see cref="ToolInvocation.Deadline"/> budget) and the turn's lifetime token
-/// stays the hard wall (chat-and-tools.md section Ask the user). Replaces the old <c>IInteractiveTool</c>
-/// marker. The derived tool still implements <see cref="ITool.ExecuteAsync"/> itself - modal flows
-/// differ too much (a question-wait vs a nested model loop) to share a body.
+/// Base for a <see cref="ToolType.Modal"/> typed tool - one that legitimately blocks mid-turn on
+/// out-of-band input (<c>ask_user</c>) or runs a long nested flow (<c>run_sub_agent</c>). It is the
+/// <see cref="ToolCall{TArgs, TResult}"/> bridge (deserialize + validate <typeparamref name="TArgs"/>
+/// before <see cref="ToolCall{TArgs, TResult}.CallAsync"/>) with one difference: <see cref="Type"/>
+/// is <see cref="ToolType.Modal"/>. That single signal is what the runner keys off to exempt the
+/// call from the per-tool <c>ToolBounds.CallTimeout</c> - the modal flow owns its own deadline math
+/// (the <see cref="ToolInvocation.Deadline"/> budget) and the turn's lifetime token stays the hard
+/// wall (chat-and-tools.md section Ask the user).
 /// </summary>
-public abstract class ToolCallModal : ITool
+/// <typeparam name="TArgs">The tool's argument record (with a registered validator).</typeparam>
+/// <typeparam name="TResult">The tool's result payload type.</typeparam>
+public abstract class ToolCallModal<TArgs, TResult> : ToolCall<TArgs, TResult>
 {
-    /// <inheritdoc />
-    public abstract string Id { get; }
+    /// <param name="validation">The fail-closed provider; the derived tool injects it.</param>
+    protected ToolCallModal(IValidationProvider validation)
+        : base(validation)
+    {
+    }
 
     /// <inheritdoc />
-    public abstract string Name { get; }
-
-    /// <inheritdoc />
-    public abstract string Description { get; }
-
-    /// <inheritdoc />
-    public abstract string ParametersSchema { get; }
-
-    /// <inheritdoc />
-    public ToolType Type => ToolType.Modal;
-
-    /// <summary>
-    /// Whether the tool needs a human in the loop (<c>ask_user</c>). False by default; a
-    /// derived modal tool overrides it. Re-declared as a class member (not the <see cref="ITool"/>
-    /// default) so it is virtual - the interface default isn't.
-    /// </summary>
-    public virtual bool RequiresHuman => false;
-
-    /// <summary>Menu title. Re-declared as a virtual class member (the <see cref="ITool"/> default isn't); defaults to <see cref="Name"/>.</summary>
-    public virtual string Title => Name;
-
-    /// <summary>Icon key into the curated client vocabulary; virtual, defaults to the neutral glyph (matches ToolIcons.Fallback).</summary>
-    public virtual string Icon => "gear";
-
-    /// <summary>Menu grouping; virtual, defaults to the built-in group.</summary>
-    public virtual string Group => "builtin";
-
-    /// <summary>Per-turn budget ceiling; virtual class member (the <see cref="ITool"/> default isn't), defaults to <see cref="ToolBounds.Default"/>. A modal tool is timeout-exempt, so only the call/token caps apply.</summary>
-    public virtual ToolBounds Bounds => ToolBounds.Default;
-
-    /// <inheritdoc />
-    public abstract Task<ToolResult> ExecuteAsync(
-        ToolInvocation invocation,
-        IToolHost host,
-        CancellationToken cancellationToken = default);
+    public override ToolType Type => ToolType.Modal;
 }

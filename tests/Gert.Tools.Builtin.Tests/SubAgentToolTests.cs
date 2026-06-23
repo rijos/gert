@@ -8,15 +8,20 @@ using Xunit;
 namespace Gert.Tools.Builtin.Tests;
 
 /// <summary>
-/// The sub-agent tool (chat-and-tools.md section sub-agent): it parses + bounds the model's
-/// {task, context} args (model-correctable errors stay here), drives the host's
-/// <see cref="IToolDelegate"/> with a <see cref="DelegateRequest"/>, and shapes the
-/// <see cref="DelegateResult"/> back into a <see cref="ToolResult"/>. The nested loop, the
-/// delegable-set intersection, and the autonomous host live behind the delegate (ChatToolDelegate)
-/// and are tested in ChatToolDelegateTests - here the delegate is a scriptable fake.
+/// The sub-agent tool (chat-and-tools.md section sub-agent): the typed base parses + bounds the
+/// model's {task, context} args (SubAgentArgsValidator; model-correctable errors stay here and
+/// never reach the delegate), then CallAsync drives the host's <see cref="IToolDelegate"/> with a
+/// <see cref="DelegateRequest"/> and shapes the <see cref="DelegateResult"/> back into a
+/// <see cref="ToolResult"/>. The nested loop, the delegable-set intersection, and the autonomous
+/// host live behind the delegate (ChatToolDelegate) and are tested in ChatToolDelegateTests - here
+/// the delegate is a scriptable fake.
 /// </summary>
 public sealed class SubAgentToolTests
 {
+    // The real production-wired validation provider, so the tool's fail-closed arg
+    // check is exercised, not stubbed away.
+    private static SubAgentTool Tool() => new(Gert.Testing.Proof.Validation);
+
     private static FakeToolHost HostWith(FakeToolDelegate del) => new() { Delegate = del };
 
     private static ToolInvocation Invocation(string args) => new()
@@ -30,7 +35,7 @@ public sealed class SubAgentToolTests
     public async Task Parses_task_and_context_and_calls_the_delegate()
     {
         var del = new FakeToolDelegate();
-        await new SubAgentTool().RunAsync(
+        await Tool().RunAsync(
             Invocation("""{"task":"summarize","context":"raw material"}"""), HostWith(del));
 
         del.LastRequest.Should().NotBeNull();
@@ -46,7 +51,7 @@ public sealed class SubAgentToolTests
             Result = new DelegateResult { Success = true, Text = "the digested result", Rounds = 3 },
         };
 
-        var result = await new SubAgentTool().RunAsync(
+        var result = await Tool().RunAsync(
             Invocation("""{"task":"digest this"}"""), HostWith(del));
 
         result.Success.Should().BeTrue();
@@ -57,6 +62,23 @@ public sealed class SubAgentToolTests
     }
 
     [Fact]
+    public async Task A_successful_delegate_with_no_text_still_carries_the_result_shape()
+    {
+        // The sub-agent can finish with no final text; the result arm stays { result: null, rounds }.
+        var del = new FakeToolDelegate
+        {
+            Result = new DelegateResult { Success = true, Text = null, Rounds = 2 },
+        };
+
+        var result = await Tool().RunAsync(Invocation("""{"task":"t"}"""), HostWith(del));
+
+        result.Success.Should().BeTrue();
+        using var doc = JsonDocument.Parse(result.ResultJson!);
+        doc.RootElement.GetProperty("result").ValueKind.Should().Be(JsonValueKind.Null);
+        doc.RootElement.GetProperty("rounds").GetInt32().Should().Be(2);
+    }
+
+    [Fact]
     public async Task A_failed_delegate_result_becomes_a_failed_tool_result()
     {
         var del = new FakeToolDelegate
@@ -64,7 +86,7 @@ public sealed class SubAgentToolTests
             Result = new DelegateResult { Success = false, Error = "sub-agent ran out of time" },
         };
 
-        var result = await new SubAgentTool().RunAsync(
+        var result = await Tool().RunAsync(
             Invocation("""{"task":"t"}"""), HostWith(del));
 
         result.Success.Should().BeFalse();
@@ -78,7 +100,7 @@ public sealed class SubAgentToolTests
     public async Task Bad_arguments_are_model_correctable_errors_and_never_delegate(string args)
     {
         var del = new FakeToolDelegate();
-        var result = await new SubAgentTool().RunAsync(Invocation(args), HostWith(del));
+        var result = await Tool().RunAsync(Invocation(args), HostWith(del));
 
         result.Success.Should().BeFalse();
         result.Error.Should().NotBeNullOrEmpty();
@@ -95,7 +117,7 @@ public sealed class SubAgentToolTests
         var context = contextLen > 0 ? new string('x', contextLen) : null;
         var args = JsonSerializer.Serialize(new { task, context });
 
-        var result = await new SubAgentTool().RunAsync(Invocation(args), HostWith(del));
+        var result = await Tool().RunAsync(Invocation(args), HostWith(del));
 
         result.Success.Should().BeFalse();
         del.LastRequest.Should().BeNull();

@@ -52,8 +52,9 @@ public static class ServiceCollectionExtensions
         AddValidator<DocumentUpload, DocumentUploadValidator>(services);
         AddValidator<AnswerRequest, AnswerRequestValidator>(services);
 
-        // The Standard built-in tools' argument records (Gert.Tools/Args). Every
-        // concrete ToolCall<TArgs, _> in Gert.Tools.Builtin needs a registered
+        // The built-in tools' argument records (Gert.Tools/Args). Every concrete
+        // ToolCall<TArgs, _> in Gert.Tools.Builtin - Standard tools and the modal
+        // ToolCallModal<TArgs, _> ones (ask_user, sub_agent) alike - needs a registered
         // IValidator<TArgs> - the base proves args fail-closed before CallAsync, and
         // FailClosedMetaTest's tool-args check keeps this list complete.
         AddValidator<RagArgs, RagArgsValidator>(services);
@@ -67,6 +68,8 @@ public static class ServiceCollectionExtensions
         AddValidator<EditArtifactArgs, EditArtifactArgsValidator>(services);
         AddValidator<ReadArtifactArgs, ReadArtifactArgsValidator>(services);
         AddValidator<ListArtifactsArgs, ListArtifactsArgsValidator>(services);
+        AddValidator<AskUserArgs, AskUserArgsValidator>(services);
+        AddValidator<SubAgentArgs, SubAgentArgsValidator>(services);
 
         return services;
     }

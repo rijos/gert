@@ -156,6 +156,46 @@ public sealed class ToolSchemaFidelityTests
             typeof(ListArtifactsArgs),
             """{"type":"object","properties":{}}"""
         },
+        {
+            typeof(AskUserArgs),
+            """
+            {
+              "type": "object",
+              "properties": {
+                "questions": {
+                  "type": "array",
+                  "description": "One to four questions to ask together, shown as tabs.",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "question": { "type": "string", "description": "The question to show the user." },
+                      "header": { "type": "string", "description": "Optional short tab label (defaults to 'Question N')." },
+                      "options": { "type": "array", "items": { "type": "string" },
+                                   "description": "Optional closed set of answer choices (max 8), rendered as buttons." },
+                      "allow_free_text": { "type": "boolean",
+                                   "description": "Allow a typed answer in addition to options. Default true when no options are given, false otherwise." }
+                    },
+                    "required": ["question"]
+                  }
+                }
+              },
+              "required": ["questions"]
+            }
+            """
+        },
+        {
+            typeof(SubAgentArgs),
+            """
+            {
+              "type": "object",
+              "properties": {
+                "task": { "type": "string", "description": "The complete, self-contained task." },
+                "context": { "type": "string", "description": "Optional background material the task needs." }
+              },
+              "required": ["task"]
+            }
+            """
+        },
     };
 
     [Theory]
