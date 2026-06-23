@@ -153,6 +153,24 @@ public sealed class PluginArchitectureTests
     }
 
     [Fact]
+    public void Assembly_split_impl_leaves_do_not_depend_on_the_service_layer()
+    {
+        // An impl leaf reaches the world through its contracts ports, never the business-logic
+        // layer (tech-stack.md section Architecture): it references only its contracts + Gert.Model
+        // (+ Gert.Storage for the file-backed engines). This guards against re-introducing an
+        // outward edge like the removed Gert.Database.Sqlite -> Gert.Service reference.
+        foreach (var capability in Capabilities.Where(c => c.AssemblySplit is not null))
+        {
+            var impl = capability.AssemblySplit!.Value.Impl;
+            impl.GetReferencedAssemblies().Select(a => a.Name)
+                .Should().NotContain(
+                    "Gert.Service",
+                    $"the {capability.Name} impl leaf '{impl.GetName().Name}' must not reference the " +
+                    "service layer");
+        }
+    }
+
+    [Fact]
     public void Every_capability_impl_registrar_follows_the_AddGert_Capability_Impl_convention()
     {
         foreach (var capability in Capabilities)
