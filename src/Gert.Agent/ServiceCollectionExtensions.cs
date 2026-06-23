@@ -46,11 +46,10 @@ public static class ServiceCollectionExtensions
         // identity and serve their data to everyone (a captive-dependency cross-user leak).
         services.TryAddScoped<ITurnPlanner, TurnPlanner>();
         // The reusable tool loop the chat shell (and the sub-agent / headless driver) run:
-        // stateless beyond the clock, so a process-wide singleton.
+        // stateless beyond the clock, so a process-wide singleton. The driver runs it inline on its
+        // own (already off-thread) turn task and tees its events through a sink - no separate agent
+        // task or channel.
         services.TryAddSingleton<IAgentLoop, AgentLoop>();
-        // The agent: runs the loop on a background task behind a channel (compute in your name, in
-        // the background). Stateless beyond a counter, so a process-wide singleton.
-        services.TryAddSingleton<IAgent, Agent>();
         services.TryAddScoped<ITurnRunner, TurnRunner>();
         // The worker-scope IUserContext: seeded from the TurnJob before anything
         // else resolves in the scope. The host's IUserContext registration picks

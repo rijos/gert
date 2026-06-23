@@ -60,7 +60,6 @@ public sealed class TurnRunner : ITurnRunner
     private readonly IChatDatabaseProvider _databases;
     private readonly IChatClientFactory _clients;
     private readonly IConversationBus _bus;
-    private readonly IAgent _agent;
     private readonly IAgentLoop _loop;
     private readonly IReadOnlyList<ITool> _tools;
     private readonly IRagIndexProvider _ragProvider;
@@ -76,7 +75,6 @@ public sealed class TurnRunner : ITurnRunner
         IChatDatabaseProvider databases,
         IChatClientFactory clients,
         IConversationBus bus,
-        IAgent agent,
         IAgentLoop loop,
         IEnumerable<ITool> tools,
         IRagIndexProvider ragProvider,
@@ -91,7 +89,6 @@ public sealed class TurnRunner : ITurnRunner
         _databases = databases ?? throw new ArgumentNullException(nameof(databases));
         _clients = clients ?? throw new ArgumentNullException(nameof(clients));
         _bus = bus ?? throw new ArgumentNullException(nameof(bus));
-        _agent = agent ?? throw new ArgumentNullException(nameof(agent));
         _loop = loop ?? throw new ArgumentNullException(nameof(loop));
         ArgumentNullException.ThrowIfNull(tools);
         _tools = tools.ToList();
@@ -378,40 +375,31 @@ public sealed class TurnRunner : ITurnRunner
             }
         }
 
-        // Start the agent - compute in the background behind a channel - and tee its events into the
-        // conversation event log as they arrive (while it's busy, I get stuff back). The provider's
-        // connection + sampling come from Gert:Chat:Providers; the provider is fixed for the turn.
-        var run = _agent.Start(
-            new AgentLoopRequest
-            {
-                Messages = messages,
-                Tools = toolset,
-                ModelId = job.ModelId,
-                Model = _clients.ForProvider(job.ModelId),
-                Host = host,
-                Pid = job.Pid,
-                ConversationId = job.ConversationId,
-                MessageId = job.AssistantMessageId,
-                ClientTimezone = job.ClientTimezone,
-                MaxRounds = _options.MaxToolRounds,
-                MaxTokensPerRound = _options.MaxTokensPerRound,
-            },
-            token);
+        // Run the loop INLINE on this (already off-thread) turn task, teeing each AgentEvent into the
+        // conversation event log as the loop emits it (the sink calls OnAgentEvent synchronously, so
+        // acc holds the true partial content if the loop faults mid-stream). The provider's connection
+        // + sampling come from Gert:Chat:Providers; the provider is fixed for the turn.
+        var request = new AgentLoopRequest
+        {
+            Messages = messages,
+            Tools = toolset,
+            ModelId = job.ModelId,
+            Model = _clients.ForProvider(job.ModelId),
+            Host = host,
+            Pid = job.Pid,
+            ConversationId = job.ConversationId,
+            MessageId = job.AssistantMessageId,
+            ClientTimezone = job.ClientTimezone,
+            MaxRounds = _options.MaxToolRounds,
+            MaxTokensPerRound = _options.MaxTokensPerRound,
+        };
 
         AgentResult result;
         try
         {
-            // Drain to channel completion (not the token): the loop's finally completes the channel on
-            // success AND on fault/cancel, so the tee always sees every event the loop wrote before it
-            // ended - acc then holds the true partial content for the cancel finalize.
-            await foreach (var ev in run.Events.ConfigureAwait(false))
-            {
-                await OnAgentEvent(ev, token).ConfigureAwait(false);
-            }
-
-            // Observe the loop's outcome (rethrows a fault / cancel to the finalizers above), then
-            // flush the final round's trailing text before the terminal events.
-            result = await run.Completion.ConfigureAwait(false);
+            // A fault / cancel rethrows straight to the finalizers above, with every already-emitted
+            // event teed; then flush the final round's trailing text before the terminal events.
+            result = await _loop.RunAsync(request, new CallbackSink(OnAgentEvent), token).ConfigureAwait(false);
             await coalescer.FlushBoundary(token).ConfigureAwait(false);
         }
         finally
@@ -580,5 +568,16 @@ public sealed class TurnRunner : ITurnRunner
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// The inline tee seam: the loop emits each <see cref="AgentEvent"/> through this sink, which
+    /// forwards it to the runner's per-event handler on the same task (no background agent task, no
+    /// channel - the loop is already off-thread under the turn worker).
+    /// </summary>
+    private sealed class CallbackSink(Func<AgentEvent, CancellationToken, ValueTask> onEvent) : IAgentEventSink
+    {
+        public ValueTask EmitAsync(AgentEvent ev, CancellationToken cancellationToken) =>
+            onEvent(ev, cancellationToken);
     }
 }

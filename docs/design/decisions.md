@@ -233,15 +233,18 @@ maintaining by hand. Should we adopt it, and how far? See
     (they depend on the runtime extensions at `>= 10.0.9`). Abstractions is contracts-safe (in
     `Gert.Chat`); AI core + AI.OpenAI carry the SDK and live only in the `Gert.Chat.OpenAI` leaf;
     an architecture test keeps the OpenAI adapter out of `Gert.Agent`/`Gert.Service`.
-  - **Keep (no M.E.AI analog), re-homed into `SalvagingChatClient`** (a `DelegatingChatClient` over
-    `chatClient.AsIChatClient()` in `Gert.Chat.OpenAI`): the `<tool_call>` leak salvage, the vLLM
-    `reasoning`/`reasoning_content` extraction (the adapter surfaces only the latter), the
-    truncated-argument degrade-to-`{}` guard, the name-first live-intent signal, the provider's
-    sampling, and the off-spec vendor fields (`top_k`/`min_p`/`repetition_penalty`/
-    `chat_template_kwargs`) via `ChatOptions.RawRepresentationFactory` seeding an OpenAI SDK
-    `ChatCompletionOptions` + JsonPatch. Interleaved-thinking replay (`preserve_thinking`) rides a
-    native `AssistantChatMessage` on the message's `RawRepresentation` - the one thing the adapter
-    cannot express. Embeddings keep order-by-index reassembly + the dimension/count assertions
+  - **Keep (no M.E.AI analog), re-homed into `OpenAIProviderChatClient`** (a `DelegatingChatClient`
+    over `chatClient.AsIChatClient()` in `Gert.Chat.OpenAI`): the provider's sampling and the off-spec
+    vendor fields (`top_k`/`min_p`/`repetition_penalty`/`chat_template_kwargs`) via
+    `ChatOptions.RawRepresentationFactory` seeding an OpenAI SDK `ChatCompletionOptions` + JsonPatch;
+    interleaved-thinking replay (`preserve_thinking`) on a native `AssistantChatMessage` on the
+    message's `RawRepresentation` (the one thing the adapter cannot express); and a stream re-map
+    (`OpenAIStreamParser`) for the vLLM `delta.reasoning` field (the adapter surfaces only the older
+    `reasoning_content`) and the name-first live-intent signal (the adapter emits only the completed
+    call). The `<tool_call>` leak salvage and the truncated-argument degrade-to-`{}` guard this client
+    once carried were dropped once the fixed vLLM qwen template stopped leaking tool-call markup into
+    `content` and stopped streaming the unterminated-`{` fragment. Embeddings keep order-by-index
+    reassembly + the dimension/count assertions
     (M.E.AI's `GeneratedEmbeddings` drops the source index), so `OpenAIEmbeddingGenerator` runs over
     the SDK `EmbeddingClient` directly rather than `.AsIEmbeddingGenerator()`.
   - **Keep the multi-provider catalog + the keyed plugin seam.** "Scrap the wire layer" is the wire,

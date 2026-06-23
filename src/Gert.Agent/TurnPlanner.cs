@@ -425,7 +425,7 @@ public sealed class TurnPlanner : ITurnPlanner
     /// Map persisted chat rows to the Microsoft.Extensions.AI upstream message list. Assistant
     /// rows always carry their persisted thinking as a <see cref="TextReasoningContent"/>; the
     /// adapter forwards it upstream as <c>reasoning_content</c> only when the selected provider has
-    /// preserve_thinking on (the SalvagingChatClient gates it; an instruct provider's adapter drops
+    /// preserve_thinking on (the OpenAIProviderChatClient gates it; an instruct provider's adapter drops
     /// it). With <paramref name="includeImages"/>, user rows carry their persisted image attachments
     /// as <see cref="DataContent"/> vision parts.
     /// </summary>

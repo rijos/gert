@@ -11,7 +11,7 @@ namespace Gert.Chat.Tests;
 /// <summary>
 /// Unit tests for the pure update-&gt;<see cref="ChatResponseUpdate"/> mapper: content deltas,
 /// incremental tool-call accumulation (name + fragmented arguments by index), the live name-first
-/// intent, finish_reason, usage extraction, and the &lt;tool_call&gt; leak salvage. Fixtures stay as
+/// intent, finish_reason, and usage extraction. Fixtures stay as
 /// raw chunk JSON (the actual wire shapes captured from vLLM) and are lifted into the SDK's
 /// <see cref="StreamingChatCompletionUpdate"/> via <see cref="ModelReaderWriter"/> - exactly what the
 /// adapter hands the parser as the raw representation.
@@ -143,55 +143,6 @@ public sealed class OpenAIStreamParserTests
     }
 
     [Fact]
-    public void Parse_UnterminatedToolCallArguments_DegradeToEmptyObject()
-    {
-        // Captured live from vLLM 0.22.1 + qwen3 tool parser with
-        // chat_template_kwargs.enable_thinking=false and a no-argument call: the arguments stream is
-        // a lone "{" that is never closed. Passing the fragment through poisons the turn twice - the
-        // tool rejects it, and echoing it back inside the next round's assistant tool_calls message
-        // makes the server 400 on its own output.
-        var parser = new OpenAIStreamParser();
-        var updates = Run(
-            parser,
-            """{"choices":[{"index":0,"delta":{"role":"assistant","content":""},"finish_reason":null}]}""",
-            """{"choices":[{"index":0,"delta":{"tool_calls":[{"id":"call_1ee8120e235a4baeb37c043e","type":"function","index":0,"function":{"name":"get_datetime","arguments":""}}]},"finish_reason":null}]}""",
-            """{"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{"}}]},"finish_reason":null}]}""",
-            """{"choices":[{"index":0,"delta":{"content":""},"finish_reason":"tool_calls"}]}""",
-            """{"choices":[],"usage":{"prompt_tokens":296,"total_tokens":310,"completion_tokens":14}}""");
-
-        var call = updates.Select(Completed).Single(c => c is not null)!;
-        call.Name.Should().Be("get_datetime");
-        Args(call).Should().Be(
-            "{}",
-            "unparseable argument fragments must degrade to an empty object, never flow downstream");
-
-        Finish(updates.Single(u => Finish(u) is not null)).Should().Be("tool_calls");
-    }
-
-    [Theory]
-    [InlineData("{\"timezone\"")] // truncated mid-key
-    [InlineData("\"not-an-object\"")] // valid JSON, wrong shape
-    [InlineData("[1,2]")] // valid JSON, wrong shape
-    [InlineData("not json at all")]
-    public void Parse_MalformedToolCallArguments_DegradeToEmptyObject(string fragment)
-    {
-        // The fragment arrives as the wire-format arguments *string*.
-        var encoded = JsonSerializer.Serialize(fragment);
-        var line =
-            """{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"c1","function":{"name":"get_datetime","arguments":"""
-            + encoded
-            + """}}]},"finish_reason":null}]}""";
-
-        var parser = new OpenAIStreamParser();
-        var updates = Run(
-            parser,
-            line,
-            """{"choices":[{"delta":{},"finish_reason":"tool_calls"}]}""");
-
-        Args(updates.Select(Completed).Single(c => c is not null)!).Should().Be("{}");
-    }
-
-    [Fact]
     public void Parse_WellFormedToolCallArguments_PassThrough()
     {
         var parser = new OpenAIStreamParser();
@@ -290,79 +241,11 @@ public sealed class OpenAIStreamParserTests
         OutTokens(finish).Should().Be(3);
     }
 
-    // -- Leaked tool-call markup (chat-and-tools.md section tool-call robustness) --
-    // When the server-side tool parser misses a call, the raw <tool_call> markup leaks into content
-    // deltas. The hold-back salvages well-formed leaks into real tool calls and drops the mangled
-    // rest - neither reaches the text.
-
     [Fact]
-    public void Parse_LeakedXmlToolCall_IsSalvagedNotSurfaced()
+    public void Parse_AngleBracketContent_StreamsThroughUnmangled()
     {
-        var parser = new OpenAIStreamParser();
-        var updates = Run(
-            parser,
-            """{"choices":[{"delta":{"content":"Let me look.\n<tool_call>\n<function=web_search>\n<parameter=query>\ntop stories\n</parameter>\n</function>\n</tool_call>"},"finish_reason":null}]}""",
-            """{"choices":[{"delta":{},"finish_reason":"stop"}]}""");
-
-        string.Concat(updates.Select(Text).Where(t => t is not null)).Should().Be("Let me look.\n");
-
-        var call = updates.Select(Completed).Single(c => c is not null)!;
-        call.Name.Should().Be("web_search");
-        Args(call).Should().Be("""{"query":"top stories"}""");
-        parser.SalvagedToolCalls.Should().Be(1);
-        parser.DroppedLeakChars.Should().Be(0);
-    }
-
-    [Fact]
-    public void Parse_LeakedJsonToolCall_SplitAcrossDeltas_IsSalvaged()
-    {
-        var parser = new OpenAIStreamParser();
-        var updates = Run(
-            parser,
-            """{"choices":[{"delta":{"content":"<tool"},"finish_reason":null}]}""",
-            """{"choices":[{"delta":{"content":"_call>{\"name\": \"get_datetime\", \"arguments\": {\"timezone\": \"Europe/Amsterdam\"}}</tool_"},"finish_reason":null}]}""",
-            """{"choices":[{"delta":{"content":"call>"},"finish_reason":null}]}""",
-            """{"choices":[{"delta":{},"finish_reason":"stop"}]}""");
-
-        updates.Select(Text).Where(t => t is not null).Should().BeEmpty();
-        var call = updates.Select(Completed).Single(c => c is not null)!;
-        call.Name.Should().Be("get_datetime");
-        Args(call).Should().Contain("Europe/Amsterdam");
-    }
-
-    [Fact]
-    public void Parse_MangledLeakedMarkup_IsDroppedAndCounted()
-    {
-        // The drifted form a struggling model actually emitted: wrong tags that neither the server
-        // parser nor the salvage can read - drop, never show.
-        var parser = new OpenAIStreamParser();
-        var updates = Run(
-            parser,
-            """{"choices":[{"delta":{"content":"\n\n<tool_call>\n<user_search>\n<parameter>query>\ntop stories\n</parameter>\n</function>"},"finish_reason":null}]}""",
-            """{"choices":[{"delta":{},"finish_reason":"stop"}]}""");
-
-        string.Concat(updates.Select(Text).Where(t => t is not null)).Should().Be("\n\n");
-        updates.Should().NotContain(u => Completed(u) != null);
-        parser.SalvagedToolCalls.Should().Be(0);
-        parser.DroppedLeakChars.Should().BeGreaterThan(0);
-    }
-
-    [Fact]
-    public void Parse_TextAfterLeakedCall_ResumesStreaming()
-    {
-        var parser = new OpenAIStreamParser();
-        var updates = Run(
-            parser,
-            """{"choices":[{"delta":{"content":"before <tool_call><function=f1></function></tool_call> after"},"finish_reason":null}]}""",
-            """{"choices":[{"delta":{},"finish_reason":"stop"}]}""");
-
-        string.Concat(updates.Select(Text).Where(t => t is not null)).Should().Be("before  after");
-        updates.Select(Completed).Single(c => c is not null)!.Name.Should().Be("f1");
-    }
-
-    [Fact]
-    public void Parse_AngleBracketText_ThatIsNotAnOpener_StreamsThrough()
-    {
+        // The fixed qwen template no longer leaks <tool_call> markup into content, so there is no
+        // hold-back: angle-bracket text streams straight through, split exactly as it arrived.
         var parser = new OpenAIStreamParser();
         var updates = Run(
             parser,
@@ -371,33 +254,5 @@ public sealed class OpenAIStreamParserTests
             """{"choices":[{"delta":{},"finish_reason":"stop"}]}""");
 
         string.Concat(updates.Select(Text).Where(t => t is not null)).Should().Be("use <toolbox> for this");
-    }
-
-    [Fact]
-    public void Parse_HeldOpenerPrefix_AtStreamEnd_EmitsAsText()
-    {
-        // A reply ending in a partial "<tool_call" prefix is plain text once the stream finishes
-        // without completing the opener.
-        var parser = new OpenAIStreamParser();
-        var updates = Run(
-            parser,
-            """{"choices":[{"delta":{"content":"see <tool_ca"},"finish_reason":null}]}""",
-            """{"choices":[{"delta":{},"finish_reason":"stop"}]}""");
-
-        string.Concat(updates.Select(Text).Where(t => t is not null)).Should().Be("see <tool_ca");
-    }
-
-    [Fact]
-    public void Parse_UnclosedLeakAtStreamEnd_IsStillSalvaged()
-    {
-        var parser = new OpenAIStreamParser();
-        var updates = Run(
-            parser,
-            """{"choices":[{"delta":{"content":"<tool_call>\n<function=read_artifact>\n<parameter=name>\nindex.html\n</parameter>\n<parameter=range>\n[1, -1]\n</parameter>\n</function>"},"finish_reason":null}]}""",
-            """{"choices":[{"delta":{},"finish_reason":"stop"}]}""");
-
-        var call = updates.Select(Completed).Single(c => c is not null)!;
-        call.Name.Should().Be("read_artifact");
-        Args(call).Should().Be("""{"name":"index.html","range":[1,-1]}""");
     }
 }

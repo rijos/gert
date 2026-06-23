@@ -25,7 +25,7 @@ namespace Gert.Agent.Tests;
 /// (the event-log tee) and stay in TurnRunnerTests.
 ///
 /// <para>
-/// Convention mirroring the real SalvagingChatClient: a streamed <see cref="FunctionCallContent"/>
+/// Convention mirroring the real OpenAIProviderChatClient: a streamed <see cref="FunctionCallContent"/>
 /// with null <see cref="FunctionCallContent.Arguments"/> is a live name-first intent (the running
 /// card); a non-null arguments dictionary is a completed call.
 /// </para>
@@ -77,7 +77,7 @@ public sealed class AgentLoopTests
         };
     }
 
-    // ---- update builders (mirror SalvagingChatClient's output convention) ----
+    // ---- update builders (mirror OpenAIProviderChatClient's output convention) ----
     private static ChatResponseUpdate Text(string text) => new(ChatRole.Assistant, text);
 
     private static ChatResponseUpdate Reasoning(string text) => new()

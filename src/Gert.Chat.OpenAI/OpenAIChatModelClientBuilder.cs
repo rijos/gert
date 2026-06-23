@@ -14,8 +14,8 @@ namespace Gert.Chat.OpenAI;
 /// sampling is bound as named <see cref="ChatProviderParameters"/> options (keyed by the slug), and
 /// its transport is the per-slug named <c>HttpClient</c> - both wired by the registrar. The built
 /// client is the OpenAI SDK chat client adapted to <see cref="IChatClient"/>
-/// (<c>.AsIChatClient()</c>) and wrapped in <see cref="SalvagingChatClient"/> for Gert's
-/// stream-salvage + provider sampling + interleaved-thinking behaviour (decisions #13).
+/// (<c>.AsIChatClient()</c>) and wrapped in <see cref="OpenAIProviderChatClient"/> for Gert's
+/// provider sampling + interleaved-thinking + stream re-mapping behaviour (decisions #13).
 /// </summary>
 public sealed class OpenAIChatModelClientBuilder : IChatModelClientBuilder
 {
@@ -45,6 +45,6 @@ public sealed class OpenAIChatModelClientBuilder : IChatModelClientBuilder
             .CreateSdkClient(http, parameters.BaseUrl, parameters.ApiKey)
             .GetChatClient(parameters.Model)
             .AsIChatClient();
-        return new SalvagingChatClient(inner, parameters, _loggerFactory.CreateLogger<SalvagingChatClient>());
+        return new OpenAIProviderChatClient(inner, parameters, _loggerFactory.CreateLogger<OpenAIProviderChatClient>());
     }
 }

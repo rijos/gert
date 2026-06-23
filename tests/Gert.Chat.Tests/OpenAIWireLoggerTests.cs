@@ -79,7 +79,7 @@ public sealed class OpenAIWireLoggerTests
             .CreateSdkClient(http, parameters.BaseUrl, parameters.ApiKey)
             .GetChatClient(parameters.Model)
             .AsIChatClient();
-        var client = new SalvagingChatClient(inner, parameters, NullLogger<SalvagingChatClient>.Instance);
+        var client = new OpenAIProviderChatClient(inner, parameters, NullLogger<OpenAIProviderChatClient>.Instance);
 
         await foreach (var _ in client.GetStreamingResponseAsync([new ChatMessage(ChatRole.User, "hi")]))
         {

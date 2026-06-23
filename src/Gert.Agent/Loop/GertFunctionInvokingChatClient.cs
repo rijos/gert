@@ -1,6 +1,8 @@
 using System.Diagnostics;
 using System.Text.Json;
 using Gert.Model.Agent;
+using Gert.Model.Chat;
+using Gert.Model.Events;
 using Gert.Tools;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
@@ -84,7 +86,7 @@ internal sealed class GertFunctionInvokingChatClient : FunctionInvokingChatClien
             var refusal = entry is null
                 ? $"no tool named '{call.Name}'"
                 : $"tool '{entry.Tool.Id}' is not permitted";
-            responseJson = ToolOutcome.Failure(kind, refusal).ResponseJson ?? string.Empty;
+            responseJson = ErrorJson(refusal);
         }
         else
         {
@@ -94,14 +96,14 @@ internal sealed class GertFunctionInvokingChatClient : FunctionInvokingChatClien
 
             // Round budget: past MaxRounds (the refused round the middleware runs before its wind-down),
             // every call is refused with a synthetic result the model reads, never a torn turn.
-            ToolOutcome outcome;
+            ExecutedToolCall executed;
             if (context.Iteration >= _request.MaxRounds)
             {
                 _logger.LogWarning(
                     "Tool budget exhausted after {MaxToolRounds} rounds - refusing call '{ToolName}' and winding the turn down.",
                     _request.MaxRounds, call.Name);
-                outcome = ToolOutcome.Failure(
-                    kind,
+                executed = Refused(
+                    call.CallId, kind, argumentsJson,
                     $"tool budget exhausted ({_request.MaxRounds} rounds) - no further tool calls will run this turn; answer with what you already have");
             }
             else
@@ -109,34 +111,17 @@ internal sealed class GertFunctionInvokingChatClient : FunctionInvokingChatClien
                 // Within the round budget this counts as an executed tool round (idempotent within the
                 // round - every call of the round writes the same iteration+1).
                 _acc.ToolRounds = context.Iteration + 1;
-                outcome = !_toolset.TryConsumeCall(entry!)
-                    ? ToolOutcome.Failure(
-                        kind,
+                executed = !_toolset.TryConsumeCall(entry!)
+                    ? Refused(
+                        call.CallId, kind, argumentsJson,
                         $"tool '{entry!.Tool.Id}' call budget exhausted ({entry.Effective.MaxCallsPerTurn} per turn) - no further '{entry.Tool.Name}' calls will run this turn; answer with what you already have")
                     : await ExecuteToolAsync(entry!, call, argumentsJson, cancellationToken).ConfigureAwait(false);
             }
 
             // The result card, the durable tool row, its citations, and any canvas artifacts are all the
             // entitled call's visible/persistent footprint, carried in ONE event the consumer unpacks.
-            await _sink.EmitAsync(
-                new ToolCompleted(new ExecutedToolCall
-                {
-                    CallId = call.CallId,
-                    Kind = outcome.Kind,
-                    Status = outcome.Status,
-                    RequestJson = argumentsJson,
-                    ResponseJson = outcome.ResponseJson,
-                    LatencyMs = outcome.LatencyMs,
-                    Citations = outcome.Citations,
-                    Artifacts = outcome.Artifacts,
-                    Hits = outcome.Hits,
-                    Stdout = outcome.Stdout,
-                    Todos = outcome.Todos,
-                    Error = outcome.Error,
-                }),
-                cancellationToken).ConfigureAwait(false);
-
-            responseJson = outcome.ResponseJson ?? string.Empty;
+            await _sink.EmitAsync(new ToolCompleted(executed), cancellationToken).ConfigureAwait(false);
+            responseJson = executed.ResponseJson ?? string.Empty;
         }
 
         // The tool boundary: the LAST call of a round is a discrete beat the consumer maps to the
@@ -180,7 +165,7 @@ internal sealed class GertFunctionInvokingChatClient : FunctionInvokingChatClien
     /// effective <c>CallTimeout</c> (Modal tools exempt; <c>&lt;= 0</c> disables). A timeout fails THIS
     /// call with a visible card error; the turn-lifetime token cancelling rethrows and ends the turn.
     /// </summary>
-    private async Task<ToolOutcome> ExecuteToolAsync(
+    private async Task<ExecutedToolCall> ExecuteToolAsync(
         ToolEntry entry,
         FunctionCallContent call,
         string argumentsJson,
@@ -189,7 +174,7 @@ internal sealed class GertFunctionInvokingChatClient : FunctionInvokingChatClien
         var tool = entry.Tool;
 
         // The per-call card: where the tool pushes its side-effects (citations/artifacts/stdout/todos)
-        // instead of returning them; the outcome folds them onto the ExecutedToolCall below.
+        // instead of returning them; folded onto the ExecutedToolCall below.
         var card = new ToolCardCollector();
 
         var invocation = new ToolInvocation
@@ -234,8 +219,8 @@ internal sealed class GertFunctionInvokingChatClient : FunctionInvokingChatClien
             _logger.LogWarning(
                 "Tool '{ToolId}' timed out after {TimeoutSeconds}s (call {CallId}).",
                 tool.Id, timeout.TotalSeconds, call.CallId);
-            return ToolOutcome.Failure(
-                tool.Id,
+            return Refused(
+                call.CallId, tool.Id, argumentsJson,
                 $"tool timed out after {timeout.TotalSeconds:0}s",
                 stopwatch.ElapsedMilliseconds);
         }
@@ -246,11 +231,73 @@ internal sealed class GertFunctionInvokingChatClient : FunctionInvokingChatClien
         catch (Exception ex)
         {
             stopwatch.Stop();
-            return ToolOutcome.Failure(tool.Id, ex.Message, stopwatch.ElapsedMilliseconds);
+            return Refused(call.CallId, tool.Id, argumentsJson, ex.Message, stopwatch.ElapsedMilliseconds);
         }
 
         stopwatch.Stop();
-        return ToolOutcome.From(tool.Id, result, card, stopwatch.ElapsedMilliseconds);
+        return FromResult(call.CallId, tool.Id, argumentsJson, result, card, stopwatch.ElapsedMilliseconds);
+    }
+
+    /// <summary>The model-facing JSON for a synthetic refusal/error - the shape every error result carries.</summary>
+    private static string ErrorJson(string error) => JsonSerializer.Serialize(new { error });
+
+    /// <summary>
+    /// An error <see cref="ExecutedToolCall"/> that never reached the tool, or did and timed out/threw:
+    /// <see cref="ToolCallStatus.Error"/> with the human-readable <paramref name="error"/> for the card
+    /// and the synthetic error JSON fed back to the model. Carries no side-effects (a refusal/failure
+    /// produces no citations/artifacts).
+    /// </summary>
+    private static ExecutedToolCall Refused(
+        string callId, string kind, string argumentsJson, string error, long? latencyMs = null) => new()
+    {
+        CallId = callId,
+        Kind = kind,
+        Status = ToolCallStatus.Error,
+        RequestJson = argumentsJson,
+        ResponseJson = ErrorJson(error),
+        LatencyMs = latencyMs,
+        Error = error,
+    };
+
+    /// <summary>
+    /// Fold a tool's <see cref="ToolResult"/> + the side-effects it reported to its per-call
+    /// <paramref name="card"/> into an <see cref="ExecutedToolCall"/>. A failed call carries no card
+    /// side-effects, and its payload (if any - e.g. the sandbox's exit_code/stderr) rides
+    /// <see cref="ExecutedToolCall.ResponseJson"/>; a success carries the citations/hits/stdout/todos/
+    /// artifacts the tool pushed.
+    /// </summary>
+    private static ExecutedToolCall FromResult(
+        string callId, string kind, string argumentsJson, ToolResult result, ToolCardCollector card, long latencyMs)
+    {
+        if (!result.Success)
+        {
+            var error = result.Error ?? "tool failed";
+            return new ExecutedToolCall
+            {
+                CallId = callId,
+                Kind = kind,
+                Status = ToolCallStatus.Error,
+                RequestJson = argumentsJson,
+                ResponseJson = result.ResultJson ?? ErrorJson(error),
+                LatencyMs = latencyMs,
+                Error = error,
+            };
+        }
+
+        return new ExecutedToolCall
+        {
+            CallId = callId,
+            Kind = kind,
+            Status = ToolCallStatus.Done,
+            RequestJson = argumentsJson,
+            ResponseJson = result.ResultJson,
+            LatencyMs = latencyMs,
+            Citations = card.Citations,
+            Hits = ToolResultHit.FromCitations(card.Citations),
+            Stdout = card.Stdout,
+            Todos = card.Todos,
+            Artifacts = card.Artifacts,
+        };
     }
 
     /// <summary>Serialize the model's parsed arguments back to JSON for the tool invocation + the row's request (compact; the values round-trip the model's bytes).</summary>

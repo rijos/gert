@@ -12,21 +12,21 @@ using ChatMessage = Microsoft.Extensions.AI.ChatMessage;
 namespace Gert.Chat.Tests;
 
 /// <summary>
-/// Drives the real <see cref="SalvagingChatClient"/> over the M.E.AI OpenAI adapter through a
+/// Drives the real <see cref="OpenAIProviderChatClient"/> over the M.E.AI OpenAI adapter through a
 /// stubbed <see cref="HttpMessageHandler"/> - no live server. Two halves:
 /// <list type="bullet">
 /// <item><b>Request shaping</b> (the wire bytes the old request builder owned, now the adapter +
-/// SalvagingChatClient): roles/content, tools + auto tool-choice, the provider's typed sampling and
+/// OpenAIProviderChatClient): roles/content, tools + auto tool-choice, the provider's typed sampling and
 /// off-spec <c>Extra</c> JsonPatch (top_k / chat_template_kwargs), the reasoning_content replay gate,
 /// assistant tool calls, tool-result messages, and vision image parts.</item>
 /// <item><b>Response</b>: a canned SSE stream parses end-to-end into <see cref="ChatResponseUpdate"/>s
-/// (proving the salvage parser runs over the adapter's raw representation), and an upstream error
+/// (proving the stream re-mapper runs over the adapter's raw representation), and an upstream error
 /// keeps the port's <see cref="HttpRequestException"/> contract with the server's diagnostic.</item>
 /// </list>
 /// </summary>
-public sealed class SalvagingChatClientTests
+public sealed class OpenAIProviderChatClientTests
 {
-    private static (SalvagingChatClient Client, StubHttpMessageHandler Handler) NewClient(
+    private static (OpenAIProviderChatClient Client, StubHttpMessageHandler Handler) NewClient(
         ChatProviderParameters? parameters = null,
         string sse = "data: [DONE]\n\n",
         HttpStatusCode status = HttpStatusCode.OK)
@@ -43,7 +43,7 @@ public sealed class SalvagingChatClientTests
         var http = new HttpClient(handler);
         var p = parameters ?? new ChatProviderParameters { BaseUrl = "http://openai.test:8000", Model = "qwen-test" };
         var inner = OpenAISdkClient.CreateSdkClient(http, p.BaseUrl, p.ApiKey).GetChatClient(p.Model).AsIChatClient();
-        return (new SalvagingChatClient(inner, p, NullLogger<SalvagingChatClient>.Instance), handler);
+        return (new OpenAIProviderChatClient(inner, p, NullLogger<OpenAIProviderChatClient>.Instance), handler);
     }
 
     private static ChatProviderParameters Params(Action<ChatProviderParameters>? configure = null)
@@ -54,7 +54,7 @@ public sealed class SalvagingChatClientTests
     }
 
     private static async Task<JsonNode> WireBodyAsync(
-        SalvagingChatClient client, StubHttpMessageHandler handler, IEnumerable<ChatMessage> messages, ChatOptions? options = null)
+        OpenAIProviderChatClient client, StubHttpMessageHandler handler, IEnumerable<ChatMessage> messages, ChatOptions? options = null)
     {
         await foreach (var _ in client.GetStreamingResponseAsync(messages, options))
         {
@@ -353,7 +353,7 @@ public sealed class SalvagingChatClientTests
         body["messages"]!.AsArray()[0]!["content"]!.GetValueKind().Should().Be(JsonValueKind.String);
     }
 
-    // ---- response: the salvage parser runs end-to-end over the adapter's raw updates ----
+    // ---- response: the stream re-mapper runs end-to-end over the adapter's raw updates ----
 
     [Fact]
     public async Task ParsesCannedSseIntoUpdateSequence()

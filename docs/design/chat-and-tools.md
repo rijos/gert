@@ -64,26 +64,20 @@ two **modal** tools (`ask_user`, `sub_agent`) have no `TArgs` and keep a
 hand-written `ParametersSchema`.
 
 
-**Tool-call robustness (leak salvage).** The server-side tool parser
-(`--tool-call-parser qwen3_coder`, regex-based) misses near-miss calls; the raw
-`<tool_call>` markup then leaks into `content` deltas - streamed to the user
-verbatim, or (streaming) swallowed into a silently empty reply. The chat client
-is the Microsoft.Extensions.AI `IChatClient` (the OpenAI SDK adapted via
-`.AsIChatClient()`), wrapped in `SalvagingChatClient` (a `DelegatingChatClient`)
-which re-parses each raw streamed update through a hold-back state machine
-(`OpenAIStreamParser`): text streams through normally (at most a 10-char tail held
-until disambiguated), but a completed `<tool_call>` opener switches to buffering;
-at the close tag or stream end the segment is salvage-parsed - the Hermes JSON
-body and the qwen3-coder XML body both - into a real `FunctionCallContent`
-(id `salvaged_<name>_<n>`), and an unsalvageable segment is dropped, never
-shown. The client logs both counts after the stream; salvages firing at all
-means the server parser configuration deserves a look (`qwen3_xml` is the
-community-recommended parser for Qwen3.6). A segment past 256 KiB degrades
-back to visible text - better ugly than unboundedly silent. The same client
-re-homes the vLLM `reasoning`/`reasoning_content` extraction (the M.E.AI adapter
-surfaces only the latter), the truncated-argument degrade-to-`{}` guard, the
-name-first live-intent signal, the provider's sampling, and the off-spec vendor
-fields via `ChatOptions.RawRepresentationFactory` + JsonPatch (decisions section 13).
+**The provider chat client.** The chat client is the Microsoft.Extensions.AI
+`IChatClient` (the OpenAI SDK adapted via `.AsIChatClient()`), wrapped in
+`OpenAIProviderChatClient` (a `DelegatingChatClient`) for the Gert-specific
+behaviour the stock adapter has no analog for (decisions section 13): the
+provider's sampling and off-spec vendor fields (`chat_template_kwargs`,
+`top_k`/`min_p`/`repetition_penalty`) via `ChatOptions.RawRepresentationFactory`
++ JsonPatch, the interleaved-thinking replay (`preserve_thinking`), and a stream
+re-map (`OpenAIStreamParser`) over each raw update for the two things the adapter
+drops: vLLM's `delta.reasoning` (the adapter surfaces only the older
+`reasoning_content`) and the name-first live-intent signal (the adapter emits only
+the completed call). The `<tool_call>` leak salvage and the truncated-argument
+degrade-to-`{}` guard the parser once carried are gone - the fixed vLLM qwen
+template no longer leaks tool-call markup into `content` nor streams the
+unterminated-`{` fragment, so content deltas pass straight through.
 
 `set_todos`, `get_datetime`, and the canvas suite touch no external world: the
 todo list is replace-not-patch (the latest call is the truth, rendered as a
@@ -139,9 +133,9 @@ record that replays. They meet at exactly one seam.
   The loop's **only** output is an `AgentEvent` (`Gert.Model.Agent`: `TextDelta`,
   `ReasoningDelta`, `ToolStarted`, `ToolCompleted`, `RoundCompleted`, `TurnFinished`)
   emitted through one **`IAgentEventSink`** - it knows nothing of logs, buses,
-  persistence, or coalescing. `IAgent.Start` runs it on a background task behind a
-  channel (`Agent` + `ChannelSink`); the caller reads the bridged event stream while
-  it's busy. Sink inside, stream out.
+  persistence, or coalescing. The driver runs the loop INLINE on its own (already
+  off-thread) turn task, passing a sink that tees each event as the loop emits it -
+  no separate agent task or channel.
 - **The conversation event log (durability).** The chat driver (`TurnRunner`) is
   the thin **tee** that turns the agent's compute vocabulary into the durable log:
   it reads the event stream and maps each `AgentEvent` to the persisted/published
@@ -267,15 +261,14 @@ stay inline in the bubble; nothing is ever extracted from prose.
 
 ### Detached turns
 
-**Where it lives.** The turn/agent EXECUTION engine - the `TurnLauncher`, the `TurnPlanner`/`TurnRunner`, the `IAgent` + reusable `IAgentLoop`, the ask_user/cancel registries, and the chat tool-host wiring - is its own project **`Gert.Agent`**, a layer between the host and the service layer (host -> `Gert.Agent` -> `Gert.Service`, registered by `AddGertAgent`). The **request-facing read side** - the `ConversationBus`, `ConversationReader`, and `ConversationStreamer`, plus the shared turn vocabulary the readers also consume (`TurnOptions`, `MessageStatusRules`, `PromptOptions`, `TurnInProgressException`) - stays in `Gert.Service` (`Gert.Service.Chat`). `Gert.Service` does not reference `Gert.Agent` back; both edges are pinned by architecture tests ([tech-stack.md section Architecture](tech-stack.md#architecture)).
+**Where it lives.** The turn/agent EXECUTION engine - the `TurnLauncher`, the `TurnPlanner`/`TurnRunner`, the reusable `IAgentLoop`, the ask_user/cancel registries, and the chat tool-host wiring - is its own project **`Gert.Agent`**, a layer between the host and the service layer (host -> `Gert.Agent` -> `Gert.Service`, registered by `AddGertAgent`). The **request-facing read side** - the `ConversationBus`, `ConversationReader`, and `ConversationStreamer`, plus the shared turn vocabulary the readers also consume (`TurnOptions`, `MessageStatusRules`, `PromptOptions`, `TurnInProgressException`) - stays in `Gert.Service` (`Gert.Service.Chat`). `Gert.Service` does not reference `Gert.Agent` back; both edges are pinned by architecture tests ([tech-stack.md section Architecture](tech-stack.md#architecture)).
 
 A turn is **detached from the request that started it**: `POST .../messages` only
 *plans* (validate -> materialize the conversation if new -> persist the user
 message and a `streaming` assistant placeholder -> snapshot identity +
 entitlements into a `TurnJob`) and enqueues; the `TurnLauncher` runs the turn
-off-thread under a global concurrency cap. The launcher starts the **agent**
-(`IAgent.Start` - the loop on a background task) and the driver tees its
-`AgentEvent` stream into the durable log. **The database is the source of truth
+off-thread under a global concurrency cap. The driver runs the reusable loop
+inline on that turn task and tees its `AgentEvent` stream into the durable log. **The database is the source of truth
 and transports are just delivery** - the tee's emit protocol is *persist, then
 publish*: allocate a per-conversation monotonic `seq` (`conversations.next_seq`),
 append the event to the durable `turn_events` log, then publish to the in-process

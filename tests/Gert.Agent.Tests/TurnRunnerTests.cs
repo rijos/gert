@@ -148,11 +148,10 @@ public sealed class TurnRunnerTests
         ITurnCancellation? cancellation = null,
         ILogger<TurnRunner>? logger = null)
     {
-        // The real loop + agent, so the chat-shell tests still exercise the background-run + tee path.
+        // The real loop, run inline by the runner, so the chat-shell tests still exercise the tee path.
         var loop = new AgentLoop(clock ?? TimeProvider.System, NullLogger<AgentLoop>.Instance);
         return new TurnRunner(
             _chatProvider, new FixedChatClientFactory(model), _bus,
-            new Agent(loop),
             loop,
             tools ?? [],
             // The runner now builds the project RAG resource + sub-agent delegate
@@ -612,7 +611,7 @@ public sealed class TurnRunnerTests
         _finalized.Single().ContextTokens.Should().Be(1056);
     }
 
-    // ---- update builders (mirror SalvagingChatClient's output convention) ----
+    // ---- update builders (mirror OpenAIProviderChatClient's output convention) ----
     private static ChatResponseUpdate Text(string text) => new(ChatRole.Assistant, text);
 
     private static ChatResponseUpdate Reasoning(string text) => new()

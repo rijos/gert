@@ -15,12 +15,6 @@ namespace Gert.Chat.OpenAI;
 /// equivalent for, layered as a <see cref="DelegatingChatClient"/> over
 /// <c>chatClient.AsIChatClient()</c> (decisions #13). It owns three things the adapter cannot:
 /// <list type="bullet">
-/// <item><b>Stream salvage + reasoning + arg normalisation</b> (chat-and-tools.md section tool-call
-/// robustness): each streamed update is re-parsed from its raw
-/// <see cref="StreamingChatCompletionUpdate"/> by <see cref="OpenAIStreamParser"/>, reproducing the
-/// <c>&lt;tool_call&gt;</c> leak salvage, the vLLM <c>reasoning</c>/<c>reasoning_content</c>
-/// extraction (the adapter surfaces only the latter), the name-first live-intent signal, and the
-/// degrade-truncated-arguments-to-<c>{}</c> guard.</item>
 /// <item><b>The provider's sampling + vendor extensions</b>: the selected provider's typed sampling
 /// (temperature/top_p/penalties/seed/stop) plus the off-spec <c>Extra</c> map (vLLM
 /// <c>top_k</c>/<c>min_p</c>/<c>repetition_penalty</c> and the <c>chat_template_kwargs</c>) ride a
@@ -31,19 +25,23 @@ namespace Gert.Chat.OpenAI;
 /// prior assistant turn's reasoning is sent back as the wire <c>reasoning_content</c> via a native
 /// <see cref="AssistantChatMessage"/> on the message's <c>RawRepresentation</c> (the adapter drops a
 /// plain <see cref="TextReasoningContent"/> on input); an instruct provider sends nothing.</item>
+/// <item><b>Stream re-mapping</b> (<see cref="OpenAIStreamParser"/>): each streamed update is
+/// re-parsed from its raw <see cref="StreamingChatCompletionUpdate"/> to surface vLLM's
+/// <c>delta.reasoning</c> (the adapter surfaces only <c>reasoning_content</c>) and the name-first
+/// live-intent signal (the adapter emits only the completed call).</item>
 /// </list>
 /// The transport, SSE framing, and message/tool/sampling mapping stay the adapter's job; this client
 /// is pure post-/pre-processing. One instance per provider slug (carries that provider's parameters).
 /// </summary>
-internal sealed class SalvagingChatClient : DelegatingChatClient
+internal sealed class OpenAIProviderChatClient : DelegatingChatClient
 {
     private readonly ChatProviderParameters _parameters;
-    private readonly ILogger<SalvagingChatClient> _logger;
+    private readonly ILogger<OpenAIProviderChatClient> _logger;
 
-    public SalvagingChatClient(
+    public OpenAIProviderChatClient(
         IChatClient inner,
         ChatProviderParameters parameters,
-        ILogger<SalvagingChatClient> logger)
+        ILogger<OpenAIProviderChatClient> logger)
         : base(inner)
     {
         _parameters = parameters ?? throw new ArgumentNullException(nameof(parameters));
@@ -110,8 +108,6 @@ internal sealed class SalvagingChatClient : DelegatingChatClient
         {
             yield return u;
         }
-
-        LogSalvage(parser);
     }
 
     /// <summary>
@@ -226,26 +222,6 @@ internal sealed class SalvagingChatClient : DelegatingChatClient
         var native = new AssistantChatMessage(content);
         native.Patch.Set("$.reasoning_content"u8, reasoning);
         return new ChatMessage(ChatRole.Assistant, content) { RawRepresentation = native };
-    }
-
-    private void LogSalvage(OpenAIStreamParser parser)
-    {
-        // Leak accounting (chat-and-tools.md section tool-call robustness): salvaged calls mean the
-        // server-side tool parser is missing calls the model DID make - worth an operator's
-        // attention; dropped markup means the model emitted tool syntax too mangled to recover.
-        if (parser.SalvagedToolCalls > 0)
-        {
-            _logger.LogWarning(
-                "Salvaged {Count} tool call(s) from <tool_call> markup that leaked into content - check the vLLM --tool-call-parser setting.",
-                parser.SalvagedToolCalls);
-        }
-
-        if (parser.DroppedLeakChars > 0)
-        {
-            _logger.LogWarning(
-                "Dropped {Chars} characters of unparseable leaked tool-call markup from the reply.",
-                parser.DroppedLeakChars);
-        }
     }
 
     /// <summary>
