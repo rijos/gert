@@ -24,8 +24,8 @@ The design was built to be testable; the plan just cashes that in:
 
 | Architectural fact | Testing consequence |
 |--------------------|---------------------|
-| `Gert.Service` references **only** `Gert.Model` - no `HttpContext`, JWT, or SSE ([tech-stack](tech-stack.md)) | The entire tool loop, ingestion pipeline, and orchestration are unit-testable with plain objects - no web host needed. |
-| Streaming is `IAsyncEnumerable<ChatEvent>`; transport renders it ([tech-stack](tech-stack.md)) | We assert on the **event stream** directly in `Gert.Service.Tests`; SSE framing is tested once, separately, in `Gert.Api.Tests`. |
+| `Gert.Service` references **only** `Gert.Model` - no `HttpContext`, JWT, or SSE ([tech-stack](tech-stack.md)); the agent execution engine `Gert.Agent` sits above it | The agent loop / turn planner+runner, the ingestion pipeline, and the read side are all unit-testable with plain objects - no web host needed. |
+| Streaming is `IAsyncEnumerable<ChatEvent>`; transport renders it ([tech-stack](tech-stack.md)) | We assert on the **event stream** directly (the agent loop in `Gert.Agent.Tests`, the read side in `Gert.Service.Tests`); SSE framing is tested once, separately, in `Gert.Api.Tests`. |
 | Repository interfaces are the **only** code that sees SQL | We test `Gert.Database.Sqlite` against a **real** temp SQLite (vec0 + FTS5) - the only place SQL correctness can be proven. |
 | Isolation is enforced by the **data layer** - a per-user store keyed from the token ([principles #2](principles.md)) | Isolation and IDOR become concrete assertions: mint two tokens, prove user B physically cannot reach user A's data. |
 
@@ -61,8 +61,8 @@ fast as in-memory and loses none of the SQL or isolation coverage. In-memory rep
    DB   │  Gert.Database.Sqlite.Tests - real temp SQLite   │
         │  vec0 + FTS5 - hybrid rank - migrations - isolation│
         ├───────────────────────────────────────────────┤
-  Unit  │  Gert.Service.Tests - Authentication - Validation │   fast, many
-        │  tool loop - ingestion - claim mapping - rules    │
+  Unit  │  Gert.Agent.Tests - Service - Auth - Validation  │   fast, many
+        │  agent loop+turns - read side - ingestion - rules │
         └───────────────────────────────────────────────┘
               all tiers share one set of fakes (Gert.Testing)
 ```
@@ -91,12 +91,14 @@ tests/
     TestData/
       NaughtyStrings.cs         #   adversarial input corpus - fed across every string field (section 5)
 
-  Gert.Service.Tests/           # whitebox - chat orchestrator/tool loop, conversations,
-                                #   documents, ingestion pipeline, validation
+  Gert.Agent.Tests/             # whitebox - agent loop, turn planner+runner, toolset, chat tool-host
+  Gert.Service.Tests/           # whitebox - read side (conversation bus/reader/streamer, delta
+                                #   coalescer), ingestion pipeline
+  Gert.Validation.Tests/        # per-DTO validators + fail-closed meta-test + provider contract
   Gert.Database.Sqlite.Tests/   # repositories vs real temp SQLite (vec0 + FTS5); migrations; isolation
   Gert.Authentication.Tests/    # JWT claims -> IUserContext; sub->key (sha256); RS256 pin
   Gert.Chat.Tests/              # chat/embeddings adapter units - OpenAI client, provider catalog, Polly wiring
-  Gert.Tools.Tests/             # tool adapter units - built-in tools, SSRF guard, sandbox invocation, backend selection
+  Gert.Tools.Builtin.Tests/     # built-in tool units - the 13 ITool impls, SSRF guard, sandbox invocation, backend selection
   Gert.Ingestion.Tests/         # extractor hardening units - XXE, zip-bomb, helper output
   Gert.Api.Tests/               # integration via GertApiFactory - controllers, SSE, auth, IDOR, admin, SPA fallback
   Gert.Web.Bundle.Tests/        # publish bundler: pinned esbuild manifest + index.html repoint
@@ -259,19 +261,26 @@ gives us the cleanest possible isolation assertion: after a two-user test, two s
 `ChatEvent` streams are collected and asserted directly with FluentAssertions - no snapshot
 library.
 
-### `Gert.Service.Tests` - the heart of the suite
-- **Chat orchestrator / tool loop** ([chat-and-tools](chat-and-tools.md)): drive `IChatService`
+### `Gert.Agent.Tests` - the agent execution engine
+- **Agent loop / tool loop** ([chat-and-tools](chat-and-tools.md)): drive the shared `IAgentLoop`
   with `FakeChatModel` scripted to request a tool, assert the emitted `ChatEvent` sequence
   (assistant text -> tool call -> tool result -> final text) collected from the stream. Covers the
   no-tool path, single tool, and a model that loops/recovers.
-- **Tools**: `RagTool` (hybrid retrieve -> citations), `WebSearchTool`, `PythonSandboxTool` (incl. the
-  `StubSandbox` failure variant). Assert tool entitlement is honoured - a user whose
-  `AllowedTools` excludes `sandbox` can't invoke it.
+- **Turn planner + runner**: the `TurnPlanner` intersection (request body x conversation preference
+  x JWT entitlement) and the `TurnRunner` drive, including ask_user/cancel back-channel handling.
+- **Toolset / chat tool-host** (`Gert.Agent.Hosting`): the `ChatToolHost` wiring of the built-in
+  tools through the `IToolHost` seams, and that tool entitlement is honoured - a user whose
+  `AllowedTools` excludes `sandbox` can't invoke `run_python`.
+
+### `Gert.Service.Tests` - the heart of the suite
+- **Read side** ([chat-and-tools](chat-and-tools.md)): the conversation bus + reader/streamer and
+  the delta coalescer - assert that subscribers see the right `ChatEvent` sequence collected from
+  the stream, across resubscribe and coalescing.
 - **Ingestion pipeline**: extract -> chunk -> embed -> write, run inline with fakes. Assert chunk
   counts, that `FakeEmbeddings` vectors land in the repo, and the "no extractable text -> Failed"
   decision from [decisions section 5](decisions.md).
 - **Conversations / Documents / Artifacts** services: CRUD + ownership semantics.
-- **Validation** - its own security-focused subsection below ([section 5 Validation](#validation---the-input-security-boundary)).
+- **Validation** - its own assembly (`Gert.Validation.Tests`) and security-focused subsection below ([section 5 Validation](#validation---the-input-security-boundary)).
 
 ### `Gert.Database.Sqlite.Tests` - the only place SQL is proven
 Runs against a **real** temp SQLite with the extension loaded (vec0 + FTS5) - an in-memory or
@@ -379,7 +388,7 @@ that only exist once you add HTTP:
 - **SSRF guard** ([security F5](security.md#3-findings--remediations)): the web-search fetcher,
   pointed at a private/loopback/`file:` URL (via the `FakeWebSearch` result set), refuses it - it
   never opens the connection. The live-socket halves of the control - the per-hop redirect
-  re-vet and the connect-time DNS pin - are pinned in `Gert.Tools.Tests/SafeHttpFetcherRedirectTests.cs`
+  re-vet and the connect-time DNS pin - are pinned in `Gert.Tools.Builtin.Tests/SafeHttpFetcherRedirectTests.cs`
   via the fetcher's internal resolver/IP-check seam (loopback listeners; production wiring unchanged).
 - **Per-user rate limiting** ([security F10](security.md#3-findings--remediations)):
   `RateLimitingTests` re-enables the limiter (skipped under the Testing environment) and turns

@@ -4,13 +4,15 @@
 
 vLLM exposes an **OpenAI-compatible** `/v1/chat/completions` with function calling and streaming, so the orchestrator can use a standard OpenAI client pointed at the model's base URL.
 
-The API advertises up to twelve tools to the model (each gated by entitlement,
+The API advertises up to thirteen tools to the model (each gated by entitlement,
 conversation toggles, and the request - see the intersection rule below):
 
 ```jsonc
 [
   { "name":"search_documents", "description":"Hybrid search over this project's private docs",
     "parameters": { "query":"string", "k":"integer" } },
+  { "name":"read_document", "description":"Read this project's stored document blobs full-text",
+    "parameters": { "doc":"string?", "offset":"integer?", "max_chars":"integer?" } },
   { "name":"web_search", "description":"Search the web via SearXNG",
     "parameters": { "query":"string" } },
   { "name":"run_python", "description":"Execute Python in a sandbox, return stdout",
@@ -306,6 +308,7 @@ Run phase (launcher scope, `DetachedUserContext` seeded from the job's snapshot)
      a. emit `tool_call` (card appears)
      b. execute the tool against THIS project's resources
         - search_documents -> hybrid query (below) on this project's rag.db (docs)
+        - read_document    -> this project's stored document blobs (full-text) on rag.db
         - web_search       -> SearXNG
         - run_python       -> sandbox (monty by default, or gVisor)
         - make/edit/read_artifact -> this conversation's chat_objects rows (chat.db), via the host's IObjectResource
@@ -587,7 +590,7 @@ the loop. The chat driver's `ChatToolDelegate` is the impl: it runs the **same
 project's RAG) and returns only the final text.
 
 - **Nested tools = delegable AND entitled.** The sub-agent may use a fixed
-  read-only subset (`rag`, `search`, `fetch`, `clock`), intersected with the
+  read-only subset (`rag`, `read_document`, `search`, `fetch`, `clock`), intersected with the
   parent turn's entitlement snapshot - the claim stays the ceiling
   ([auth](auth.md)) at every nesting depth. `run_sub_agent` is not in the
   delegable set, and the nested host's delegate is a no-op, so delegation

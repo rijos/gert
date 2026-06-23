@@ -47,15 +47,29 @@
     <p class="intro">Gert speaks the OpenAI-compatible chat protocol with function calling
     and streaming, so any vLLM-served model with tool support drives the full loop.</p>
 
-    <h2>The five tools</h2>
+    <h2>The thirteen tools</h2>
+    <p>Gert advertises up to thirteen built-in tools to the model. The core set:</p>
     <div class="table-wrap"><table>
       <tr><th>Tool</th><th>What it does</th></tr>
       <tr><td><code>search_documents</code></td><td>Hybrid search over this project's private documents <em>and</em> memory.</td></tr>
+      <tr><td><code>read_document</code></td><td>Return a stored document's <em>full</em> text (paged by offset/max_chars) when ranked passages aren't enough.</td></tr>
       <tr><td><code>web_search</code></td><td>Search the web via SearXNG; optionally fetch + summarize results (SSRF-guarded).</td></tr>
-      <tr><td><code>run_python</code></td><td>Execute Python in an ephemeral gVisor sandbox; only stdout returns.</td></tr>
+      <tr><td><code>web_fetch</code></td><td>Fetch one model-named public URL and return its readable text (same SSRF guard).</td></tr>
+      <tr><td><code>run_python</code></td><td>Execute Python in a sandbox; only stdout/stderr returns (see <a href="#sandbox">The sandbox</a>).</td></tr>
       <tr><td><code>set_todos</code></td><td>Replace the model-managed todo checklist the chat window renders live.</td></tr>
-      <tr><td><code>get_datetime</code></td><td>Current date/time (UTC + optional IANA timezone).</td></tr>
+      <tr><td><code>get_datetime</code></td><td>Current date/time, user-local by default (UTC + optional IANA timezone).</td></tr>
+      <tr><td><code>run_sub_agent</code></td><td>Delegate one self-contained task to a nested agent and wait for its final answer only.</td></tr>
+      <tr><td><code>ask_user</code></td><td>Ask up to four clarifying questions mid-turn (rendered as tabs) and block until answered.</td></tr>
     </table></div>
+    <p>The remaining four are the <strong>canvas suite</strong> -
+    <code>make_artifact</code>, <code>edit_artifact</code>, <code>read_artifact</code>, and
+    <code>list_artifacts</code> - that round the roster out to thirteen
+    (see <a href="#artifacts">Artifacts</a>).</p>
+    <blockquote><p><strong>Tool specs are a token budget.</strong> The tools array renders into
+    the prompt, and a model's tool-call format adherence collapses once that region grows too
+    large, so every description stays one or two short sentences carrying only the behavioural
+    contract. Each tool's schema is generated from its typed argument record, not hand-written,
+    so the advertised shape can't drift from the parsed contract.</p></blockquote>
     <p>Only tools that are <strong>(a)</strong> granted by the user's <code>gert_tools</code>
     JWT entitlement, <strong>(b)</strong> enabled on the conversation, and
     <strong>(c)</strong> requested in the message are offered to the model. The entitlement
@@ -79,17 +93,24 @@
     <code>kind = 'memory'</code> - so retrieval covers documents and memory together with no
     extra plumbing. Pinned memory is additionally prepended to the system prompt.</p></blockquote>
 
-    <h2>Artifacts (canvas tabs)</h2>
-    <p>The model opts a fenced code block into the canvas by <strong>naming it in the fence
-    info string</strong>:</p>
-    <pre><code>```html name=demo.html
-&lt;h1&gt;Demo&lt;/h1&gt;
-```</code></pre>
-    <p>Named fences with a known language (<code>md</code>, <code>html</code>,
-    <code>svg</code>, <code>py</code>, <code>cs</code>, <code>cpp</code>, <code>js</code>,
-    <code>rs</code>) persist as artifact rows and open as canvas tabs live - with HTML
-    preview, source view, and download. Unnamed fences stay inline in the message. A reload
-    gets the same artifacts back through the thread GET.</p>
+    <h2 id="artifacts">Artifacts (canvas tabs)</h2>
+    <p>Artifacts are created by <strong>explicit tool calls</strong>, not by parsing the
+    model's prose. (An earlier convention - a named fenced code block - was replaced wholesale:
+    as opaque tool arguments the content can't be truncated by a file's own fences.) Four
+    functions drive the canvas:</p>
+    <div class="table-wrap"><table>
+      <tr><th>Tool</th><th>What it does</th></tr>
+      <tr><td><code>make_artifact</code></td><td>Create (or overwrite by name) a complete file. <code>format</code> is a closed set: <code>html</code>, <code>markdown</code>, <code>svg</code>, <code>python</code>, <code>csharp</code>, <code>cpp</code>, <code>javascript</code>, <code>rust</code>.</td></tr>
+      <tr><td><code>edit_artifact</code></td><td>Iterate by exact substring replacement (<code>old_str</code> must match exactly and once), mirroring the <code>str_replace</code> contract.</td></tr>
+      <tr><td><code>read_artifact</code></td><td>Return an artifact's current content, line-numbered, so a follow-up edit can copy a snippet verbatim.</td></tr>
+      <tr><td><code>list_artifacts</code></td><td>Enumerate the conversation's artifacts (name, format, version) so the model picks the right one instead of guessing.</td></tr>
+    </table></div>
+    <p>Each call persists as a <code>tool_calls</code> row; created/updated artifacts open as
+    canvas tabs <strong>live, mid-turn</strong> - with HTML preview, source view, and download.
+    A reload gets the same artifacts back through the thread GET. The operator-configurable
+    <code>Gert:Prompts:Canvas</code> fragment rides each turn's system prompt and tells the
+    model to call <code>make_artifact</code> for any complete file instead of pasting a fenced
+    block; inline code blocks stay inline in the message.</p>
     <img class="doc-shot shot-light" src="../assets/canvas-light.png" alt="The artifacts canvas with a Python file and HTML preview open as tabs" loading="lazy">
     <img class="doc-shot shot-dark" src="../assets/canvas-dark.png" alt="The artifacts canvas with a Python file and HTML preview open as tabs (dark theme)" loading="lazy">
 
@@ -119,14 +140,26 @@
     and decompressed-size caps (zip bombs). A crash fails <em>that document</em>, never the
     host.</p></blockquote>
 
-    <h2>The sandbox</h2>
-    <p>Each <code>run_python</code> call executes in an ephemeral gVisor
-    (<code>runsc</code>) container:</p>
+    <h2 id="sandbox">The sandbox</h2>
+    <p><code>run_python</code> runs untrusted, model-written code - the strongest blast radius
+    in the system. Two backends sit behind one port, chosen by the operator
+    (<code>Gert:Tools:Sandbox:Type</code>):</p>
     <ul>
-      <li>No inbound network; <strong>outbound disabled by default</strong> - the exfiltration brake for arbitrary code.</li>
-      <li>Read-only rootfs, small writable <code>/tmp</code>, and <strong>no mount of <code>/data</code></strong> - the sandbox never sees any user's database files.</li>
-      <li>CPU, memory, and PID limits with a hard wall-clock timeout; the container is destroyed after the call.</li>
+      <li><strong>Monty</strong> <em>(default)</em> - a minimal Python interpreter written in
+      Rust with <strong>no syscalls</strong>: the language itself has no filesystem, network, or
+      env access, so untrusted code can only reach the world through host callbacks (plain
+      <code>run_python</code> grants none). It runs in an unprivileged <strong>sidecar
+      process</strong> Gert reaches over HTTP - microsecond startup, no container, no infra. It
+      supports a Python <em>subset</em>; an unsupported construct returns an error the model reads.</li>
+      <li><strong>gVisor</strong> (<code>runsc</code>) <em>(opt-in)</em> - an
+      <strong>ephemeral container</strong> running real CPython, for workloads needing the full
+      language and stdlib: no inbound network, <strong>outbound off by default</strong>,
+      read-only rootfs, a small writable <code>/tmp</code>, container destroyed after the call.
+      Needs gVisor on the host.</li>
     </ul>
+    <p>Both backends share the per-run posture: <strong>no mount of <code>/data</code></strong>
+    (the sandbox never sees any user's - or this user's - database files), a hard wall-clock and
+    memory cap, and only captured <code>stdout</code>/<code>stderr</code> returns.</p>
 
     <a class="next-link" href="security.html">Next: Security Model -></a>
   </div>

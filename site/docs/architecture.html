@@ -61,8 +61,9 @@
     │               │               │               │
     ▼               ▼               ▼               ▼
 ┌────────┐     ┌──────────┐    ┌──────────┐    ┌──────────────────────┐
-│  vLLM  │     │ SearXNG  │    │  gVisor  │    │ /data/users/{key}/   │
-│ models │     │  search  │    │  sandbox │    │  chat.db + rag.db    │
+│  vLLM  │     │ SearXNG  │    │  sandbox │    │ /data/users/{key}/   │
+│ models │     │  search  │    │ monty/   │    │   projects/{pid}/    │
+│        │     │          │    │ gVisor   │    │  chat.db + rag.db    │
 └────────┘     └──────────┘    └──────────┘    └──────────────────────┘</code></pre>
 
     <div class="table-wrap"><table>
@@ -70,9 +71,9 @@
       <tr><td><strong>VanJS SPA</strong></td><td>The UI, served as static files by Gert.Api itself. Holds the access token in memory, calls <code>/api/*</code> on the same origin - no CORS needed.</td></tr>
       <tr><td><strong>Pocket ID</strong></td><td>OIDC provider. Authenticates users with <strong>passkeys</strong>, issues JWTs, owns the user list. The API only ever fetches its JWKS.</td></tr>
       <tr><td><strong>Gert.Api</strong></td><td>Stateless REST API + static host. Validates JWTs, derives the user folder, orchestrates chat and ingestion.</td></tr>
-      <tr><td><strong>vLLM</strong></td><td>Chat + embedding models behind an OpenAI-compatible API. Server-side only.</td></tr>
+      <tr><td><strong>vLLM</strong></td><td>Chat + embedding models behind an OpenAI-compatible API, reached through Microsoft.Extensions.AI over the official OpenAI SDK. Server-side only.</td></tr>
       <tr><td><strong>SearXNG</strong></td><td>Self-hosted web search. Server-side only.</td></tr>
-      <tr><td><strong>gVisor</strong></td><td>Ephemeral sandbox for the <code>run_python</code> tool. Server-side only.</td></tr>
+      <tr><td><strong>Sandbox</strong></td><td>Isolated backend for the <code>run_python</code> tool, operator-picked via <code>Gert:Tools:Sandbox:Type</code>: <strong>monty</strong> (default - a Rust Python interpreter sidecar with no syscalls and no container) or <strong>gVisor</strong> (opt-in - real CPython in an ephemeral <code>runsc</code> container). Egress off either way. Server-side only.</td></tr>
     </table></div>
 
     <h2>Design principles</h2>
@@ -86,28 +87,51 @@
     </ol>
 
     <h2>Solution layout</h2>
-    <p>The compiler enforces inward dependencies - <code>Gert.Service</code> references only
-    <code>Gert.Model</code>, so the host (API) and the tests drive the same business
-    logic:</p>
+    <p>The compiler enforces inward dependencies. Everything points inward to
+    <code>Gert.Service</code> -> <code>Gert.Model</code>; the host and the turn engine sit
+    outward of the service layer (host -> <code>Gert.Agent</code> -> <code>Gert.Service</code>),
+    and the service layer references only the capability <em>contracts</em>, never the impl
+    leaves - so the host (API) and the tests drive the same business logic. Each config-selected
+    capability (chat, the database engine, the RAG engine, search, the sandbox) is split into a
+    contracts assembly and one or more per-impl leaves:</p>
     <pre><code>src/
 ├── Gert.Model/             <span class="c"># POCOs only - no dependencies</span>
-├── Gert.Service/           <span class="c"># host-agnostic business logic</span>
-│   ├── Chat/               <span class="c"># turn planner + runner (the tool loop)</span>
-│   ├── Ingestion/          <span class="c"># extract -> chunk -> embed -> write</span>
-│   ├── Tools/              <span class="c"># tool registry (RAG, search, sandbox...)</span>
-│   └── Validation/         <span class="c"># fail-closed input boundary</span>
-├── Gert.Storage/           <span class="c"># object store (local FS today)</span>
-├── Gert.Database/          <span class="c"># DB provider seams</span>
-├── Gert.Database.Sqlite/   <span class="c"># sqlite-vec + FTS5 implementation</span>
+├── Gert.Service/           <span class="c"># host-agnostic business logic; refs Model + the capability contracts + Validation</span>
+│   ├── Chat/               <span class="c"># request-facing read side: conversation bus + reader/streamer + turn vocab</span>
+│   ├── Conversations/      <span class="c"># IConversationService</span>
+│   ├── Documents/          <span class="c"># IDocumentService</span>
+│   ├── Ingestion/          <span class="c"># IIngestionService - extract -> chunk -> embed -> write</span>
+│   └── Provisioning/       <span class="c"># UserProvisioner - username refresh + default-project seed</span>
+├── Gert.Agent/             <span class="c"># turn/agent EXECUTION engine (host -> Agent -> Service)</span>
+│   │                       <span class="c">#   TurnPlanner/TurnRunner/TurnLauncher, IAgentLoop, ask_user/cancel registries</span>
+│   ├── Loop/               <span class="c"># IAgentLoop + the M.E.AI chat-client pipeline</span>
+│   └── Hosting/            <span class="c"># ChatToolHost / ProjectRagResource / ChatToolDelegate</span>
+├── Gert.Validation/        <span class="c"># fail-closed input boundary - IValidationProvider + per-DTO validators</span>
+│
+│   <span class="c"># --- capability contracts (ref Model only; service may reference these) ---</span>
+├── Gert.Storage/           <span class="c"># IObjectStore port + StorageOptions/StorageKeys</span>
+├── Gert.Database/          <span class="c"># user.db/chat.db provider + repository ports (keyed by Gert:Database:Type)</span>
+├── Gert.Rag/               <span class="c"># vector/RAG index ports (IRagStore/IRagIndexProvider, keyed by Gert:Rag:Type)</span>
+├── Gert.Chat/              <span class="c"># M.E.AI chat/embeddings ports + the provider catalog/factory</span>
+├── Gert.Tools/             <span class="c"># tool contracts (ITool/ToolRegistry/...) + IToolHost seams + external ports</span>
+│
+│   <span class="c"># --- per-impl adapter leaves ---</span>
+├── Gert.Storage.Local/     <span class="c"># local-filesystem object store</span>
+├── Gert.Database.Sqlite/   <span class="c"># user.db/chat.db SQLite engine (Microsoft.Data.Sqlite + Dapper)</span>
+├── Gert.Rag.Sqlite/        <span class="c"># sqlite-vec + FTS5 hybrid RAG store</span>
+├── Gert.Chat.OpenAI/       <span class="c"># OpenAI-SDK chat + embedding client plugin</span>
+├── Gert.Tools.Builtin/     <span class="c"># the 13 built-in tools + search/sandbox(monty,gVisor)/fetch backends</span>
+├── Gert.Ingestion/         <span class="c"># md/txt + isolated pdf/docx text extractors</span>
 ├── Gert.Authentication/    <span class="c"># JWT claims -> IUserContext</span>
-├── Gert.External/          <span class="c"># vLLM, SearXNG, gVisor, extraction adapters</span>
-└── Gert.Api/               <span class="c"># REST host + the SPA (wwwroot/)</span></code></pre>
+│
+└── Gert.Api/               <span class="c"># REST host + the SPA (wwwroot/); the composition root</span></code></pre>
 
     <h2>Tech stack</h2>
     <ul>
       <li><strong>.NET 10 / ASP.NET Core</strong> - warnings as errors, nullable strict.</li>
-      <li><strong>SQLite</strong> via <code>Microsoft.Data.Sqlite</code> + Dapper, with <code>sqlite-vec</code> (vector KNN) and <code>FTS5</code> (BM25) per project database.</li>
-      <li><strong>VanJS</strong> SPA - native ES modules, vendored libs, no npm, no build step; minified in place on publish.</li>
+      <li><strong>SQLite</strong> via <code>Microsoft.Data.Sqlite</code> + Dapper. The database engine (<code>Gert.Database.Sqlite</code>) backs <code>user.db</code> + <code>chat.db</code>; the RAG engine (<code>Gert.Rag.Sqlite</code>) backs <code>rag.db</code> with <code>sqlite-vec</code> (vector KNN) + <code>FTS5</code> (BM25) for hybrid search - both per project.</li>
+      <li><strong>Microsoft.Extensions.AI</strong> (<code>IChatClient</code>/<code>IEmbeddingGenerator</code>) over the official <strong>OpenAI .NET SDK</strong> - any OpenAI-compatible server (vLLM in the reference deployment).</li>
+      <li><strong>VanJS</strong> SPA - native ES modules, vendored libs, no npm, no build step; on publish a pinned, SHA-512-verified esbuild Go binary bundles it (no Node).</li>
       <li><strong>Polly</strong> resilience on all upstream HTTP; <strong>Serilog</strong> NDJSON logs (no tokens, no content).</li>
       <li><strong>Channels + BackgroundService</strong> for the detached turn and ingestion workers.</li>
     </ul>

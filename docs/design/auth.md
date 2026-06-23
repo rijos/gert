@@ -174,6 +174,7 @@ The Notes column records why a grant is more or less sensitive:
 | Tool (model function) | Capability id | Notes |
 |---|---|---|
 | RAG - `search_documents` | `rag` | reads **this** user's `rag.db` only |
+| Read document - `read_document` | `read_document` | reads this project's stored document blobs full-text; no external world |
 | Web search - `web_search` | `search` | SearXNG; outbound egress |
 | Sandbox - `run_python` | `sandbox` | gVisor; **executes arbitrary code** - the most sensitive grant, hand it out deliberately |
 | Todos - `set_todos` | `todo` | renders the chat checklist; no external world |
@@ -184,6 +185,7 @@ The Notes column records why a grant is more or less sensitive:
 | Canvas list - `list_artifacts` | `list_artifacts` | read-only; lists this conversation's artifacts (name, format, version) |
 | Ask the user - `ask_user` | `ask_user` | blocks the turn awaiting the user's answer (own timeout budget); no external world ([chat-and-tools](chat-and-tools.md#ask-the-user-ask_user)) |
 | Web fetch - `web_fetch` | `fetch` | outbound egress to a **model-named URL**; SSRF-guarded - the same hardened fetcher as web search's page pulls ([chat-and-tools](chat-and-tools.md#web-fetch-web_fetch)) |
+| Sub-agent - `run_sub_agent` | `sub_agent` | delegates to a nested loop bounded by the parent entitlement ceiling; no external world of its own |
 
 The SPA exposes the canvas suite (`make_artifact` / `edit_artifact` / `read_artifact` /
 `list_artifacts`) as **one "Canvas" switch**, so a token granting the canvas should grant all

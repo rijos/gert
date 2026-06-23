@@ -36,7 +36,9 @@ code comments cite docs by section, so keep both ends accurate.
   under `Builtin/`, and the id-only `ToolRegistry` derived from them). The remaining adapters:
   `Gert.Ingestion` (the md/txt + isolated pdf/docx text extractors), `Gert.Authentication`.
 - `Gert.Agent` - the turn/agent EXECUTION engine, a layer between the host and `Gert.Service`
-  (host -> `Gert.Agent` -> `Gert.Service`): the `TurnWorker` + `ChannelTurnQueue`, the
+  (host -> `Gert.Agent` -> `Gert.Service`): the `TurnLauncher` (an `IHostedService` that launches
+  each planned turn on a detached task, bounds concurrency at `Gert:Turn:MaxConcurrentTurns`, and
+  cancels/drains in-flight runners on shutdown), the
   `TurnPlanner`/`TurnRunner`, the reusable `IAgentLoop`, the ask_user/cancel registries
   (`ITurnQuestions`/`ITurnCancellation`), the worker-scope `DetachedUserContext`, and the chat
   tool-host wiring (`Gert.Agent.Hosting`: `ChatToolHost`, `ProjectRagResource`, `ChatToolDelegate`

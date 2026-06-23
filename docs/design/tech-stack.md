@@ -117,7 +117,7 @@ Gert.sln
 │  ├─ ServiceCollectionExtensions.cs  # AddGertDatabase(cfg): the GENERIC engine selector + the user/chat provider ports
 │  └─ UnauthorizedDatabaseIdentityException.cs  # the fail-closed provisioning-gate refusal
 │
-├─ Gert.Database.Sqlite/      # SQLite engine IMPL leaf - references Database, Service, Storage (contracts), Model
+├─ Gert.Database.Sqlite/      # SQLite engine IMPL leaf - references Database, Storage (contracts), Model
 │  ├─ SqliteDatabaseEngineBuilder.cs # IDatabaseEngineBuilder (Type=Sqlite) - builds the user/chat providers; AddGertDatabaseSqlite registers it keyed
 │  ├─ SqliteUserDatabaseProvider.cs  # opens THIS user's user.db (self-migrating)
 │  ├─ SqliteChatDatabaseProvider.cs  # opens a project's chat.db (WAL, busy_timeout)
@@ -176,7 +176,7 @@ Gert.sln
 │  └─ Ports/                  #   Gert.Tools.Ports - the IWebSearch/IWebFetcher/IPythonSandbox external-world ports
 │
 ├─ Gert.Tools.Builtin/        # built-in tools + search/sandbox/fetch impl leaf - refs Tools(contracts), Validation, Model (NOT Service/Database/Rag/Chat: tools reach RAG/objects/UI/delegation through the IToolHost seams; an architecture test enforces no Service edge)
-│  ├─ Builtin/                #   the 12 built-in ITool impls (rag, search, sandbox, fetch, todo, clock, artifact suite, ask_user, sub_agent); the id-only ToolRegistry is derived from them
+│  ├─ Builtin/                #   the 13 built-in ITool impls (rag, read_document, search, sandbox, fetch, todo, clock, artifact suite, ask_user, sub_agent); the id-only ToolRegistry is derived from them
 │  ├─ Fetch/                  #   SSRF-guarded fetcher + the web_fetch IWebFetcher impl (security F5)
 │  ├─ Search/                 #   IWebSearch keyed-plugin selector (WebSearchFactory, Gert:Tools:Search:Type)
 │  │  └─ SearXNG/             #     the SearXNG plugin leaf - AddGertSearchSearXNG (keyed by Type)
@@ -206,7 +206,8 @@ Gert.sln
 │
 ├─ tests/                     # test projects - see docs/design/testing.md
 │  ├─ Gert.Testing/           #   shared infra: fakes (vLLM/SearXNG/sandbox), GertApiFactory, JWT mint
-│  ├─ Gert.Service.Tests/     #   whitebox: tool loop + turn orchestration, ingestion pipeline
+│  ├─ Gert.Agent.Tests/       #   whitebox: agent loop, turn planner/runner, toolset, chat tool-host wiring
+│  ├─ Gert.Service.Tests/     #   the request-facing read side (conversation bus/reader/streamer, ingestion, delta coalescer) + validators
 │  ├─ Gert.Validation.Tests/  #   fail-closed meta-test + per-DTO validator units + adversarial corpus
 │  ├─ Gert.Database.Sqlite.Tests/ # repositories vs real temp SQLite (vec0 + FTS5); isolation
 │  ├─ Gert.Authentication.Tests/  # JWT claims -> IUserContext; sub->key; RS256 pin

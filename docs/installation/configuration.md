@@ -158,7 +158,7 @@ block follow in sections 3-7.
 The embeddings functionality. `Type` selects the implementation (`OpenAI` only today - an
 OpenAI-compatible `/v1/embeddings` upstream, vLLM serving bge-m3 in the reference deployment);
 an unknown `Type` fails fast at startup. The connection + resilience live under `Parameters`
-(`EmbeddingsParameters`, `src/Gert.Chat/OpenAI/EmbeddingsParameters.cs`).
+(`EmbeddingsParameters`, `src/Gert.Chat.OpenAI/EmbeddingsParameters.cs`).
 
 `Gert:Embeddings:Parameters`:
 
@@ -441,7 +441,7 @@ concrete defaults and an operator retunes them under
 | Key | Default | Notes |
 |-----|---------|-------|
 | `MaxTurnDuration` | `00:05:00` | Hard wall-clock cap on one turn (model rounds + tools) - the real budget. Doubles as the orphan horizon: a `streaming` row older than this reads as `error`. |
-| `MaxConcurrentTurns` | `4` | Parallel turn lanes. Turns shard by (user, project, conversation): one conversation never runs concurrently with itself; different conversations may overlap. `1` restores the global serial worker. Must be >= 1 (validated at startup). |
+| `MaxConcurrentTurns` | `4` | Global cap on the number of turns running concurrently across all users, projects, and conversations. `1` = global serial worker. Per-conversation serialization (one conversation never streams concurrently with itself) is enforced separately by the streaming gate index, not by this cap. Must be >= 1 (validated at startup). |
 | `MaxToolRounds` | `64` | **Runaway brake, not a work budget** - sized an order of magnitude above legitimate turns. Past it the runner refuses further calls with budget-exhausted errors (visible on the cards), winds down in one final round, and logs a warning. |
 | `MaxTokensPerRound` | `16384` | Per-round completion bound: the `max_tokens` sent on every upstream request. Reasoning tokens count against it on a thinking provider - keep it generous. `0` disables. |
 | `AskUserTimeout` | `00:05:00` | How long one `ask_user` question waits for the user before the tool returns its graceful "user did not respond" result. The effective wait is min(this, remaining turn budget - 15 s grace), so it can never outlive `MaxTurnDuration`. |

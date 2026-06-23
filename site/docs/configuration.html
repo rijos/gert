@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Configuration - Gert Docs</title>
-  <meta name="description" content="Every server-level configuration knob in Gert: model upstream, model catalog, auth, storage, search, sandbox, and extraction.">
+  <meta name="description" content="Every server-level configuration knob in Gert: embeddings, the chat provider catalog, auth, storage, search, sandbox, extraction, turns, prompts, artifacts, and rate limiting.">
   <link rel="icon" href="../favicon.svg" type="image/svg+xml">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -48,114 +48,253 @@
     Standard ASP.NET Core layering applies - last one wins:</p>
     <pre><code>appsettings.json -> appsettings.{Environment}.json -> environment variables -> command line</code></pre>
     <ul>
-      <li><strong>Environment variables</strong> - replace <code>:</code> with <code>__</code>: <code>Gert__OpenAI__BaseUrl=http://vllm:8000</code>. Array entries by index: <code>Gert__Models__0__Id=qwen36</code>.</li>
-      <li><strong>Command line</strong> - <code>dotnet run --project src/Gert.Api -- --Gert:OpenAI:BaseUrl=...</code> (highest precedence).</li>
-      <li><strong>Secrets never go in <code>appsettings.json</code></strong> - the vLLM bearer key arrives via env vars or <code>dotnet user-secrets</code>.</li>
+      <li><strong>Environment variables</strong> - replace <code>:</code> with <code>__</code>: <code>Gert__Embeddings__Parameters__BaseUrl=http://vllm:8000</code>. Map entries by key: <code>Gert__Chat__Providers__qwen36-thinking__Parameters__Model=qwen36</code>.</li>
+      <li><strong>Command line</strong> - <code>dotnet run --project src/Gert.Api -- --Gert:Embeddings:Parameters:BaseUrl=...</code> (highest precedence; beats launch-profile env vars too).</li>
+      <li><strong>Secrets never go in <code>appsettings.json</code></strong> - a bearer key, if your upstream needs one, arrives via env vars or <code>dotnet user-secrets</code>. Chat keys are <strong>per provider</strong> (<code>Gert:Chat:Providers:&lt;slug&gt;:Parameters:ApiKey</code>); the embeddings key is <code>Gert:Embeddings:Parameters:ApiKey</code>.</li>
     </ul>
+    <p>The whole <code>Gert:*</code> tree follows one rule: <strong>functionality -&gt; choose an
+    implementation (<code>Type</code>) -&gt; configure it (<code>Parameters</code>)</strong>.
+    Cross-implementation knobs sit beside <code>Type</code>; the connection / impl-private
+    config lives under <code>Parameters</code>. HTTP resilience
+    (<code>RequestTimeoutSeconds</code>/<code>RetryCount</code>) is <strong>per item that makes
+    calls</strong> - each chat provider's <code>Parameters</code> and
+    <code>Gert:Embeddings:Parameters</code> carry their own; there is no shared HTTP section.</p>
 
-    <h2>Gert:OpenAI - the model upstream</h2>
-    <p>One OpenAI-compatible upstream serves <strong>both chat and embeddings</strong>.</p>
+    <h2>Gert:Embeddings - the embeddings upstream</h2>
+    <p>The embeddings functionality. <code>Type</code> selects the implementation
+    (<code>OpenAI</code> only today - an OpenAI-compatible <code>/v1/embeddings</code> upstream,
+    vLLM serving bge-m3 in the reference deployment); an unknown <code>Type</code> fails fast at
+    startup. The connection + resilience live under <code>Parameters</code>.</p>
     <div class="table-wrap"><table>
       <tr><th>Key</th><th>Default</th><th>Notes</th></tr>
-      <tr><td><code>BaseUrl</code></td><td><code>http://localhost:8000</code></td><td>Server base URL, <strong>without</strong> <code>/v1</code>.</td></tr>
-      <tr><td><code>ApiKey</code></td><td><em>(unset)</em></td><td><strong>Secret</strong> - env / user-secrets only. Sent as <code>Authorization: Bearer</code>.</td></tr>
-      <tr><td><code>ChatModelId</code></td><td><code>default</code></td><td>Sent as <code>model</code> on <code>/v1/chat/completions</code>. Must exist on the server (<code>GET /v1/models</code>).</td></tr>
-      <tr><td><code>EmbeddingModelId</code></td><td><code>bge-m3</code></td><td>Sent as <code>model</code> on <code>/v1/embeddings</code>. Document upload fails without it.</td></tr>
-      <tr><td><code>EmbeddingDimensions</code></td><td><code>1024</code></td><td>Must match the embedding model. Effectively immutable once data exists - it bakes into every <code>rag.db</code>.</td></tr>
-      <tr><td><code>RequestTimeoutSeconds</code></td><td><code>120</code></td><td>Per-attempt timeout; Polly retries wrap it.</td></tr>
-      <tr><td><code>RetryCount</code></td><td><code>2</code></td><td>Retries on transient upstream failure.</td></tr>
+      <tr><td><code>Parameters:BaseUrl</code></td><td><code>http://localhost:8000</code></td><td>Embeddings server base URL, <strong>without</strong> <code>/v1</code>.</td></tr>
+      <tr><td><code>Parameters:ApiKey</code></td><td><em>(unset)</em></td><td><strong>Secret</strong> - env / user-secrets only. Sent as <code>Authorization: Bearer</code>. (Each chat provider carries its own key.)</td></tr>
+      <tr><td><code>Parameters:Model</code></td><td><code>bge-m3</code></td><td>Sent as <code>model</code> on <code>/v1/embeddings</code>. Knowledge upload (RAG) fails if the upstream doesn't serve it.</td></tr>
+      <tr><td><code>Parameters:Dimensions</code></td><td><code>1024</code></td><td>Must match the embedding model (bge-m3 = 1024). Effectively immutable once data exists - it bakes into every <code>rag.db</code>.</td></tr>
+      <tr><td><code>Parameters:RequestTimeoutSeconds</code></td><td><code>120</code></td><td>Per-attempt timeout (time to response headers) for the embeddings path's own resilience.</td></tr>
+      <tr><td><code>Parameters:RetryCount</code></td><td><code>2</code></td><td>Retries on transient pre-stream failure. Embedding POSTs are idempotent, so retries are safe. <code>0</code> disables.</td></tr>
     </table></div>
-    <blockquote><p><strong>vLLM prefix caching.</strong> Gert's requests are prefix-cache
+    <blockquote><p><strong>vLLM prefix caching.</strong> Gert's chat requests are prefix-cache
     friendly: a static system prompt per project, history replayed verbatim, deterministic
     tool specs, no per-request unique fields. Make sure your vLLM has automatic prefix
     caching enabled (it's on by default in the V1 engine) and watch
     <code>vllm:prefix_cache_hit_rate</code>.</p></blockquote>
 
-    <h2>Gert:Models - the model catalog</h2>
-    <p>What <code>GET /api/models</code> publishes to the picker, in configured order. When
-    absent, the catalog falls back to a single entry built from
-    <code>Gert:OpenAI:ChatModelId</code>.</p>
+    <h2>Gert:Chat:Providers - the chat provider catalog</h2>
+    <p>A <strong>map keyed by provider slug</strong> - each entry is one named chat preset, and
+    the slug is the <code>id</code> that <code>GET /api/models</code> publishes to the picker (in
+    configured/document order). When the section is absent or empty, the catalog falls back to a
+    single default <code>openai</code> provider built from
+    <code>Gert:Embeddings:Parameters:BaseUrl</code> (single-vLLM zero-config boot). The picker's
+    default is <code>Gert:Chat:DefaultProvider</code> - a chat-level key (a sibling of
+    <code>Providers</code>) naming a slug; <strong>unset</strong> falls back to the first entry in
+    document order, and a value matching no configured slug is a startup error.</p>
+    <p>The split is catalog/capabilities on the entry, connection + sampling + per-item resilience
+    under <code>Parameters</code>:</p>
     <div class="table-wrap"><table>
       <tr><th>Key</th><th>Required</th><th>Notes</th></tr>
-      <tr><td><code>Id</code></td><td>yes</td><td>Sent upstream as <code>model</code>.</td></tr>
-      <tr><td><code>Name</code></td><td>yes</td><td>Display name in the picker.</td></tr>
-      <tr><td><code>Default</code></td><td>no</td><td>The server-level default. Flag exactly one.</td></tr>
-      <tr><td><code>Capabilities</code></td><td>no</td><td><code>"tools"</code> is <strong>load-bearing</strong> - it gates tool calling. Unset means permissive; an explicit list without <code>"tools"</code> disables tools for that model. <code>"vision"</code> gates image input.</td></tr>
-      <tr><td><code>Context</code></td><td>no</td><td>Context window in tokens (the "128K ctx" badge). vLLM reports it as <code>max_model_len</code>.</td></tr>
+      <tr><td><code>Name</code></td><td>no</td><td>Display name in the picker. Defaults to the slug.</td></tr>
+      <tr><td><code>Type</code></td><td>no</td><td>Selects the chat-client impl. <code>"openai"</code> (default) is the only one implemented - an OpenAI-compatible / vLLM endpoint; the schema is open for others.</td></tr>
+      <tr><td><code>Capabilities</code></td><td>no</td><td>Capability tokens, shown as badges. <code>"tools"</code> is <strong>load-bearing</strong> - it gates tool calling. <strong>Unset means permissive</strong>; an explicit list without <code>"tools"</code> disables tools for that provider. <code>"vision"</code> and others are display-only today.</td></tr>
+      <tr><td><code>Context</code></td><td>yes</td><td>Context window in tokens (the "128K ctx" badge) <strong>and</strong> the budget an inline message attachment is gated against. vLLM reports it as <code>max_model_len</code>. A configured provider with no positive <code>Context</code> fails closed at startup.</td></tr>
       <tr><td><code>Fast</code></td><td>no</td><td>Display-only "- fast" marker.</td></tr>
-      <tr><td><code>Endpoint</code></td><td>no</td><td>Display-only endpoint hint.</td></tr>
+      <tr><td><code>Parameters</code></td><td>yes</td><td>The <code>Type</code>-specific connection + sampling + resilience bag (see below). The picker's <code>endpoint</code> hint is taken from <code>Parameters.BaseUrl</code>.</td></tr>
     </table></div>
-    <p>Users pick from this catalog; they can never add endpoints or model ids of their own.</p>
-
-    <h2>Auth + Storage - identity and the data root</h2>
-    <div class="table-wrap"><table>
-      <tr><th>Key</th><th>Notes</th></tr>
-      <tr><td><code>Auth:Authority</code></td><td>The OIDC issuer. JWTs are validated against its JWKS, RS256 only.</td></tr>
-      <tr><td><code>Auth:Audience</code></td><td>Expected <code>aud</code> claim, e.g. <code>gert-api</code>.</td></tr>
-      <tr><td><code>Storage:DataRoot</code></td><td>Filesystem root holding the <code>users/</code> tree. Back up this directory and you've backed up Gert.</td></tr>
-      <tr><td><code>Storage:ExpectedIssuer</code></td><td>Fail-closed <code>iss</code> assertion checked <strong>before</strong> any user folder is created. Normally equal to <code>Auth:Authority</code>.</td></tr>
-    </table></div>
-    <p>Both <code>Storage</code> values are <strong>required</strong> - the host refuses to start without them.</p>
-
-    <h2>Gert:Search - SearXNG web search</h2>
-    <p>The fetch step (downloading result pages) is the SSRF-exposed part and is
-    <strong>off by default</strong>.</p>
+    <p><strong>Parameters (the <code>openai</code> type).</strong> The OpenAI REST-spec sampling
+    fields are typed and <strong>all optional - null omits the field</strong>, so the upstream's
+    own default applies; everything outside the spec rides <code>Extra</code>.</p>
     <div class="table-wrap"><table>
       <tr><th>Key</th><th>Default</th><th>Notes</th></tr>
-      <tr><td><code>BaseUrl</code></td><td><code>http://localhost:8080</code></td><td>The SearXNG instance (must allow <code>format=json</code>).</td></tr>
+      <tr><td><code>BaseUrl</code></td><td><code>http://localhost:8000</code></td><td>Server base URL, <strong>without</strong> <code>/v1</code>.</td></tr>
+      <tr><td><code>Model</code></td><td><code>default</code></td><td>The upstream model id, sent as <code>model</code> on <code>/v1/chat/completions</code>. Must exist on the server (<code>GET &lt;BaseUrl&gt;/v1/models</code>).</td></tr>
+      <tr><td><code>ApiKey</code></td><td><em>(unset)</em></td><td><strong>Secret</strong> - env / user-secrets only, never appsettings.json. Sent as <code>Authorization: Bearer</code>. Empty for a keyless vLLM.</td></tr>
+      <tr><td><code>RequestTimeoutSeconds</code></td><td><code>120</code></td><td>Per-item pre-stream timeout for <strong>this provider</strong> (time to response headers) - not the stream duration, which the turn budget bounds. Each provider gets its own named HTTP client.</td></tr>
+      <tr><td><code>RetryCount</code></td><td><code>2</code></td><td>Per-item pre-stream retries for <strong>this provider</strong>. Safe for chat - a retried attempt means no tokens were streamed. <code>0</code> disables.</td></tr>
+      <tr><td><code>Temperature</code> ...</td><td><em>(unset)</em></td><td>Typed OpenAI-spec sampling (<code>Temperature</code>, <code>TopP</code>, <code>PresencePenalty</code>, <code>FrequencyPenalty</code>, <code>Seed</code>, <code>Stop</code>). Each unset field is <strong>omitted</strong> so the upstream default stands.</td></tr>
+      <tr><td><code>Extra</code></td><td><code>{}</code></td><td>A <strong>string-&gt;string map</strong> for everything outside the OpenAI REST spec, keyed by dotted JSON path. Home of the vLLM extensions (<code>top_k</code>, <code>min_p</code>, <code>repetition_penalty</code>) and the template kwargs (<code>chat_template_kwargs.enable_thinking</code>, <code>chat_template_kwargs.preserve_thinking</code>).</td></tr>
+    </table></div>
+    <p><strong>Thinking vs instruct is a provider choice.</strong> There is no per-request
+    thinking toggle - you pick a thinking provider or an instruct provider. The same physical
+    model can appear under several slugs with different sampling:</p>
+    <pre><code>"Chat": {
+  "DefaultProvider": "qwen36-thinking",
+  "Providers": {
+    "qwen36-thinking": {
+      "Name": "Qwen 3.6 - thinking",
+      "Type": "openai",
+      "Capabilities": [ "tools", "vision" ],
+      "Context": 131072,
+      "Parameters": {
+        "BaseUrl": "http://vllm-host:8000",
+        "Model": "qwen36",
+        "Temperature": 0.6,
+        "TopP": 0.95,
+        "Extra": { "top_k": "20", "chat_template_kwargs.enable_thinking": "true" }
+      }
+    }
+  }
+}</code></pre>
+    <p>Gert binds this statically at startup and never probes the upstream, so filling in
+    <code>Context</code> and <code>Capabilities</code> is on you. Users pick from this catalog;
+    they can never add endpoints or model ids of their own.</p>
+
+    <h2>Auth + Storage + Gert:Database + Gert:Rag - identity, the data root, and the engines</h2>
+    <div class="table-wrap"><table>
+      <tr><th>Key</th><th>Notes</th></tr>
+      <tr><td><code>Auth:Authority</code></td><td>The OIDC issuer (Pocket ID). JWTs are validated against its JWKS, RS256 only.</td></tr>
+      <tr><td><code>Auth:Audience</code></td><td>Expected <code>aud</code> claim, e.g. <code>gert-api</code>.</td></tr>
+      <tr><td><code>Storage:DataRoot</code></td><td>Filesystem root holding the <code>users/</code> tree - the <strong>shared default</strong> for the object store and both SQLite engines. Back up this directory (and any override roots) and you've backed up Gert.</td></tr>
+      <tr><td><code>Storage:ExpectedIssuer</code></td><td>Fail-closed <code>iss</code> assertion checked <strong>before</strong> any user folder is created. Normally equal to <code>Auth:Authority</code>.</td></tr>
+      <tr><td><code>Gert:Database:Type</code></td><td>Engine for the per-user/per-project databases (<code>user.db</code>/<code>chat.db</code>). Only <code>Sqlite</code> ships (the default - per-user SQLite files); case-insensitive.</td></tr>
+      <tr><td><code>Gert:Database:Parameters:DataRoot</code></td><td><em>(SQLite only, optional)</em> Own filesystem root for <code>user.db</code> + <code>chat.db</code>. Unset -&gt; falls back to <code>Storage:DataRoot</code>.</td></tr>
+      <tr><td><code>Gert:Rag:Type</code></td><td>Engine for the per-project RAG/vector index - a <strong>separate</strong> capability from <code>Gert:Database</code>. Only <code>Sqlite</code> ships (the default - per-project <code>rag.db</code> with sqlite-vec + FTS5).</td></tr>
+      <tr><td><code>Gert:Rag:Parameters:DataRoot</code></td><td><em>(SQLite only, optional)</em> Own filesystem root for <code>rag.db</code>. Unset -&gt; falls back to <code>Storage:DataRoot</code>. Set it to put the vector index on its own (larger) volume.</td></tr>
+      <tr><td><code>Gert:Rag:Parameters:VecExtensionPath</code></td><td><em>(SQLite only, optional)</em> Path to the native sqlite-vec extension. Unset -&gt; the vendored copy beside the running assembly.</td></tr>
+    </table></div>
+    <p>Both <code>Storage</code> values are <strong>required</strong> - the host refuses to start
+    without them. <code>Gert:Database:Type</code> and <code>Gert:Rag:Type</code> are optional and
+    default to <code>Sqlite</code>. Database, RAG, and storage are independent stores: by default
+    all three sit under <code>Storage:DataRoot</code>, but a SQLite engine can take its own root.</p>
+
+    <h2>Gert:Tools:Search - SearXNG web search</h2>
+    <p>The web-search tool backend. <code>Type</code> selects the implementation
+    (<code>SearXNG</code> only today). The fetch step (downloading result pages) is the
+    SSRF-exposed part and is <strong>off by default</strong>. The <code>web_fetch</code> tool
+    shares this section's fetch caps (same guarded fetcher).</p>
+    <div class="table-wrap"><table>
+      <tr><th>Key</th><th>Default</th><th>Notes</th></tr>
+      <tr><td><code>Type</code></td><td><code>SearXNG</code></td><td>The search implementation.</td></tr>
       <tr><td><code>FetchPages</code></td><td><code>false</code></td><td>Fetch + summarize result pages (SSRF-guarded).</td></tr>
       <tr><td><code>MaxFetch</code></td><td><code>3</code></td><td>Pages fetched per search when enabled.</td></tr>
-      <tr><td><code>MaxFetchBytes</code></td><td><code>2097152</code></td><td>Body-size cap per fetched page.</td></tr>
-      <tr><td><code>FetchTimeoutSeconds</code></td><td><code>10</code></td><td>Wall-clock cap per page fetch.</td></tr>
+      <tr><td><code>MaxFetchBytes</code></td><td><code>2097152</code></td><td>Body-size cap per fetched page. Also bounds <code>web_fetch</code>.</td></tr>
+      <tr><td><code>FetchTimeoutSeconds</code></td><td><code>10</code></td><td>Wall-clock cap per page fetch. Also bounds <code>web_fetch</code>.</td></tr>
       <tr><td><code>MaxRedirects</code></td><td><code>3</code></td><td>Each hop re-vetted by the SSRF guard.</td></tr>
-      <tr><td><code>SearchTimeoutSeconds</code></td><td><code>15</code></td><td>Timeout on the search API call itself.</td></tr>
+      <tr><td><code>SearchTimeoutSeconds</code></td><td><code>15</code></td><td>Total budget for the search API call, retries included; the HTTP client timeout sits 1 s above as a backstop.</td></tr>
+      <tr><td><code>Parameters:BaseUrl</code></td><td><code>http://localhost:8080</code></td><td>The SearXNG instance base URL (must allow <code>format=json</code>).</td></tr>
     </table></div>
 
-    <h2>Gert:Sandbox - the gVisor Python sandbox</h2>
-    <p>The defaults <em>are</em> the security posture: egress off, read-only rootfs, hard
-    caps. Raise them knowingly.</p>
+    <h2>Gert:Tools:Sandbox - the run_python sandbox</h2>
+    <p>The <code>run_python</code> backend. <code>Type</code> picks one of two implementations
+    behind the one sandbox port: <strong>Monty</strong> (the default - a Rust no-syscall Python
+    interpreter reached via a sidecar, no container infra) or <strong>GVisor</strong> (opt-in - an
+    ephemeral <code>runsc</code> container). The cross-backend per-run caps sit beside
+    <code>Type</code>; the per-backend bag lives under <code>Parameters</code>. The defaults
+    <em>are</em> the security posture: egress off, no <code>/data</code> mount, hard caps.</p>
+    <div class="table-wrap"><table>
+      <tr><th>Key</th><th>Default</th><th>Notes</th></tr>
+      <tr><td><code>Type</code></td><td><code>Monty</code></td><td><code>Monty</code> (Rust interpreter via the sidecar - no container) or <code>GVisor</code> (runsc container). Case-insensitive; unknown fails fast at startup.</td></tr>
+      <tr><td><code>WallClockSeconds</code></td><td><code>10</code></td><td>Kill timeout per run (both backends).</td></tr>
+      <tr><td><code>MemoryMiB</code></td><td><code>256</code></td><td>Memory limit (both backends).</td></tr>
+      <tr><td><code>MaxOutputBytes</code></td><td><code>65536</code></td><td>Captured stdout/stderr cap (both backends).</td></tr>
+    </table></div>
+    <p><strong>Parameters when <code>Type=Monty</code></strong> - the monty sidecar (reached
+    server-side only):</p>
+    <div class="table-wrap"><table>
+      <tr><th>Key</th><th>Default</th><th>Notes</th></tr>
+      <tr><td><code>BaseUrl</code></td><td><code>http://localhost:8077</code></td><td>Where the monty sidecar listens.</td></tr>
+      <tr><td><code>RequestTimeoutSeconds</code></td><td><code>30</code></td><td>HTTP backstop above the run's wall clock. Must be strictly greater than <code>WallClockSeconds</code>; enforced at startup when monty is selected.</td></tr>
+    </table></div>
+    <p><strong>Parameters when <code>Type=GVisor</code></strong> - the runsc container (monty has
+    no processes, filesystem, or network to limit):</p>
     <div class="table-wrap"><table>
       <tr><th>Key</th><th>Default</th><th>Notes</th></tr>
       <tr><td><code>RunscPath</code></td><td><code>runsc</code></td><td>Path to the gVisor binary.</td></tr>
       <tr><td><code>Image</code></td><td><code>gert-sandbox-python</code></td><td>OCI bundle with a Python runtime.</td></tr>
-      <tr><td><code>EgressEnabled</code></td><td><code>false</code></td><td>Outbound network for sandboxed code - the exfiltration brake. Leave off unless you must.</td></tr>
-      <tr><td><code>WallClockSeconds</code></td><td><code>10</code></td><td>Kill timeout per run.</td></tr>
       <tr><td><code>CpuSeconds</code></td><td><code>5</code></td><td>CPU-time limit.</td></tr>
-      <tr><td><code>MemoryMiB</code></td><td><code>256</code></td><td>Memory limit.</td></tr>
       <tr><td><code>PidLimit</code></td><td><code>64</code></td><td>Max processes/threads.</td></tr>
       <tr><td><code>TmpSizeMiB</code></td><td><code>32</code></td><td>Writable <code>/tmp</code>; rootfs stays read-only.</td></tr>
-      <tr><td><code>MaxOutputBytes</code></td><td><code>65536</code></td><td>Captured stdout/stderr cap.</td></tr>
+      <tr><td><code>EgressEnabled</code></td><td><code>false</code></td><td>Outbound network - the exfiltration brake. Leave off unless you must.</td></tr>
     </table></div>
+    <p><strong>Per-tool budgets - <code>Gert:Tools:&lt;toolId&gt;:Limits</code>.</strong> Every
+    tool ships concrete intrinsic bounds, so a tool always has a budget;
+    <code>Limits</code> is a <strong>partial</strong> operator override keyed by the tool id
+    (case-insensitive), so <code>web_search</code>'s budget lives under
+    <code>Gert:Tools:Search:Limits</code> and <code>run_python</code>'s under
+    <code>Gert:Tools:Sandbox:Limits</code>. The fields are <code>MaxCallsPerTurn</code> (default
+    <code>64</code>; <code>web_search</code> ships <code>5</code>), <code>CallTimeout</code>
+    (default <code>00:01:00</code>), and <code>TokenBudget</code> (default <code>16384</code>).</p>
 
     <h2>Gert:Extractor - isolated document extraction</h2>
-    <p>The PDF/DOCX text extractor runs as an unprivileged, rlimit-capped helper process.</p>
+    <p>The document text-extractor functionality. <code>Type</code> selects the implementation
+    (<code>Subprocess</code> only today - the PDF/DOCX extractor runs as an unprivileged,
+    rlimit-capped helper process). The caps live under <code>Parameters</code>.</p>
     <div class="table-wrap"><table>
       <tr><th>Key</th><th>Default</th><th>Notes</th></tr>
-      <tr><td><code>HelperPath</code></td><td><code>gert-extract</code></td><td>The helper executable.</td></tr>
-      <tr><td><code>AddressSpaceMiB</code></td><td><code>512</code></td><td><code>RLIMIT_AS</code> cap.</td></tr>
-      <tr><td><code>CpuSeconds</code></td><td><code>20</code></td><td><code>RLIMIT_CPU</code> cap.</td></tr>
-      <tr><td><code>ProcessLimit</code></td><td><code>16</code></td><td><code>RLIMIT_NPROC</code> cap.</td></tr>
-      <tr><td><code>WallClockSeconds</code></td><td><code>30</code></td><td>Kill timeout backstopping <code>RLIMIT_CPU</code>.</td></tr>
+      <tr><td><code>Parameters:HelperPath</code></td><td><code>gert-extract</code></td><td>The helper executable.</td></tr>
+      <tr><td><code>Parameters:AddressSpaceMiB</code></td><td><code>512</code></td><td><code>RLIMIT_AS</code> cap.</td></tr>
+      <tr><td><code>Parameters:CpuSeconds</code></td><td><code>20</code></td><td><code>RLIMIT_CPU</code> cap.</td></tr>
+      <tr><td><code>Parameters:ProcessLimit</code></td><td><code>16</code></td><td><code>RLIMIT_NPROC</code> cap.</td></tr>
+      <tr><td><code>Parameters:WallClockSeconds</code></td><td><code>30</code></td><td>Kill timeout backstopping <code>RLIMIT_CPU</code>.</td></tr>
+      <tr><td><code>Parameters:RunAsUid</code></td><td><code>65534</code></td><td>Unprivileged uid the helper drops to.</td></tr>
+      <tr><td><code>Parameters:MaxDecompressedBytes</code></td><td><code>67108864</code></td><td>DOCX zip-bomb cap (total decompressed).</td></tr>
+      <tr><td><code>Parameters:MaxZipEntries</code></td><td><code>2048</code></td><td>DOCX zip-bomb cap (entry count).</td></tr>
+      <tr><td><code>Parameters:MaxOutputBytes</code></td><td><code>16777216</code></td><td>Cap on emitted extracted text.</td></tr>
     </table></div>
 
     <h2>Gert:Turn - the detached turn pipeline</h2>
     <p>A <strong>round</strong> is one upstream completion request that comes back with
     tool calls - executing them and re-prompting starts the next round, so every round
-    costs a full vLLM completion.</p>
-    <p>The guards are layered: bound every part, brake the loop, make every trip visible
-    on its tool card.</p>
+    costs a full vLLM completion. The guards are layered: bound every part, brake the loop,
+    make every trip visible on its tool card. The <strong>per-tool</strong> budgets no longer
+    live here - each tool ships concrete defaults that an operator retunes under
+    <code>Gert:Tools:&lt;toolId&gt;:Limits</code>.</p>
     <div class="table-wrap"><table>
       <tr><th>Key</th><th>Default</th><th>Notes</th></tr>
-      <tr><td><code>MaxTurnDuration</code></td><td><code>00:05:00</code></td><td>Hard wall-clock cap on one turn (model rounds + tools) - the real budget. Doubles as the orphan horizon for abandoned streaming rows.</td></tr>
+      <tr><td><code>MaxTurnDuration</code></td><td><code>00:05:00</code></td><td>Hard wall-clock cap on one turn (model rounds + tools) - the real budget. Doubles as the orphan horizon: a <code>streaming</code> row older than this reads as <code>error</code>.</td></tr>
+      <tr><td><code>MaxConcurrentTurns</code></td><td><code>4</code></td><td><strong>Global</strong> cap on turns running concurrently across all users, projects, and conversations. <code>1</code> = global serial worker. Per-conversation serialization is enforced separately. Must be &gt;= 1 (validated at startup).</td></tr>
       <tr><td><code>MaxToolRounds</code></td><td><code>64</code></td><td><strong>Runaway brake, not a work budget</strong> - sized an order of magnitude above legitimate turns. Past it the runner refuses further calls with budget-exhausted errors (visible on the cards) and winds the turn down.</td></tr>
-      <tr><td><code>MaxTokensPerRound</code></td><td><code>16384</code></td><td>Per-round completion bound: both the default <code>max_tokens</code> (when neither conversation nor per-model user settings ask) and the ceiling (requests clamp down). Reasoning tokens count against it on thinking models. <code>0</code> disables.</td></tr>
-      <tr><td><code>ToolCallTimeout</code></td><td><code>00:01:00</code></td><td>Generic wall-clock backstop on one tool execution, behind each tool's own tighter limits. A trip fails that call with a visible card error; the turn continues. <code>0</code> disables.</td></tr>
-      <tr><td><code>DeltaFlushInterval</code></td><td><code>150ms</code></td><td>Delta coalescing window - buffered chunks emit as one event per window.</td></tr>
+      <tr><td><code>MaxTokensPerRound</code></td><td><code>16384</code></td><td>Per-round completion bound: the <code>max_tokens</code> sent on every upstream request. Reasoning tokens count against it on a thinking provider - keep it generous. <code>0</code> disables.</td></tr>
+      <tr><td><code>AskUserTimeout</code></td><td><code>00:05:00</code></td><td>How long one <code>ask_user</code> question waits for the user before the tool returns its graceful "user did not respond" result. The effective wait is min(this, remaining turn budget - 15 s grace), so it can never outlive <code>MaxTurnDuration</code>.</td></tr>
+      <tr><td><code>MaxInlineAttachmentContextFraction</code></td><td><code>0.5</code></td><td>Largest share of the selected provider's <code>Context</code> (tokens) an inline text-file attachment (dropped into the composer) may consume. A drop estimated over this is refused at send with a 400 steering the user to the Knowledge panel (RAG). Only enforced when the provider declares a <code>Context</code>.</td></tr>
+      <tr><td><code>DeltaFlushInterval</code></td><td><code>150ms</code></td><td>Delta coalescing window - buffered chunks emit as one event per window. <code>0</code> disables coalescing.</td></tr>
       <tr><td><code>DeltaFlushMaxChars</code></td><td><code>512</code></td><td>Size backstop for the coalescing window.</td></tr>
     </table></div>
-    <p>The per-round <code>max_tokens</code> is also user-facing: the model picker's
-    cogwheel sets per-model defaults and conversation params override them - the server
-    value is the cascade's last fallback <em>and</em> its ceiling.</p>
+    <p><code>MaxTokensPerRound</code> is the single per-round <code>max_tokens</code> for every
+    turn - sampling is no longer a user/conversation cascade (it rides the selected provider's
+    <code>Parameters</code>), so there is no per-model cogwheel to override it.</p>
+
+    <h2>Gert:Prompts - operator-configurable system prompt</h2>
+    <p>System-prompt fragments the host prepends to every turn - not a secret, so they live in
+    <code>appsettings.json</code>. The service layer ships empty defaults; the host binds
+    <code>Gert:Prompts</code> over them.</p>
+    <div class="table-wrap"><table>
+      <tr><th>Key</th><th>Notes</th></tr>
+      <tr><td><code>Canvas</code></td><td>The canvas/artifact convention prepended first to every turn's system prompt (before a project's pinned instructions). It steers the model to call the <code>make_artifact</code>/<code>edit_artifact</code>/<code>read_artifact</code> tools instead of pasting whole files into code blocks. Empty omits it. Editing it invalidates the vLLM prefix cache for <strong>all</strong> conversations at once - it is the first bytes of every rendered prompt.</td></tr>
+    </table></div>
+
+    <h2>Artifacts - served-artifact tickets</h2>
+    <p>The separate-origin HTML-artifact preview and the HMAC-signed capability URLs it rides
+    (security F3). A top-level section, like <code>Auth</code>/<code>Storage</code>.</p>
+    <div class="table-wrap"><table>
+      <tr><th>Key</th><th>Default</th><th>Notes</th></tr>
+      <tr><td><code>Origin</code></td><td><em>(empty)</em></td><td>The separate origin (<code>scheme://host[:port]</code>) that serves rendered HTML artifacts - a sandbox subdomain in prod, a second port in dev/CI. Empty means same origin: isolation rests on the iframe sandbox alone.</td></tr>
+      <tr><td><code>Secret</code></td><td><em>(unset)</em></td><td><strong>Secret</strong> - env / user-secrets only. HMAC signing key for ticket URLs. An explicit value must be at least <strong>32 UTF-8 bytes</strong>. Unset = a random per-process key: fine for one instance, but tickets stop surviving restarts and instances behind a LB won't accept each other's tickets.</td></tr>
+      <tr><td><code>Lifetime</code></td><td><code>00:05:00</code></td><td>Ticket validity window. Long enough to load the iframe, short enough that a leaked URL is near-useless.</td></tr>
+    </table></div>
+
+    <h2>Gert:RateLimiting - the per-user API limiter</h2>
+    <p>A <strong>fixed window per user</strong> (security F10): each authenticated caller gets its
+    own partition keyed by the token <code>(iss, sub)</code> pair - the same identity anchor as
+    the user folder key (anonymous traffic falls back to the remote IP). One client - or one
+    stolen token - can't saturate the box, and one user's bursts never throttle another's.
+    Applied to <code>/api/*</code> only; <code>/healthz</code> is exempt. A rejected request is a
+    branded <code>429</code>. Leave the section absent and nothing changes.</p>
+    <div class="table-wrap"><table>
+      <tr><th>Key</th><th>Default</th><th>Notes</th></tr>
+      <tr><td><code>PermitLimit</code></td><td><code>600</code></td><td>Max requests per partition (per user / per anonymous IP) within one window.</td></tr>
+      <tr><td><code>Window</code></td><td><code>00:01:00</code></td><td>The fixed window length.</td></tr>
+    </table></div>
+
+    <h2>Logging - verbosity</h2>
+    <p>The standard .NET <code>Logging:LogLevel</code> config drives <strong>Serilog</strong> (the
+    host logger): set the floor with <code>Logging:LogLevel:Default</code>
+    (<code>Trace</code>|<code>Debug</code>|<code>Information</code>|<code>Warning</code>|<code>Error</code>|<code>Critical</code>),
+    and quiet individual categories with overrides such as
+    <code>Microsoft.AspNetCore: Warning</code>. Booting at <code>Debug</code> makes the turn
+    pipeline and the HTTP traffic to the model upstream visible; the
+    <code>OpenAIWireLogger</code> then traces the exact POST sent upstream (the api-key bearer
+    redacted). The wire trace carries message <strong>content</strong>, so it is a local tuning
+    mode only - never run the host at <code>Debug</code> in production.</p>
 
     <h2>Dev &amp; test modes</h2>
     <p>Not for production - listed so a deployment never enables them by accident.</p>

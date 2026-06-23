@@ -29,8 +29,10 @@
 
 - **Hybrid RAG** - upload PDFs, DOCX, markdown; vector KNN (`sqlite-vec`) + BM25 (`FTS5`)
   fused with Reciprocal Rank Fusion, with citations back to file and page.
-- **Sandboxed Python** - the model runs code in an ephemeral [gVisor](https://gvisor.dev)
-  container: no egress, read-only rootfs, CPU/memory/PID caps. Only stdout comes back.
+- **Sandboxed Python** - by default the model runs code in Monty, a no-syscall Rust interpreter
+  (Pydantic's) via a sidecar with no container or infra to stand up; operators can switch to an
+  ephemeral [gVisor](https://gvisor.dev) container (no egress, read-only rootfs, CPU/memory/PID
+  caps) instead. Only stdout comes back.
 - **Web search** - self-hosted [SearXNG](https://docs.searxng.org), with an SSRF-hardened
   optional fetch-and-summarize step.
 - **Artifacts canvas** - named code fences open as live canvas tabs (HTML preview, source
