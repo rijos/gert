@@ -224,7 +224,11 @@ export const QuestionCard = component({
                   type: "text",
                   placeholder: "Type your answer...",
                   "aria-label": tabLabel(i),
-                  value: it.value,
+                  // Function-valued (reactive) binding, NOT a direct read: a
+                  // direct `it.value` here would make the enclosing panel derive
+                  // depend on it, so every keystroke rebuilt the <input> and
+                  // stole focus. As a function it updates the live element in place.
+                  value: () => it.value,
                   oninput: (e: Event) => {
                     it.value = (e.target as HTMLInputElement).value;
                   },
@@ -237,19 +241,35 @@ export const QuestionCard = component({
         );
       },
 
-      // One submit for all questions - live while pending.
-      () =>
-        !q.answered && !q.expired
-          ? button(
-              {
-                class: "qsend",
-                type: "button",
-                disabled: () => q.posting || !complete(),
-                onclick: () => submit(),
-              },
-              q.items.length > 1 ? "Submit answers" : "Answer",
-            )
-          : "",
+      // The action button. A single question (or the LAST tab of a multi-
+      // question card) submits all answers together; an earlier tab advances to
+      // the next question with "Next", live once the current tab is answered.
+      () => {
+        if (q.answered || q.expired) return "";
+        const multi = q.items.length > 1;
+        const onLast = active.val >= q.items.length - 1;
+        if (multi && !onLast) {
+          const cur = q.items[active.val];
+          return button(
+            {
+              class: "qsend",
+              type: "button",
+              disabled: () => q.posting || (cur?.value ?? "").trim().length === 0,
+              onclick: () => (active.val += 1),
+            },
+            "Next",
+          );
+        }
+        return button(
+          {
+            class: "qsend",
+            type: "button",
+            disabled: () => q.posting || !complete(),
+            onclick: () => submit(),
+          },
+          multi ? "Submit answers" : "Answer",
+        );
+      },
 
       // Resolved: echo each question's answer.
       () =>
