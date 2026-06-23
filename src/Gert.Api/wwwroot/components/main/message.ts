@@ -14,10 +14,12 @@ import { copyText } from "../../lib/clipboard.js";
 import { Icon } from "../../icons/icons.js";
 import { Citation } from "./citation.js";
 import { Activity } from "./activity.js";
+import { QuestionCard } from "./question-card.js";
 import { Sources } from "./sources.js";
 import { ArtifactChips } from "./artifact-chips.js";
 import { MessageActions } from "./message-actions.js";
 import type { Citation as CitationRow, Message as MessageRow } from "../../state/chat.js";
+import type { Card } from "./tool-card.helpers.js";
 
 const { div, span, button, img } = van.tags;
 
@@ -96,6 +98,20 @@ const injectCitations = (root: HTMLElement, citations: CitationRow[]) => {
     }
     node.replaceWith(frag);
   }
+};
+
+// A pending ask_user question is lifted OUT of the activity block (which is
+// collapsible and frequently collapsed) so it can never be hidden from the
+// user: it renders inline under the activity until the user answers, then folds
+// back into its tool card as a record (tool-card.js). ask_user blocks the turn,
+// so at most one question is pending at a time.
+const PendingQuestions = (m: MessageRow) => () => {
+  const pending = (m.tools as Card[]).filter(
+    (c) => c.question && !c.question.answered && !c.question.expired,
+  );
+  return pending.length
+    ? div({ class: "pending-q" }, ...pending.map((c) => QuestionCard(c.question!)))
+    : div();
 };
 
 export const Message = component({
@@ -336,6 +352,12 @@ export const Message = component({
       }
     }
 
+    /* a pending ask_user question, promoted out of the (collapsible) activity
+       block so it is always visible - separated from the activity above it */
+    .pending-q {
+      margin: 0 0 14px;
+    }
+
     /* user-stopped turn: quiet meta line under the partial text */
     .stopped {
       margin-top: 8px;
@@ -385,6 +407,7 @@ export const Message = component({
     return div(
       { class: "msg bot" },
       Activity(m),
+      PendingQuestions(m),
       () => {
         const body = div({ class: "body" });
         body.append(renderMarkdown(m.text));

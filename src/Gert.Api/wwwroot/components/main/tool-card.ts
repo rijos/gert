@@ -309,9 +309,14 @@ export const ToolCard = component({
       },
       div(
         { class: () => "tbody" + (card.open ? "" : " hide") },
-        // ask_user: the interactive question (buttons / free text) lives in
-        // its own sub-component - this stays the single toolzone node.
-        () => (card.question ? QuestionCard(card.question) : div()),
+        // ask_user: a PENDING question (buttons / free text) is promoted out to
+        // the message level so the collapsible activity can never hide it (see
+        // message.js). Once answered/expired it folds back here as a quiet
+        // record, matching the reloaded look.
+        () =>
+          card.question && (card.question.answered || card.question.expired)
+            ? QuestionCard(card.question)
+            : div(),
         () => (card.query && !card.question ? div({ class: "q" }, card.query) : div()),
         () => {
           // `hits` is `unknown` in the ToolCard contract (a wire boundary);

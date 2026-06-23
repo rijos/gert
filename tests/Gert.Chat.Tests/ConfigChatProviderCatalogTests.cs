@@ -21,6 +21,8 @@ public sealed class ConfigChatProviderCatalogTests
     /// </summary>
     private sealed class StubDefault(string baseUrl) : IDefaultChatProvider
     {
+        public string DefaultType => "OpenAI";
+
         public ChatProviderInfo? Synthesize() => new()
         {
             Id = ChatProviderInfo.DefaultId,

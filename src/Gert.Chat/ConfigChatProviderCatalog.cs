@@ -30,10 +30,21 @@ public sealed class ConfigChatProviderCatalog : IChatProviderCatalog
         // picker order is the order the operator wrote - a plain Get<Dictionary<>>
         // would not promise that. The endpoint badge is read generically from each
         // entry's Parameters:BaseUrl (a near-universal "where it connects" convention),
-        // so the catalog never binds an implementation's Parameters shape.
+        // so the catalog never binds an implementation's Parameters shape. A configured entry
+        // that omits Type takes the registered default plugin's token (the OpenAI plugin's
+        // `openai`), so this generic catalog never names an implementation itself.
+        var defaultType = defaultProvider?.DefaultType;
         var entries = configuration.GetSection(ChatProviderOptions.SectionName).GetChildren()
-            .Select(c => (c.Get<ChatProviderOptions>() ?? new ChatProviderOptions())
-                .ToInfo(c.Key, c.GetSection("Parameters")["BaseUrl"]))
+            .Select(c =>
+            {
+                var options = c.Get<ChatProviderOptions>() ?? new ChatProviderOptions();
+                if (string.IsNullOrWhiteSpace(options.Type) && !string.IsNullOrWhiteSpace(defaultType))
+                {
+                    options.Type = defaultType;
+                }
+
+                return options.ToInfo(c.Key, c.GetSection("Parameters")["BaseUrl"]);
+            })
             .ToList();
 
         if (entries.Count == 0 && defaultProvider?.Synthesize() is { } synthesized)

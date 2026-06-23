@@ -81,6 +81,8 @@ public sealed class ModelsApiTests : IClassFixture<GertApiFactory>
         {
             Id = "qwen3-27b-fp8-mtp",
             Name = "Qwen3-27B FP8",
+            // Type omitted in config; the catalog fills it from the registered OpenAI plugin.
+            Type = "openai",
             Default = true,
             Capabilities = ["tools", "vision"],
             Context = 131072,

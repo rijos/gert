@@ -138,9 +138,17 @@ export const toggleKnowledge = () => {
   showKnowledge.val = !showKnowledge.val;
 };
 
-export const openArtifact = (id: string) => {
+// fromUser distinguishes an explicit click (chip / tab) from a live artifact
+// event. Both surface the canvas on desktop (uncollapse), but on mobile the
+// canvas IS a drawer: only a user click may open it. A live event must not pop
+// a drawer over the chat as the artifact finishes generating - the user clicks
+// the chip when ready (matching desktop, which just uncollapses a side column).
+export const openArtifact = (id: string, fromUser = false) => {
   activeArtifact.val = id;
   showKnowledge.val = false;
-  // A live artifact event should always surface the canvas.
   panelCollapsed.val = false;
+  if (fromUser && isMobile()) {
+    navOpen.val = false;
+    panelOpen.val = true;
+  }
 };
