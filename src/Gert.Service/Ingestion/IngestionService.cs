@@ -69,7 +69,13 @@ public sealed class IngestionService : IIngestionService
         catch (Exception ex)
         {
             // Fail the document, never the worker (chat-and-tools.md section hardened extraction).
-            await TryFailAsync(repo, job.DocumentId, ex.Message, cancellationToken).ConfigureAwait(false);
+            // Log the detail; persist a GENERIC reason - never raw ex.Message, which can carry an
+            // absolute server path or upstream text into the client-visible document.Error
+            // (dotnet-style-guide.md section 7). Expected failures (extractor unavailable, etc.)
+            // already set their own controlled message inside RunAsync; this catch-all is for the
+            // unexpected.
+            _logger.LogError(ex, "Ingestion failed for document {DocumentId}.", job.DocumentId);
+            await TryFailAsync(repo, job.DocumentId, "Processing failed.", cancellationToken).ConfigureAwait(false);
         }
     }
 

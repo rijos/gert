@@ -53,6 +53,12 @@ public static class ServiceCollectionExtensions
             // Backstop 1 s OUTSIDE the Polly total above, so the pipeline's
             // timeouts - not this CTS - decide outcomes.
             client.Timeout = TimeSpan.FromSeconds(opt.SearchTimeoutSeconds + 1);
+            // Cap the buffered search-API body so a large/slow/compromised SearXNG (or a MITM on a
+            // plain-http base URL) cannot OOM the host: capped external reads are the standard for
+            // every external body (dotnet-style-guide.md section 9; mirrors SafeHttpFetcher /
+            // MontySandbox / IsolatedTextExtractor). Reuse MaxFetchBytes (2 MiB) - search-result
+            // JSON is metadata, far smaller; over-cap reads throw rather than balloon memory.
+            client.MaxResponseContentBufferSize = opt.MaxFetchBytes;
         });
 
         // Self-register the keyed plugin; the generic WebSearchFactory dispatches by Type.
