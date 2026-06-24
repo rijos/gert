@@ -27,4 +27,6 @@ public sealed record Artifact
     public int Version { get; init; } = 1;
 
     public required DateTimeOffset CreatedAt { get; init; }
+
+    public required DateTimeOffset UpdatedAt { get; init; }
 }

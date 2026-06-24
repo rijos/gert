@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>REST API - Gert Docs</title>
-  <meta name="description" content="Gert's REST API reference: models, projects, conversations, turn delivery, documents, memory, artifacts, and admin.">
+  <meta name="description" content="Gert's REST API reference: models, projects, conversations, turn delivery, documents, artifacts, and admin.">
   <link rel="icon" href="../favicon.svg" type="image/svg+xml">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -76,6 +76,7 @@
       <tr><td><code>GET</code></td><td><code>.../conversations/{id}</code></td><td>Full thread: messages + tool calls + citations + artifacts.</td></tr>
       <tr><td><code>PATCH</code></td><td><code>.../conversations/{id}</code></td><td>Rename / switch model / toggle tools / archive.</td></tr>
       <tr><td><code>DELETE</code></td><td><code>.../conversations/{id}</code></td><td>Cascade-deletes everything in the thread.</td></tr>
+      <tr><td><code>POST</code></td><td><code>.../conversations/{id}/move</code></td><td><code>{ target_pid }</code> - relocate the thread (messages, tool calls, citations, artifacts) to another of your projects. Copy-then-delete, re-sequenced in the target. <strong>409</strong> while a turn streams.</td></tr>
     </table></div>
 
     <h2>Sending a message (detached turn)</h2>
@@ -103,22 +104,28 @@ GET .../conversations/{id}/stream?after={seq}             <span class="c"># SSE 
       <tr><td><code>delta</code></td><td>Streamed text append.</td></tr>
       <tr><td><code>citation</code></td><td>The <code>[1]</code> marker + footnote.</td></tr>
       <tr><td><code>artifact</code></td><td>Opens a canvas tab.</td></tr>
+      <tr><td><code>question_asked</code></td><td>Renders the interactive question card on an <code>ask_user</code> call; the turn blocks until <code>POST .../answer</code>, timeout, or cancel.</td></tr>
+      <tr><td><code>question_answered</code></td><td>Resolves the question card once the answers arrive.</td></tr>
       <tr><td><code>message_end</code> / <code>cancelled</code> / <code>error</code></td><td>Finalizes the row (token count / stopped marker / inline error).</td></tr>
     </table></div>
     <p>Every event is persisted <strong>before</strong> it is published, so a reload mid-turn
     resubscribes from the last <code>seq</code> and loses nothing.
     <code>POST .../cancel</code> stops an in-flight turn server-side.</p>
+    <p>When the model calls <code>ask_user</code>, the turn blocks on a
+    <code>question_asked</code> event. <code>POST .../answer</code> with
+    <code>{ question_id, answers }</code> delivers the user's answers to the waiting
+    turn - one entry per asked question, in order; ownership is structural (the
+    pending-question registry is keyed by the token's identity, so a foreign
+    conversation id can never reach another user's question). A
+    <code>question_answered</code> event follows on the delivery transports.</p>
 
-    <h2>Documents &amp; memory</h2>
+    <h2>Documents</h2>
     <div class="table-wrap"><table>
       <tr><th>Method</th><th>Path</th><th>Notes</th></tr>
       <tr><td><code>GET</code></td><td><code>.../documents</code></td><td>List: name, size, chunk_count, status, error.</td></tr>
       <tr><td><code>POST</code></td><td><code>.../documents</code></td><td>Multipart upload -> 202, ingestion enqueued.</td></tr>
       <tr><td><code>GET</code></td><td><code>.../documents/{id}</code></td><td>Polled while processing - drives the status pills and progress.</td></tr>
       <tr><td><code>DELETE</code></td><td><code>.../documents/{id}</code></td><td>Deletes chunks + vectors + FTS rows + the original file.</td></tr>
-      <tr><td><code>GET</code></td><td><code>.../memory</code></td><td>List entries (id, title, pinned, updated_at).</td></tr>
-      <tr><td><code>POST</code></td><td><code>.../memory</code></td><td><code>{ title, content, pinned? }</code> - add/edit; (re)embedded for retrieval.</td></tr>
-      <tr><td><code>DELETE</code></td><td><code>.../memory/{id}</code></td><td>Remove an entry and its chunks.</td></tr>
     </table></div>
 
     <h2>Artifacts</h2>

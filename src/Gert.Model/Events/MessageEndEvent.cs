@@ -6,6 +6,7 @@ namespace Gert.Model.Events;
 /// </summary>
 public sealed record MessageEndEvent : ChatEvent
 {
+    /// <summary>Completion token count reported for the turn; null if the model reported none.</summary>
     public int? TokenCount { get; init; }
 
     /// <summary>Pure generation wall-clock in ms (tool execution excluded) - the tok/s readout.</summary>

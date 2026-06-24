@@ -11,7 +11,7 @@ namespace Gert.Api.Security;
 /// by construction. An endpoint that genuinely wants caching sets its own Cache-Control
 /// first and this filter leaves it untouched (the SSE stream's own <c>no-cache</c> is one
 /// such case). Scoped to the MVC pipeline (registered as a global filter), so static assets
-/// (MapStaticAssets) and the anonymous health probes are never touched.
+/// (UseStaticFiles) and the anonymous health probes are never touched.
 /// </summary>
 public sealed class NoStoreByDefaultFilter : IResultFilter
 {

@@ -19,8 +19,7 @@
 .resize-handle::after{content:""; position:absolute; left:0; top:0; bottom:0; width:2px; background:transparent; transition:background var(--t-fast);}
 .resize-handle:hover::after,.app.resizing .resize-handle::after{background:var(--coral);}
 .app.nav-collapsed{--nav-col:0px;}
-.app.panel-wide{--panel-col:588px;}
-.app.panel-collapsed{--panel-col:0px;} /* after panel-wide: collapsed wins when both are set */
+.app.panel-collapsed{--panel-col:0px;}
 /* non-chat routes (admin) have no artifacts - the canvas column folds away
    (state/ui.js adminRoute, set by the route table in app.js) */
 .app.route-admin{--panel-col:0px;}
@@ -55,7 +54,6 @@
   .scrim{display:block;}
   .drawer-close{display:grid;}
   .app .brand{padding-right:14px;}
-  .expand-btn{display:none;}            /* pane is already an overlay */
   .app .topbar{padding:0 14px; gap:8px;}
   .app .conv-title{font-size:16px; display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
   .app .title-wrap .edit{display:none;}

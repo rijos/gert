@@ -52,7 +52,7 @@ ROLES: dict[str, dict[str, Any]] = {
     "user": {
         "sub": "dev-user",
         "groups": ["gert-users"],
-        "gert_tools": "rag search ask_user fetch memory sub_agent",
+        "gert_tools": "rag search ask_user fetch sub_agent list_artifacts",
     },
     # restricted: only rag (search AND sandbox denied).
     "limited": {"sub": "dev-limited", "groups": ["gert-users"], "gert_tools": "rag"},

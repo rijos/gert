@@ -1,7 +1,7 @@
 -- rag.db schema v1 (storage-and-data.md section rag.db).
 --
 -- The vec0 / fts5 virtual tables below require the native sqlite-vec extension,
--- which the provider loads on every rag.db connection (OpenRagAsync) before this
+-- which the provider loads on every rag.db connection (SqliteRagConnectionFactory.OpenAsync) before this
 -- migration runs. The three indexes share an integer rowid (chunks.id ==
 -- vec_chunks.chunk_id == fts_chunks rowid), so they join cheaply.
 --
@@ -20,8 +20,6 @@ CREATE TABLE documents (
     status      TEXT NOT NULL,                  -- processing | ready | failed
     chunk_count INTEGER NOT NULL DEFAULT 0,
     error       TEXT,                           -- "no extractable text"
-    kind        TEXT NOT NULL DEFAULT 'document', -- document | memory
-    pinned      INTEGER NOT NULL DEFAULT 0,       -- memory entries: always injected
     created_at  TEXT NOT NULL
 );
 

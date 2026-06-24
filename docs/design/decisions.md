@@ -54,15 +54,15 @@ SSE (`.../documents/events`) vs. simple polling. See [REST API -> Documents](res
 
 How a user's data is organised: one flat store, or scoped workspaces? See [Configuration -> projects](configuration.md#2-projects).
 
-- **Decision:** **Per-project isolation, "default" not "global".** Each project is its own folder with its own `chat.db` + `rag.db` + memory, fully isolated - no cross-project search, no shared/global corpus. The initial, always-present project is **`default`** (the landing project); creating a project just makes another isolated folder. This nests [principle #2](principles.md) (filesystem isolation) and [principle #5](principles.md) (deletion drops a store's data, not a row) one level down. *Rejected:* a "global + local" blended scope - it reintroduced cross-corpus query fusion and a `use_global` flag for little gain over simply switching projects.
+- **Decision:** **Per-project isolation, "default" not "global".** Each project is its own folder with its own `chat.db` + `rag.db`, fully isolated - no cross-project search, no shared/global corpus. The initial, always-present project is **`default`** (the landing project); creating a project just makes another isolated folder. This nests [principle #2](principles.md) (filesystem isolation) and [principle #5](principles.md) (deletion drops a store's data, not a row) one level down. *Rejected:* a "global + local" blended scope - it reintroduced cross-corpus query fusion and a `use_global` flag for little gain over simply switching projects.
 
 
 
 ## 8. Storage backend seam - everything non-database through IObjectStore
 
-Where do the non-database bytes under a user's tree (uploads, memory bodies) live: direct file I/O in the adapter, or one storage-backend seam?
+Where do the non-database bytes under a user's tree (uploads) live: direct file I/O in the adapter, or one storage-backend seam?
 
-- **Decision:** **`IObjectStore` is the single storage-backend seam - every byte under a user's tree that is not a database file flows through it**: uploads (`files/...`) and memory bodies (`memory/...`). One seam means an S3/Azure-Blob backend is a drop-in swap. (Structured user state is **not** blob territory - it lives in `user.db`, [section 9](#9-userdb---structured-user-state-is-a-database-not-json-sidecars).)
+- **Decision:** **`IObjectStore` is the single storage-backend seam - every byte under a user's tree that is not a database file flows through it**: uploads (`files/...`). One seam means an S3/Azure-Blob backend is a drop-in swap. (Structured user state is **not** blob territory - it lives in `user.db`, [section 9](#9-userdb---structured-user-state-is-a-database-not-json-sidecars).)
   - **Scopes:** an `ObjectScope` is the user root or one project root; keys are scope-relative and traversal-guarded. The scope carries only the opaque `sha256(iss+sub)` key (derivation = `StorageKeys`, core policy in `Gert.Service`).
   - **Atomic PUT is a port contract** - a reader never observes a partial object. Cloud backends give it natively; `LocalObjectStore` stages to a temp sibling + renames.
   - **Lifecycle is independent stores, orchestrated by the service.** Deleting a user/project is not one store's job: the **service** drops the database halves (the providers' `DeleteUserAsync` / `DeleteProjectAsync` - the structured-database and RAG engines each removing their own files/rows) and then the artifact half (`DeleteScopeAsync`), in that order so a local whole-tree wipe never races an open db handle. "Emptied, never removed" = the providers' project delete + `DeletePrefixAsync("")`; the admin scan = `ListUserKeysAsync` + `ListEntriesAsync` (maps 1:1 to S3 listing). `IObjectStore` knows nothing about databases - it owns only the artifact bytes.
@@ -86,7 +86,7 @@ files on the object store, or a database?
     (`PRAGMA user_version`, `Migrations/user/*.sql`); and provisioning collapses to "open the
     database" - first open creates and migrates it, the provisioner seeds the `default`
     project row, and the steady-state request path stays read-only.
-  - **Consequences:** `IObjectStore` is demoted to genuine blobs (uploads, memory bodies) plus
+  - **Consequences:** `IObjectStore` is demoted to genuine blobs (uploads) plus
     the artifact half of the lifecycle and the admin footprint listing. The provider seam
     splits per database - `IUserDatabaseProvider` / `IChatDatabaseProvider` (and the RAG index
     is its own capability, `Gert.Rag.IRagIndexProvider`) - and each owns destroying its own data
@@ -118,7 +118,7 @@ server-side default set, or nothing?
     server config participates in an authorization decision).
   - **Consequences:** a bare login with no claim is a working chat with no tools (plain
     completion). Admins grant capability explicitly - e.g. a `gert-tools` group granting
-    `rag search todo clock make_artifact edit_artifact read_artifact` and a separate
+    `rag search todo clock make_artifact edit_artifact read_artifact list_artifacts` and a separate
     `gert-sandbox` group adding `sandbox`. `ToolRegistry` still intersects every grant, so a
     typo'd id fails closed rather than erroring the login.
   - *Rejected:* a configured default grant (convenient, but it's server state in an authz
@@ -126,13 +126,13 @@ server-side default set, or nothing?
     *explicit-but-present* (still an exception to the one-source rule - the objection was the
     exception itself, not its visibility).
 
-## 11. Turn execution - keyed lanes over an atomic per-conversation gate
+## 11. Turn execution - a global concurrency cap over an atomic per-conversation gate
 
 How are queued `TurnJob`s executed: one global serial consumer, or per-conversation keyed
 parallelism? See [chat-and-tools section detached turns](chat-and-tools.md#detached-turns).
 
-- **Decision (settled - shipped as one combined change):** **an engine-enforced per-conversation
-  gate plus bounded keyed parallelism.**
+- **Decision (settled):** **an engine-enforced per-conversation gate plus a bounded global
+  concurrency cap.**
   - **(a) The atomic gate.** A partial unique index
     `ux_messages_streaming ON messages(conversation_id) WHERE status='streaming'` makes the
     streaming-placeholder insert itself the gate: the planner persists the user row + the
@@ -145,13 +145,15 @@ parallelism? See [chat-and-tools section detached turns](chat-and-tools.md#detac
     a dead turn's row frees the index instead of locking the conversation forever. Both
     invariants - the **seq single-writer invariant** and the **409 rule** - are explicit
     controls in the database, not properties of a serial worker.
-  - **(b) Keyed lanes.** The one `TurnWorker` hosted service drains
-    `Gert:Turn:MaxConcurrentTurns` (default 4) internal lanes of the sharded
-    `ChannelTurnQueue`; jobs shard by the full `TurnKey` (iss, sub, pid, conversation) hash,
-    so one conversation's turns ride one lane in strict FIFO - per-conversation ordering is
-    structural, not timing - while different conversations may overlap. `1` reproduces the
-    old global serial worker exactly. The gate is the correctness control; the lane count is
-    only throughput.
+  - **(b) A global concurrency cap.** The `TurnLauncher` runs each planned turn on a TPL Dataflow
+    `ActionBlock` and bounds how many run at once with the block's `MaxDegreeOfParallelism`
+    (`Gert:Turn:MaxConcurrentTurns`, default 4). Per-conversation serialization is
+    the gate index's job, not the launcher's: the gate already admits at most one live turn per
+    conversation (a second is 409'd at plan time), so per-conversation FIFO lanes were redundant
+    alongside it - the launcher carries no `TurnKey` sharding. `1` reproduces a global serial
+    worker. The gate is the correctness control; the cap is only throughput. (This superseded
+    the original sharded keyed-lane `ChannelTurnQueue` + `TurnWorker`, which serialized per
+    conversation in vain alongside the gate.)
   - **SQLite under two lanes:** the only genuinely new concurrency is *same user, same
     project, two conversations* hitting one `chat.db` (per-user/per-project databases make
     everything else disjoint). Open-per-use connections with WAL + `busy_timeout=5000` mean
@@ -165,18 +167,34 @@ parallelism? See [chat-and-tools section detached turns](chat-and-tools.md#detac
     `MaxTurnDuration` *remaining* from that instant, so a job that waited behind its lane
     can never outlive the reader-facing orphan/409 horizon and read as `error` while
     healthily running.
-  - *Rejected:* unbounded `Task.Run` per turn (no ordering, no owner - violates the
-    worker-owns-detached-work rule in the style guide); a channel per conversation created
-    eagerly (unbounded channel count, no backpressure story); N hosted services instead of N
-    lanes (DI churn, N owners for one queue - the style guide wants one worker owning the
-    detached work); parallelising without the gate (a duplicate streaming turn corrupts seq
-    ordering and history - fail-closed loses), or shipping the gate without the lanes (closes
-    a race nobody can hit and changes nothing user-visible).
+  - **The control plane is a pub/sub port, not in-process registries or a db table (landed).**
+    Cancel and `ask_user` answers no longer ride in-memory registries
+    (`ITurnCancellation`/`ITurnQuestions`, keyed by `TurnKey`, with tombstones + a dual-CTS) -
+    those are deleted. They ride **`ITurnControlBus`** (`Gert.TurnControl`): the runner
+    **subscribes** to its conversation's control channel for the turn's lifetime and links the
+    channel's cancel token into the turn token; the `cancel`/`answer` endpoints **publish** to
+    that scope (addressed by the token-derived user key + project + conversation) without knowing
+    which instance runs the turn. The default impl is in-process (`Gert.TurnControl.Local`); a
+    networked impl (Kafka/NATS) drops in behind the same port to split the agent host from the
+    chat API across instances - the port is that seam. Cancellation is **reactive** (the signal
+    trips the linked token, no polling); a cancel that lands while the turn is still queued is
+    retained and caught at subscribe time, judged against the turn's plan instant (the freshness
+    boundary that replaced the registry tombstone TTL). Answer validation (count + closed-option
+    membership) is the bus's job, so the endpoint keeps its 202/404/400 contract. (This was
+    phases 6+7 of the split-the-noun `Gert.Agent` refactor; an interim `turn_control` `chat.db`
+    table was tried and then replaced by this port - the db only reaches across instances on a
+    shared filesystem and pays a poll latency, where the bus is the transport the host-split
+    future actually needs.)
+  - *Rejected:* per-conversation FIFO lanes (the sharded `ChannelTurnQueue` + `TurnWorker` the
+    cap superseded) - the gate index already serializes a conversation, so the lanes closed a
+    race nobody can hit and only added a `TurnKey`-hash sharding layer; an unbounded `Task.Run`
+    per turn with no cap (no concurrency ceiling, no shutdown owner); parallelising without the
+    gate (a duplicate streaming turn corrupts seq ordering and history - fail-closed loses).
 
 ## 12. Deletion crash-consistency - a journal + idempotent forward recovery
 
 Erasing a user spans three independent stores - the structured-database engine
-(`user.db`/`chat.db`), the RAG engine (`rag.db`), and the object store (file/memory blobs) -
+(`user.db`/`chat.db`), the RAG engine (`rag.db`), and the object store (file blobs) -
 which may even sit on separate roots ([configuration -> data root](../installation/configuration.md#8-auth--storage--gertdatabase--gertrag---identity-the-data-root-and-the-engines)).
 A crash between steps would leave a partial state, worst case **blobs (PII) left on disk after a
 "delete my account" the operator believed finished**. See
@@ -195,7 +213,8 @@ A crash between steps would leave a partial state, worst case **blobs (PII) left
     `users/`**, so the user-tree wipe never takes it and it never shows up in the admin scan. It
     holds only opaque, transient folder keys (no user data), so it is operational recovery state,
     not a central user registry - [principle #1](principles.md) still holds.
-  - **Who replays it:** the `DeletionRecoveryService` hosted task on **startup** (covers a process
+  - **Who replays it:** the `DeletionRecoveryService` hosted task (a service-layer concern,
+    registered by `AddGertServices`) on **startup** (covers a process
     crash/restart) and the request-edge **provisioner gate** (covers a returning user whose
     self-service delete was interrupted - it finishes the erase *before* re-provisioning, so a
     fresh empty account never inherits stale residue). Both just re-run the eraser.
@@ -208,3 +227,89 @@ A crash between steps would leave a partial state, worst case **blobs (PII) left
     journal** (relies on a human re-issuing the delete and silently orphans an abandoned partial).
     Project deletion has the same shape and can adopt the same journal when needed; account
     deletion carries the PII-residue stakes, so it goes first.
+
+## 13. Model API on Microsoft.Extensions.AI - scrap the custom wire layer
+
+Gert maintained a hand-rolled model-wire abstraction (`IChatModelClient`/`ChatModelChunk`/
+`ChatCompletionRequest`/`ChatModelMessage`/`ChatToolSpec`/`ChatModelToolCall`/`ToolCallStart`/
+`ChatModelImage`, `IEmbeddingClient`, `OpenAIChatRequestBuilder`, the `OpenAIStreamParser` feeding
+those DTOs) on top of the OpenAI SDK. The first-party **Microsoft.Extensions.AI** stack
+(`IChatClient`, `IEmbeddingGenerator`, `AIFunction`) now covers the wire translation we were
+maintaining by hand. Should we adopt it, and how far? See
+[tech-stack section Model API](tech-stack.md#tech-stack), [chat-and-tools section the tool loop](chat-and-tools.md#chat-orchestration-the-tool-loop).
+
+- **Decision:** **Adopt M.E.AI at the chat + embeddings ports; delete the custom wire DTOs; keep
+  the Gert-specific behavior M.E.AI has no analog for, re-homed into thin wrappers.**
+  `IChatClientFactory`/`IChatModelClientBuilder` now return a M.E.AI `IChatClient`; the embeddings
+  port is `IEmbeddingGenerator<string, Embedding<float>>`. `IChatClient`/`ChatMessage`/`ChatOptions`/
+  `ChatResponseUpdate`/`AIFunction` flow directly into the agent loop - **not** hidden under the old
+  port (the cheap "wrap underneath" path was explicitly rejected).
+  - **Versions.** `Microsoft.Extensions.AI{,.Abstractions,.OpenAI}` are pinned at **10.7.0**, which
+    is **stable** (the OpenAI adapter is no longer preview, contra older guidance) and requires
+    `OpenAI >= 2.11.0` - exactly our existing pin. The AI packages run their own 10.x cadence,
+    distinct from the runtime `Microsoft.Extensions.*` 10.0.9 family but interoperating with it
+    (they depend on the runtime extensions at `>= 10.0.9`). Abstractions is contracts-safe (in
+    `Gert.Chat`); AI core + AI.OpenAI carry the SDK and live only in the `Gert.Chat.OpenAI` leaf;
+    an architecture test keeps the OpenAI adapter out of `Gert.Agent`/`Gert.Service`.
+  - **Keep (no M.E.AI analog), re-homed into `OpenAIProviderChatClient`** (a `DelegatingChatClient`
+    over `chatClient.AsIChatClient()` in `Gert.Chat.OpenAI`): the provider's sampling and the off-spec
+    vendor fields (`top_k`/`min_p`/`repetition_penalty`/`chat_template_kwargs`) via
+    `ChatOptions.RawRepresentationFactory` seeding an OpenAI SDK `ChatCompletionOptions` + JsonPatch;
+    interleaved-thinking replay (`preserve_thinking`) on a native `AssistantChatMessage` on the
+    message's `RawRepresentation` (the one thing the adapter cannot express); and a stream re-map
+    (`OpenAIStreamParser`) for the vLLM `delta.reasoning` field (the adapter surfaces only the older
+    `reasoning_content`) and the name-first live-intent signal (the adapter emits only the completed
+    call). The `<tool_call>` leak salvage and the truncated-argument degrade-to-`{}` guard this client
+    once carried were dropped once the fixed vLLM qwen template stopped leaking tool-call markup into
+    `content` and stopped streaming the unterminated-`{` fragment. Embeddings keep order-by-index
+    reassembly + the dimension/count assertions
+    (M.E.AI's `GeneratedEmbeddings` drops the source index), so `OpenAIEmbeddingGenerator` runs over
+    the SDK `EmbeddingClient` directly rather than `.AsIEmbeddingGenerator()`.
+  - **Keep the multi-provider catalog + the keyed plugin seam.** "Scrap the wire layer" is the wire,
+    not multi-provider config: `IChatProviderCatalog`/`ConfigChatProviderCatalog`/`ChatProviderOptions`/
+    `IDefaultChatProvider` and the `IChatModelClientBuilder` keyed-by-`Type` plugin stay (the
+    thinking-vs-instruct provider selection rides them; `PluginArchitectureTests` pins the seam).
+  - **Tools become `AIFunction`s at the advertise boundary, side-effects via a host card seam.**
+    Each offered tool is advertised as a lean `ToolFunction : AIFunction` carrying the tool's OWN
+    compact `ToolSchema` output verbatim (the tools region is a token budget - qwen format adherence
+    collapses past ~1.8k tokens, so the verbose schema `AIFunctionFactory.CreateDeclaration` would
+    synthesise is avoided). A tool's citations/artifacts/stdout/todos are pushed through a new
+    `IToolHost.Card` (`IToolCard`) seam (impl in `Gert.Agent`) instead of riding `ToolResult`, which
+    slims to `{Success, ResultJson, Error}` - "intelligence into the tool."
+  - **The agent loop is a `FunctionInvokingChatClient` (FICC) subclass.** `AgentLoop.RunAsync` is now
+    a thin assembler: per turn it builds a two-layer M.E.AI pipeline over the run's `IChatClient` and
+    drives its streamed response to completion (the metrics are read back off a shared
+    `TurnAccumulators`). The middleware owns the round loop, the streamed-response-to-history shaping
+    (the assistant tool-calls message carries the round's narration back for free), and the wind-down;
+    the Gert-specific behavior it does not model is re-homed into two seams:
+    - `GertFunctionInvokingChatClient` overrides **`InvokeFunctionAsync`** (the per-call hook) for, in
+      order, the plan-time entitlement re-check (an unentitled call is refused INVISIBLY - synthetic
+      result fed upstream, no card, no row), the round budget, the per-tool call ceiling, the per-call
+      timeout (Modal-exempt) under a per-call `BudgetedToolHost`/`IToolCard`, and the
+      `ToolStarted`(args)/`ToolCompleted`/`RoundCompleted` events; a Gert `ITool` is run directly
+      through its host (its `ToolFunction` advertise shape is never invoked) and its model-facing JSON
+      is RETURNED to the middleware (refusals return a value too, never throw, so the consecutive-error
+      brake never trips). It also overrides **`CreateResponseMessages`** to keep the hand-rolled
+      history shape (one tool-role message per result, not the middleware's combined message).
+    - `LiveIntentChatClient` (a `DelegatingChatClient` in FRONT of the inner client) folds the streamed
+      content/reasoning, the last-round token counts, and the pure generation span (stream consumption
+      only - tool execution runs in the override between inner calls), emits the `TextDelta`/
+      `ReasoningDelta` deltas and the name-first live-intent `ToolStarted` (the running card the
+      middleware can't give - it sees only completed calls), then DROPS the null-args live-intent signal
+      from the forwarded stream (the middleware does not coalesce a name-first/args-later pair and would
+      otherwise invoke the call twice).
+    - **Wind-down via the native iteration cap.** `MaximumIterationsPerRequest = MaxRounds + 1` gives
+      the executed rounds plus ONE refused round (the override turns its calls into synthetic
+      budget-exhausted results, tools still advertised), after which the middleware runs ONE final
+      tools-cleared answer-only round and stops even if that round still emits calls - reproducing the
+      cited brake exactly (`Runaway_tool_loop_is_bounded`: 5 executed + 1 refused + 1 wind-down = 7
+      model calls). The "claim is the ceiling" re-check ([principle #6](principles.md)) lives in the
+      `InvokeFunctionAsync` override, off-thread, unweakened.
+  - *Rejected:* **wrapping M.E.AI underneath the old `IChatModelClient`** (keeps the abstraction we
+    were asked to scrap, and the dead translation layer); **`AIFunctionFactory.CreateDeclaration`
+    for the advertised schemas** (it synthesises a verbose, pretty-printed schema with strict-mode
+    `additionalProperties` that bloats the qwen tools budget - the lean `ToolFunction` schema rides
+    the wire compact, the adapter adding only a bounded `additionalProperties:false` per tool);
+    **forwarding the null-args live-intent signal to the middleware** (FICC does not coalesce a
+    name-first/args-later pair into one call, so it would double-invoke - the interceptor emits the
+    running card and drops the signal instead).

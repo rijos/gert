@@ -24,10 +24,12 @@ public sealed class ChatProviderOptions
 
     /// <summary>
     /// Provider type - selects the chat-client implementation plugin (matched
-    /// case-insensitively; <c>openai</c> is the only plugin shipped today). Surfaced verbatim
-    /// as the wire <c>type</c>, so the default matches <see cref="ChatProviderInfo.Type"/>.
+    /// case-insensitively; <c>openai</c> is the only plugin shipped today). Surfaced verbatim as the
+    /// wire <c>type</c>. Empty = unset: this generic contract names no implementation, so the catalog
+    /// fills an omitted type from the registered <see cref="IDefaultChatProvider"/> (the OpenAI plugin
+    /// supplies <c>openai</c>) rather than baking the token in here.
     /// </summary>
-    public string Type { get; set; } = "openai";
+    public string Type { get; set; } = string.Empty;
 
     /// <summary>Whether the picker shows a "fast" hint.</summary>
     public bool Fast { get; set; }

@@ -1,17 +1,17 @@
 using Gert.Chat;
-using Gert.Model;
+using Microsoft.Extensions.AI;
 
 namespace Gert.Testing.Fakes;
 
 /// <summary>
 /// An <see cref="IChatClientFactory"/> double that returns one fixed
-/// <see cref="IChatModelClient"/> for every provider id - the test seam now that
+/// <see cref="IChatClient"/> for every provider id - the test seam now that
 /// <c>TurnRunner</c> resolves its client by provider rather than taking it directly.
 /// </summary>
-public sealed class FixedChatClientFactory(IChatModelClient client) : IChatClientFactory
+public sealed class FixedChatClientFactory(IChatClient client) : IChatClientFactory
 {
-    private readonly IChatModelClient _client = client ?? throw new ArgumentNullException(nameof(client));
+    private readonly IChatClient _client = client ?? throw new ArgumentNullException(nameof(client));
 
     /// <inheritdoc />
-    public IChatModelClient ForProvider(string? providerId) => _client;
+    public IChatClient ForProvider(string? providerId) => _client;
 }

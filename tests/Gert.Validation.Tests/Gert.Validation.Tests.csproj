@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="$(TestSdkVersion)" />
+    <PackageReference Include="xunit.v3" Version="$(XunitV3Version)" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="$(XunitRunnerVersion)" />
+    <PackageReference Include="FluentAssertions" Version="$(FluentAssertionsVersion)" />
+    <!-- ShouldHaveValidationErrorFor / ShouldNotHaveValidationErrorFor.
+         FluentValidation.TestHelper ships inside the FluentValidation package. -->
+    <PackageReference Include="FluentValidation" Version="$(FluentValidationVersion)" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Gert.Validation\Gert.Validation.csproj" />
+    <!-- FailClosedMetaTest reflects over IGertServices / ITurnPlanner (plus the inline-proven
+         AnswerRequest) to prove every request DTO a service accepts has a registered validator;
+         ValidationTestHost builds the real AddGertServices container. -->
+    <ProjectReference Include="..\..\src\Gert.Service\Gert.Service.csproj" />
+    <!-- ToolRegistry / ITool for ValidationTestHost's stub tool census. -->
+    <ProjectReference Include="..\..\src\Gert.Tools\Gert.Tools.csproj" />
+    <!-- The tool-args fail-closed check reflects over the Gert.Tools.Builtin assembly for
+         every concrete ToolCall<TArgs, _> and asserts a registered IValidator<TArgs>. -->
+    <ProjectReference Include="..\..\src\Gert.Tools.Builtin\Gert.Tools.Builtin.csproj" />
+    <ProjectReference Include="..\Gert.Testing\Gert.Testing.csproj" />
+    <ProjectReference Include="..\..\src\Gert.Agent\Gert.Agent.csproj" />
+  </ItemGroup>
+
+</Project>

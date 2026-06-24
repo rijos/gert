@@ -6,7 +6,6 @@ import { Icon } from "../../icons/icons.js";
 import { Switch } from "../ui/switch.js";
 import { DropZone } from "./drop-zone.js";
 import { DocList } from "./doc-list.js";
-import { MemoryList } from "./memory-list.js";
 import { fmtBytes } from "../../lib/format.js";
 import * as chat from "../../state/chat.js";
 import * as knowledge from "../../state/knowledge.js";
@@ -119,6 +118,5 @@ export const KnowledgePanel = component({
     ),
     DropZone(),
     DocList(),
-    MemoryList(),
   ),
 });

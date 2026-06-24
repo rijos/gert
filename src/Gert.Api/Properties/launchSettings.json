@@ -40,6 +40,7 @@
         "Gert__Chat__Providers__echo__Type": "openai",
         "Gert__Chat__Providers__echo__Capabilities__0": "tools",
         "Gert__Chat__Providers__echo__Capabilities__1": "vision",
+        "Gert__Chat__Providers__echo__Context": "262144",
         "Gert__Chat__Providers__echo__Parameters__BaseUrl": "http://127.0.0.1:8000",
         "Gert__Chat__Providers__echo__Parameters__Model": "echo",
 

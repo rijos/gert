@@ -1,9 +1,11 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <!-- Chat capability CONTRACTS + generic wiring: the ports the service layer drives
-       (IChatModelClient, IEmbeddingClient, IChatClientFactory, IChatProviderCatalog), the
-       implementation-agnostic provider catalog/factory, and the plugin seams
-       (IChatModelClientBuilder, IDefaultChatProvider). Concrete implementations live in a
+       (IChatClientFactory returning Microsoft.Extensions.AI IChatClient, IChatProviderCatalog;
+       the IEmbeddingGenerator a plugin registers), the implementation-agnostic provider
+       catalog/factory, and the plugin seams (IChatModelClientBuilder, IDefaultChatProvider).
+       Microsoft.Extensions.AI.Abstractions carries IChatClient/IEmbeddingGenerator/ChatMessage.
+       Concrete implementations live in a
        per-impl leaf assembly, e.g. Gert.Chat.OpenAI (tech-stack.md section Architecture).
        Depends only on Gert.Model + the DI/configuration abstractions, so the service layer can
        reference it without seeing any adapter. -->
@@ -21,6 +23,11 @@
                       Version="$(MicrosoftExtensionsOptionsVersion)" />
     <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions"
                       Version="$(MicrosoftExtensionsConfigVersion)" />
+    <!-- Microsoft.Extensions.AI abstractions: the IChatClient / IEmbeddingGenerator ports the
+         chat factory + plugin builder return, plus ChatMessage / AITool in the service-facing
+         signatures. Contracts-safe (no HTTP, no SDK); the OpenAI adapter rides the impl leaf. -->
+    <PackageReference Include="Microsoft.Extensions.AI.Abstractions"
+                      Version="$(MicrosoftExtensionsAIVersion)" />
   </ItemGroup>
 
 </Project>

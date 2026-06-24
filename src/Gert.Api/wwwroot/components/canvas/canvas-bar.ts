@@ -62,9 +62,6 @@ export const CanvasBar = component({
       button({ class: () => "kbtn" + (ui.showKnowledge.val ? " active" : ""), title: "Knowledge base", "aria-label": "Knowledge base", "aria-pressed": () => String(ui.showKnowledge.val), onclick: ui.toggleKnowledge },
         Icon("book", { size: 15, strokeWidth: 2 }),
       ),
-      button({ class: () => "kbtn expand-btn" + (ui.panelWide.val ? " active" : ""), title: "Expand pane", "aria-label": "Expand pane", "aria-pressed": () => String(ui.panelWide.val), onclick: ui.toggleWide },
-        Icon("expand", { size: 15, strokeWidth: 2 }),
-      ),
       button(
         { class: "kbtn drawer-close", title: "Close panel", "aria-label": "Close panel", onclick: ui.togglePanel },
         Icon("close", { size: 15, strokeWidth: 2.2 }),

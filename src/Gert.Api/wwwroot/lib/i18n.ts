@@ -60,7 +60,6 @@ const NL = {
   "Clock": "Klok",
   "Sub-agents": "Subagenten",
   "Ask me": "Vraag mij",
-  "Save memories": "Herinneringen opslaan",
   "Canvas": "Canvas",
   "Use my docs": "Gebruik mijn documenten",
 
@@ -79,10 +78,6 @@ const NL = {
   "Send with": "Versturen met",
   "Default reply language": "Standaard antwoordtaal",
   "e.g. English": "bijv. Nederlands",
-  "Memories": "Herinneringen",
-  "Off - never store memories": "Uit - nooit herinneringen opslaan",
-  "Manual - only when I ask": "Handmatig - alleen op verzoek",
-  "Automatic - the model decides": "Automatisch - het model beslist",
   "Default model": "Standaardmodel",
   "Dials for the model above. Off = inherit the model's own defaults.":
     "Instellingen voor het model hierboven. Uit = de standaard van het model.",
@@ -90,20 +85,12 @@ const NL = {
   "Could not save settings": "Instellingen opslaan mislukt",
   "Model": "Model",
 
-  // knowledge / memory
+  // knowledge
   "Knowledge": "Kennis",
   "Private to you - stored in your own file": "Privé - opgeslagen in je eigen bestand",
   "Use in this chat ": "Gebruik in deze chat ",
   "retrieve from your documents": "haal op uit je documenten",
-  "Add": "Toevoegen",
-  "New memory": "Nieuwe herinnering",
-  "Title": "Titel",
-  "Note": "Notitie",
-  "What should Gert remember?": "Wat moet Gert onthouden?",
-  "Pin - include in every chat": "Vastzetten - in elke chat meenemen",
   "Save": "Opslaan",
-  "Nothing remembered yet.": "Nog niets onthouden.",
-  "Delete memory": "Herinnering verwijderen",
 
   // search overlay
   "Search chats": "Chats zoeken",

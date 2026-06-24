@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="$(TestSdkVersion)" />
+    <PackageReference Include="xunit.v3" Version="$(XunitV3Version)" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="$(XunitRunnerVersion)" />
+    <PackageReference Include="NetArchTest.Rules" Version="$(NetArchTestVersion)" />
+    <PackageReference Include="NSubstitute" Version="$(NSubstituteVersion)" />
+    <PackageReference Include="FluentAssertions" Version="$(FluentAssertionsVersion)" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The extracted turn/agent execution engine under test (worker, queue, planner,
+         runner, AgentLoop, the chat tool-host wiring). -->
+    <ProjectReference Include="..\..\src\Gert.Agent\Gert.Agent.csproj" />
+    <!-- The host-agnostic service layer the engine drives (IUserContext, PromptOptions, ...). -->
+    <ProjectReference Include="..\..\src\Gert.Service\Gert.Service.csproj" />
+    <!-- Tool capability contracts: ITool/ToolRegistry/ToolResult + the IToolHost seams the loop drives. -->
+    <ProjectReference Include="..\..\src\Gert.Tools\Gert.Tools.csproj" />
+    <!-- The tool impl leaf: the ChatToolDelegate / TurnRunner tests drive the real
+         RagTool/SubAgentTool through the nested loop. -->
+    <ProjectReference Include="..\..\src\Gert.Tools.Builtin\Gert.Tools.Builtin.csproj" />
+    <!-- The in-process turn control plane: the runner tests subscribe + publish cancel/answer
+         through the real ITurnControlBus (the port rides transitively via Gert.Agent). -->
+    <ProjectReference Include="..\..\src\Gert.TurnControl.Local\Gert.TurnControl.Local.csproj" />
+    <ProjectReference Include="..\Gert.Testing\Gert.Testing.csproj" />
+  </ItemGroup>
+
+</Project>

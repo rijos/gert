@@ -2,11 +2,11 @@
 
   <!-- Database CONTRACTS + generic wiring shared by every database engine
        (Gert.Database.Sqlite today, e.g. Gert.Database.Postgres tomorrow): the
-       per-database provider ports (IUserDatabaseProvider / IChatDatabaseProvider /
-       IRagDatabaseProvider) and repository interfaces, their row DTOs (ChunkInsert,
-       RetrievedChunk), the fail-closed provisioning-gate exception, and the
+       user.db/chat.db provider ports (IUserDatabaseProvider / IChatDatabaseProvider)
+       and their repository interfaces (IUserRepository / IChatRepository), plus the
        engine-selection plugin seam (DatabaseOptions + IDatabaseEngineBuilder +
-       DatabaseEngineFactory + the generic AddGertDatabase registrar). Concrete engines
+       DatabaseEngineFactory + the generic AddGertDatabase registrar). The RAG
+       index/store lives behind its own port in Gert.Rag, not here. Concrete engines
        live in a per-impl leaf assembly. Consumed by Gert.Service (never the reverse);
        nothing in here may reference a concrete database driver. -->
 

@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <!-- Storage capability CONTRACTS: the ports the service layer drives (IObjectStore,
-       IUserStore), the value types in their signatures (ObjectScope, ObjectEntry,
+       IDeletionJournal), the value types in their signatures (ObjectScope, ObjectEntry,
        StorageKeys) and the bound StorageOptions (the data-root shared by the object store
        and the per-user SQLite db paths). The local-filesystem implementation lives in
        Gert.Storage.Local; an S3/Azure-Blob backend is a sibling Gert.Storage.* impl + one

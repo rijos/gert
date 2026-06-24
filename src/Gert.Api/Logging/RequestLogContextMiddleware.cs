@@ -1,5 +1,4 @@
 using Gert.Service;
-using Gert.Service.Observability;
 using Serilog.Context;
 
 namespace Gert.Api.Logging;
@@ -33,12 +32,12 @@ public sealed class RequestLogContextMiddleware(RequestDelegate next)
             {
                 using (LogContext.PushProperty("uid", uid))
                 {
-                    await _next(context);
+                    await _next(context).ConfigureAwait(false);
                 }
             }
             else
             {
-                await _next(context);
+                await _next(context).ConfigureAwait(false);
             }
         }
     }

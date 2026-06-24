@@ -16,8 +16,9 @@ public sealed record Message
     public required string Content { get; init; }
 
     /// <summary>
-    /// Inline image attachments (pasted into the composer); null/empty for
-    /// messages without images - assistant rows never carry any.
+    /// Inline attachments (image or text-file) pasted or dropped into the
+    /// composer; null/empty when none. See <see cref="MessageAttachment"/> /
+    /// <see cref="AttachmentKinds"/> for the per-attachment kind discrimination.
     /// </summary>
     public IReadOnlyList<MessageAttachment>? Attachments { get; init; }
 

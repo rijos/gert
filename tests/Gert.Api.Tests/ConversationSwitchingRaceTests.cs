@@ -11,10 +11,11 @@ using Gert.Model;
 using Gert.Model.Chat;
 using Gert.Model.Dtos;
 using Gert.Model.Json;
-using Gert.Service.External;
 using Gert.Testing;
 using Gert.Testing.Fakes;
+using Gert.Tools;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Xunit;
@@ -25,7 +26,7 @@ namespace Gert.Api.Tests;
 /// Race / dead-zone integration tests around switching conversations while a
 /// turn streams: the breakage modes a fast user invites by submitting and
 /// switching before the model finishes. Turns are PACED with real delays (a
-/// custom <see cref="IChatModelClient"/>), so these are deliberately slow and
+/// custom <see cref="IChatClient"/>), so these are deliberately slow and
 /// timing-coupled - <b>not part of the CI gate</b>. Each test is a
 /// <see cref="RaceFactAttribute"/> (xUnit <c>Explicit</c>), so even a bare
 /// <c>dotnet test</c> skips them; they run only on demand via <c>make test-race</c>
@@ -45,7 +46,7 @@ public sealed class ConversationSwitchingRaceTests : IClassFixture<GertApiFactor
         Tokens = factory;
         // Swap the instant fixture model for a paced one - runs AFTER the
         // parent's fake registration, so this replace wins. TurnRunner resolves
-        // its client through IChatClientFactory (not IChatModelClient directly),
+        // its client through IChatClientFactory (not the IChatClient directly),
         // so the paced model has to ride in on the factory seam.
         _factory = factory.WithWebHostBuilder(builder => builder.ConfigureServices(services =>
             services.Replace(ServiceDescriptor.Singleton<IChatClientFactory>(
@@ -62,20 +63,33 @@ public sealed class ConversationSwitchingRaceTests : IClassFixture<GertApiFactor
     /// text before the first ':' of the user message - assertions use it to
     /// prove streams never cross conversations.
     /// </summary>
-    private sealed class PacedChatModel : IChatModelClient
+    private sealed class PacedChatModel : IChatClient
     {
-        public async IAsyncEnumerable<ChatModelChunk> StreamAsync(
-            ChatCompletionRequest request,
+        public async IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(
+            IEnumerable<ChatMessage> messages,
+            ChatOptions? options = null,
             [EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
-            var content = request.Messages.LastOrDefault(m => m.Role == "user")?.Content ?? "?";
+            var content = messages.LastOrDefault(m => m.Role == ChatRole.User)?.Text ?? "?";
             var tag = content.Split(':')[0];
-            yield return new ChatModelChunk { TextDelta = $"[{tag}]" };
+            yield return new ChatResponseUpdate(ChatRole.Assistant, $"[{tag}]");
             for (var i = 0; i < 12; i++)
             {
                 await Task.Delay(80, cancellationToken);
-                yield return new ChatModelChunk { TextDelta = $" d{i}" };
+                yield return new ChatResponseUpdate(ChatRole.Assistant, $" d{i}");
             }
+        }
+
+        public Task<ChatResponse> GetResponseAsync(
+            IEnumerable<ChatMessage> messages,
+            ChatOptions? options = null,
+            CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException("paced fake streams only");
+
+        public object? GetService(Type serviceType, object? serviceKey = null) => null;
+
+        public void Dispose()
+        {
         }
     }
 

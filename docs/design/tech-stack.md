@@ -10,7 +10,7 @@
 | SQLite | `Microsoft.Data.Sqlite` + `SQLitePCLRaw.bundle_e_sqlite3` | Extension loading for sqlite-vec; WAL. |
 | Vector | **sqlite-vec** (`vec0`) + **FTS5** | Per-user KNN + lexical for hybrid search. |
 | Data access | **Dapper** (raw SQL) behind `IUserRepository` / `IChatRepository` (contracts in `Gert.Database`) and `IRagStore` (contracts in the separate `Gert.Rag` capability), opened via the per-database providers (`IUserDatabaseProvider` / `IChatDatabaseProvider`) and `IRagIndexProvider` | Hand-written SQL suits `vec0`/FTS virtual tables. The **repository interfaces are the engine-portability seam** - the service layer never sees SQL, so another engine drops in as a new project (see [Engine portability](#engine-portability)). |
-| Model API | **official OpenAI .NET SDK** -> any OpenAI-compatible server (vLLM in the reference deployment) | The SDK owns the wire format + SSE parsing, so requests always match the OpenAI spec (and Claude's OpenAI-compat endpoint works unchanged). vLLM extension fields (`chat_template_kwargs`, `reasoning_content`) ride via `JsonPatch`; the SDK's retry/timeout are disabled - the typed `HttpClient` + Polly stay the only resilience owner. The ports `IChatModelClient`/`IEmbeddingClient` (and the generic provider catalog/factory) live in the **`Gert.Chat`** contracts assembly; the OpenAI implementation is the self-registering **`Gert.Chat.OpenAI`** plugin. |
+| Model API | **Microsoft.Extensions.AI** (`IChatClient`/`IEmbeddingGenerator`/`AIFunction`) over the **official OpenAI .NET SDK** -> any OpenAI-compatible server (vLLM in the reference deployment) | M.E.AI is the model abstraction; the OpenAI SDK rides underneath via `.AsIChatClient()` and owns the wire format + SSE parsing, so requests match the OpenAI spec (Claude's OpenAI-compat endpoint works unchanged). The Gert-specific behavior M.E.AI has no analog for is re-homed into an `OpenAIProviderChatClient` (a `DelegatingChatClient`): the provider's sampling and the vendor fields (`chat_template_kwargs`, `top_k`/`min_p`/`repetition_penalty`) via `ChatOptions.RawRepresentationFactory` + `JsonPatch`, interleaved-thinking replay, and a stream re-map for vLLM's `delta.reasoning` (the adapter surfaces only `reasoning_content`) and the name-first live-intent. The SDK's retry/timeout are disabled - the typed `HttpClient` + Polly stay the only resilience owner. The ports (`IChatClientFactory` returning `IChatClient`, the registered `IEmbeddingGenerator`, the provider catalog/factory) live in the **`Gert.Chat`** contracts assembly (Abstractions only); the OpenAI implementation (+ AI core + AI.OpenAI) is the self-registering **`Gert.Chat.OpenAI`** plugin (decisions #13). |
 | HTTP | `IHttpClientFactory` + **Polly** | vLLM (`Gert.Chat`) / SearXNG (`Gert.Tools`) calls with resilience; every pipeline is configured **from the bound options**, never stock defaults. The streaming chat client has an **infinite** `HttpClient.Timeout` - the turn budget owns the stream ([turn-budgets](turn-budgets.md)) and Polly bounds only the pre-stream (time-to-headers) phase, so a connect/accept retry never repeats streamed tokens; buffered calls (embeddings, search) keep a finite client timeout sitting just outside their Polly total. The SearXNG fetch is SSRF-guarded ([security F5](security.md#3-findings--remediations)). |
 | Background work | `System.Threading.Channels` + `BackgroundService` (Gert.Api) | Ingestion queue - an **Api hosting** concern wrapping `IIngestionService`. |
 | Logging | **Serilog** -> JSON lines (NDJSON) on stdout | `ts`/`level`-first schema **shared with the Python tooling** so one parser reads every process; never logs tokens/`sub`/content ([operations section Logging format](operations.md#logging-format-shared)). |
@@ -22,8 +22,9 @@
 The codebase is a **host-agnostic service layer** with a single host on top of it, kept
 deliberately decoupled so the host stays swappable:
 
-- **`Gert.Service`** holds all business logic and references nothing host-specific - no `HttpContext`, no JWT, no SSE. It depends only on abstractions: `IUserContext` (who is the current user + their tool entitlement), the persistence contracts in **`Gert.Database`** (the per-database providers `IUserDatabaseProvider` / `IChatDatabaseProvider` and their repositories - this user's connections + migrations), the RAG index contracts in **`Gert.Rag`** (`IRagIndexProvider` / `IRagStore`), and the tool/validation interfaces.
-- **`Gert.Api`** drives the services over HTTP (controllers, JWT auth, SSE, the ingestion `BackgroundService`, SPA hosting).
+- **`Gert.Service`** holds all business logic and references nothing host-specific - no `HttpContext`, no JWT, no SSE. It depends only on abstractions: `IUserContext` (who is the current user + their tool entitlement), the persistence contracts in **`Gert.Database`** (the per-database providers `IUserDatabaseProvider` / `IChatDatabaseProvider` and their repositories - this user's connections + migrations), the RAG index contracts in **`Gert.Rag`** (`IRagIndexProvider` / `IRagStore`), and the tool/validation interfaces. The request-facing read side of chat (the conversation bus + reader/streamer) stays here; the turn EXECUTION engine does not.
+- **`Gert.Agent`** is the turn/agent execution engine, a layer between the host and `Gert.Service` (host -> `Gert.Agent` -> `Gert.Service`): the `TurnLauncher`, the `TurnPlanner`/`TurnRunner`, the reusable `IAgentLoop` (the `TurnRunner` runs it inline on its turn task, teeing the `AgentEvent`s it emits into the conversation event log), the turn control plane (cancel + ask_user over the `ITurnControlBus` port the runner subscribes to per turn), the launcher-scope `DetachedUserContext`, and the chat tool-host wiring (`ChatToolHost`/`ProjectRagResource`/`ChatToolDelegate`). It references `Gert.Service` + the capability contracts, never the host or an adapter impl; `Gert.Service` must not reference it back. Registered by `AddGertAgent` (the host calls it right after `AddGertServices`).
+- **`Gert.Api`** drives the engine + services over HTTP (controllers, JWT auth, SSE, the ingestion `BackgroundService`, SPA hosting).
 
 Because the service layer can't see the host, its independence from any transport is **structural** (compiler-enforced reference direction), not a convention. Services that stream - chat - return `IAsyncEnumerable<ChatEvent>`; the Api renders those as SSE. Transport never leaks into the service.
 
@@ -36,32 +37,37 @@ Arrows are project references. Everything points inward to `Gert.Service` -> `Ge
 ```
   ── host ────────────────────────────────────────────────────────────────────
      Gert.Api
-       refs: Service, Authentication, Database.Sqlite, Storage(+Local), Chat(+OpenAI), Tools, Ingestion
+       refs: Agent, Service, Authentication, Database.Sqlite, Storage(+Local), Chat(+OpenAI), Tools, Ingestion
+       │
+       ▼
+  ── turn/agent execution engine ──────────────────────────────────────────────
+     Gert.Agent       refs: Service + the capability contracts (Database, Rag, Chat, Tools, Validation)
+       (TurnLauncher, TurnPlanner/TurnRunner, IAgentLoop, the chat tool-host wiring)
        │
        ▼
   ── impl adapters (per-impl leaves) ──────────────────────────────────────────
-     Gert.Authentication   Gert.Database.Sqlite   Gert.Storage.Local   Gert.Chat.OpenAI   Gert.Tools / Gert.Ingestion
-     (JWT -> IUserContext)   (vec0 + FTS5)          (local FS object store)  (OpenAI plugin)   (search+sandbox / extractors)
+     Gert.Authentication   Gert.Database.Sqlite   Gert.Storage.Local   Gert.Chat.OpenAI   Gert.Tools.Builtin / Gert.Ingestion
+     (JWT -> IUserContext)   (vec0 + FTS5)          (local FS object store)  (OpenAI plugin)   (search+sandbox+built-in tools / extractors)
             └──────────────────────┴──────────────────────┴────────────────────┴─────────────┘
                                     │  all ref ▼
   ── capability contracts ─────────────────────────────────────────────────────
-              Gert.Database   Gert.Storage   Gert.Chat        refs: Model only (service may reference these)
+           Gert.Database   Gert.Storage   Gert.Chat   Gert.Rag   Gert.Tools   refs: Model only (service may reference these)
                                     │  service refs ▼
   ── core ────────────────────────────────────────────────────────────────────
-                            Gert.Service        refs: Model + Database + Storage + Chat (contracts)
+                            Gert.Service        refs: Model + Database + Storage + Chat + Rag + Tools (contracts)
                                     │
                                     ▼
   ── model ────────────────────────────────────────────────────────────────────
                             Gert.Model                   no dependencies
 ```
 
-The compiler enforces the inward direction: `Gert.Service` cannot reference `Gert.Api`, `Gert.Authentication`, the outside-world impl adapters (`Gert.Chat.OpenAI`, `Gert.Tools`, `Gert.Ingestion`, `Gert.Storage.Local`), or any `Gert.Database.*` **adapter** - so the service layer's independence from any host is structural, not a convention. Each capability splits into a **contracts** assembly (`Gert.Database`, `Gert.Storage`, `Gert.Chat`) that depends only on `Gert.Model` and holds the ports (plus any impl-agnostic wiring, e.g. the chat provider catalog/factory) and a **per-impl leaf** that holds the real backend; the service layer references only the contracts. The service layer talks only to the ports (`IChatModelClient`, `IEmbeddingClient`, `IObjectStore`, the database providers, `IWebSearch`, `IPythonSandbox`, `ITextExtractor`), and the real vLLM/SearXNG/gVisor/local-FS clients live behind them - so they can be swapped (or pointed at mock upstreams for tests, see [testing](testing.md#41-the-fake-external-world)) with a single DI change. For a config-selected, multi-impl capability (chat, the database engine, the RAG index engine, web search, the run_python sandbox), each impl is a self-registering plugin keyed by its `Type` token (`ICapabilityPlugin`): a generic factory dispatches by config with no central `switch`, and the composition root registers the plugins it ships (`AddGert<Capability><Impl>`, e.g. `AddGertChatOpenAI` / `AddGertDatabaseSqlite` / `AddGertRagSqlite` / `AddGertSearchSearXNG` / `AddGertSandboxMonty`). The split is by assembly when the impl carries heavy deps (chat: `Gert.Chat` contracts vs `Gert.Chat.OpenAI` leaf; database: `Gert.Database` contracts vs `Gert.Database.Sqlite` leaf; RAG: `Gert.Rag` contracts vs `Gert.Rag.Sqlite` leaf) or by namespace leaf within one adapter when the ports already live upstream in `Gert.Service.External` (search/sandbox inside `Gert.Tools`). `PluginArchitectureTests` asserts the contracts-vs-impl split and the registrar naming convention for all of them.
+The compiler enforces the inward direction: `Gert.Service` cannot reference `Gert.Api`, `Gert.Agent` (the turn engine sits OUTWARD of it - host -> `Gert.Agent` -> `Gert.Service`), `Gert.Authentication`, the outside-world impl adapters (`Gert.Chat.OpenAI`, `Gert.Tools.Builtin`, `Gert.Ingestion`, `Gert.Storage.Local`), or any `Gert.Database.*` **adapter** - so the service layer's independence from any host is structural, not a convention. An architecture test also pins `Gert.Agent` so it never references the host or an adapter impl leaf. Each capability splits into a **contracts** assembly (`Gert.Database`, `Gert.Storage`, `Gert.Chat`, `Gert.Rag`, `Gert.Tools`) that depends only on `Gert.Model` and holds the ports (plus any impl-agnostic wiring, e.g. the chat provider catalog/factory) and a **per-impl leaf** that holds the real backend; the service layer references only the contracts. The service layer talks only to the ports (the Microsoft.Extensions.AI `IChatClient`/`IEmbeddingGenerator` via `IChatClientFactory`, `IObjectStore`, the database providers, `IWebSearch`, `IPythonSandbox`, `ITextExtractor`), and the real vLLM/SearXNG/gVisor/local-FS clients live behind them - so they can be swapped (or pointed at mock upstreams for tests, see [testing](testing.md#41-the-fake-external-world)) with a single DI change. For a config-selected, multi-impl capability (chat, the database engine, the RAG index engine, web search, the run_python sandbox), each impl is a self-registering plugin keyed by its `Type` token (`ICapabilityPlugin`): a generic factory dispatches by config with no central `switch`, and the composition root registers the plugins it ships (`AddGert<Capability><Impl>`, e.g. `AddGertChatOpenAI` / `AddGertDatabaseSqlite` / `AddGertRagSqlite` / `AddGertSearchSearXNG` / `AddGertSandboxMonty`). The split is by assembly when the impl carries heavy deps (chat: `Gert.Chat` contracts vs `Gert.Chat.OpenAI` leaf; database: `Gert.Database` contracts vs `Gert.Database.Sqlite` leaf; RAG: `Gert.Rag` contracts vs `Gert.Rag.Sqlite` leaf) or by namespace leaf within one impl adapter when the ports live in the shared contracts assembly `Gert.Tools` (search/sandbox inside `Gert.Tools.Builtin`). `PluginArchitectureTests` asserts the contracts-vs-impl split and the registrar naming convention for all of them.
 
 ## Engine portability
 
 The persistence seam is the **repository interfaces** (`IChatRepository`, and `IRagStore` in the separate RAG capability), not a generic connection wrapper - because the RAG retrieval is engine-specific (sqlite-vec + FTS5 + RRF) and cannot be abstracted into shared SQL. The service layer talks only to those interfaces, so swapping engines means adding a new `Gert.Database.*` / `Gert.Rag.*` plugin and selecting it with `Gert:Database:Type` / `Gert:Rag:Type`; `Gert.Service` is untouched.
 
-Persistence is split along the storage/database line, each a contracts-vs-impl pair. **`Gert.Storage`** is the storage CONTRACTS assembly (refs `Gert.Model` only): `IObjectStore` is the seam for the genuine blobs under a user tree - uploads and memory bodies - plus the artifact half of the lifecycle (`DeleteScopeAsync`, the recursive tree delete) and the admin footprint listing; the shared `StorageOptions` data-root + `StorageKeys` key derivation (core policy) live here too. The local-FS implementation - `LocalObjectStore` - lives in the **`Gert.Storage.Local`** impl leaf (an S3/Azure-Blob backend is a sibling `Gert.Storage.*` project + one DI swap, `AddGertStorageLocal` -> that backend's registrar). It implements `IObjectStore` and depends only on the storage contracts - it owns artifact bytes and knows nothing about databases, so it never changes when the backend does and carries **no** reference to `Gert.Database`. (Structured user state - username, settings, the project registry - is **not** blob territory: it lives in `user.db`, [decisions section 9](decisions.md#9-userdb---structured-user-state-is-a-database-not-json-sidecars).) **`Gert.Database`** is the engine-neutral contracts kernel: the per-database providers (`IUserDatabaseProvider` / `IChatDatabaseProvider`), the repository interfaces, and the provisioning-gate refusal (`UnauthorizedDatabaseIdentityException`); `SqliteDatabasePaths` (local db-file paths) lives in `Gert.Database.Sqlite` because only a file-backed engine has paths at all (Postgres has a connection string). Each provider owns destroying its own data (`DeleteUserAsync` / `DeleteProjectAsync`: a file-backed engine drops its pooled handles + unlinks its db files, a server-backed engine deletes the rows), so deleting a user/project is a **service-orchestrated** sequence of database-halves (the structured + RAG engines) then the blob-half, rather than one store reaching into the other. The engine is itself a config-selected keyed plugin (`IDatabaseEngineBuilder` keyed by `Gert:Database:Type`, default `Sqlite`; the generic `DatabaseEngineFactory` builds the providers from the selected engine), so `Gert.Database` holds the contracts + that generic wiring and `Gert.Database.Sqlite` is the impl leaf. **`Gert.Rag`** is the parallel RAG capability - deliberately split out of the database line because a vector index need not be SQL: its `IRagStore` / `IRagIndexProvider` ports + the `IRagEngineBuilder` keyed by `Gert:Rag:Type` (default `Sqlite`) live here, and `Gert.Rag.Sqlite` (sqlite-vec + FTS5, with its own self-contained connection factory + paths so it has no dependency on `Gert.Database.Sqlite`) is the impl leaf; a dedicated vector store (Qdrant, pgvector) is a sibling `Gert.Rag.*` plugin. Database files themselves (`user.db`/`chat.db`/`rag.db`) are *not* objects - engines need real local file handles - so they stay behind the providers, and a remote object backend paired with SQLite is a split deployment (objects remote, dbs local); the full remote-storage payoff arrives with a server database. A future Postgres implementation (`Gert.Database.Postgres`) is therefore a **new plugin with its own SQL** reusing those shared layers, selected by `Gert:Database:Type=Postgres`:
+Persistence is split along the storage/database line, each a contracts-vs-impl pair. **`Gert.Storage`** is the storage CONTRACTS assembly (refs `Gert.Model` only): `IObjectStore` is the seam for the genuine blobs under a user tree - uploads - plus the artifact half of the lifecycle (`DeleteScopeAsync`, the recursive tree delete) and the admin footprint listing; the shared `StorageOptions` data-root + `StorageKeys` key derivation (core policy) live here too. The local-FS implementation - `LocalObjectStore` - lives in the **`Gert.Storage.Local`** impl leaf (an S3/Azure-Blob backend is a sibling `Gert.Storage.*` project + one DI swap, `AddGertStorageLocal` -> that backend's registrar). It implements `IObjectStore` and depends only on the storage contracts - it owns artifact bytes and knows nothing about databases, so it never changes when the backend does and carries **no** reference to `Gert.Database`. (Structured user state - username, settings, the project registry - is **not** blob territory: it lives in `user.db`, [decisions section 9](decisions.md#9-userdb---structured-user-state-is-a-database-not-json-sidecars).) **`Gert.Database`** is the engine-neutral contracts kernel: the per-database providers (`IUserDatabaseProvider` / `IChatDatabaseProvider`), the repository interfaces, and the provisioning-gate refusal (`UnauthorizedDatabaseIdentityException`); `SqliteDatabasePaths` (local db-file paths) lives in `Gert.Database.Sqlite` because only a file-backed engine has paths at all (Postgres has a connection string). Each provider owns destroying its own data (`DeleteUserAsync` / `DeleteProjectAsync`: a file-backed engine drops its pooled handles + unlinks its db files, a server-backed engine deletes the rows), so deleting a user/project is a **service-orchestrated** sequence of database-halves (the structured + RAG engines) then the blob-half, rather than one store reaching into the other. The engine is itself a config-selected keyed plugin (`IDatabaseEngineBuilder` keyed by `Gert:Database:Type`, default `Sqlite`; the generic `DatabaseEngineFactory` builds the providers from the selected engine), so `Gert.Database` holds the contracts + that generic wiring and `Gert.Database.Sqlite` is the impl leaf. **`Gert.Rag`** is the parallel RAG capability - deliberately split out of the database line because a vector index need not be SQL: its `IRagStore` / `IRagIndexProvider` ports + the `IRagEngineBuilder` keyed by `Gert:Rag:Type` (default `Sqlite`) live here, and `Gert.Rag.Sqlite` (sqlite-vec + FTS5, with its own self-contained connection factory + paths so it has no dependency on `Gert.Database.Sqlite`) is the impl leaf; a dedicated vector store (Qdrant, pgvector) is a sibling `Gert.Rag.*` plugin. Database files themselves (`user.db`/`chat.db`/`rag.db`) are *not* objects - engines need real local file handles - so they stay behind the providers, and a remote object backend paired with SQLite is a split deployment (objects remote, dbs local); the full remote-storage payoff arrives with a server database. A future Postgres implementation (`Gert.Database.Postgres`) is therefore a **new plugin with its own SQL** reusing those shared layers, selected by `Gert:Database:Type=Postgres`:
 
 - `vec0 ... MATCH ... ORDER BY distance` -> **pgvector** `<=>` / `<->` with an HNSW index; `FLOAT[1024]` -> `vector(1024)`.
 - FTS5 `bm25()` -> `tsvector` + `ts_rank_cd` (no native BM25 without `pg_search`/ParadeDB or `rum`), so the lexical rank and the RRF fusion are re-tuned.
@@ -76,18 +82,24 @@ Gert.sln
 ├─ Gert.Model/                # POCOs only, no deps - Conversation, Message, ToolCall,
 │                             #   Citation, Artifact, Document, Chunk, ChatEvent, DTOs
 │
-├─ Gert.Service/              # host-agnostic business logic - references Model + Database (contracts)
+├─ Gert.Service/              # host-agnostic business logic - refs Model + the capability contracts (Database, Storage, Chat, Rag, Tools) + Validation
 │  ├─ IGertServices.cs        # aggregate hub: .Chat .Conversations .Documents .Artifacts .Admin
 │  ├─ IUserContext.cs         # current user's scope: Sub, AllowedTools (abstraction only)
-│  ├─ Chat/                   # the detached turn pipeline: TurnPlanner, TurnRunner, queue, bus,
-│  │                          #   ConversationStreamer, MessageStatusRules, SystemPrompts
+│  ├─ Chat/                   # the request-facing read side: ConversationBus, ConversationReader,
+│  │                          #   ConversationStreamer + the shared turn vocab (TurnOptions,
+│  │                          #   MessageStatusRules, PromptOptions, TurnInProgressException)
 │  ├─ Conversations/          # IConversationService
 │  ├─ Documents/              # IDocumentService
 │  ├─ Ingestion/              # IIngestionService.Ingest(doc) - pure pipeline (extract->chunk->embed->write)
-│  ├─ Provisioning/           # UserProvisioner - username refresh + default-project seed (user.db)
-│  ├─ Tools/                  # ITool + ToolRegistry + ITailReminder; rag/search/sandbox/todo/clock
-│  │                          #   + the canvas suite (make/edit/read artifact)
-│  └─ Validation/             # IValidationProvider + FluentValidation validators per model
+│  └─ Provisioning/           # UserProvisioner - username refresh + default-project seed (user.db)
+│
+├─ Gert.Agent/                # turn/agent EXECUTION engine - layer between host and Service - refs Service + the capability contracts + Validation
+│  ├─ TurnPlanner / TurnRunner / TurnLauncher                   # the detached turn pipeline (plan -> launch -> tee, loop run inline)
+│  ├─ DetachedUserContext                                       # launcher-scope IUserContext; cancel + ask_user ride the ITurnControlBus the runner subscribes to
+│  ├─ Loop/                   #   IAgentLoop/AgentLoop + the GertFunctionInvokingChatClient + LiveIntentChatClient pipeline, AgentEvent out
+│  └─ Hosting/                #   ChatToolHost / ProjectRagResource / ChatToolDelegate - the IToolHost wiring
+│
+├─ Gert.Validation/           # fail-closed validation sub-layer - IValidationProvider + Validated<T> proof + per-DTO validators - refs Model + Tools(contracts)
 │
 ├─ Gert.Storage/              # storage CONTRACTS - references Model only (service may reference it)
 │  ├─ IObjectStore.cs         # the artifact-store port the service layer drives (blobs + footprint scan)
@@ -105,7 +117,7 @@ Gert.sln
 │  ├─ ServiceCollectionExtensions.cs  # AddGertDatabase(cfg): the GENERIC engine selector + the user/chat provider ports
 │  └─ UnauthorizedDatabaseIdentityException.cs  # the fail-closed provisioning-gate refusal
 │
-├─ Gert.Database.Sqlite/      # SQLite engine IMPL leaf - references Database, Service, Storage (contracts), Model
+├─ Gert.Database.Sqlite/      # SQLite engine IMPL leaf - references Database, Storage (contracts), Model
 │  ├─ SqliteDatabaseEngineBuilder.cs # IDatabaseEngineBuilder (Type=Sqlite) - builds the user/chat providers; AddGertDatabaseSqlite registers it keyed
 │  ├─ SqliteUserDatabaseProvider.cs  # opens THIS user's user.db (self-migrating)
 │  ├─ SqliteChatDatabaseProvider.cs  # opens a project's chat.db (WAL, busy_timeout)
@@ -143,33 +155,51 @@ Gert.sln
 │  ├─ JwtBearer.cs            # JWKS/Authority config, NameClaimType/RoleClaimType
 │  └─ Policies.cs             # Admin policy, fallback authenticated-user policy
 │
-├─ Gert.Chat/                 # chat CONTRACTS + generic wiring - references Model only (service may reference it)
-│  ├─ IChatModelClient.cs / IEmbeddingClient.cs / IChatClientFactory.cs / IChatProviderCatalog.cs  # the ports
+├─ Gert.Chat/                 # chat CONTRACTS + generic wiring - references Model + M.E.AI Abstractions (service may reference it)
+│  ├─ IChatClientFactory.cs / IChatProviderCatalog.cs  # the ports (factory returns M.E.AI IChatClient)
 │  ├─ ConfigChatProviderCatalog.cs / ChatClientFactory.cs  # impl-agnostic catalog + keyed-plugin factory
 │  ├─ IChatModelClientBuilder.cs / IDefaultChatProvider.cs / ChatProviderOptions.cs  # the plugin seams + metadata
 │  └─ ServiceCollectionExtensions.cs  # AddGertChat(cfg): the generic catalog + factory (no impl)
 │
-├─ Gert.Chat.OpenAI/          # the OpenAI chat IMPL plugin leaf - references Chat, Model
-│  ├─ OpenAIChatModelClient.cs / OpenAIEmbeddingClient.cs  # OpenAI-compatible (IHttpClientFactory + Polly)
+├─ Gert.Chat.OpenAI/          # the OpenAI chat IMPL plugin leaf - references Chat, Model + M.E.AI core/OpenAI
+│  ├─ OpenAIProviderChatClient.cs / OpenAIStreamParser.cs  # the IChatClient over .AsIChatClient(): sampling, vendor params, reasoning + live-intent re-map
+│  ├─ OpenAIEmbeddingGenerator.cs / OpenAISdkClient.cs  # IEmbeddingGenerator (order-by-index) + shared SDK-client construction
 │  ├─ OpenAIChatModelClientBuilder.cs / ChatProviderParameters.cs  # the plugin (keyed by Type) + its sampling
 │  └─ ServiceCollectionExtensions.cs  # AddGertChatOpenAI(cfg): the keyed builder + per-provider transports
 │
-├─ Gert.Tools/                # tool backends + built-in tools adapter - references Service, Database, Model
-│  ├─ Builtin/                #   the 12 built-in ITool impls (rag, search, sandbox, fetch, todo, clock, artifact suite, ask_user, memory, sub_agent)
-│  ├─ Fetch/                  #   SSRF-guarded fetcher + the web_fetch IWebFetcher port (security F5)
+├─ Gert.Tools/                # tool CONTRACTS - references Model only. Core tool-calling types at the root (ITool/ToolRegistry/ToolResult/ToolInvocation/ToolType); folder-matched sub-namespaces hold the rest
+│  ├─ Args/                   #   Gert.Tools.Args - the typed tool-argument records (one per tool)
+│  ├─ Results/                #   Gert.Tools.Results - the typed result-payload POCOs (RagResult, WebSearchToolResult, ... - the model-facing shapes; live in the contracts assembly, not the impl leaf)
+│  ├─ Resources/              #   Gert.Tools.Resources - IToolResources/IObjectResource/IRagResource + their DTOs (ResourceScope, StoredObject, RagSearchHit, ...)
+│  ├─ Ui/                     #   Gert.Tools.Ui - IToolUi + the ask_user interaction DTOs
+│  ├─ Hosting/                #   Gert.Tools.Hosting - IToolHost/IToolDelegate/ToolLimits + Delegate{Request,Result} seams
+│  └─ Ports/                  #   Gert.Tools.Ports - the IWebSearch/IWebFetcher/IPythonSandbox external-world ports
+│
+├─ Gert.Tools.Builtin/        # built-in tools + search/sandbox/fetch impl leaf - refs Tools(contracts), Validation, Model (NOT Service/Database/Rag/Chat: tools reach RAG/objects/UI/delegation through the IToolHost seams; an architecture test enforces no Service edge)
+│  ├─ Builtin/                #   the 13 built-in ITool impls (rag, read_document, search, sandbox, fetch, todo, clock, artifact suite, ask_user, sub_agent); the id-only ToolRegistry is derived from them
+│  ├─ Fetch/                  #   SSRF-guarded fetcher + the web_fetch IWebFetcher impl (security F5)
 │  ├─ Search/                 #   IWebSearch keyed-plugin selector (WebSearchFactory, Gert:Tools:Search:Type)
 │  │  └─ SearXNG/             #     the SearXNG plugin leaf - AddGertSearchSearXNG (keyed by Type)
 │  ├─ Sandbox/                #   IPythonSandbox keyed-plugin selector (PythonSandboxFactory, Gert:Tools:Sandbox:Type)
 │  │  ├─ Monty/               #     the monty sidecar plugin leaf (default) - AddGertSandboxMonty
 │  │  └─ GVisor/              #     the gVisor (runsc) plugin leaf - AddGertSandboxGVisor
-│  └─ ServiceCollectionExtensions.cs  # AddGertTools(cfg): the generic search/sandbox selectors + fetch + AddBuiltinTools (no impl)
+│  └─ ServiceCollectionExtensions.cs  # AddGertTools(cfg): generic search/sandbox selectors + fetch + AddBuiltinTools (id-only ToolRegistry + the impls)
 │
 ├─ Gert.Ingestion/            # text-extractor adapter - references Service, Model
-│  ├─ PlainText/              #   PlainTextExtractor - the md/txt ITextExtractor leaf
-│  ├─ Subprocess/             #   IsolatedTextExtractor - unprivileged subprocess for PDF/DOCX parsing (security F7)
-│  └─ ServiceCollectionExtensions.cs  # AddGertIngestion(cfg): both keyed ITextExtractor leaves (md/txt + pdf/docx)
+│  ├─ PlainText/              #   PlainTextExtractor - universal text ITextExtractor leaf (any non-binary type; UTF-8 decode + text-ness gate)
+│  ├─ Subprocess/             #   IsolatedTextExtractor - unprivileged subprocess for PDF/DOCX/XLSX parsing (security F7)
+│  └─ ServiceCollectionExtensions.cs  # AddGertIngestion(cfg): both keyed ITextExtractor leaves (isolated pdf/docx/xlsx + plain-text fallback)
 │
-├─ Gert.Api/                  # HTTP host - refs Service, Authentication, Database.Sqlite, Storage(+Local), Chat(+OpenAI), Tools, Ingestion
+├─ Gert.TurnControl/          # turn control-plane CONTRACTS - references Model only (Agent + Api reference it)
+│  ├─ ITurnControlBus.cs / ITurnControlSubscription.cs  # the pub/sub port: runner subscribes per turn, endpoints publish cancel/answer to the scope
+│  ├─ ControlScope.cs / AnswerOutcome.cs  # the token-derived (userKey, pid, conversation) address + the 202/404/400 outcome
+│  └─ AnswerValidation.cs     #   the single-sourced closed-question fit rule (count + offered-option membership)
+│
+├─ Gert.TurnControl.Local/    # the in-process control-plane IMPL leaf (a networked Kafka/NATS bus is a sibling, one DI swap)
+│  ├─ InProcessTurnControlBus.cs  # per-scope in-memory broker: trips the live subscription, retains a queued cancel against `since`
+│  └─ ServiceCollectionExtensions.cs  # AddGertTurnControlLocal(): the default single-process ITurnControlBus
+│
+├─ Gert.Api/                  # HTTP host - refs Agent, Service, Authentication, Database.Sqlite, Storage(+Local), Chat(+OpenAI), Tools.Builtin, Ingestion, TurnControl(+Local)
 │  ├─ Program.cs              # DI, JwtBearer, static files + SPA fallback, SSE, BackgroundService
 │  ├─ appsettings.json        # NON-secret defaults only: vLLM/SearXNG URLs, embedding dim, DataRoot,
 │  │                          #   Auth. Keys/secrets come from env / user-secrets / a secret store
@@ -185,11 +215,13 @@ Gert.sln
 │
 ├─ tests/                     # test projects - see docs/design/testing.md
 │  ├─ Gert.Testing/           #   shared infra: fakes (vLLM/SearXNG/sandbox), GertApiFactory, JWT mint
-│  ├─ Gert.Service.Tests/     #   whitebox: tool loop + turn orchestration, ingestion pipeline, validation
+│  ├─ Gert.Agent.Tests/       #   whitebox: agent loop, turn planner/runner, toolset, chat tool-host wiring
+│  ├─ Gert.Service.Tests/     #   the request-facing read side (conversation bus/reader/streamer, ingestion, delta coalescer) + validators
+│  ├─ Gert.Validation.Tests/  #   fail-closed meta-test + per-DTO validator units + adversarial corpus
 │  ├─ Gert.Database.Sqlite.Tests/ # repositories vs real temp SQLite (vec0 + FTS5); isolation
 │  ├─ Gert.Authentication.Tests/  # JWT claims -> IUserContext; sub->key; RS256 pin
 │  ├─ Gert.Chat.Tests/        #   chat/embeddings adapter units: OpenAI client, catalog, Polly wiring
-│  ├─ Gert.Tools.Tests/       #   tool adapter units: built-in tools, SSRF guard, sandbox args, backend selection
+│  ├─ Gert.Tools.Builtin.Tests/ # tool adapter units: built-in tools, SSRF guard, sandbox args, backend selection
 │  ├─ Gert.Ingestion.Tests/   #   extractor hardening units (XXE, zip-bomb, helper output)
 │  ├─ Gert.Api.Tests/         #   integration (WebApplicationFactory): SSE, auth, IDOR, admin, SPA fallback
 │  ├─ Gert.Web.Bundle.Tests/  #   web toolchain: pinned esbuild + tsgo manifests, SHA-512 verifier, index.html repoint

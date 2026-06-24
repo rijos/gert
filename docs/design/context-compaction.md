@@ -89,13 +89,6 @@ prompt head **every** turn - worst-case prefix-cache behaviour, (b) silently for
 no record of what was lost. Only acceptable as the emergency fallback inside 3a when
 even compaction can't fit (e.g. a tiny-context model).
 
-### 3e. Promote-to-memory - the durable end of the spectrum
-Compaction summaries that contain *facts worth keeping* overlap with project memory
-([configuration section 2.3](configuration.md#23-memory)). A "promote to memory" affordance on
-the compaction divider would let the user (or later, `auto` memory mode) move durable
-facts out of conversation scope entirely. Out of scope for v1 of compaction; the summary
-column design must just not preclude it.
-
 ## 4. Recommendation
 
 Phased, same shape as [turn-budgets section 5](turn-budgets.md#5-recommendation):
@@ -107,7 +100,7 @@ Phased, same shape as [turn-budgets section 5](turn-budgets.md#5-recommendation)
    weeks". Ships with the visible divider event and a per-conversation toggle
    (`off - auto`, default `auto`) - a new conversation/settings field, *not* the deleted
    sampling cascade.
-4. 3d only as the in-3a emergency fallback; 3e parked until memory `auto` is revisited.
+4. 3d only as the in-3a emergency fallback.
 
 ## 5. Open questions
 

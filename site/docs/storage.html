@@ -52,16 +52,20 @@
     <pre><code>/data/
 └── users/
     └── {key}/                     <span class="c"># key = sha256(iss + sub)</span>
-        ├── meta.json              <span class="c"># identity - iss, sub, username, created_at</span>
-        ├── settings.json          <span class="c"># theme, language, defaults</span>
+        ├── user.db                <span class="c"># username, settings, and the PROJECT REGISTRY</span>
         └── projects/
             ├── default/           <span class="c"># lazily created; always present</span>
-            │   ├── meta.json      <span class="c"># name, instructions, defaults</span>
             │   ├── chat.db        <span class="c"># conversations, messages, tool calls, artifacts</span>
-            │   ├── rag.db         <span class="c"># sqlite-vec: documents, chunks, embeddings, FTS</span>
-            │   ├── files/         <span class="c"># original uploaded files</span>
-            │   └── memory/        <span class="c"># memory entries (markdown)</span>
+            │   ├── rag.db         <span class="c"># sqlite-vec: documents, chunks, embeddings, FTS, memory</span>
+            │   └── files/         <span class="c"># uploaded blobs, server key files/{doc-id}</span>
             └── {project-id}/      <span class="c"># same shape, fully isolated</span></code></pre>
+    <p>There are <strong>no JSON sidecars</strong>. Structured user state - the username (for
+    the admin scan), settings, and the project registry (one row per project) - lives in
+    <code>user.db</code> at the user root: durable, transactional, and free of the torn-write
+    healing a JSON file needs. A project's <em>config</em> is a registry row; a project's
+    <em>data</em> is its folder. <strong>Memory</strong> is not a folder either - memory entries
+    live inside that project's <code>rag.db</code> (rows with <code>kind='memory'</code>), so
+    they retrieve through the same RAG store.</p>
 
     <h2>Why the key derivation matters</h2>
     <p>The folder key is computed as <code>sha256(iss + "\n" + sub)</code> from the
@@ -101,8 +105,8 @@ PRAGMA foreign_keys = ON;</code></pre>
     before any disk access</strong>:</p>
     <ol>
       <li><strong>Validate the identity before touching disk</strong> - assert <code>iss</code> equals the configured authority, <code>aud</code> equals the audience, and <code>sub</code> is well-formed. No valid identity -> no folder.</li>
-      <li>Create the user root, <code>settings.json</code>, and the <code>default</code> project.</li>
-      <li>Per project, open each database, check <code>PRAGMA user_version</code>, and apply any newer plain-SQL migration scripts.</li>
+      <li>Open <code>user.db</code> - the first open creates the user root and the file, then seeds the <code>default</code> project row in the registry so the user always has a landing project.</li>
+      <li>Open project databases lazily - each <code>chat.db</code>/<code>rag.db</code> (and <code>files/</code>) materialises on first use, checking <code>PRAGMA user_version</code> and applying any newer plain-SQL migration scripts. Every database self-migrates on open, so there is no separate provisioning ceremony.</li>
     </ol>
     <p>There is no global migration step because there is no global database.</p>
 

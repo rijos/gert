@@ -1,4 +1,4 @@
-// state/ui.js - scalar UI state: theme, nav/panel collapse, panel-wide,
+// state/ui.js - scalar UI state: theme, nav/panel collapse,
 // mobile drawers, active artifact tab / KB view. van.state only. No DOM, no I/O.
 // (Theme persists to localStorage - the token never does; see services/auth.js.)
 import van from "/lib/van.js";
@@ -45,8 +45,7 @@ export const setPanelWidth = (px: number) => {
 
 // layout flags (mirror the mockup's app classes)
 export const navCollapsed = van.state(false);
-export const panelCollapsed = van.state(false);
-export const panelWide = van.state(false);
+export const panelCollapsed = van.state(true); // pane starts closed; openArtifact reopens it on a live event
 export const navOpen = van.state(false); // mobile drawer
 export const panelOpen = van.state(false); // mobile drawer
 // true on non-chat routes (admin) - the canvas column folds away there
@@ -127,8 +126,6 @@ export const togglePanel = () => {
   } else panelCollapsed.val = !panelCollapsed.val;
 };
 
-export const toggleWide = () => (panelWide.val = !panelWide.val);
-
 export const closeDrawers = () => {
   navOpen.val = false;
   panelOpen.val = false;
@@ -141,9 +138,17 @@ export const toggleKnowledge = () => {
   showKnowledge.val = !showKnowledge.val;
 };
 
-export const openArtifact = (id: string) => {
+// fromUser distinguishes an explicit click (chip / tab) from a live artifact
+// event. Both surface the canvas on desktop (uncollapse), but on mobile the
+// canvas IS a drawer: only a user click may open it. A live event must not pop
+// a drawer over the chat as the artifact finishes generating - the user clicks
+// the chip when ready (matching desktop, which just uncollapses a side column).
+export const openArtifact = (id: string, fromUser = false) => {
   activeArtifact.val = id;
   showKnowledge.val = false;
-  // A live artifact event should always surface the canvas.
   panelCollapsed.val = false;
+  if (fromUser && isMobile()) {
+    navOpen.val = false;
+    panelOpen.val = true;
+  }
 };

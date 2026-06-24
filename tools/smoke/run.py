@@ -278,35 +278,6 @@ def _scenario_artifact(app: AppPage, role: str) -> None:
         expect(app.thread.tool_cards).to_have_count(0)
 
 
-def _scenario_memory(app: AppPage, role: str) -> None:
-    """A memory entry rides the hybrid query: seeded via the SPA's own memory
-    service, retrieved by the model's search_documents call, and surfaced with
-    its DECODED title (never the base64 blob) plus a citation."""
-    from playwright.sync_api import expect
-
-    app.page.evaluate(
-        """async () => {
-            const memory = await import('/services/memory.js');
-            await memory.add({
-                title: 'Favorite database',
-                content: 'My favorite database is sqlite-vec, running the homelab RAG stack.',
-            });
-        }"""
-    )
-    app.composer.send("search my docs about favorite database")
-    app.thread.open_activity()
-    card = app.thread.tool_cards.first
-    expect(card).to_be_visible(timeout=15000)
-    app.thread.expand_tool_card(card)
-    expect(card.locator(".doc-hit").first).to_contain_text(
-        "Favorite database", timeout=15000
-    )
-    expect(app.thread.last_bot_body).to_contain_text(
-        "sqlite-vec is your favorite", timeout=15000
-    )
-    expect(app.thread.citations.first).to_be_visible(timeout=15000)
-
-
 def _scenario_todos(app: AppPage, role: str) -> None:
     """The set_todos tool renders the model-managed checklist; a role without the
     `todo` entitlement proves the execution-time ceiling (card errors, turn survives)."""
@@ -364,7 +335,6 @@ SCENARIOS = {
     "chrome": _scenario_chrome,
     "rbac": _scenario_rbac,
     "artifact": _scenario_artifact,
-    "memory": _scenario_memory,
     "todos": _scenario_todos,
     "clock": _scenario_clock,
 }

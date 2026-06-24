@@ -1,12 +1,11 @@
-"""test_llm_tools.py - artifacts, memory retrieval, todos, and the clock through
-the FULL stack (section 9): real SPA -> real adapters -> the Python vLLM mock, with
-fixtures.json keying deterministic tool calls off the last user message.
+"""test_llm_tools.py - artifacts, todos, and the clock through the FULL stack
+(section 9): real SPA -> real adapters -> the Python vLLM mock, with fixtures.json
+keying deterministic tool calls off the last user message.
 
-Covers the four flows the scenario matrix smoke-checks, with deeper assertions:
-the artifact persists across a reload, the memory hit carries the DECODED title
-plus a citation chip, the todo checklist renders per-status, the clock card shows
-a wall-clock reading, and the tool-entitlement ceiling errors the card without
-killing the turn.
+Covers the flows the scenario matrix smoke-checks, with deeper assertions:
+the artifact persists across a reload, the todo checklist renders per-status, the
+clock card shows a wall-clock reading, and the tool-entitlement ceiling errors the
+card without killing the turn.
 """
 
 from __future__ import annotations
@@ -148,43 +147,6 @@ def test_artifact_persists_across_reload(page: Page, base_url: str) -> None:
     expect(app.canvas.tab("html")).to_contain_text("demo.html")
 
 
-def test_memory_entry_is_retrieved_with_decoded_title(
-    page: Page, base_url: str
-) -> None:
-    app = _open(page, base_url)
-
-    # Seed a memory entry through the SPA's own service (bearer + project
-    # scoping ride along); MemoryService embeds it into rag.db as kind='memory'.
-    page.evaluate(
-        """async () => {
-            const memory = await import('/services/memory.js');
-            await memory.add({
-                title: 'Favorite database',
-                content: 'My favorite database is sqlite-vec, running the homelab RAG stack.',
-            });
-        }"""
-    )
-
-    # The fixture fires search_documents("favorite database") - the memory entry
-    # rides the same hybrid query as documents.
-    app.composer.send("search my docs about favorite database")
-    app.thread.open_activity()
-    card = app.thread.tool_cards.first
-    expect(card).to_be_visible(timeout=15000)
-    app.thread.expand_tool_card(card)
-
-    # The hit shows the DECODED title (documents.filename holds it base64-encoded).
-    hit = card.locator(".doc-hit").first
-    expect(hit).to_contain_text("Favorite database", timeout=15000)
-    expect(hit).not_to_contain_text("RmF2b3JpdGU")  # base64("Favorite...") prefix
-
-    # The citation binds the bubble's [1] marker to the memory entry.
-    expect(app.thread.last_bot_body).to_contain_text(
-        "sqlite-vec is your favorite", timeout=15000
-    )
-    expect(app.thread.citations.first).to_be_visible(timeout=15000)
-
-
 def test_todo_checklist_renders_with_statuses(page: Page, base_url: str) -> None:
     app = _open(page, base_url)
     app.composer.send("plan the homelab upgrade")
@@ -274,8 +236,8 @@ def test_todo_card_survives_reload(page: Page, base_url: str) -> None:
 def test_todo_tool_is_refused_without_the_entitlement(
     user_page: Page, base_url: str
 ) -> None:
-    # `user` carries gert_tools "rag search ask_user fetch memory sub_agent" - it has
-    # no `todo` entitlement, so set_todos is dropped by the ceiling. The drop stays
+    # `user` carries gert_tools "rag search ask_user fetch sub_agent list_artifacts"
+    # - it has no `todo` entitlement, so set_todos is dropped by the ceiling. The drop stays
     # silent toward the user (auth.md - the boundary does not leak into the
     # conversation): NO tool card surfaces, yet the turn still completes because the
     # model reads the synthetic refusal and answers around the dropped tool.

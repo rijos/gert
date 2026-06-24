@@ -2,23 +2,28 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
 using FluentAssertions;
-using Gert.Service.Chat;
+using Gert.Model.Events;
+using Gert.Storage;
 using Gert.Testing;
+using Gert.TurnControl;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
 namespace Gert.Api.Tests;
 
 /// <summary>
-/// Answer a question (rest-api.md section answer a question): the HTTP answer
-/// endpoint's auth + outcome contract - it actually completes a registered
-/// pending question (202), a non-pending/foreign/stale question is an opaque
-/// 404, a closed question's off-menu answer is a 400, and the fail-closed body
-/// validation rejects malformed input before the registry is touched. The
-/// route/auth/ownership shape mirrors <see cref="CancelApiTests"/>.
+/// Answer a question (rest-api.md section answer a question): the HTTP answer endpoint's auth +
+/// outcome contract over the <see cref="ITurnControlBus"/>. The endpoint submits the body to the
+/// turn's control channel, which validates it against the open question - a matching id + valid
+/// answer is delivered to the waiting turn (202), an off-menu / count-mismatched answer is a 400 (the
+/// question stays open), a non-pending/foreign/stale question id is an opaque 404, and the fail-closed
+/// body validation rejects malformed input with 400 before the bus is touched. The scope's user key is
+/// token-derived, so a request keyed by a conversation id only ever reaches the caller's own turn.
 /// </summary>
 public sealed class AnswerApiTests : IClassFixture<GertApiFactory>
 {
+    private const string Pid = "default";
+
     private readonly GertApiFactory _factory;
     private readonly string _sub = "user-" + Guid.NewGuid().ToString("N");
 
@@ -32,17 +37,19 @@ public sealed class AnswerApiTests : IClassFixture<GertApiFactory>
         return client;
     }
 
-    private ITurnQuestions Registry =>
-        _factory.Services.GetRequiredService<ITurnQuestions>();
+    private ITurnControlBus Bus => _factory.Services.GetRequiredService<ITurnControlBus>();
 
-    private TurnKey KeyFor(string sub, string conversationId) =>
-        new(_factory.Tokens.Issuer, sub, "default", conversationId);
+    private ControlScope ScopeFor(string sub, string conversationId) =>
+        new(StorageKeys.UserKey(_factory.Tokens.Issuer, sub), Pid, conversationId);
 
-    private static StringContent Body(string questionId, string answer) =>
+    private static StringContent Body(string questionId, params string[] answers) =>
         new(
-            $$"""{"question_id":"{{questionId}}","answer":"{{answer}}"}""",
+            $$"""{"question_id":"{{questionId}}","answers":[{{string.Join(",", answers.Select(a => $"\"{a}\""))}}]}""",
             Encoding.UTF8,
             "application/json");
+
+    private static AskedQuestion OneClosed(params string[] options) =>
+        new("Which color?", null, options, AllowFreeText: false);
 
     [Fact]
     public async Task Answer_requires_authentication()
@@ -61,6 +68,7 @@ public sealed class AnswerApiTests : IClassFixture<GertApiFactory>
     {
         var client = Authed();
 
+        // No turn subscribed for this conversation: the bus finds no open question, opaque 404.
         var response = await client.PostAsync(
             "/api/projects/default/conversations/conv-none/answer",
             Body(Guid.NewGuid().ToString("D"), "blue"));
@@ -69,90 +77,128 @@ public sealed class AnswerApiTests : IClassFixture<GertApiFactory>
     }
 
     [Fact]
-    public async Task Answer_completes_the_registered_question_with_202()
+    public async Task Answer_matching_the_pending_question_is_202_and_is_delivered_to_the_turn()
     {
-        using var pending = Registry.Open(
-            KeyFor(_sub, "conv-live"),
-            new QuestionPayload("Which color?", ["red", "blue"], AllowFreeText: false));
-        var wait = pending.WaitAsync(TimeSpan.FromSeconds(30), CancellationToken.None);
-        var client = Authed();
+        var conv = Guid.NewGuid().ToString("D");
+        var questionId = Guid.NewGuid().ToString("D");
+        await using var turn = await Bus.SubscribeAsync(ScopeFor(_sub, conv), DateTimeOffset.UtcNow);
+        await turn.OpenQuestionAsync(questionId, [OneClosed("red", "blue")]);
 
-        var response = await client.PostAsync(
-            "/api/projects/default/conversations/conv-live/answer",
-            Body(pending.QuestionId, "blue"));
+        var response = await Authed().PostAsync(
+            $"/api/projects/default/conversations/{conv}/answer",
+            Body(questionId, "blue"));
 
         response.StatusCode.Should().Be(HttpStatusCode.Accepted);
-        (await wait).Should().Be("blue");
+
+        // The waiting turn received exactly the submitted answer.
+        var delivered = await turn.WaitForAnswerAsync(questionId).WaitAsync(TimeSpan.FromSeconds(2));
+        delivered.Should().Equal("blue");
     }
 
     [Fact]
     public async Task An_off_menu_answer_to_a_closed_question_is_400_and_keeps_it_pending()
     {
-        using var pending = Registry.Open(
-            KeyFor(_sub, "conv-closed"),
-            new QuestionPayload("Which color?", ["red", "blue"], AllowFreeText: false));
-        var wait = pending.WaitAsync(TimeSpan.FromSeconds(30), CancellationToken.None);
+        var conv = Guid.NewGuid().ToString("D");
+        var questionId = Guid.NewGuid().ToString("D");
+        await using var turn = await Bus.SubscribeAsync(ScopeFor(_sub, conv), DateTimeOffset.UtcNow);
+        await turn.OpenQuestionAsync(questionId, [OneClosed("red", "blue")]);
         var client = Authed();
 
         var refused = await client.PostAsync(
-            "/api/projects/default/conversations/conv-closed/answer",
-            Body(pending.QuestionId, "green"));
+            $"/api/projects/default/conversations/{conv}/answer",
+            Body(questionId, "green"));
 
         refused.StatusCode.Should().Be(HttpStatusCode.BadRequest);
 
-        // The question survived the rejected attempt and still accepts an option.
+        // The question survived the rejected attempt and still accepts an offered option.
         var accepted = await client.PostAsync(
-            "/api/projects/default/conversations/conv-closed/answer",
-            Body(pending.QuestionId, "red"));
+            $"/api/projects/default/conversations/{conv}/answer",
+            Body(questionId, "red"));
         accepted.StatusCode.Should().Be(HttpStatusCode.Accepted);
-        (await wait).Should().Be("red");
+        (await turn.WaitForAnswerAsync(questionId).WaitAsync(TimeSpan.FromSeconds(2))).Should().Equal("red");
+    }
+
+    [Fact]
+    public async Task A_count_mismatch_to_a_pending_question_is_400_and_keeps_it_pending()
+    {
+        // Two questions pend but the body carries one answer: the fit check refuses to mis-pair them.
+        var conv = Guid.NewGuid().ToString("D");
+        var questionId = Guid.NewGuid().ToString("D");
+        await using var turn = await Bus.SubscribeAsync(ScopeFor(_sub, conv), DateTimeOffset.UtcNow);
+        await turn.OpenQuestionAsync(
+            questionId,
+            [
+                OneClosed("red", "blue"),
+                new AskedQuestion("Anything else?", null, [], AllowFreeText: true),
+            ]);
+        var client = Authed();
+
+        var refused = await client.PostAsync(
+            $"/api/projects/default/conversations/{conv}/answer",
+            Body(questionId, "blue"));
+
+        refused.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        // The question survives and still accepts the matching count.
+        var accepted = await client.PostAsync(
+            $"/api/projects/default/conversations/{conv}/answer",
+            Body(questionId, "blue", "no thanks"));
+        accepted.StatusCode.Should().Be(HttpStatusCode.Accepted);
     }
 
     [Fact]
     public async Task A_stale_question_id_is_an_opaque_404()
     {
-        using var pending = Registry.Open(
-            KeyFor(_sub, "conv-stale"),
-            new QuestionPayload("Which color?", [], AllowFreeText: true));
-        var client = Authed();
+        var conv = Guid.NewGuid().ToString("D");
+        var questionId = Guid.NewGuid().ToString("D");
+        await using var turn = await Bus.SubscribeAsync(ScopeFor(_sub, conv), DateTimeOffset.UtcNow);
+        await turn.OpenQuestionAsync(questionId, [new AskedQuestion("anything?", null, [], AllowFreeText: true)]);
 
-        var response = await client.PostAsync(
-            "/api/projects/default/conversations/conv-stale/answer",
+        // A question is open, but the body names a different (stale) id - 404, the same response as
+        // none-pending (no oracle).
+        var response = await Authed().PostAsync(
+            $"/api/projects/default/conversations/{conv}/answer",
             Body(Guid.NewGuid().ToString("D"), "blue"));
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
     [Fact]
-    public async Task Answer_cannot_address_another_tenants_question()
+    public async Task Answer_only_ever_reaches_the_callers_own_turn()
     {
-        // Another user's question under the SAME conversation id: the caller's
-        // key carries their own iss/sub, so the foreign question stays pending
-        // and the caller sees the same 404 as none-pending (no oracle).
-        using var foreign = Registry.Open(
-            KeyFor("someone-else", "conv-shared-id"),
-            new QuestionPayload("Which color?", [], AllowFreeText: true));
-        var wait = foreign.WaitAsync(TimeSpan.FromSeconds(1), CancellationToken.None);
-        var client = Authed();
+        // A foreign tenant has a pending question under this conversation id; the caller has none. The
+        // caller's token derives THEIR user key, so the scope addresses no open question -> 404, and the
+        // foreign question stays pending (reachable only under the foreign scope).
+        var foreignSub = "user-" + Guid.NewGuid().ToString("N");
+        var conv = Guid.NewGuid().ToString("D");
+        var questionId = Guid.NewGuid().ToString("D");
+        await using var foreign = await Bus.SubscribeAsync(ScopeFor(foreignSub, conv), DateTimeOffset.UtcNow);
+        await foreign.OpenQuestionAsync(questionId, [new AskedQuestion("anything?", null, [], AllowFreeText: true)]);
 
-        var response = await client.PostAsync(
-            "/api/projects/default/conversations/conv-shared-id/answer",
-            Body(foreign.QuestionId, "blue"));
+        var response = await Authed().PostAsync(
+            $"/api/projects/default/conversations/{conv}/answer",
+            Body(questionId, "blue"));
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
-        (await wait).Should().BeNull("the foreign question must never receive this answer");
+
+        // The foreign question stayed pending: it still accepts an answer under the foreign scope.
+        (await Bus.SubmitAnswerAsync(ScopeFor(foreignSub, conv), questionId, ["blue"]))
+            .Should().Be(AnswerOutcome.Accepted);
     }
 
     [Theory]
-    [InlineData("""{"question_id":"not-a-guid","answer":"blue"}""")]
-    [InlineData("""{"question_id":"5f0c6a1e-9d4b-4c7e-8f23-0a1b2c3d4e5f","answer":"   "}""")]
-    [InlineData("""{"question_id":"5f0c6a1e-9d4b-4c7e-8f23-0a1b2c3d4e5f","answer":"a\u0007b"}""")]
+    [InlineData("""{"question_id":"not-a-guid","answers":["blue"]}""")]
+    [InlineData("""{"question_id":"5f0c6a1e-9d4b-4c7e-8f23-0a1b2c3d4e5f","answers":["   "]}""")]
     [InlineData("""{"question_id":"5f0c6a1e-9d4b-4c7e-8f23-0a1b2c3d4e5f"}""")]
+    [InlineData("""{"question_id":"5f0c6a1e-9d4b-4c7e-8f23-0a1b2c3d4e5f","answers":[]}""")]
+    [InlineData("""{"question_id":"5f0c6a1e-9d4b-4c7e-8f23-0a1b2c3d4e5f","answers":["a","b","c","d","e"]}""")]
     [InlineData("not json at all")]
     public async Task Malformed_bodies_are_rejected_with_400(string body)
     {
         var client = Authed();
 
+        // The body is proven before the bus is touched - a malformed body 400s with no control-plane
+        // access at all (conv-x need not name a live turn).
         var response = await client.PostAsync(
             "/api/projects/default/conversations/conv-x/answer",
             new StringContent(body, Encoding.UTF8, "application/json"));
@@ -161,7 +207,7 @@ public sealed class AnswerApiTests : IClassFixture<GertApiFactory>
     }
 
     [Fact]
-    public async Task An_invalid_project_id_is_rejected_before_the_registry()
+    public async Task An_invalid_project_id_is_rejected_before_the_bus()
     {
         var client = Authed();
 

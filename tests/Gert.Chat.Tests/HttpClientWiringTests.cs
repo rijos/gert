@@ -25,7 +25,7 @@ public sealed class HttpClientWiringTests
     /// <summary>AddStandardResilienceHandler stores its options as "{clientName}-standard".</summary>
     private static string PipelineName(string clientName) => clientName + "-standard";
 
-    private static string DefaultChatClient => OpenAIChatModelClient.HttpClientNameFor(ChatProviderInfo.DefaultId);
+    private static string DefaultChatClient => OpenAISdkClient.HttpClientNameFor(ChatProviderInfo.DefaultId);
 
     private static ServiceProvider Provider(Dictionary<string, string?>? settings = null)
     {
@@ -64,11 +64,11 @@ public sealed class HttpClientWiringTests
         });
 
         // Each slug gets its own pipeline bound to its Parameters - never a shared "openai" client.
-        Pipeline(provider, OpenAIChatModelClient.HttpClientNameFor("fast")).AttemptTimeout.Timeout
+        Pipeline(provider, OpenAISdkClient.HttpClientNameFor("fast")).AttemptTimeout.Timeout
             .Should().Be(TimeSpan.FromSeconds(10));
-        Pipeline(provider, OpenAIChatModelClient.HttpClientNameFor("slow")).AttemptTimeout.Timeout
+        Pipeline(provider, OpenAISdkClient.HttpClientNameFor("slow")).AttemptTimeout.Timeout
             .Should().Be(TimeSpan.FromSeconds(42));
-        Pipeline(provider, OpenAIChatModelClient.HttpClientNameFor("slow")).Retry.MaxRetryAttempts
+        Pipeline(provider, OpenAISdkClient.HttpClientNameFor("slow")).Retry.MaxRetryAttempts
             .Should().Be(4);
     }
 
@@ -81,7 +81,7 @@ public sealed class HttpClientWiringTests
             ["Gert:Chat:Providers:p:Parameters:RetryCount"] = "4",
         });
 
-        var pipeline = Pipeline(provider, OpenAIChatModelClient.HttpClientNameFor("p"));
+        var pipeline = Pipeline(provider, OpenAISdkClient.HttpClientNameFor("p"));
 
         pipeline.AttemptTimeout.Timeout.Should().Be(TimeSpan.FromSeconds(42));
         pipeline.Retry.MaxRetryAttempts.Should().Be(4);
@@ -94,14 +94,14 @@ public sealed class HttpClientWiringTests
     [Fact]
     public void Embeddings_client_is_split_from_chat_with_a_finite_timeout_above_the_pipeline_total()
     {
-        OpenAIEmbeddingClient.HttpClientName.Should().NotBe(
+        OpenAIEmbeddingGenerator.HttpClientName.Should().NotBe(
             DefaultChatClient,
             "the buffered embeddings path must not inherit a streaming chat client's infinite timeout");
 
         using var provider = Provider();
         var client = provider.GetRequiredService<IHttpClientFactory>()
-            .CreateClient(OpenAIEmbeddingClient.HttpClientName);
-        var pipeline = Pipeline(provider, OpenAIEmbeddingClient.HttpClientName);
+            .CreateClient(OpenAIEmbeddingGenerator.HttpClientName);
+        var pipeline = Pipeline(provider, OpenAIEmbeddingGenerator.HttpClientName);
 
         client.Timeout.Should().NotBe(Timeout.InfiniteTimeSpan);
         // The client timeout is the outermost layer: 1 s outside the Polly total, so
@@ -118,7 +118,7 @@ public sealed class HttpClientWiringTests
             ["Gert:Embeddings:Parameters:RetryCount"] = "4",
         });
 
-        var pipeline = Pipeline(provider, OpenAIEmbeddingClient.HttpClientName);
+        var pipeline = Pipeline(provider, OpenAIEmbeddingGenerator.HttpClientName);
 
         pipeline.AttemptTimeout.Timeout.Should().Be(TimeSpan.FromSeconds(42));
         pipeline.Retry.MaxRetryAttempts.Should().Be(4);
@@ -137,7 +137,7 @@ public sealed class HttpClientWiringTests
 
         // Resolving the named options runs the pipeline validators; MaxRetryAttempts = 0
         // would be rejected, so zero is implemented via a never-handle predicate instead.
-        var pipeline = Pipeline(provider, OpenAIEmbeddingClient.HttpClientName);
+        var pipeline = Pipeline(provider, OpenAIEmbeddingGenerator.HttpClientName);
 
         pipeline.TotalRequestTimeout.Timeout.Should().Be(
             pipeline.AttemptTimeout.Timeout, "a single attempt is the whole budget");

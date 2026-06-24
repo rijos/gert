@@ -1,14 +1,16 @@
 using System.Runtime.CompilerServices;
-using Gert.Chat;
-using Gert.Model;
-using Gert.Model.Chat;
+using System.Text.Json;
+using Microsoft.Extensions.AI;
 
 namespace Gert.Testing.Fakes;
 
 /// <summary>
-/// OpenAI-compatible <see cref="IChatModelClient"/> double (testing.md section 4.1, A.3).
+/// Microsoft.Extensions.AI <see cref="IChatClient"/> double (testing.md section 4.1, A.3).
 /// Resolves a reply from <c>fixtures.json</c> by the trimmed last user message
-/// (exact/contains per fixture) and <b>streams</b> it as <see cref="ChatModelChunk"/>s.
+/// (exact/contains per fixture) and <b>streams</b> it as <see cref="ChatResponseUpdate"/>s -
+/// text as <see cref="TextContent"/>, thinking as <see cref="TextReasoningContent"/>, a tool call
+/// as a completed <see cref="FunctionCallContent"/> (non-null arguments), and usage as a
+/// <see cref="UsageContent"/> on the terminal update.
 ///
 /// Tool loop: when a matched fixture has a <c>tool_call</c>, the first call (the
 /// messages carry no tool result yet) streams the tool call and finishes
@@ -16,9 +18,10 @@ namespace Gert.Testing.Fakes;
 /// role result) replays <c>after_tool.deltas</c>. With no match, the
 /// <c>echo</c> fallback streams <c>Echo: &lt;message&gt;</c> tokenised on word
 /// boundaries (spaces preserved) so SSE framing and the typewriter caret have
-/// real chunks to render.
+/// real chunks to render. Only streaming is supported (the loop never calls
+/// <see cref="GetResponseAsync"/>).
 /// </summary>
-public sealed class FakeChatModel : IChatModelClient
+public sealed class FakeChatModel : IChatClient
 {
     private readonly Fixtures _fixtures;
 
@@ -35,19 +38,21 @@ public sealed class FakeChatModel : IChatModelClient
     }
 
     /// <inheritdoc />
-    public async IAsyncEnumerable<ChatModelChunk> StreamAsync(
-        ChatCompletionRequest request,
+    public async IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(
+        IEnumerable<ChatMessage> messages,
+        ChatOptions? options = null,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(messages);
+        var list = messages as IReadOnlyList<ChatMessage> ?? messages.ToList();
 
-        var lastUser = LastUserMessage(request.Messages);
-        var hasToolResult = request.Messages.Any(m =>
-            string.Equals(m.Role, "tool", StringComparison.OrdinalIgnoreCase));
+        var lastUser = LastUserMessage(list);
+        var hasToolResult = list.Any(m => m.Role == ChatRole.Tool);
 
         // Rough context estimate so the SPA's ring lights up under serve-mock
         // (~ chars/4, the classic token heuristic).
-        var promptTokens = request.Messages.Sum(m => (m.Content?.Length ?? 0) + (m.ReasoningContent?.Length ?? 0)) / 4;
+        var promptTokens = list.Sum(m =>
+            m.Text.Length + m.Contents.OfType<TextReasoningContent>().Sum(r => r.Text.Length)) / 4;
 
         var fixture = Resolve(lastUser);
 
@@ -56,25 +61,15 @@ public sealed class FakeChatModel : IChatModelClient
             foreach (var thought in fixture.ReasoningDeltas)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                yield return new ChatModelChunk { ReasoningDelta = thought };
+                yield return Reasoning(thought);
             }
 
             cancellationToken.ThrowIfCancellationRequested();
-            yield return new ChatModelChunk
-            {
-                ToolCall = new ChatModelToolCall
-                {
-                    Id = $"call_{fixture.ToolCall.Name}_1",
-                    Name = fixture.ToolCall.Name,
-                    ArgumentsJson = fixture.ToolCall.Arguments,
-                },
-            };
-
-            yield return new ChatModelChunk
-            {
-                FinishReason = string.IsNullOrEmpty(fixture.Finish) ? "tool_calls" : fixture.Finish,
-                PromptTokenCount = promptTokens,
-            };
+            yield return Call($"call_{fixture.ToolCall.Name}_1", fixture.ToolCall.Name, fixture.ToolCall.Arguments);
+            yield return Finish(
+                string.IsNullOrEmpty(fixture.Finish) ? "tool_calls" : fixture.Finish,
+                completionTokens: null,
+                promptTokens);
             yield break;
         }
 
@@ -84,22 +79,16 @@ public sealed class FakeChatModel : IChatModelClient
             foreach (var thought in after?.ReasoningDeltas ?? [])
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                yield return new ChatModelChunk { ReasoningDelta = thought };
+                yield return Reasoning(thought);
             }
 
-            var deltas = after?.Deltas ?? [];
-            foreach (var delta in deltas)
+            foreach (var delta in after?.Deltas ?? [])
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                yield return new ChatModelChunk { TextDelta = delta };
+                yield return Text(delta);
             }
 
-            yield return new ChatModelChunk
-            {
-                FinishReason = after?.Finish ?? "stop",
-                TokenCount = after?.Usage?.CompletionTokens,
-                PromptTokenCount = promptTokens,
-            };
+            yield return Finish(after?.Finish ?? "stop", after?.Usage?.CompletionTokens, promptTokens);
             yield break;
         }
 
@@ -108,31 +97,87 @@ public sealed class FakeChatModel : IChatModelClient
             foreach (var thought in fixture.ReasoningDeltas)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                yield return new ChatModelChunk { ReasoningDelta = thought };
+                yield return Reasoning(thought);
             }
 
             foreach (var delta in fixture.Deltas)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                yield return new ChatModelChunk { TextDelta = delta };
+                yield return Text(delta);
             }
 
-            yield return new ChatModelChunk
-            {
-                FinishReason = string.IsNullOrEmpty(fixture.Finish) ? "stop" : fixture.Finish,
-                TokenCount = fixture.Usage?.CompletionTokens,
-                PromptTokenCount = promptTokens,
-            };
+            yield return Finish(
+                string.IsNullOrEmpty(fixture.Finish) ? "stop" : fixture.Finish,
+                fixture.Usage?.CompletionTokens,
+                promptTokens);
             yield break;
         }
 
         foreach (var chunk in EchoChunks(lastUser))
         {
             cancellationToken.ThrowIfCancellationRequested();
-            yield return new ChatModelChunk { TextDelta = chunk };
+            yield return Text(chunk);
         }
 
-        yield return new ChatModelChunk { FinishReason = "stop", PromptTokenCount = promptTokens };
+        yield return Finish("stop", completionTokens: null, promptTokens);
+    }
+
+    /// <inheritdoc />
+    public Task<ChatResponse> GetResponseAsync(
+        IEnumerable<ChatMessage> messages,
+        ChatOptions? options = null,
+        CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException("FakeChatModel only supports streaming (the agent loop streams).");
+
+    /// <inheritdoc />
+    public object? GetService(Type serviceType, object? serviceKey = null) => null;
+
+    /// <inheritdoc />
+    public void Dispose()
+    {
+    }
+
+    private static ChatResponseUpdate Text(string text) => new(ChatRole.Assistant, text);
+
+    private static ChatResponseUpdate Reasoning(string text) => new()
+    {
+        Role = ChatRole.Assistant,
+        Contents = [new TextReasoningContent(text)],
+    };
+
+    private static ChatResponseUpdate Call(string id, string name, string argumentsJson) => new()
+    {
+        Role = ChatRole.Assistant,
+        Contents = [new FunctionCallContent(id, name, ParseArguments(argumentsJson))],
+    };
+
+    private static ChatResponseUpdate Finish(string finishReason, int? completionTokens, int promptTokens) => new()
+    {
+        Role = ChatRole.Assistant,
+        FinishReason = new ChatFinishReason(finishReason),
+        Contents = [new UsageContent(new UsageDetails
+        {
+            InputTokenCount = promptTokens,
+            OutputTokenCount = completionTokens,
+        })],
+    };
+
+    private static IDictionary<string, object?> ParseArguments(string argumentsJson)
+    {
+        if (string.IsNullOrWhiteSpace(argumentsJson))
+        {
+            return new Dictionary<string, object?>();
+        }
+
+        try
+        {
+            return JsonSerializer.Deserialize<Dictionary<string, object?>>(argumentsJson)
+                   ?? new Dictionary<string, object?>();
+        }
+        catch (JsonException)
+        {
+            return new Dictionary<string, object?>();
+        }
     }
 
     private CompletionFixture? Resolve(string lastUser)
@@ -154,13 +199,13 @@ public sealed class FakeChatModel : IChatModelClient
         return null;
     }
 
-    private static string LastUserMessage(IReadOnlyList<ChatModelMessage> messages)
+    private static string LastUserMessage(IReadOnlyList<ChatMessage> messages)
     {
         for (var i = messages.Count - 1; i >= 0; i--)
         {
-            if (string.Equals(messages[i].Role, "user", StringComparison.OrdinalIgnoreCase))
+            if (messages[i].Role == ChatRole.User)
             {
-                return messages[i].Content ?? string.Empty;
+                return messages[i].Text;
             }
         }
 

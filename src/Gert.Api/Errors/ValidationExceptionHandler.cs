@@ -1,4 +1,4 @@
-using Gert.Service.Validation;
+using Gert.Validation;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
 

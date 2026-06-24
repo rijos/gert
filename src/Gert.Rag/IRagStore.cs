@@ -4,18 +4,17 @@ using Gert.Model.Rag;
 namespace Gert.Rag;
 
 /// <summary>
-/// Per-project RAG index persistence - documents, memory, chunks, the vector index
-/// and the lexical index (storage-and-data.md section rag.db). One instance is scoped
-/// to a single project; dispose it when the unit of work completes. Hybrid retrieval
-/// fuses vector KNN + BM25 via RRF (chat-and-tools.md section hybrid retrieval). This
-/// is the RAG capability's port (engine-neutral): the SQLite impl is sqlite-vec + FTS5,
-/// but a dedicated vector store (Qdrant, pgvector, ...) is a sibling engine behind the
-/// same contract.
+/// Per-project RAG index persistence - documents, chunks, the vector index and the
+/// lexical index (storage-and-data.md section rag.db). One instance is scoped to a
+/// single project; dispose it when the unit of work completes. Hybrid retrieval fuses
+/// vector KNN + BM25 via RRF (chat-and-tools.md section hybrid retrieval). This is the
+/// RAG capability's port (engine-neutral): the SQLite impl is sqlite-vec + FTS5, but a
+/// dedicated vector store (Qdrant, pgvector, ...) is a sibling engine behind the same
+/// contract.
 /// </summary>
 public interface IRagStore : IAsyncDisposable
 {
     Task<IReadOnlyList<Document>> ListDocumentsAsync(
-        DocumentKind? kind = null,
         CancellationToken cancellationToken = default);
 
     Task<Document?> GetDocumentAsync(string documentId, CancellationToken cancellationToken = default);

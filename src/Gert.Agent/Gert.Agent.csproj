@@ -1,0 +1,54 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\Gert.Model\Gert.Model.csproj" />
+    <!-- The request-facing read side (the bus + conversation reader/streamer) + the
+         host-agnostic services the turn engine drives stay in Gert.Service; Gert.Agent
+         is the layer between the host and the service layer (Gert.Agent -> Gert.Service). -->
+    <ProjectReference Include="..\Gert.Service\Gert.Service.csproj" />
+    <!-- Persistence contracts (IChatRepository, IChatDatabaseProvider, ...) the turn
+         runner drives; the Gert.Database.* adapters implement them (never referenced here). -->
+    <ProjectReference Include="..\Gert.Database\Gert.Database.csproj" />
+    <!-- RAG capability contracts: the vector-index port the ProjectRagResource drives. -->
+    <ProjectReference Include="..\Gert.Rag\Gert.Rag.csproj" />
+    <!-- Chat capability contracts: the chat/embeddings ports the agent loop drives. -->
+    <ProjectReference Include="..\Gert.Chat\Gert.Chat.csproj" />
+    <!-- Tool capability contracts: ITool/ToolRegistry/ToolResult + the IToolHost seams the
+         agent loop drives (Gert.Tools.Builtin implements them - never referenced here). -->
+    <ProjectReference Include="..\Gert.Tools\Gert.Tools.csproj" />
+    <!-- Turn control-plane port: the runner subscribes for cancel + ask_user answers (the
+         Gert.TurnControl.Local impl wires in at the composition root - never referenced here). -->
+    <ProjectReference Include="..\Gert.TurnControl\Gert.TurnControl.csproj" />
+    <!-- Fail-closed validation sub-layer: Validated<T>/IValidationProvider the planner consumes. -->
+    <ProjectReference Include="..\Gert.Validation\Gert.Validation.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Test seam: ChatToolUiTests drives the internal ChatToolUi directly (the
+         human-interaction port impl behind IToolHost.Ui). The assembly name MUST match. -->
+    <InternalsVisibleTo Include="Gert.Agent.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Abstractions only: AddGertAgent registers the turn engine without coupling to a host. -->
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions"
+                      Version="$(MicrosoftExtensionsDIAbstractionsVersion)" />
+    <!-- IOptions<T> + AddOptions for TurnOptions; the host binds Gert:Turn over the defaults. -->
+    <PackageReference Include="Microsoft.Extensions.Options"
+                      Version="$(MicrosoftExtensionsOptionsVersion)" />
+    <!-- ILogger<T> for the turn pipeline's operational logging (round counts, the tool-budget brake). -->
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions"
+                      Version="$(MicrosoftExtensionsLoggingVersion)" />
+    <!-- IHostedService for the TurnLauncher's shutdown coordination. Abstractions only - the host owns the runtime. -->
+    <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions"
+                      Version="$(MicrosoftExtensionsHostingAbstractionsVersion)" />
+    <!-- Microsoft.Extensions.AI core: the agent loop drives IChatClient directly and builds
+         the advertised tools as AIFunctions (AIFunctionFactory); Movement C's loop is a
+         FunctionInvokingChatClient subclass. The Abstractions ride transitively via Gert.Chat;
+         the OpenAI adapter (AI.OpenAI) stays out of the engine - it is the impl leaf's alone
+         (an architecture test pins that edge). -->
+    <PackageReference Include="Microsoft.Extensions.AI"
+                      Version="$(MicrosoftExtensionsAIVersion)" />
+  </ItemGroup>
+
+</Project>

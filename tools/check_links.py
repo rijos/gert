@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""check_links.py - CI gate: relative links in tracked markdown resolve.
+"""check_links.py - CI gate: relative links in tracked markdown + site HTML resolve.
 
-Checks, across all git-tracked *.md files (adversarial fuzzer corpora
-excluded - see EXCLUDE_PREFIXES):
+Checks, across all git-tracked *.md files AND the tracked public-site
+*.html under site/ (adversarial fuzzer corpora excluded - see
+EXCLUDE_PREFIXES):
   * markdown inline links  [text](target)  and HTML  href= / src= /
     srcset= attributes
   * the target file/directory exists (resolved relative to the source
@@ -11,12 +12,15 @@ excluded - see EXCLUDE_PREFIXES):
     anchor algorithm (lowercase; backticks/bold/link markup stripped;
     punctuation dropped; spaces to hyphens; duplicate headings get
     -1/-2/... suffixes)
+  * a #fragment into a .html file matches a real id=/name= anchor
 
-Links inside fenced code blocks and inline code spans are ignored -
-they are examples, not navigation. External URLs (http/https/mailto)
-are out of scope: this gate keeps the docs' internal cross-link graph
-sound (docs/design/README.md - "if you change behaviour a doc covers,
-update the doc in the same change").
+Markdown links inside fenced code blocks and inline code spans are
+ignored - they are examples, not navigation; HTML is scanned line for
+line (href/src/srcset only). Only site/ HTML is gated, not the SPA shell
+(wwwroot, whose modules/bundles resolve at publish) or test harnesses.
+External URLs (http/https/mailto) are out of scope: this gate keeps the
+docs + site internal cross-link graph sound (docs/design/README.md - "if
+you change behaviour a doc covers, update the doc in the same change").
 
 Stdlib only. Exit 0 = clean, 1 = problems (annotated inline when
 GITHUB_ACTIONS is set). Run directly or via `make check-links`.
@@ -44,20 +48,39 @@ MD_LINK = re.compile(
 )
 HTML_ATTR = re.compile(r"""(?:href|src)\s*=\s*["']([^"']+)["']""")
 HTML_SRCSET = re.compile(r"""srcset\s*=\s*["']([^"']+)["']""")
+HTML_ANCHOR = re.compile(r"""(?:id|name)\s*=\s*["']([^"']+)["']""")
 HEADING = re.compile(r"^(#{1,6})\s+(.*?)\s*#*\s*$")
 FENCE = re.compile(r"^\s*(```|~~~)")
 
+# Only the public site is gated. The SPA shell (wwwroot) references modules and
+# the publish-time app.js/app.css bundle that do not exist at rest; the test
+# harness HTML is not navigation. Both would false-positive, so scope to site/.
+HTML_PREFIXES = ("site/",)
 
-def tracked_markdown() -> list[Path]:
+
+def _tracked(pattern: str) -> list[str]:
     out = subprocess.run(
-        ["git", "ls-files", "-z", "*.md"],
+        ["git", "ls-files", "-z", pattern],
         cwd=ROOT,
         capture_output=True,
         check=True,
     ).stdout
-    rels = [p.decode() for p in out.split(b"\0") if p]
+    return [p.decode() for p in out.split(b"\0") if p]
+
+
+def tracked_markdown() -> list[Path]:
     return [
-        ROOT / rel for rel in rels if not rel.startswith(EXCLUDE_PREFIXES)
+        ROOT / rel
+        for rel in _tracked("*.md")
+        if not rel.startswith(EXCLUDE_PREFIXES)
+    ]
+
+
+def tracked_html() -> list[Path]:
+    return [
+        ROOT / rel
+        for rel in _tracked("*.html")
+        if rel.startswith(HTML_PREFIXES)
     ]
 
 
@@ -112,9 +135,24 @@ def anchors_of(path: Path) -> set[str]:
     return _anchor_cache[path]
 
 
-def targets_in(line: str) -> list[str]:
-    line = strip_inline_code(line)
-    found = [m.group(1) for m in MD_LINK.finditer(line)]
+_html_anchor_cache: dict[Path, set[str]] = {}
+
+
+def html_anchors_of(path: Path) -> set[str]:
+    """The explicit anchor targets in an HTML file: id= and name= values."""
+    if path not in _html_anchor_cache:
+        text = path.read_text(encoding="utf-8")
+        _html_anchor_cache[path] = set(HTML_ANCHOR.findall(text))
+    return _html_anchor_cache[path]
+
+
+def targets_in(line: str, is_html: bool = False) -> list[str]:
+    # HTML is navigation markup, not prose: take only href/src/srcset, and skip
+    # the markdown-specific masking (a `[x](y)` or backtick in script/style text
+    # is not a link).
+    if not is_html:
+        line = strip_inline_code(line)
+    found = [] if is_html else [m.group(1) for m in MD_LINK.finditer(line)]
     found += [m.group(1) for m in HTML_ATTR.finditer(line)]
     for m in HTML_SRCSET.finditer(line):
         found += [
@@ -125,6 +163,37 @@ def targets_in(line: str) -> list[str]:
     return found
 
 
+def check_source(src: Path, lines: list[str], errors: list[tuple[Path, int, str]]) -> int:
+    """Validate every relative link in one source file; append problems. Returns
+    the link count. .md targets resolve fragments against headings, .html targets
+    against id=/name= anchors."""
+    is_html = src.suffix in (".html", ".htm")
+    total = 0
+    for lineno, line in enumerate(lines, 1):
+        for target in targets_in(line, is_html=is_html):
+            if target.startswith(
+                ("http://", "https://", "mailto:", "data:", "tel:")
+            ):
+                continue
+            total += 1
+            if target.startswith("#"):
+                dest, frag = src, target[1:]
+            else:
+                rel, _, frag = target.partition("#")
+                base = ROOT if rel.startswith("/") else src.parent
+                dest = (base / rel.lstrip("/")).resolve()
+                if not dest.exists():
+                    errors.append((src, lineno, f"missing file: {target}"))
+                    continue
+            if not (frag and dest.is_file()):
+                continue
+            if dest.suffix == ".md" and frag not in anchors_of(dest):
+                errors.append((src, lineno, f"bad anchor: {target}"))
+            elif dest.suffix in (".html", ".htm") and frag not in html_anchors_of(dest):
+                errors.append((src, lineno, f"bad anchor: {target}"))
+    return total
+
+
 def main() -> int:
     errors: list[tuple[Path, int, str]] = []
     total = 0
@@ -132,33 +201,14 @@ def main() -> int:
     for md in tracked_markdown():
         if not md.is_file():
             continue  # tracked but deleted in the worktree (pending git rm)
-        text = md.read_text(encoding="utf-8")
-        for lineno, line in enumerate(mask_fences(text), 1):
-            for target in targets_in(line):
-                if target.startswith(
-                    ("http://", "https://", "mailto:", "data:")
-                ):
-                    continue
-                total += 1
-                if target.startswith("#"):
-                    dest, frag = md, target[1:]
-                else:
-                    rel, _, frag = target.partition("#")
-                    base = ROOT if rel.startswith("/") else md.parent
-                    dest = (base / rel.lstrip("/")).resolve()
-                    if not dest.exists():
-                        errors.append(
-                            (md, lineno, f"missing file: {target}")
-                        )
-                        continue
-                if frag and dest.is_file() and dest.suffix == ".md":
-                    if frag not in anchors_of(dest):
-                        errors.append(
-                            (md, lineno, f"bad anchor: {target}")
-                        )
+        total += check_source(md, mask_fences(md.read_text(encoding="utf-8")), errors)
+    for html in tracked_html():
+        if not html.is_file():
+            continue
+        total += check_source(html, html.read_text(encoding="utf-8").splitlines(), errors)
 
     print(
-        f"check_links: {total} relative links across tracked markdown"
+        f"check_links: {total} relative links across tracked markdown + site HTML"
     )
     if errors:
         on_actions = os.environ.get("GITHUB_ACTIONS") == "true"

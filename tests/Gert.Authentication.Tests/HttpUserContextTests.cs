@@ -1,7 +1,8 @@
 using System.Security.Claims;
 using FluentAssertions;
 using Gert.Authentication;
-using Gert.Service.Tools;
+using Gert.Tools;
+using Gert.Tools.Hosting;
 using Microsoft.AspNetCore.Http;
 using NSubstitute;
 using Xunit;
@@ -202,6 +203,7 @@ public sealed class HttpUserContextTests
 
         public Task<ToolResult> ExecuteAsync(
             ToolInvocation invocation,
+            IToolHost host,
             CancellationToken cancellationToken = default) =>
             Task.FromResult(new ToolResult { Success = true });
     }

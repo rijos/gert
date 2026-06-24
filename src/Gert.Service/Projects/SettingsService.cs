@@ -1,7 +1,7 @@
 using Gert.Database;
 using Gert.Model.Dtos;
 using Gert.Model.Projects;
-using Gert.Service.Validation;
+using Gert.Validation;
 
 namespace Gert.Service.Projects;
 
@@ -54,7 +54,6 @@ public sealed class SettingsService : ISettingsService
             ReplyLanguage = dto.ReplyLanguage ?? current.ReplyLanguage,
             DefaultModelId = dto.DefaultModelId ?? current.DefaultModelId,
             DefaultTools = dto.DefaultTools ?? current.DefaultTools,
-            MemoryMode = dto.MemoryMode ?? current.MemoryMode,
         };
 
         await repo.SaveSettingsAsync(merged, cancellationToken).ConfigureAwait(false);

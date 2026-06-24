@@ -1,6 +1,6 @@
 using Gert.Chat.OpenAI;
-using Gert.Tools.Search;
-using Gert.Tools.Search.SearXNG;
+using Gert.Tools.Builtin.Search;
+using Gert.Tools.Builtin.Search.SearXNG;
 
 namespace Gert.Api.Logging;
 
@@ -27,14 +27,14 @@ public static class ReadinessCheck
         // The per-provider chat clients carry no base address (the SDK sets each endpoint),
         // so probe the embeddings client instead - it carries the Gert:Embeddings base URL,
         // the same OpenAI-compatible/vLLM upstream that serves chat in the reference deployment.
-        var vllm = ProbeAsync(httpFactory, OpenAIEmbeddingClient.HttpClientName, cancellationToken);
+        var vllm = ProbeAsync(httpFactory, OpenAIEmbeddingGenerator.HttpClientName, cancellationToken);
         var searxng = ProbeAsync(httpFactory, SearXngWebSearch.HttpClientName, cancellationToken);
 
         await Task.WhenAll(vllm, searxng);
 
         return new Dictionary<string, bool>(StringComparer.Ordinal)
         {
-            [OpenAIEmbeddingClient.HttpClientName] = vllm.Result,
+            [OpenAIEmbeddingGenerator.HttpClientName] = vllm.Result,
             [SearXngWebSearch.HttpClientName] = searxng.Result,
         };
     }

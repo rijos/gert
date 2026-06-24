@@ -1,4 +1,5 @@
 using FluentAssertions;
+using Gert.Agent;
 using Gert.Model;
 using Gert.Model.Chat;
 using Gert.Model.Dtos;
@@ -27,6 +28,7 @@ public class TurnPlannerGateTests
         _user,
         tools: [],
         Options.Create(options),
+        Options.Create(new PromptOptions()),
         TimeProvider.System,
         instructions: null);
 

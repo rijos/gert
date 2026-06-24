@@ -2,8 +2,8 @@ namespace Gert.Storage;
 
 /// <summary>
 /// THE storage-backend seam: every non-database byte under a user's tree flows
-/// through it - uploaded originals (<c>files/...</c>) and memory bodies
-/// (<c>memory/...</c>) (storage-and-data.md section layout). Structured user state
+/// through it - uploaded originals (<c>files/...</c>) (storage-and-data.md section
+/// layout). Structured user state
 /// is not blob territory - it lives in <c>user.db</c>. Operations are addressed by
 /// an <see cref="ObjectScope"/> (user root or one project root) plus a
 /// scope-relative <c>key</c>. Implementations <b>must</b> reject any key that

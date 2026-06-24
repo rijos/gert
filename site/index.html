@@ -57,7 +57,7 @@
       </div>
       <div class="feature">
         <h3><span class="dot"></span>Sandboxed Python</h3>
-        <p>The model runs code in an ephemeral <strong>gVisor</strong> container: no network egress, read-only rootfs, CPU/memory/PID caps. Only stdout comes back.</p>
+        <p>By default the model runs code in <strong>Monty</strong>, a no-syscall Rust interpreter via a sidecar - no container to stand up. Operators can switch to an ephemeral <strong>gVisor</strong> container: no network egress, read-only rootfs, CPU/memory/PID caps. Only stdout comes back.</p>
       </div>
       <div class="feature">
         <h3><span class="dot"></span>Web search, SSRF-hardened</h3>
@@ -111,11 +111,11 @@
 {
   <span class="k">"Gert"</span>: {
     <span class="k">"Chat"</span>: {
+      <span class="k">"DefaultProvider"</span>: <span class="s">"qwen36"</span>,
       <span class="k">"Providers"</span>: {
         <span class="k">"qwen36"</span>: {
           <span class="k">"Name"</span>: <span class="s">"Qwen 3.6"</span>,
           <span class="k">"Type"</span>: <span class="s">"openai"</span>,
-          <span class="k">"Default"</span>: true,
           <span class="k">"Capabilities"</span>: [ <span class="s">"tools"</span>, <span class="s">"vision"</span> ],
           <span class="k">"Parameters"</span>: { <span class="k">"BaseUrl"</span>: <span class="s">"http://192.168.1.50:8000"</span>, <span class="k">"Model"</span>: <span class="s">"qwen36"</span> }
         }

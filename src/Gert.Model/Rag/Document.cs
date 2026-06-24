@@ -1,10 +1,8 @@
 namespace Gert.Model.Rag;
 
 /// <summary>
-/// A RAG corpus entry - an uploaded document or a memory note - mirrors the
-/// <c>documents</c> row in a project's <c>rag.db</c> (storage-and-data.md
-/// section rag.db; configuration.md section 2.3). Memory and documents share this table,
-/// distinguished by <see cref="Kind"/>.
+/// A RAG corpus entry - an uploaded document - mirrors the <c>documents</c> row in a
+/// project's <c>rag.db</c> (storage-and-data.md section rag.db; configuration.md section 2.3).
 /// </summary>
 public sealed record Document
 {
@@ -23,11 +21,6 @@ public sealed record Document
 
     /// <summary>Failure reason, e.g. "no extractable text".</summary>
     public string? Error { get; init; }
-
-    public DocumentKind Kind { get; init; } = DocumentKind.Document;
-
-    /// <summary>Memory entries with <c>pinned</c> are always injected, not just retrieved.</summary>
-    public bool Pinned { get; init; }
 
     public required DateTimeOffset CreatedAt { get; init; }
 }

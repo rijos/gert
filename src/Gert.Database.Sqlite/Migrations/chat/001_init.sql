@@ -53,7 +53,7 @@ CREATE UNIQUE INDEX ux_messages_streaming ON messages(conversation_id) WHERE sta
 CREATE TABLE tool_calls (
     id            TEXT PRIMARY KEY,
     message_id    TEXT NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
-    kind          TEXT NOT NULL,            -- rag | web_search | sandbox
+    kind          TEXT NOT NULL,            -- the tool Name: rag | web_search | sandbox | todo | clock
     status        TEXT NOT NULL,            -- running | done | error
     request_json  TEXT,                     -- query / code
     response_json TEXT,                     -- hits / results / stdout
@@ -77,18 +77,21 @@ CREATE TABLE citations (
 );
 CREATE INDEX ix_citations_msg ON citations(message_id, ordinal);
 
-CREATE TABLE artifacts (
+-- Conversation-scoped stored objects (the canvas artifacts): create-or-overwrite
+-- by name, versioned on overwrite. The artifact tools (make/edit/read) reach these
+-- only through the host's IObjectResource (ResourceScope.Chat) - never a raw key.
+CREATE TABLE chat_objects (
     id              TEXT PRIMARY KEY,
     conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
-    message_id      TEXT REFERENCES messages(id) ON DELETE SET NULL,
-    kind            TEXT NOT NULL,          -- md | html | svg | py  (the canvas tabs)
+    kind            TEXT NOT NULL,          -- md | html | svg | py | cs | cpp | js | rs  (the canvas tabs)
     name            TEXT NOT NULL,          -- decision.md, status.html, ...
-    language        TEXT,                   -- for code artifacts
     content         TEXT NOT NULL,
     version         INTEGER NOT NULL DEFAULT 1,
-    created_at      TEXT NOT NULL
+    created_at      TEXT NOT NULL,
+    updated_at      TEXT NOT NULL,
+    UNIQUE(conversation_id, name)
 );
-CREATE INDEX ix_artifacts_conv ON artifacts(conversation_id, created_at);
+CREATE INDEX ix_chat_objects_conv ON chat_objects(conversation_id, created_at);
 
 -- The durable streaming replay log (chat-and-tools.md section detached turns).
 -- The runner appends one row per published event; range/SSE catch-up reads

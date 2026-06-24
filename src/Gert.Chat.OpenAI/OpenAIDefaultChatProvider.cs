@@ -21,11 +21,14 @@ public sealed class OpenAIDefaultChatProvider : IDefaultChatProvider
         _embeddings = embeddings ?? throw new ArgumentNullException(nameof(embeddings));
 
     /// <inheritdoc />
+    public string DefaultType => "openai";
+
+    /// <inheritdoc />
     public ChatProviderInfo? Synthesize() => new()
     {
         Id = ChatProviderInfo.DefaultId,
         Name = "Default",
-        Type = "openai",
+        Type = DefaultType,
         Default = true,
         Capabilities = [ChatProviderInfo.ToolsCapability, ChatProviderInfo.VisionCapability],
         Endpoint = _embeddings.Value.Parameters.BaseUrl,

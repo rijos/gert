@@ -108,6 +108,7 @@ block follow in sections 3-7.
         "FetchTimeoutSeconds": 10,
         "MaxRedirects": 3,
         "SearchTimeoutSeconds": 15,
+        "Limits": { "MaxCallsPerTurn": 5 },   // per-tool budget override (web_search id="search"); partial
         "Parameters": { "BaseUrl": "http://localhost:8080" }
       },
       "Sandbox": {
@@ -115,6 +116,7 @@ block follow in sections 3-7.
         "WallClockSeconds": 10,               // cross-backend per-run caps sit beside Type
         "MemoryMiB": 256,
         "MaxOutputBytes": 65536,
+        // "Limits": { "CallTimeout": "00:02:00" },  // per-tool budget override (run_python id="sandbox")
         // Parameters is the per-backend bag. Monty: { BaseUrl, RequestTimeoutSeconds }.
         // GVisor: { RunscPath, Image, CpuSeconds, PidLimit, TmpSizeMiB, EgressEnabled }.
         "Parameters": { "BaseUrl": "http://localhost:8077" }
@@ -133,6 +135,10 @@ block follow in sections 3-7.
         "MaxZipEntries": 2048,
         "MaxOutputBytes": 16777216
       }
+    },
+    "Prompts": {
+      // Operator-configurable system-prompt fragments. See section 10.
+      "Canvas": "When you produce a complete, self-contained file ... use the make_artifact tool ..."  // canvas/artifact nudge; empty omits it
     }
   },
   "Auth": { "Authority": "https://id.example.com", "Audience": "gert-api" },
@@ -152,7 +158,7 @@ block follow in sections 3-7.
 The embeddings functionality. `Type` selects the implementation (`OpenAI` only today - an
 OpenAI-compatible `/v1/embeddings` upstream, vLLM serving bge-m3 in the reference deployment);
 an unknown `Type` fails fast at startup. The connection + resilience live under `Parameters`
-(`EmbeddingsParameters`, `src/Gert.Chat/OpenAI/EmbeddingsParameters.cs`).
+(`EmbeddingsParameters`, `src/Gert.Chat.OpenAI/EmbeddingsParameters.cs`).
 
 `Gert:Embeddings:Parameters`:
 
@@ -200,7 +206,7 @@ under `Parameters`:**
 | `Name` | no | Display name in the picker. Defaults to the slug. |
 | `Type` | no | Selects the chat-client implementation. `"openai"` (default) is the only one implemented - an OpenAI-compatible / vLLM endpoint; the schema is open for others (`"anthropic"`, ...). |
 | `Capabilities` | no | Capability tokens, shown as badges. `"tools"` is **load-bearing**: it gates tool calling. **Unset (null) means permissive** - the provider is assumed tool-capable; an explicit list *without* `"tools"` (e.g. `["text only"]`) disables tools for that provider. Other tokens (`"vision"`, ...) are display-only today. |
-| `Context` | no | Context window in tokens - the "128K ctx" badge. vLLM reports it as `max_model_len` on `GET /v1/models`. Unset hides the badge. |
+| `Context` | **yes** | Context window in tokens - the "128K ctx" badge, **and** the budget the server gates an inline message attachment against (`Gert:Turn:MaxInlineAttachmentContextFraction`). vLLM reports it as `max_model_len` on `GET /v1/models`. **A configured provider with no positive `Context` fails closed at startup** (naming the slug); the zero-config synthesized default is exempt. |
 | `Fast` | no | Display-only "- fast" marker. |
 | `Parameters` | yes | The `Type`-specific connection + sampling + resilience bag - see below. (The picker's `endpoint` hint is taken from `Parameters.BaseUrl`.) |
 
@@ -289,7 +295,7 @@ fetch step (downloading result pages) is the SSRF-exposed part and is **off by d
 `web_fetch` tool shares this section's fetch caps (`MaxFetchBytes` / `FetchTimeoutSeconds` /
 `MaxRedirects`) - same guarded fetcher, no parallel knob set; it needs no SearXNG instance and
 ignores `Parameters:BaseUrl` / `FetchPages`. Binds to `SearXngOptions`
-(`src/Gert.Tools/Search/SearXngOptions.cs`).
+(`src/Gert.Tools.Builtin/Search/SearXngOptions.cs`).
 
 | Key | Default | Required? | Secret? | Notes |
 |-----|---------|-----------|---------|-------|
@@ -310,7 +316,7 @@ The `run_python` sandbox backend. `Type` picks one of two implementations behind
 `IPythonSandbox` port; an unknown value fails fast at startup. The cross-backend per-run caps
 sit beside `Type`; the per-backend bag lives under `Parameters`. The defaults *are* the
 security posture: egress off, no `/data` mount, hard caps. Raise them knowingly. Binds to
-`PythonSandboxOptions` (`src/Gert.Tools/Sandbox/PythonSandboxOptions.cs`).
+`PythonSandboxOptions` (`src/Gert.Tools.Builtin/Sandbox/PythonSandboxOptions.cs`).
 
 | Key | Default | Required? | Secret? | Notes |
 |-----|---------|-----------|---------|-------|
@@ -321,7 +327,7 @@ security posture: egress off, no `/data` mount, hard caps. Raise them knowingly.
 
 ### 6a. `Parameters` when `Type=Monty` - the monty sidecar
 
-Binds to `MontyParameters` (`src/Gert.Tools/Sandbox/MontyParameters.cs`). Run the sidecar
+Binds to `MontyParameters` (`src/Gert.Tools.Builtin/Sandbox/MontyParameters.cs`). Run the sidecar
 from [tools/monty](../../tools/monty/README.md); it is reached server-side only.
 
 | Key | Default | Required? | Secret? | Notes |
@@ -331,7 +337,7 @@ from [tools/monty](../../tools/monty/README.md); it is reached server-side only.
 
 ### 6b. `Parameters` when `Type=GVisor` - the runsc container
 
-Binds to `GVisorParameters` (`src/Gert.Tools/Sandbox/GVisorParameters.cs`). gVisor-only; monty
+Binds to `GVisorParameters` (`src/Gert.Tools.Builtin/Sandbox/GVisorParameters.cs`). gVisor-only; monty
 has no processes, filesystem, or network to limit.
 
 | Key | Default | Required? | Secret? | Notes |
@@ -342,6 +348,25 @@ has no processes, filesystem, or network to limit.
 | `PidLimit` | `64` | no | no | Max processes/threads. |
 | `TmpSizeMiB` | `32` | no | no | Writable `/tmp`; rootfs stays read-only. |
 | `EgressEnabled` | `false` | no | no | Outbound network - the exfiltration brake. Leave off unless you must. |
+
+### Per-tool budgets - `Gert:Tools:<toolId>:Limits`
+
+Every tool ships **concrete intrinsic bounds** (`ToolBounds`, declared on the `ITool`), so a tool
+always has a budget. `Gert:Tools:<toolId>:Limits` is a **partial** operator override - only the
+fields you set replace the tool's defaults; the section key is the **tool id** (case-insensitive),
+so `web_search`'s budget lives under `Gert:Tools:Search:Limits` and `run_python`'s under
+`Gert:Tools:Sandbox:Limits`. Binds to `ToolBoundsOverride` (`src/Gert.Service/Chat/ToolBoundsOverride.cs`);
+the rationale is in [design/turn-budgets.md](../design/turn-budgets.md).
+
+| Key | Default (`ToolBounds.Default`) | Notes |
+|-----|--------------------------------|-------|
+| `MaxCallsPerTurn` | `64` (`web_search` ships `5`) | Cap on the tool's executed calls per turn; past it each further call is refused with a synthetic budget-exhausted result the model reads (visible on the card), the turn continues. `0` or less disables the cap. |
+| `CallTimeout` | `00:01:00` | Per-call wall-clock backstop, behind each tool's own tighter limits (sandbox wall clock, search timeouts). A trip fails that call with a visible card error; the turn continues. `0` disables. Modal tools (`ask_user`, `run_sub_agent`) are exempt - they carry their own deadline math (`ask_user` waits per `Gert:Turn:AskUserTimeout`; the sub-agent runs under its own nested round cap), with the turn lifetime token the hard wall. |
+| `TokenBudget` | `16384` | Allowance for the tool's nested work, surfaced to the tool as its host's token budget. |
+
+The defaults live on the tool, not in config: an absent `Limits` section, or an absent field within
+one, leaves the tool's intrinsic bounds untouched. `web_search` ships `MaxCallsPerTurn=5` because
+searches dominate tool-loop runaway; `appsettings.json` shows it as the visible default.
 
 ---
 
@@ -388,7 +413,7 @@ SQLite engine sets its own `Parameters:DataRoot`, the object store still needs `
 
 > **Database, RAG, and storage are independent stores.** `Gert:Database:Type` picks the engine
 > for the structured data (`user.db`/`chat.db`), `Gert:Rag:Type` the vector/RAG index
-> (`rag.db`), and the object store (uploads, memory bodies) is selected by which `AddGertStorage*`
+> (`rag.db`), and the object store (uploads) is selected by which `AddGertStorage*`
 > the build ships. By default all three sit under `Storage:DataRoot`; a SQLite engine can take its
 > own root via `Gert:Database:Parameters:DataRoot` / `Gert:Rag:Parameters:DataRoot` (e.g. the
 > vector index on a bigger disk). Deleting a user/project drops all three - each engine removing
@@ -408,19 +433,21 @@ re-prompting starts the next round, so every round costs a full vLLM completion.
 
 The guards are layered (the rationale and survey live in
 [design/turn-budgets.md](../design/turn-budgets.md)): bound every part, brake the loop,
-make every trip visible on its tool card.
+make every trip visible on its tool card. The **per-tool** budgets (the per-turn call cap, the
+per-call timeout, and the nested-work token allowance) no longer live here - each tool ships
+concrete defaults and an operator retunes them under
+[`Gert:Tools:<toolId>:Limits`](#per-tool-budgets---gerttoolstoolidlimits).
 
 | Key | Default | Notes |
 |-----|---------|-------|
 | `MaxTurnDuration` | `00:05:00` | Hard wall-clock cap on one turn (model rounds + tools) - the real budget. Doubles as the orphan horizon: a `streaming` row older than this reads as `error`. |
-| `MaxConcurrentTurns` | `4` | Parallel turn lanes. Turns shard by (user, project, conversation): one conversation never runs concurrently with itself; different conversations may overlap. `1` restores the global serial worker. Must be >= 1 (validated at startup). |
+| `MaxConcurrentTurns` | `4` | Global cap on the number of turns running concurrently across all users, projects, and conversations. `1` = global serial worker. Per-conversation serialization (one conversation never streams concurrently with itself) is enforced separately by the streaming gate index, not by this cap. Must be >= 1 (validated at startup). |
 | `MaxToolRounds` | `64` | **Runaway brake, not a work budget** - sized an order of magnitude above legitimate turns. Past it the runner refuses further calls with budget-exhausted errors (visible on the cards), winds down in one final round, and logs a warning. |
-| `MaxSearchCallsPerTurn` | `5` | Per-turn cap on `web_search` calls - searches dominate tool-loop runaway (each costs a SearXNG round-trip and floods the prompt with results). Past it, further searches fail with a budget-exhausted error the model can read (visible on the card); the turn continues. `0` disables. |
 | `MaxTokensPerRound` | `16384` | Per-round completion bound: the `max_tokens` sent on every upstream request. Reasoning tokens count against it on a thinking provider - keep it generous. `0` disables. |
-| `ToolCallTimeout` | `00:01:00` | Generic wall-clock backstop on one tool execution, behind each tool's own tighter limits (sandbox wall clock, search timeouts). A trip fails that call with a visible card error; the turn continues. `0` disables. Interactive tools (`ask_user`) are exempt - see `AskUserTimeout`. |
 | `AskUserTimeout` | `00:05:00` | How long one `ask_user` question waits for the user before the tool returns its graceful "user did not respond" result. The effective wait is min(this, remaining turn budget - 15 s grace), so it can never outlive `MaxTurnDuration`. |
 | `DeltaFlushInterval` | `00:00:00.150` | Delta coalescing window - buffered model chunks emit as one event per window. `0` disables coalescing. |
 | `DeltaFlushMaxChars` | `512` | Size backstop for the coalescing window. |
+| `MaxInlineAttachmentContextFraction` | `0.5` | Largest share of the selected provider's `Context` (tokens) an inline **text-file** attachment (dropped into the composer) may consume; the rest is reserved for the prompt, history, and reply. A drop estimated over this is refused at send with a 400 steering the user to the Knowledge panel (RAG). Only enforced when the provider declares a `Context`. |
 
 `MaxTokensPerRound` is the single per-round `max_tokens` for every turn - sampling is no
 longer a user/conversation cascade (it rides the selected provider -
@@ -429,7 +456,23 @@ override it.
 
 ---
 
-## 10. `Artifacts` - served-artifact tickets
+## 10. `Gert:Prompts` - operator-configurable system prompt
+
+Binds to `PromptOptions` (`src/Gert.Service/Chat/PromptOptions.cs`). System-prompt
+fragments the host prepends to every turn - not a secret, so they live in
+`appsettings.json` (or any config source). The service layer ships empty defaults; the
+host binds `Gert:Prompts` over them.
+
+| Key | Default | Notes |
+|-----|---------|-------|
+| `Canvas` | *(the canvas nudge in `appsettings.json`)* | The canvas/artifact convention prepended first to every turn's system prompt (before a project's pinned instructions). It steers the model to call the `make_artifact`/`edit_artifact`/`read_artifact` tools instead of pasting whole files into code blocks. Empty omits it. Editing it invalidates the vLLM prefix cache for **all** conversations at once - it is the first bytes of every rendered prompt. |
+
+The exact text the admin model sees is returned by `GET /api/admin/system-prompt`
+([rest-api.md section admin](../design/rest-api.md)).
+
+---
+
+## 11. `Artifacts` - served-artifact tickets
 
 Binds to `ArtifactTicketOptions` (`src/Gert.Api/Security/ArtifactTicketOptions.cs`):
 the separate-origin HTML-artifact preview and the HMAC-signed capability URLs it rides
@@ -443,7 +486,7 @@ the separate-origin HTML-artifact preview and the HMAC-signed capability URLs it
 
 ---
 
-## 11. `Gert:RateLimiting` - the per-user API limiter
+## 12. `Gert:RateLimiting` - the per-user API limiter
 
 Binds to `RateLimiting.PolicyOptions` (`src/Gert.Api/Security/RateLimiting.cs`),
 security F10. A **fixed window per user**: each authenticated caller gets its own
@@ -462,7 +505,7 @@ absent and nothing changes.
 
 ---
 
-## 12. Request size limits
+## 13. Request size limits
 
 Not knobs - compile-time constants, listed so the numbers are findable:
 
@@ -478,7 +521,7 @@ Not knobs - compile-time constants, listed so the numbers are findable:
 
 ---
 
-## 13. Dev & test modes
+## 14. Dev & test modes
 
 Not for production - listed here so a deployment never enables them by accident.
 
@@ -495,7 +538,7 @@ profile by construction.
 
 ---
 
-## 14. `Logging` - verbosity
+## 15. `Logging` - verbosity
 
 The standard .NET `Logging:LogLevel` config drives **Serilog** (the host logger): set the
 floor with `Logging:LogLevel:Default`, and quiet individual categories with overrides.

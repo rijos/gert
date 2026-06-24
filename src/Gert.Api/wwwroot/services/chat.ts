@@ -6,7 +6,7 @@
 import * as http from "./http.js";
 import * as chat from "../state/chat.js";
 import type { Attachment, Citation, Message, ToolCard } from "../state/chat.js";
-import type { ToolKind, WireChatEvent, WireEventPage, WireEventType, WireMessageInput, WireTurnAccepted } from "./wire.js";
+import type { ToolKind, WireAnswerInput, WireChatEvent, WireEventPage, WireEventType, WireMessageInput, WireTurnAccepted } from "./wire.js";
 import * as artifacts from "../state/artifacts.js";
 import type { Artifact } from "../state/artifacts.js";
 import * as conversationsSvc from "./conversations.js";
@@ -14,14 +14,24 @@ import * as ui from "../state/ui.js";
 import { activeProjectId, activeId } from "../state/chat.js";
 import { selectedId } from "../state/models.js";
 
-// The interactive ask_user payload folded onto a tool card's `question` slot.
-interface ToolQuestion {
-  questionId: string;
+// One question (one tab) inside the interactive ask_user payload. `value` is the
+// per-tab answer collected before submit (an option or typed text).
+interface ToolQuestionItem {
   text: string;
+  header: string;
   options: string[];
   allowFreeText: boolean;
+  value: string;
+}
+
+// The interactive ask_user payload folded onto a tool card's `question` slot:
+// one to four questions rendered as tabs, answered together. The card mutates
+// the per-tab `value`, plus `posting`/`answered`/`expired`, in place.
+interface ToolQuestion {
+  questionId: string;
+  items: ToolQuestionItem[];
   answered: boolean;
-  answer: string;
+  answers: string[];
   expired: boolean;
   posting: boolean;
 }
@@ -109,19 +119,23 @@ const apply = (assistant: Message, event: WireEventType, data: WireChatEvent) =>
     }
 
     case "question_asked": {
-      // The ask_user tool opened a question: fold the FULL payload (the
-      // tool_call request caps long strings) onto the call's card and open it
-      // - the card IS the input while the turn blocks on the answer.
+      // The ask_user tool opened a question (1..4 tabs): fold the FULL payload
+      // (the tool_call request caps long strings) onto the call's card and open
+      // it - the card IS the input while the turn blocks on the answers.
       const card = tools.find((t) => t.id === data.id);
       if (card) {
-        // A question_asked event always carries question_id + question.
+        // A question_asked event always carries question_id + questions.
         card.question = {
           questionId: data.question_id!,
-          text: data.question!,
-          options: data.options || [],
-          allowFreeText: !!data.allow_free_text,
+          items: (data.questions || []).map((q) => ({
+            text: q.question,
+            header: q.header || "",
+            options: q.options || [],
+            allowFreeText: !!q.allow_free_text,
+            value: "",
+          })),
           answered: false,
-          answer: "",
+          answers: [],
           expired: false,
           posting: false,
         };
@@ -132,12 +146,12 @@ const apply = (assistant: Message, event: WireEventType, data: WireChatEvent) =>
 
     case "question_answered": {
       // Resolved (also on replay: this event after question_asked means "no
-      // longer pending" - rest-api.md SSE table). Idempotent boolean sets keep
-      // the watermark-deduped replay safe.
+      // longer pending" - rest-api.md SSE table). Idempotent sets keep the
+      // watermark-deduped replay safe.
       const card = tools.find((t) => t.id === data.id);
       if (card?.question) {
         card.question.answered = true;
-        card.question.answer = data.answer || "";
+        card.question.answers = data.answers || [];
       }
       break;
     }
@@ -260,17 +274,19 @@ export const labelFor = (kind: ToolKind): string =>
     read_artifact: "Reading a file",
     ask_user: "Asking you a question",
     fetch: "Fetching a web page",
-    memory: "Saving a memory",
     sub_agent: "Running a sub-agent",
   } satisfies Record<ToolKind, string>)[kind];
 
-// answer(questionId, text) - deliver the user's answer to the in-flight
-// turn's pending ask_user question (202; 404 = the question is stale).
-export const answer = (questionId: string, text: string) =>
-  http.post(
+// answer(questionId, answers) - deliver the user's answers (one per question,
+// in question order) to the in-flight turn's pending ask_user question (202;
+// 404 = the question is stale).
+export const answer = (questionId: string, answers: string[]) => {
+  const body: WireAnswerInput = { question_id: questionId, answers };
+  return http.post(
     `/projects/${activeProjectId.val}/conversations/${activeId.val}/answer`,
-    { question_id: questionId, answer: text },
+    body,
   );
+};
 
 // The shared seq cursor (watermark) the transports advance in lockstep.
 interface Cursor {

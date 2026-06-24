@@ -25,7 +25,7 @@ const Tab = (a: Artifact) =>
       role: "tab",
       "data-tab": a.kind,
       "aria-selected": () => String(ui.activeArtifact.val === a.id && !ui.showKnowledge.val),
-      onclick: () => ui.openArtifact(a.id),
+      onclick: () => ui.openArtifact(a.id, true),
     },
     TypeIcon(a),
     a.name || "untitled",
@@ -246,13 +246,13 @@ export const ArtifactTabs = component({
                   tabindex: "0",
                   onclick: () => {
                     open.val = false;
-                    ui.openArtifact(a.id);
+                    ui.openArtifact(a.id, true);
                   },
                   onkeydown: (e: KeyboardEvent) => {
                     if (e.key === "Enter" || e.key === " ") {
                       e.preventDefault();
                       open.val = false;
-                      ui.openArtifact(a.id);
+                      ui.openArtifact(a.id, true);
                     }
                   },
                 },

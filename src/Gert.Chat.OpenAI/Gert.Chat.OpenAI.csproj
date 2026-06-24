@@ -45,6 +45,15 @@
          (chat_template_kwargs, reasoning_content) ride via System.ClientModel JsonPatch. -->
     <PackageReference Include="OpenAI"
                       Version="$(OpenAIVersion)" />
+
+    <!-- Microsoft.Extensions.AI: the core (DelegatingChatClient base for OpenAIProviderChatClient,
+         DelegatingEmbeddingGenerator) and the OpenAI adapter (.AsIChatClient() /
+         .AsIEmbeddingGenerator() over the SDK clients). These heavy/SDK-bound packages live ONLY
+         in this impl leaf - the contracts assembly carries Abstractions alone (decisions #13). -->
+    <PackageReference Include="Microsoft.Extensions.AI"
+                      Version="$(MicrosoftExtensionsAIVersion)" />
+    <PackageReference Include="Microsoft.Extensions.AI.OpenAI"
+                      Version="$(MicrosoftExtensionsAIOpenAIVersion)" />
   </ItemGroup>
 
 </Project>

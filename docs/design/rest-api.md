@@ -27,11 +27,54 @@ several slugs (a thinking preset and an instruct preset).
 ]
 ```
 
+## Tools
+
+```
+GET /api/tools
+```
+Returns the tools **this caller is entitled to** - the catalog the composer's
+tools popup renders. It is the registered tools filtered by the caller's
+`gert_tools` claim, the **same hard ceiling** the turn planner applies
+([auth section enforcement](auth.md#enforcement---the-claim-is-the-ceiling)), so the
+popup can never offer a tool the model would be denied: a `limited` token sees
+fewer rows, a token with no `gert_tools` claim sees an empty list. The user is
+implicit (token); nothing is request-supplied. Per-user, so `no-store`.
+
+Each entry carries the full display descriptor the popup renders from, so the SPA
+holds **no per-tool knowledge** - `{ id, name, description, tool_type, title, icon,
+group, source, requires_human }`:
+- `id` - the capability id (== the `gert_tools` entitlement name, e.g. `rag`).
+- `name` - the model-facing function name (`search_documents`).
+- `description` - the model-readable description (the popup uses it as a row's hover title).
+- `tool_type` - the execution flow (`standard` | `modal`).
+- `title` - the menu row's display label (e.g. `Use my docs`).
+- `icon` - a key into the SPA's curated icon vocabulary (`wwwroot/icons/icons.ts`);
+  the server degrades any key it doesn't recognise to a shipped fallback, so the
+  client only ever receives a glyph it can render (a future MCP tool can't break it).
+- `group` - the menu grouping the row sorts under (`standard` | `docs` | `canvas`):
+  `canvas` collapses to one "Canvas" switch, `docs` is the bordered "Use my docs"
+  section, everything else is a plain switch row.
+- `source` - the catalog the tool comes from (`builtin` today; an MCP server later) -
+  the menu sections on it, so adding an MCP source is data-only.
+- `requires_human` - whether the tool needs a human in the loop (`ask_user`).
+
+```json
+[
+  { "id":"ask_user", "name":"ask_user", "description":"Ask the user...", "tool_type":"modal", "title":"Ask me", "icon":"user", "group":"standard", "source":"builtin", "requires_human":true },
+  { "id":"clock", "name":"get_datetime", "description":"Get the current date and time...", "tool_type":"standard", "title":"Clock", "icon":"clock", "group":"standard", "source":"builtin", "requires_human":false },
+  { "id":"rag", "name":"search_documents", "description":"Search the user's documents...", "tool_type":"standard", "title":"Use my docs", "icon":"search", "group":"docs", "source":"builtin", "requires_human":false }
+]
+```
+
+The per-conversation on/off toggles are a separate, persisted concern: the popup
+writes them through the conversation's `tools` map (the `ToolToggles` DTO on
+`POST .../messages` and `PATCH .../conversations/{id}`), bounded by this catalog.
+
 ## Settings (user-level)
 
 | Method | Path | Notes |
 |--------|------|-------|
-| `GET` | `/api/settings` | The user's preferences from `user.db` ([storage-and-data section user.db](storage-and-data.md#userdb)): theme, UI language, default reply language, default provider, default tools, memory mode ([configuration section 3](configuration.md#3-user-settings)). Sampling is not a user setting - it rides the selected provider. |
+| `GET` | `/api/settings` | The user's preferences from `user.db` ([storage-and-data section user.db](storage-and-data.md#userdb)): theme, UI language, default reply language, default provider, default tools ([configuration section 3](configuration.md#3-user-settings)). Sampling is not a user setting - it rides the selected provider. |
 | `PUT` | `/api/settings` | Update any subset (merge: absent fields stay, each supplied field overrides). |
 
 ## Projects
@@ -40,7 +83,7 @@ several slugs (a thinking preset and an instruct preset).
 |--------|------|--------------|
 | `GET` | `/api/projects` | List the user's projects (the `user.db` registry): id, name, counts, updated_at. Optional `?q=` (name contains) + `?limit=`/`?offset=` (limit 0 = all, capped at 100) page the full-screen search's infinite scroll. |
 | `POST` | `/api/projects` | `{ name, description?, instructions?, defaults? }` -> a new isolated project folder. |
-| `GET` | `/api/projects/{pid}` | Project config + counts (conversations, documents, memory). |
+| `GET` | `/api/projects/{pid}` | Project config + counts (conversations, documents). |
 | `PATCH` | `/api/projects/{pid}` | `{ name?, description?, instructions?, defaults? }` (rename / edit instructions / defaults). |
 | `DELETE` | `/api/projects/{pid}` | **Drops the whole project** - its chats *and* documents (chat.db + rag.db + blobs together). `default` is emptied, not removed ([configuration section 5](configuration.md#5-data-lifecycle-user-facing)). |
 
@@ -124,8 +167,8 @@ footnotes sequence:
 | `delta` | `{ "text": "Short version: " }` | typewriter token append |
 | `citation` | `{ "ordinal":1, "label":"qdrant-benchmarks.pdf - p.4", "doc_id":"..." }` | the `[1]` marker + footnote |
 | `artifact` | `{ "id","kind":"md","name":"decision.md","content":"..." }` | opens a canvas tab |
-| `question_asked` | `{ "id","question_id","question":"Which color?","options":["red","blue"],"allow_free_text":false }` | renders the interactive question on the `ask_user` call's card (`id` = the tool-call id); non-terminal - the turn blocks until `POST .../answer`, timeout, or cancel |
-| `question_answered` | `{ "id","question_id","answer":"blue" }` | resolves the question card (answered state); non-terminal. A timeout emits no extra event - the call's ordinary `tool_result` ("The user did not respond.") is the signal |
+| `question_asked` | `{ "id","question_id","questions":[{"question":"Which color?","header":"Color","options":["red","blue"],"allow_free_text":false}] }` | renders the interactive question card (tabs, one per entry) on the `ask_user` call's card (`id` = the tool-call id); non-terminal - the turn blocks until `POST .../answer`, timeout, or cancel |
+| `question_answered` | `{ "id","question_id","answers":["blue"] }` | resolves the question card (answered state) - one answer per asked question, in order; non-terminal. A timeout emits no extra event - the call's ordinary `tool_result` ("The user did not respond.") is the signal |
 | `message_end` | `{ "token_count":312 }` | removes caret |
 | `cancelled` | `{ "token_count":null }` | removes caret + "Stopped" marker; the row persists as `status="cancelled"` with the partial text |
 | `error` | `{ "message":"..." }` | inline error; the assistant row persists as `status="error"` |
@@ -149,35 +192,46 @@ nothing (thread messages carry `status` + `seq` for exactly this).
 ### Stop generation
 
 `POST /api/projects/{pid}/conversations/{id}/cancel` stops the in-flight turn
-**server-side**: the
-runner's token cancels, the upstream vLLM stream is torn down, the assistant
-row finalises as `status="cancelled"` with whatever streamed, and a terminal
-`cancelled` event lands on the normal delivery transports - the still-attached
-client renders the exact final partial. Idempotent: `202` when a live turn was
-signalled, `204` when there was nothing to stop (a cancel that races the queued
-job leaves a tombstone that pre-cancels it at pickup). A cancelled turn does
-not block the conversation - the next `POST .../messages` is accepted
+**server-side**: the cancel is **published** to the conversation's control channel
+(`ITurnControlBus`, chat-and-tools.md section detached turns), the runner's linked
+cancel token trips **reactively** and tears down the upstream vLLM stream, the
+assistant row finalises as `status="cancelled"` with whatever streamed, and a
+terminal `cancelled` event lands on the normal delivery transports - the
+still-attached client renders the exact final partial. The endpoint is
+**fire-and-forget and idempotent**: always `202` (the signal reaches a live turn,
+or - for an idle/unknown/foreign conversation - no live subscription, so it is a
+harmless no-op). A cancel that arrives while the turn is still queued is caught
+when the runner subscribes (judged against the turn's plan instant). A cancelled
+turn does not block the conversation - the next `POST .../messages` is accepted
 immediately, and cancelled partials are **excluded** from the next turn's
 upstream history (UI-only context).
 
 ### Answer a question
 
 `POST /api/projects/{pid}/conversations/{id}/answer` with body
-`{ "question_id": "...", "answer": "..." }` delivers the user's answer to the
-in-flight turn's pending [`ask_user`](chat-and-tools.md#ask-the-user-ask_user)
-question. The shape mirrors the cancel endpoint exactly: same route prefix,
-covered by the fallback authenticated-user policy, and **ownership is
-structural** - the registry key is built from the token's iss/sub, so a foreign
-conversation id can never address another tenant's question. `question_id` is
-the server-minted id from the `question_asked` event (never the model's
-tool-call id). Responses:
+`{ "question_id": "...", "answers": ["...", ...] }` delivers the user's answers
+to the in-flight turn's pending
+[`ask_user`](chat-and-tools.md#ask-the-user-ask_user) question - one entry per
+asked question, in the order they were asked (1..4). The answers are **submitted**
+to the conversation's control channel (`ITurnControlBus`, chat-and-tools.md section
+detached turns), which validates them and delivers them to the waiting turn. The
+shape mirrors the cancel endpoint exactly: same route prefix, covered by the
+fallback authenticated-user policy, and **ownership is structural** - the control
+scope is addressed by the token-derived user key, so a foreign conversation id
+addresses no live turn of the caller's and can never reach another tenant's
+question (an opaque `404`). The bus is the validation boundary: `SubmitAnswerAsync`
+checks the answer's count + closed-option membership against the open question and
+returns the outcome the endpoint maps below. `question_id` is the server-minted id
+from the `question_asked` event (never the model's tool-call id). Responses:
 
-* **202** - the waiting tool received the answer; the `question_answered`
+* **202** - the waiting tool received the answers; the `question_answered`
   event follows on the normal delivery transports.
 * **404** - no question is pending for this conversation, or the id is stale
   (it just timed out / was already answered). The SPA marks its card expired.
-* **400** - validation failure (the body validator), or a closed question
-  (`allow_free_text=false`) answered with something outside its options.
+* **400** - validation failure (the body validator: a missing/empty/oversized
+  answer, or a count outside 1..4), an answer count that does not match the
+  pending question count, or a closed question (`allow_free_text=false`)
+  answered with something outside its options.
 
 While a question pends the turn is in-flight, so the usual 409 rule blocks new
 `POST .../messages` in that conversation - the question card (or Stop) is the
@@ -190,20 +244,10 @@ Scoped to a project - a document belongs to exactly one project's `rag.db`.
 | Method | Path | Notes |
 |--------|------|-------|
 | `GET` | `/api/projects/{pid}/documents` | List for the doclist: name, size, chunk_count, status, error. |
-| `POST` | `/api/projects/{pid}/documents` | `multipart/form-data` upload. Stores the file, inserts `documents` row with `status='processing'`, enqueues ingestion, returns immediately. |
+| `POST` | `/api/projects/{pid}/documents` | `multipart/form-data` upload. **Any file type is accepted** (no extension/MIME allowlist - gate is non-empty + size + filename length); text-ness is decided at extraction (see [chat-and-tools](chat-and-tools.md#document-ingestion-pipeline)). Stores the file, inserts `documents` row with `status='processing'`, enqueues ingestion, returns immediately. |
 | `GET` | `/api/projects/{pid}/documents/{id}` | **Polled** by the client while processing -> drives `processing -> ready/failed` pills and "embedding 12 / 19 chunks...". Returns `status` and a progress field (e.g. `chunk_count` / chunks embedded). |
 | `DELETE` | `/api/projects/{pid}/documents/{id}` | Deletes chunks + vec rows + fts rows + the original file. |
 | `GET` | `/api/projects/{pid}/documents/events` | *(deferred - see [decisions.md section 6](decisions.md#6-live-ingestion-progress))* SSE stream of ingestion progress; additive future upgrade over polling. |
-
-## Memory (per project)
-
-Memory entries are stored as files under `projects/{pid}/memory/` and embedded into the project's `rag.db` as `kind='memory'` ([configuration section 2.3](configuration.md#23-memory)).
-
-| Method | Path | Notes |
-|--------|------|-------|
-| `GET` | `/api/projects/{pid}/memory` | List entries (id, title, pinned, updated_at). |
-| `POST` | `/api/projects/{pid}/memory` | `{ title, content, pinned? }` - add/edit an entry; it is (re)embedded for retrieval. |
-| `DELETE` | `/api/projects/{pid}/memory/{id}` | Remove an entry and its chunks. |
 
 ## Artifacts
 
@@ -234,7 +278,7 @@ Self-service data lifecycle ([configuration section 5](configuration.md#5-data-l
 | `GET` | `/api/admin/users` | Lists user folders, reading each one's `user.db` for the username (plus a footprint listing): username, key, size, doc count, last-active. The closest thing to a "user list" the API has. |
 | `GET` | `/api/admin/users/{key}` | One user's folder summary. `{key}` validated as below. |
 | `DELETE` | `/api/admin/users/{key}` | **Erases all of that user's data** across its stores (see [Operations -> User lifecycle](operations.md#user-lifecycle---remove-a-user)). |
-| `GET` | `/api/admin/system-prompt` | What the model is sent, verbatim: the built-in system prompt plus every registered tool spec (`{ system_prompt, tools: [{ id, name, description, parameters_schema }] }`). Pure configuration - per-project pinned instructions are user data and excluded (admin grants no cross-user data read). Rendered on the admin page's "Model prompt" section. |
+| `GET` | `/api/admin/system-prompt` | What the model is sent, verbatim: the operator-configured system prompt (`Gert:Prompts:Canvas`) plus every registered tool spec (`{ system_prompt, tools: [{ id, name, description, parameters_schema }] }`). Pure configuration - per-project pinned instructions are user data and excluded (admin grants no cross-user data read). Rendered on the admin page's "Model prompt" section. |
 
 > **`{key}` is the most dangerous path parameter in the API** - it feeds a destructive whole-account delete. Unlike `pid`
 > (whose IDOR-safety is covered in [configuration section 2.5](configuration.md#25-path-resolution--why-a-request-supplied-project-id-is-still-idor-safe)),

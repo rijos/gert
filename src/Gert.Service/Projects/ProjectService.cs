@@ -2,10 +2,9 @@ using Gert.Database;
 using Gert.Model;
 using Gert.Model.Dtos;
 using Gert.Model.Projects;
-using Gert.Model.Rag;
 using Gert.Rag;
-using Gert.Service.Validation;
 using Gert.Storage;
+using Gert.Validation;
 
 namespace Gert.Service.Projects;
 
@@ -206,16 +205,13 @@ public sealed class ProjectService : IProjectService
         }
 
         int documentCount;
-        int memoryCount;
         await using (var rag = await _ragDatabases
             .OpenAsync(_user.Iss, _user.Sub, meta.Id, cancellationToken).ConfigureAwait(false))
         {
-            var documents = await rag.ListDocumentsAsync(DocumentKind.Document, cancellationToken).ConfigureAwait(false);
-            var memories = await rag.ListDocumentsAsync(DocumentKind.Memory, cancellationToken).ConfigureAwait(false);
+            var documents = await rag.ListDocumentsAsync(cancellationToken).ConfigureAwait(false);
             documentCount = documents.Count;
-            memoryCount = memories.Count;
         }
 
-        return ProjectSummary.From(meta, conversationCount, documentCount, memoryCount);
+        return ProjectSummary.From(meta, conversationCount, documentCount);
     }
 }

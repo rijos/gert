@@ -59,7 +59,7 @@ Where a new type goes (full map: [tech-stack section solution layout](tech-stack
   ```
 
   Services are `sealed class` with constructor-injected dependencies. Small identity keys are
-  `readonly record struct` (`TurnKey`, `ObjectScope`) - that is the *only* sanctioned struct use.
+  `readonly record struct` (`ControlScope`, `ObjectScope`) - that is the *only* sanctioned struct use.
 - A deliberate exception gets a justifying comment (`ToolToggles` is a class with hand-written
   equality because it needs dictionary semantics - the comment says so).
 - Public surfaces speak `IReadOnlyList<>` / `IReadOnlySet<>` / `IReadOnlyDictionary<>`, never
@@ -87,7 +87,7 @@ Where a new type goes (full map: [tech-stack section solution layout](tech-stack
   swallowed into a degraded result:
 
   ```csharp
-  // src/Gert.Tools/Builtin/PythonSandboxTool.cs
+  // src/Gert.Tools.Builtin/Builtin/PythonSandboxTool.cs
   catch (OperationCanceledException)
   {
       throw;
@@ -100,9 +100,11 @@ Where a new type goes (full map: [tech-stack section solution layout](tech-stack
   }
   ```
 - **No sync-over-async** (`.Result`, `.Wait()`, `GetAwaiter().GetResult()`) anywhere.
-- **No fire-and-forget without an owner.** Detached work rides a `Channel` queue drained by a
-  host `BackgroundService` (`TurnWorker`, `IngestionWorker`) whose loop catches, logs, and
-  survives - that worker *is* the owner. Never bare `Task.Run` / discarded tasks.
+- **No fire-and-forget without an owner.** Detached work has a host owner that tracks it,
+  catches, logs, and survives: ingestion rides a `Channel` queue drained by a
+  `BackgroundService` (`IngestionWorker`); the `TurnLauncher` (an `IHostedService`) tracks each
+  turn's background task and cancels/drains them on shutdown - that owner bounds and finalises
+  the work. Never a bare `Task.Run` / discarded task with no owner.
   (`ConversationBus.Publish` is deliberately a non-async `TryWrite` with documented drop
   semantics - the exception that proves the rule.)
 - Streams are `IAsyncEnumerable<T>` end to end; hosts render them (SSE / stdout). Argument
@@ -163,7 +165,7 @@ Where a new type goes (full map: [tech-stack section solution layout](tech-stack
   `GetTimestamp()`/`GetElapsedTime()` for intervals. Never `DateTimeOffset.UtcNow` /
   `DateTime.Now`. The sweep is complete: every service that stamps a row
   (`TurnPlanner`, `TurnRunner`, `ConversationService`, `ConversationReader`,
-  `DocumentService`, `MemoryService`, `ProjectService`, `UserProvisioner`,
+  `DocumentService`, `ProjectService`, `UserProvisioner`,
   `SqliteUserRepository`) takes `TimeProvider` in its constructor; the default
   `TimeProvider.System` is `TryAdd`-registered in `AddGertServices`.
   Why: fakeable time is what lets tests pin the instant and exercise the orphan-horizon and
@@ -195,7 +197,7 @@ Fail-closed, in the service layer, so validation runs identically for every call
   }
   ```
 
-  This is the uniform shape (`TurnPlanner`, `DocumentService`, `MemoryService`,
+  This is the uniform shape (`TurnPlanner`, `DocumentService`,
   `SettingsService`, `ProjectService`, `ConversationService`). A registered validator
   that is never invoked is a silent hole - a service-tier test pins the invocation.
 - Shared vocabulary lives in `ValidationRules`: the `SafeText`/`OptionalSafeText` extensions

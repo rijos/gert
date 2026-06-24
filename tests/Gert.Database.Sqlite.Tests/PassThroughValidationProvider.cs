@@ -1,4 +1,4 @@
-using Gert.Service.Validation;
+using Gert.Validation;
 
 namespace Gert.Database.Sqlite.Tests;
 

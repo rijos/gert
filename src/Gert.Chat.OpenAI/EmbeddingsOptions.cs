@@ -3,7 +3,7 @@ namespace Gert.Chat.OpenAI;
 /// <summary>
 /// The embeddings functionality (<c>Gert:Embeddings</c>): pick an implementation via
 /// <see cref="Type"/>, configure it under <see cref="Parameters"/> - the uniform
-/// "functionality -> Type -> Parameters" shape (configuration.md section 4). Only
+/// "functionality -> Type -> Parameters" shape (configuration.md intro; section 3). Only
 /// <c>OpenAI</c> ships today (an OpenAI-compatible <c>/v1/embeddings</c> upstream, vLLM
 /// serving bge-m3 in the reference deployment); an unknown <see cref="Type"/> fails fast at
 /// startup (a registered <c>IValidateOptions</c>). The connection + secret + resilience live

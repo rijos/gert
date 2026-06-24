@@ -1,3 +1,4 @@
+using System.IO;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
@@ -10,6 +11,9 @@ using Gert.Model.Json;
 using Gert.Model.Projects;
 using Gert.Service.Projects;
 using Gert.Testing;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.TestHost;
 using Xunit;
 
 namespace Gert.Api.Tests;
@@ -90,23 +94,6 @@ public sealed class ApiBreadthTests : IClassFixture<GertApiFactory>
 
         var get = await client.GetAsync($"/api/projects/{meta.Id}");
         get.StatusCode.Should().Be(HttpStatusCode.OK);
-    }
-
-    [Fact]
-    public async Task Memory_create_list_delete_round_trips()
-    {
-        var client = Authed();
-
-        var create = await client.PostAsJsonAsync(
-            "/api/projects/default/memory",
-            new CreateMemoryRequest { Title = "Prefs", Content = "Use sqlite-vec." },
-            Json);
-        create.StatusCode.Should().Be(HttpStatusCode.OK, await create.Content.ReadAsStringAsync());
-        var entry = await create.Content.ReadFromJsonAsync<Gert.Model.Rag.MemoryEntry>(Json);
-        entry!.Title.Should().Be("Prefs");
-
-        var delete = await client.DeleteAsync($"/api/projects/default/memory/{entry.Id}");
-        delete.StatusCode.Should().Be(HttpStatusCode.NoContent);
     }
 
     [Fact]
@@ -266,6 +253,105 @@ public sealed class ApiBreadthTests : IClassFixture<GertApiFactory>
         response.Headers.GetValues("Referrer-Policy").Single().Should().Be("no-referrer");
         response.Headers.GetValues("X-Frame-Options").Single().Should().Be("DENY");
         response.Headers.Contains("Permissions-Policy").Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Csp_script_src_carries_no_unsafe_inline()
+    {
+        // The no-bundle ESM design needs no inline scripts (SecurityHeadersMiddleware), so the
+        // single highest-value control must never be weakened with 'unsafe-inline'. A regression
+        // that added it would still satisfy the positive "script-src 'self'" assertion above - this
+        // pins the negative explicitly.
+        var response = await _factory.CreateClient().GetAsync("/some/client/route");
+
+        response.Content.Headers.ContentType!.MediaType.Should().Be("text/html");
+        var csp = response.Headers.GetValues("Content-Security-Policy").Single();
+        csp.Should().NotContain("unsafe-inline");
+        csp.Should().NotContain("unsafe-eval");
+    }
+
+    [Fact]
+    public async Task Hsts_header_is_set_on_https_outside_development_and_testing()
+    {
+        // UseHsts runs only outside Development/Testing (Program.cs), and HstsMiddleware emits the
+        // header only over HTTPS. Production (not Development) avoids loading user-secrets;
+        // SendAsync drives the request with Scheme=https so IsHttps is set without a real TLS hop.
+        using var factory = _factory.WithWebHostBuilder(b => b.UseEnvironment("Production"));
+
+        var context = await factory.Server.SendAsync(c =>
+        {
+            c.Request.Method = HttpMethods.Get;
+            c.Request.Scheme = "https";
+            // HstsMiddleware excludes localhost/loopback by default, so use a routable host.
+            c.Request.Host = new HostString("gert.example");
+            c.Request.Path = "/some/client/route";
+        });
+
+        context.Response.Headers.Should().ContainKey("Strict-Transport-Security");
+        context.Response.Headers.StrictTransportSecurity.ToString().Should().Contain("max-age=");
+    }
+
+    [Fact]
+    public void Appsettings_json_carries_no_secret_values()
+    {
+        // CLAUDE.md / security F8: appsettings.json holds only non-secret defaults; real secrets
+        // (api keys, bearer tokens) arrive via env / user-secrets. Parse (not raw-scan, so the
+        // file's // comments are ignored) and assert no secret-named property carries a value.
+        var path = Path.Combine(RepoRoot(), "src", "Gert.Api", "appsettings.json");
+        using var doc = JsonDocument.Parse(
+            File.ReadAllText(path),
+            new JsonDocumentOptions { CommentHandling = JsonCommentHandling.Skip, AllowTrailingCommas = true });
+
+        var offenders = new List<string>();
+        ScanForSecrets(doc.RootElement, string.Empty, offenders);
+        offenders.Should().BeEmpty("appsettings.json must carry no secret values (F8)");
+    }
+
+    // Secret-indicating property names (normalized: lowercased, non-alphanumerics dropped, so
+    // "Api_Key"/"ApiKey" both match). Broad "key"/"token" are excluded - they false-positive on
+    // benign config - in favour of names that only ever name a secret.
+    private static readonly string[] SecretNameMarkers =
+        ["password", "secret", "apikey", "privatekey", "accesstoken", "bearertoken", "clientsecret"];
+
+    private static void ScanForSecrets(JsonElement element, string name, List<string> offenders)
+    {
+        switch (element.ValueKind)
+        {
+            case JsonValueKind.Object:
+                foreach (var prop in element.EnumerateObject())
+                {
+                    ScanForSecrets(prop.Value, prop.Name, offenders);
+                }
+
+                break;
+            case JsonValueKind.Array:
+                foreach (var item in element.EnumerateArray())
+                {
+                    ScanForSecrets(item, name, offenders);
+                }
+
+                break;
+            case JsonValueKind.String:
+                var normalized = new string(name.ToLowerInvariant().Where(char.IsLetterOrDigit).ToArray());
+                if (SecretNameMarkers.Any(m => normalized.Contains(m, StringComparison.Ordinal))
+                    && !string.IsNullOrWhiteSpace(element.GetString()))
+                {
+                    offenders.Add(name);
+                }
+
+                break;
+        }
+    }
+
+    private static string RepoRoot()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "Gert.sln")))
+        {
+            dir = dir.Parent;
+        }
+
+        return dir?.FullName ?? throw new InvalidOperationException("repo root (Gert.sln) not found");
     }
 
     [Fact]

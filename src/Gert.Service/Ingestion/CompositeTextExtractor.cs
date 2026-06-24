@@ -3,8 +3,8 @@ namespace Gert.Service.Ingestion;
 /// <summary>
 /// The default <see cref="ITextExtractor"/> the pipeline depends on: it routes a
 /// blob to the first registered extractor that <see cref="ITextExtractor.CanExtract"/>s
-/// its type. The leaves live in the Gert.Ingestion adapter (md/txt + the isolated
-/// pdf/docx extractor, security F7); an unhandled type
+/// its type. The leaves live in the Gert.Ingestion adapter (the universal plain-text
+/// extractor + the isolated pdf/docx/xlsx extractor, security F7); an unhandled type
 /// returns <see cref="ExtractionResult.Failed"/> so the pipeline marks the document
 /// <c>failed</c> ("extractor not available") rather than throwing.
 ///

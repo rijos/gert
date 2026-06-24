@@ -8,7 +8,7 @@ using Xunit;
 namespace Gert.Ingestion.Tests;
 
 /// <summary>
-/// Unit tests for the isolated PDF/DOCX extractor's pure surfaces (security F7): the
+/// Unit tests for the isolated PDF/DOCX/XLSX extractor's pure surfaces (security F7): the
 /// command/arg builder caps, the XML-hardening flags, the zip-bomb guard, and the
 /// helper-output -> graceful-result mapping. No subprocess.
 /// </summary>
@@ -17,9 +17,11 @@ public sealed class IsolatedTextExtractorTests
     [Theory]
     [InlineData("pdf", true)]
     [InlineData("docx", true)]
+    [InlineData("xlsx", true)]
     [InlineData("txt", false)]
     [InlineData("md", false)]
-    public void CanExtract_PdfDocxOnly(string ext, bool expected)
+    [InlineData("json", false)]
+    public void CanExtract_BinaryDocumentFormatsOnly(string ext, bool expected)
     {
         var extractor = new IsolatedTextExtractor(
             Microsoft.Extensions.Options.Options.Create(new ExtractorOptions()),
@@ -165,5 +167,88 @@ public sealed class IsolatedTextExtractorTests
         var result = await extractor.ExtractAsync(content, "txt");
 
         result.Error.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task ReadCappedAsync_StreamOverCap_StopsExactlyAtCap()
+    {
+        // F7 host-side enforcement: a flooding helper stream yields only `cap` bytes.
+        using var stream = new MemoryStream(System.Text.Encoding.ASCII.GetBytes(new string('a', 5000)));
+
+        var text = await IsolatedTextExtractor.ReadCappedAsync(stream, maxBytes: 100, CancellationToken.None);
+
+        text.Should().HaveLength(100);
+        text.Should().Be(new string('a', 100));
+    }
+
+    [Fact]
+    public async Task ReadCappedAsync_StreamUnderCap_ReturnsAllBytes()
+    {
+        using var stream = new MemoryStream(System.Text.Encoding.ASCII.GetBytes("short output"));
+
+        var text = await IsolatedTextExtractor.ReadCappedAsync(stream, maxBytes: 1024, CancellationToken.None);
+
+        text.Should().Be("short output");
+    }
+
+    [Fact]
+    public async Task ReadCappedAsync_HonoursCapAcrossMultipleChunks()
+    {
+        // A drip-fed stream forces several ReadAsync round-trips, so the cap must be
+        // enforced DURING the loop - not by trimming a single fully-buffered read.
+        using var stream = new ChunkedStream(System.Text.Encoding.ASCII.GetBytes(new string('b', 4000)), chunkSize: 7);
+
+        var text = await IsolatedTextExtractor.ReadCappedAsync(stream, maxBytes: 50, CancellationToken.None);
+
+        text.Should().HaveLength(50);
+        text.Should().Be(new string('b', 50));
+    }
+
+    /// <summary>A stream that returns at most <c>chunkSize</c> bytes per read, forcing the cap loop to iterate.</summary>
+    private sealed class ChunkedStream : Stream
+    {
+        private readonly byte[] _data;
+        private readonly int _chunkSize;
+        private int _pos;
+
+        public ChunkedStream(byte[] data, int chunkSize)
+        {
+            _data = data;
+            _chunkSize = chunkSize;
+        }
+
+        public override int Read(byte[] buffer, int offset, int count)
+        {
+            var remaining = _data.Length - _pos;
+            if (remaining <= 0)
+            {
+                return 0;
+            }
+
+            var n = Math.Min(Math.Min(count, _chunkSize), remaining);
+            Array.Copy(_data, _pos, buffer, offset, n);
+            _pos += n;
+            return n;
+        }
+
+        public override bool CanRead => true;
+
+        public override bool CanSeek => false;
+
+        public override bool CanWrite => false;
+
+        public override long Length => _data.Length;
+
+        public override long Position { get => _pos; set => throw new NotSupportedException(); }
+
+        public override void Flush()
+        {
+        }
+
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+
+        public override void SetLength(long value) => throw new NotSupportedException();
+
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
     }
 }

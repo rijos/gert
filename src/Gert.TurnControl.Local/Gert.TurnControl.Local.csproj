@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <!-- The control-plane port this impl satisfies (carries Gert.Model transitively for AskedQuestion). -->
+    <ProjectReference Include="..\Gert.TurnControl\Gert.TurnControl.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- AddGertTurnControlLocal registrar. Abstractions only - the composition root owns the host. -->
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions"
+                      Version="$(MicrosoftExtensionsDIAbstractionsVersion)" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Test seam: the bus tests drive the internal InProcessTurnControlBus directly. -->
+    <InternalsVisibleTo Include="Gert.TurnControl.Tests" />
+  </ItemGroup>
+
+</Project>

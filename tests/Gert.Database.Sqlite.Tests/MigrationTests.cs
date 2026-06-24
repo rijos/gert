@@ -19,13 +19,16 @@ public class MigrationTests
 
             (await UserVersionAsync(connection)).Should().Be(0);
 
+            // ApplyAsync returns the resulting user_version. A fresh chat.db applies the single base
+            // migration - 001 - reaching user_version 1 (the cancel/answer control plane is the
+            // in-process ITurnControlBus now, not a chat.db table).
             var applied = await SqliteMigrationRunner.ApplyAsync(connection, "chat");
 
             applied.Should().Be(1);
             (await UserVersionAsync(connection)).Should().Be(1);
 
             var tables = await TableNamesAsync(connection);
-            tables.Should().Contain(new[] { "conversations", "messages", "tool_calls", "citations", "artifacts", "turn_events" });
+            tables.Should().Contain(new[] { "conversations", "messages", "tool_calls", "citations", "chat_objects", "turn_events" });
 
             // The atomic turn gate (decisions section 11): the partial unique index.
             (await ScalarAsync(
@@ -59,7 +62,7 @@ public class MigrationTests
             await SqliteMigrationRunner.ApplyAsync(connection, "chat");
             var second = await SqliteMigrationRunner.ApplyAsync(connection, "chat");
 
-            second.Should().Be(1, "re-running an up-to-date DB is a no-op");
+            second.Should().Be(1, "re-running an up-to-date DB is a no-op (the resulting version stays 1)");
         }
         finally
         {

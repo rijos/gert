@@ -21,6 +21,7 @@ namespace Gert.Chat;
 public sealed class ConfigChatProviderCatalog : IChatProviderCatalog
 {
     private readonly IReadOnlyList<ChatProviderInfo> _infos;
+    private readonly IReadOnlySet<string> _modelIds;
 
     public ConfigChatProviderCatalog(IConfiguration configuration, IDefaultChatProvider? defaultProvider = null)
     {
@@ -30,11 +31,36 @@ public sealed class ConfigChatProviderCatalog : IChatProviderCatalog
         // picker order is the order the operator wrote - a plain Get<Dictionary<>>
         // would not promise that. The endpoint badge is read generically from each
         // entry's Parameters:BaseUrl (a near-universal "where it connects" convention),
-        // so the catalog never binds an implementation's Parameters shape.
+        // so the catalog never binds an implementation's Parameters shape. A configured entry
+        // that omits Type takes the registered default plugin's token (the OpenAI plugin's
+        // `openai`), so this generic catalog never names an implementation itself.
+        var defaultType = defaultProvider?.DefaultType;
         var entries = configuration.GetSection(ChatProviderOptions.SectionName).GetChildren()
-            .Select(c => (c.Get<ChatProviderOptions>() ?? new ChatProviderOptions())
-                .ToInfo(c.Key, c.GetSection("Parameters")["BaseUrl"]))
+            .Select(c =>
+            {
+                var options = c.Get<ChatProviderOptions>() ?? new ChatProviderOptions();
+                if (string.IsNullOrWhiteSpace(options.Type) && !string.IsNullOrWhiteSpace(defaultType))
+                {
+                    options.Type = defaultType;
+                }
+
+                return options.ToInfo(c.Key, c.GetSection("Parameters")["BaseUrl"]);
+            })
             .ToList();
+
+        // Every CONFIGURED provider must declare its context window (tokens) - the planner needs it
+        // to bound an inline attachment against the model's context. Fail closed and name the
+        // offenders + the key, like the default-selection check below. (The synthesized zero-config
+        // default is exempt: it has no config entry to carry a Context, and the inline gate simply
+        // skips when the size is unknown.)
+        var missingContext = entries.Where(e => e.Context is null or <= 0).Select(e => e.Id).ToList();
+        if (missingContext.Count > 0)
+        {
+            throw new InvalidOperationException(
+                $"Chat provider(s) {string.Join(", ", missingContext)} are missing a positive "
+                + $"'Context' (context window in tokens). Set {ChatProviderOptions.SectionName}:<slug>:Context "
+                + "for each.");
+        }
 
         if (entries.Count == 0 && defaultProvider?.Synthesize() is { } synthesized)
         {
@@ -42,7 +68,14 @@ public sealed class ConfigChatProviderCatalog : IChatProviderCatalog
         }
 
         _infos = ApplyDefaultSelection(entries, configuration[ChatProviderOptions.DefaultProviderKey]);
+
+        // The allow-list the validation layer (via IModelIdCatalog) checks model_id against.
+        // Ordinal to match Get's case-sensitive lookup, so the validator and the resolver agree.
+        _modelIds = _infos.Select(i => i.Id).ToHashSet(StringComparer.Ordinal);
     }
+
+    /// <inheritdoc />
+    public IReadOnlySet<string> ModelIds => _modelIds;
 
     // Mark exactly one entry as the cascade default, selected by Gert:Chat:DefaultProvider (a
     // provider slug). Unset -> the first entry (document order) wins via Default(). A name that
@@ -82,6 +115,9 @@ public sealed class ConfigChatProviderCatalog : IChatProviderCatalog
 
     /// <inheritdoc />
     public bool SupportsVision(string id) => (Get(id) ?? Default())?.SupportsVision ?? true;
+
+    /// <inheritdoc />
+    public int? ContextSize(string id) => (Get(id) ?? Default())?.Context;
 
     /// <summary>
     /// Resolve the provider (its id + Type) for the chat-client factory. The

@@ -19,6 +19,7 @@
     <ProjectReference Include="..\..\src\Gert.Storage\Gert.Storage.csproj" />
     <ProjectReference Include="..\..\src\Gert.Storage.Local\Gert.Storage.Local.csproj" />
     <ProjectReference Include="..\Gert.Testing\Gert.Testing.csproj" />
+    <ProjectReference Include="..\..\src\Gert.Agent\Gert.Agent.csproj" />
   </ItemGroup>
 
 </Project>
