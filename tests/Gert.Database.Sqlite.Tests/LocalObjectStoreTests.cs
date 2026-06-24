@@ -131,6 +131,32 @@ public class LocalObjectStoreTests
     }
 
     [Fact]
+    public async Task Bare_dotdot_key_naming_the_scope_parent_is_rejected()
+    {
+        // A key of exactly ".." resolves to the scope root's PARENT - no trailing
+        // separator, so it is NOT caught by the StartsWith(root + sep) test unless the
+        // guard rejects an escape to the parent itself. Belt-and-braces over traversal.
+        await using var root = new TempDataRoot();
+        var store = await NewStoreAsync(root);
+
+        var act = async () => await store.PutAsync(Scope(), "..", Bytes("x"));
+        await act.Should().ThrowAsync<ArgumentException>();
+    }
+
+    [Fact]
+    public async Task Key_with_a_leading_separator_is_rejected_as_rooted()
+    {
+        // A leading "/" makes the key rooted, so it must never be joined under the
+        // scope - Path.IsPathRooted catches it before any combine.
+        await using var root = new TempDataRoot();
+        var store = await NewStoreAsync(root);
+
+        var leading = OperatingSystem.IsWindows() ? @"\evil.txt" : "/evil.txt";
+        var act = async () => await store.PutAsync(Scope(), leading, Bytes("x"));
+        await act.Should().ThrowAsync<ArgumentException>();
+    }
+
+    [Fact]
     public async Task Absolute_key_is_rejected()
     {
         await using var root = new TempDataRoot();

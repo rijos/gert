@@ -192,14 +192,17 @@ nothing (thread messages carry `status` + `seq` for exactly this).
 ### Stop generation
 
 `POST /api/projects/{pid}/conversations/{id}/cancel` stops the in-flight turn
-**server-side**: the
-runner's token cancels, the upstream vLLM stream is torn down, the assistant
-row finalises as `status="cancelled"` with whatever streamed, and a terminal
-`cancelled` event lands on the normal delivery transports - the still-attached
-client renders the exact final partial. Idempotent: `202` when a live turn was
-signalled, `204` when there was nothing to stop (a cancel that races the queued
-job leaves a tombstone that pre-cancels it at pickup). A cancelled turn does
-not block the conversation - the next `POST .../messages` is accepted
+**server-side**: the cancel is **published** to the conversation's control channel
+(`ITurnControlBus`, chat-and-tools.md section detached turns), the runner's linked
+cancel token trips **reactively** and tears down the upstream vLLM stream, the
+assistant row finalises as `status="cancelled"` with whatever streamed, and a
+terminal `cancelled` event lands on the normal delivery transports - the
+still-attached client renders the exact final partial. The endpoint is
+**fire-and-forget and idempotent**: always `202` (the signal reaches a live turn,
+or - for an idle/unknown/foreign conversation - no live subscription, so it is a
+harmless no-op). A cancel that arrives while the turn is still queued is caught
+when the runner subscribes (judged against the turn's plan instant). A cancelled
+turn does not block the conversation - the next `POST .../messages` is accepted
 immediately, and cancelled partials are **excluded** from the next turn's
 upstream history (UI-only context).
 
@@ -209,12 +212,17 @@ upstream history (UI-only context).
 `{ "question_id": "...", "answers": ["...", ...] }` delivers the user's answers
 to the in-flight turn's pending
 [`ask_user`](chat-and-tools.md#ask-the-user-ask_user) question - one entry per
-asked question, in the order they were asked (1..4). The shape mirrors the
-cancel endpoint exactly: same route prefix, covered by the fallback
-authenticated-user policy, and **ownership is structural** - the registry key is
-built from the token's iss/sub, so a foreign conversation id can never address
-another tenant's question. `question_id` is the server-minted id from the
-`question_asked` event (never the model's tool-call id). Responses:
+asked question, in the order they were asked (1..4). The answers are **submitted**
+to the conversation's control channel (`ITurnControlBus`, chat-and-tools.md section
+detached turns), which validates them and delivers them to the waiting turn. The
+shape mirrors the cancel endpoint exactly: same route prefix, covered by the
+fallback authenticated-user policy, and **ownership is structural** - the control
+scope is addressed by the token-derived user key, so a foreign conversation id
+addresses no live turn of the caller's and can never reach another tenant's
+question (an opaque `404`). The bus is the validation boundary: `SubmitAnswerAsync`
+checks the answer's count + closed-option membership against the open question and
+returns the outcome the endpoint maps below. `question_id` is the server-minted id
+from the `question_asked` event (never the model's tool-call id). Responses:
 
 * **202** - the waiting tool received the answers; the `question_answered`
   event follows on the normal delivery transports.

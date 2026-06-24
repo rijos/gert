@@ -1,22 +1,23 @@
 using Gert.Database;
+using Gert.Database.Sqlite;
 using Gert.Model.Projects;
 using Gert.Rag;
 using Gert.Rag.Sqlite;
 using Gert.Storage;
 using Gert.Storage.Local;
-using Gert.Testing;
 using Microsoft.Extensions.Options;
 
-namespace Gert.Database.Sqlite.Tests;
+namespace Gert.Testing;
 
 /// <summary>
 /// Shared helpers to spin the split SQLite database providers (user/chat/rag), the
 /// <see cref="LocalObjectStore"/> backend, and <see cref="SqliteDatabasePaths"/> over a
 /// throwaway <see cref="TempDataRoot"/>. <see cref="ProviderFor"/> returns a
 /// <see cref="TestDatabases"/> facade that replicates the request-edge provisioner
-/// (username + default project).
+/// (username + default project). Lives in Gert.Testing so both the database-engine and
+/// the RAG-engine SQLite test projects share one fixture.
 /// </summary>
-internal static class ProviderFixture
+public static class ProviderFixture
 {
     /// <summary>The issuer string the suite mints identities under.</summary>
     public const string ExpectedIssuer = "https://id.test.local";
@@ -60,7 +61,7 @@ internal static class ProviderFixture
     /// the provisioning the hosts run at their edge (seed the username + default
     /// project, materialise a project's chat.db/rag.db).
     /// </summary>
-    internal sealed class TestDatabases
+    public sealed class TestDatabases
     {
         public IUserDatabaseProvider Users { get; }
         public IChatDatabaseProvider Chat { get; }

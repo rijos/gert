@@ -1,4 +1,4 @@
-namespace Gert.Tools.Sandbox.Monty;
+namespace Gert.Tools.Builtin.Sandbox.Monty;
 
 /// <summary>
 /// Connection options for the <b>monty</b> sidecar - Pydantic's minimal Python interpreter in

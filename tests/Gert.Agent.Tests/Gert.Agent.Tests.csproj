@@ -20,6 +20,9 @@
     <!-- The tool impl leaf: the ChatToolDelegate / TurnRunner tests drive the real
          RagTool/SubAgentTool through the nested loop. -->
     <ProjectReference Include="..\..\src\Gert.Tools.Builtin\Gert.Tools.Builtin.csproj" />
+    <!-- The in-process turn control plane: the runner tests subscribe + publish cancel/answer
+         through the real ITurnControlBus (the port rides transitively via Gert.Agent). -->
+    <ProjectReference Include="..\..\src\Gert.TurnControl.Local\Gert.TurnControl.Local.csproj" />
     <ProjectReference Include="..\Gert.Testing\Gert.Testing.csproj" />
   </ItemGroup>
 

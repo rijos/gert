@@ -3,7 +3,7 @@ using Gert.Model.Tools;
 using Gert.Tools;
 using Gert.Tools.Ports;
 
-namespace Gert.Tools.Fetch;
+namespace Gert.Tools.Builtin.Fetch;
 
 /// <summary>
 /// The <see cref="IWebFetcher"/> adapter for the <c>web_fetch</c> tool: wraps the

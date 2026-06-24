@@ -93,6 +93,42 @@ public sealed class WebFetchToolTests
     }
 
     [Fact]
+    public async Task The_payload_url_and_citation_label_echo_the_requested_url()
+    {
+        var tool = new WebFetchTool(Gert.Testing.Proof.Validation, FetcherReturning("plain body"));
+
+        var result = await tool.RunAsync(Invoke("{\"url\":\"https://example.test/page\"}"));
+
+        result.Success.Should().BeTrue();
+        // The model-facing payload carries the fetched URL back...
+        result.ResultJson.Should().Contain("\"url\":\"https://example.test/page\"");
+        // ...and the single web citation's label + locator are that same URL.
+        result.Citations.Should().ContainSingle();
+        result.Citations[0].SourceType.Should().Be(CitationSourceType.Web);
+        result.Citations[0].Label.Should().Be("https://example.test/page");
+        result.Citations[0].Locator.Should().Be("https://example.test/page");
+        result.Citations[0].Ordinal.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task An_html_body_is_extracted_then_clipped_to_max_chars()
+    {
+        // Both transforms in one call: HTML -> plain text (extracted), THEN the clip
+        // spends on content not markup (the clip applies AFTER extraction).
+        var tool = new WebFetchTool(Gert.Testing.Proof.Validation, FetcherReturning(
+            "<html><body><p>" + new string('w', 200) + "</p></body></html>"));
+
+        var result = await tool.RunAsync(
+            Invoke("{\"url\":\"https://example.test/docs\",\"max_chars\":20}"));
+
+        result.Success.Should().BeTrue();
+        result.ResultJson.Should().Contain("\"extracted\":true");
+        result.ResultJson.Should().Contain("\"truncated\":true");
+        result.ResultJson.Should().Contain("\"chars\":20");
+        result.ResultJson.Should().NotContain("<p>");
+    }
+
+    [Fact]
     public async Task A_non_html_body_passes_through_raw()
     {
         var tool = new WebFetchTool(Gert.Testing.Proof.Validation, FetcherReturning("{\"version\":\"1.2.3\"}"));
@@ -192,5 +228,21 @@ public sealed class WebFetchToolTests
 
         result.Success.Should().BeFalse();
         result.Error.Should().Contain("max_chars");
+    }
+
+    [Fact]
+    public async Task A_bare_json_null_is_a_graceful_failure_distinct_from_a_parse_error()
+    {
+        // A literal `null` body PARSES cleanly (no JsonException) but deserializes to a
+        // null TArgs - the distinct "expected a JSON object" branch in the typed base,
+        // not the malformed-JSON branch. Still a tool error, never a thrown turn.
+        var fetcher = Substitute.For<IWebFetcher>();
+        var tool = new WebFetchTool(Gert.Testing.Proof.Validation, fetcher);
+
+        var result = await tool.RunAsync(Invoke("null"));
+
+        result.Success.Should().BeFalse();
+        result.Error.Should().Contain("expected a JSON object");
+        await fetcher.DidNotReceive().FetchAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 }

@@ -267,7 +267,7 @@ library.
   (assistant text -> tool call -> tool result -> final text) collected from the stream. Covers the
   no-tool path, single tool, and a model that loops/recovers.
 - **Turn planner + runner**: the `TurnPlanner` intersection (request body x conversation preference
-  x JWT entitlement) and the `TurnRunner` drive, including ask_user/cancel back-channel handling.
+  x JWT entitlement) and the `TurnRunner` drive, including ask_user/cancel over the `ITurnControlBus`.
 - **Toolset / chat tool-host** (`Gert.Agent.Hosting`): the `ChatToolHost` wiring of the built-in
   tools through the `IToolHost` seams, and that tool entitlement is honoured - a user whose
   `AllowedTools` excludes `sandbox` can't invoke `run_python`.

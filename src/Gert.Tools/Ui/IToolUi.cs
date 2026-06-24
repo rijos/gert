@@ -3,7 +3,8 @@ namespace Gert.Tools.Ui;
 /// <summary>
 /// The human-interaction surface (chat-and-tools.md section ask the user) - the generalized port
 /// the <c>ask_user</c> tool drives so it depends on a contract, not the chat impl. The chat loop's
-/// <c>ChatToolUi</c> wires it to the <c>ITurnQuestions</c> registry + the question wire events; an
+/// <c>ChatToolUi</c> wires it to the turn's control channel (the <c>ITurnControlBus</c> subscription)
+/// + the question wire events; an
 /// autonomous host (sub-agent, headless) has no Ui, where a <see cref="ITool.RequiresHuman"/> tool
 /// is excluded at advertise time and fails closed at execution.
 /// </summary>

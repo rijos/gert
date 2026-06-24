@@ -1,6 +1,6 @@
 using FluentAssertions;
-using Gert.Tools.Fetch;
-using Gert.Tools.Search.SearXNG;
+using Gert.Tools.Builtin.Fetch;
+using Gert.Tools.Builtin.Search.SearXNG;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Xunit;

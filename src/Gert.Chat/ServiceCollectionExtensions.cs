@@ -1,3 +1,4 @@
+using Gert.Model.Chat;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -31,6 +32,8 @@ public static class ServiceCollectionExtensions
             configuration,
             sp.GetService<IDefaultChatProvider>()));
         services.AddSingleton<IChatProviderCatalog>(sp => sp.GetRequiredService<ConfigChatProviderCatalog>());
+        // Same singleton answers the validation layer's model_id allow-list (the IModelIdCatalog port).
+        services.AddSingleton<IModelIdCatalog>(sp => sp.GetRequiredService<ConfigChatProviderCatalog>());
         services.AddSingleton<IChatClientFactory>(sp => new ChatClientFactory(
             sp,
             sp.GetRequiredService<ConfigChatProviderCatalog>()));

@@ -12,9 +12,9 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Gert.Validation\Gert.Validation.csproj" />
-    <!-- FailClosedMetaTest reflects over IGertServices / ITurnPlanner / ITurnQuestions to prove
-         every request DTO a service accepts has a registered validator; ValidationTestHost builds
-         the real AddGertServices container. -->
+    <!-- FailClosedMetaTest reflects over IGertServices / ITurnPlanner (plus the inline-proven
+         AnswerRequest) to prove every request DTO a service accepts has a registered validator;
+         ValidationTestHost builds the real AddGertServices container. -->
     <ProjectReference Include="..\..\src\Gert.Service\Gert.Service.csproj" />
     <!-- ToolRegistry / ITool for ValidationTestHost's stub tool census. -->
     <ProjectReference Include="..\..\src\Gert.Tools\Gert.Tools.csproj" />

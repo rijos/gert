@@ -1,9 +1,9 @@
 using Gert.Tools;
-using Gert.Tools.Fetch;
+using Gert.Tools.Builtin.Fetch;
+using Gert.Tools.Builtin.Sandbox;
+using Gert.Tools.Builtin.Search;
+using Gert.Tools.Builtin.Search.SearXNG;
 using Gert.Tools.Ports;
-using Gert.Tools.Sandbox;
-using Gert.Tools.Search;
-using Gert.Tools.Search.SearXNG;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -90,8 +90,8 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ITool, ReadArtifactTool>();
         services.AddScoped<ITool, ListArtifactsTool>();
         // ask_user is a typed modal tool (ToolCallModal<AskUserArgs, _>): the base
-        // ctor-injects IValidationProvider; the question registry + wire events ride
-        // the host's IToolUi (the chat loop's ChatToolUi) at call time.
+        // ctor-injects IValidationProvider; the control channel + wire events
+        // ride the host's IToolUi (the chat loop's ChatToolUi) at call time.
         services.AddScoped<ITool, AskUserTool>();
         // web_fetch only calls the IWebFetcher port - the SSRF hardening (F5)
         // is the adapter's job, mirroring WebSearchTool.

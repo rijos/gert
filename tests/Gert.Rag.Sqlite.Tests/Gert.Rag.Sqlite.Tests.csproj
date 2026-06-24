@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="$(TestSdkVersion)" />
+    <PackageReference Include="xunit.v3" Version="$(XunitV3Version)" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="$(XunitRunnerVersion)" />
+    <PackageReference Include="FluentAssertions" Version="$(FluentAssertionsVersion)" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The RAG engine leaf under test: SqliteRagStore/Provider + connection factory + vec0/FTS5. -->
+    <ProjectReference Include="..\..\src\Gert.Rag.Sqlite\Gert.Rag.Sqlite.csproj" />
+    <ProjectReference Include="..\..\src\Gert.Rag\Gert.Rag.csproj" />
+    <!-- SqliteRagRepositoryTests opens the rag.db over the shared SQLite connection factory. -->
+    <ProjectReference Include="..\..\src\Gert.Database.Sqlite\Gert.Database.Sqlite.csproj" />
+    <ProjectReference Include="..\..\src\Gert.Storage\Gert.Storage.csproj" />
+    <!-- ProviderFixture + TempDataRoot. -->
+    <ProjectReference Include="..\Gert.Testing\Gert.Testing.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -23,7 +23,7 @@ The codebase is a **host-agnostic service layer** with a single host on top of i
 deliberately decoupled so the host stays swappable:
 
 - **`Gert.Service`** holds all business logic and references nothing host-specific - no `HttpContext`, no JWT, no SSE. It depends only on abstractions: `IUserContext` (who is the current user + their tool entitlement), the persistence contracts in **`Gert.Database`** (the per-database providers `IUserDatabaseProvider` / `IChatDatabaseProvider` and their repositories - this user's connections + migrations), the RAG index contracts in **`Gert.Rag`** (`IRagIndexProvider` / `IRagStore`), and the tool/validation interfaces. The request-facing read side of chat (the conversation bus + reader/streamer) stays here; the turn EXECUTION engine does not.
-- **`Gert.Agent`** is the turn/agent execution engine, a layer between the host and `Gert.Service` (host -> `Gert.Agent` -> `Gert.Service`): the `TurnLauncher`, the `TurnPlanner`/`TurnRunner`, the reusable `IAgentLoop` (the `TurnRunner` runs it inline on its turn task, teeing the `AgentEvent`s it emits into the conversation event log), the ask_user/cancel registries, the launcher-scope `DetachedUserContext`, and the chat tool-host wiring (`ChatToolHost`/`ProjectRagResource`/`ChatToolDelegate`). It references `Gert.Service` + the capability contracts, never the host or an adapter impl; `Gert.Service` must not reference it back. Registered by `AddGertAgent` (the host calls it right after `AddGertServices`).
+- **`Gert.Agent`** is the turn/agent execution engine, a layer between the host and `Gert.Service` (host -> `Gert.Agent` -> `Gert.Service`): the `TurnLauncher`, the `TurnPlanner`/`TurnRunner`, the reusable `IAgentLoop` (the `TurnRunner` runs it inline on its turn task, teeing the `AgentEvent`s it emits into the conversation event log), the turn control plane (cancel + ask_user over the `ITurnControlBus` port the runner subscribes to per turn), the launcher-scope `DetachedUserContext`, and the chat tool-host wiring (`ChatToolHost`/`ProjectRagResource`/`ChatToolDelegate`). It references `Gert.Service` + the capability contracts, never the host or an adapter impl; `Gert.Service` must not reference it back. Registered by `AddGertAgent` (the host calls it right after `AddGertServices`).
 - **`Gert.Api`** drives the engine + services over HTTP (controllers, JWT auth, SSE, the ingestion `BackgroundService`, SPA hosting).
 
 Because the service layer can't see the host, its independence from any transport is **structural** (compiler-enforced reference direction), not a convention. Services that stream - chat - return `IAsyncEnumerable<ChatEvent>`; the Api renders those as SSE. Transport never leaks into the service.
@@ -95,7 +95,7 @@ Gert.sln
 │
 ├─ Gert.Agent/                # turn/agent EXECUTION engine - layer between host and Service - refs Service + the capability contracts + Validation
 │  ├─ TurnPlanner / TurnRunner / TurnLauncher                   # the detached turn pipeline (plan -> launch -> tee, loop run inline)
-│  ├─ TurnQuestions / TurnCancellation / DetachedUserContext    # ask_user + cancel + launcher IUserContext
+│  ├─ DetachedUserContext                                       # launcher-scope IUserContext; cancel + ask_user ride the ITurnControlBus the runner subscribes to
 │  ├─ Loop/                   #   IAgentLoop/AgentLoop + the GertFunctionInvokingChatClient + LiveIntentChatClient pipeline, AgentEvent out
 │  └─ Hosting/                #   ChatToolHost / ProjectRagResource / ChatToolDelegate - the IToolHost wiring
 │
@@ -190,7 +190,16 @@ Gert.sln
 │  ├─ Subprocess/             #   IsolatedTextExtractor - unprivileged subprocess for PDF/DOCX/XLSX parsing (security F7)
 │  └─ ServiceCollectionExtensions.cs  # AddGertIngestion(cfg): both keyed ITextExtractor leaves (isolated pdf/docx/xlsx + plain-text fallback)
 │
-├─ Gert.Api/                  # HTTP host - refs Agent, Service, Authentication, Database.Sqlite, Storage(+Local), Chat(+OpenAI), Tools.Builtin, Ingestion
+├─ Gert.TurnControl/          # turn control-plane CONTRACTS - references Model only (Agent + Api reference it)
+│  ├─ ITurnControlBus.cs / ITurnControlSubscription.cs  # the pub/sub port: runner subscribes per turn, endpoints publish cancel/answer to the scope
+│  ├─ ControlScope.cs / AnswerOutcome.cs  # the token-derived (userKey, pid, conversation) address + the 202/404/400 outcome
+│  └─ AnswerValidation.cs     #   the single-sourced closed-question fit rule (count + offered-option membership)
+│
+├─ Gert.TurnControl.Local/    # the in-process control-plane IMPL leaf (a networked Kafka/NATS bus is a sibling, one DI swap)
+│  ├─ InProcessTurnControlBus.cs  # per-scope in-memory broker: trips the live subscription, retains a queued cancel against `since`
+│  └─ ServiceCollectionExtensions.cs  # AddGertTurnControlLocal(): the default single-process ITurnControlBus
+│
+├─ Gert.Api/                  # HTTP host - refs Agent, Service, Authentication, Database.Sqlite, Storage(+Local), Chat(+OpenAI), Tools.Builtin, Ingestion, TurnControl(+Local)
 │  ├─ Program.cs              # DI, JwtBearer, static files + SPA fallback, SSE, BackgroundService
 │  ├─ appsettings.json        # NON-secret defaults only: vLLM/SearXNG URLs, embedding dim, DataRoot,
 │  │                          #   Auth. Keys/secrets come from env / user-secrets / a secret store

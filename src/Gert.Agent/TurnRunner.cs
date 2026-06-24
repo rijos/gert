@@ -14,6 +14,7 @@ using Gert.Service.Chat.Bus;
 using Gert.Storage;
 using Gert.Tools;
 using Gert.Tools.Resources;
+using Gert.TurnControl;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -62,6 +63,7 @@ public sealed class TurnRunner : ITurnRunner
     private readonly IChatDatabaseProvider _databases;
     private readonly IChatClientFactory _clients;
     private readonly IConversationBus _bus;
+    private readonly ITurnControlBus _turnControl;
     private readonly IAgentLoop _loop;
     private readonly IReadOnlyList<ITool> _tools;
     private readonly IRagIndexProvider _ragProvider;
@@ -70,14 +72,13 @@ public sealed class TurnRunner : ITurnRunner
     private readonly TurnOptions _options;
     private readonly ToolsOptions _toolsOptions;
     private readonly TimeProvider _clock;
-    private readonly ITurnCancellation _cancellation;
-    private readonly ITurnQuestions _questions;
     private readonly ILogger<TurnRunner> _logger;
 
     public TurnRunner(
         IChatDatabaseProvider databases,
         IChatClientFactory clients,
         IConversationBus bus,
+        ITurnControlBus turnControl,
         IAgentLoop loop,
         IEnumerable<ITool> tools,
         IRagIndexProvider ragProvider,
@@ -86,13 +87,12 @@ public sealed class TurnRunner : ITurnRunner
         IOptions<TurnOptions> options,
         IOptions<ToolsOptions> toolsOptions,
         TimeProvider clock,
-        ITurnCancellation cancellation,
-        ITurnQuestions questions,
         ILogger<TurnRunner> logger)
     {
         _databases = databases ?? throw new ArgumentNullException(nameof(databases));
         _clients = clients ?? throw new ArgumentNullException(nameof(clients));
         _bus = bus ?? throw new ArgumentNullException(nameof(bus));
+        _turnControl = turnControl ?? throw new ArgumentNullException(nameof(turnControl));
         _loop = loop ?? throw new ArgumentNullException(nameof(loop));
         ArgumentNullException.ThrowIfNull(tools);
         _tools = tools.ToList();
@@ -102,8 +102,6 @@ public sealed class TurnRunner : ITurnRunner
         _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
         _toolsOptions = toolsOptions?.Value ?? throw new ArgumentNullException(nameof(toolsOptions));
         _clock = clock ?? throw new ArgumentNullException(nameof(clock));
-        _cancellation = cancellation ?? throw new ArgumentNullException(nameof(cancellation));
-        _questions = questions ?? throw new ArgumentNullException(nameof(questions));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -113,7 +111,7 @@ public sealed class TurnRunner : ITurnRunner
         ArgumentNullException.ThrowIfNull(job);
 
         // The turn's clock: the host token (shutdown) + the wall-clock cap, then
-        // the user-cancel source the registry links in (rest-api.md section stop).
+        // the control channel's Cancelled token linked in below (rest-api.md section stop).
         // The cap is the REMAINING budget measured from the plan-time anchor
         // (TurnJob.PlannedAt = the placeholder's CreatedAt), not a fresh window
         // from run start: readers and the planner's 409 gate age the row from
@@ -142,8 +140,17 @@ public sealed class TurnRunner : ITurnRunner
         // before this lifetime token fires.
         var deadline = _clock.GetUtcNow() + remaining;
 
-        using var registration = _cancellation.Register(TurnKey.From(job), lifetime.Token);
-        var token = registration.Token;
+        // The turn's control channel (chat-and-tools.md section detached turns): subscribe for the turn's
+        // lifetime and link the channel's Cancelled token into the turn token, so a user stop unwinds the
+        // loop reactively (the linked token cancels the in-flight model call) - no polling, no second
+        // connection. `since = job.PlannedAt` lets a cancel that arrived while the turn was still QUEUED
+        // trip it at subscribe time; an older cancel (a prior turn of this conversation) is ignored.
+        var scope = new ControlScope(StorageKeys.UserKey(job.Iss, job.Sub), job.Pid, job.ConversationId);
+        await using var control = await _turnControl
+            .SubscribeAsync(scope, job.PlannedAt, cancellationToken)
+            .ConfigureAwait(false);
+        using var combined = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token, control.Cancelled);
+        var token = combined.Token;
 
         var topic = new ConversationTopic(job.Iss, job.Sub, job.Pid, job.ConversationId);
 
@@ -158,7 +165,7 @@ public sealed class TurnRunner : ITurnRunner
                 .OpenAsync(job.Iss, job.Sub, job.Pid, token)
                 .ConfigureAwait(false);
 
-            await ExecuteTurnAsync(job, repo, topic, acc, deadline, token).ConfigureAwait(false);
+            await ExecuteTurnAsync(job, repo, control, topic, acc, deadline, token).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -168,10 +175,10 @@ public sealed class TurnRunner : ITurnRunner
             await FinalizeErrorAsync(job, topic, acc, "turn interrupted by shutdown").ConfigureAwait(false);
             throw;
         }
-        catch (OperationCanceledException) when (registration.IsUserCancelled)
+        catch (OperationCanceledException) when (control.Cancelled.IsCancellationRequested)
         {
-            // User stop: a normal outcome, not a fault - finalise cancelled with
-            // the partial content and do NOT rethrow.
+            // User stop (a cancel published to the turn's control channel tripped Cancelled): a normal
+            // outcome, not a fault - finalise cancelled with the partial content and do NOT rethrow.
             await FinalizeCancelledAsync(job, topic, acc).ConfigureAwait(false);
         }
         catch (Exception ex)
@@ -205,6 +212,7 @@ public sealed class TurnRunner : ITurnRunner
     private async Task ExecuteTurnAsync(
         TurnJob job,
         IChatRepository repo,
+        ITurnControlSubscription control,
         ConversationTopic topic,
         DeltaAccumulator acc,
         DateTimeOffset deadline,
@@ -231,7 +239,7 @@ public sealed class TurnRunner : ITurnRunner
         // The chat IToolHost, built ONCE for the turn: pre-scoped to this
         // conversation's object store (the canvas artifact tools) + the project's
         // RAG index (search_documents), carrying the turn deadline, a ChatToolUi for
-        // the human-interaction port (ask_user) wired to the question registry + the
+        // the human-interaction port (ask_user) wired to the turn's control channel + the
         // runner's own persist-then-publish emit, and a ChatToolDelegate over the same
         // IAgentLoop the turn runs (run_sub_agent).
         Task Emit(ChatEvent ev, CancellationToken ct) => EmitAsync(repo, topic, ev, ct);
@@ -250,9 +258,8 @@ public sealed class TurnRunner : ITurnRunner
         }
 
         var ui = new ChatToolUi(
-            _questions,
+            control,
             Emit,
-            new TurnKey(job.Iss, job.Sub, job.Pid, job.ConversationId),
             _clock,
             _options.AskUserTimeout,
             deadline);

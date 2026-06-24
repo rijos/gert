@@ -1,4 +1,5 @@
 using FluentValidation;
+using Gert.Model.Chat;
 using Gert.Model.Dtos;
 using Gert.Validation.Rules;
 
@@ -6,14 +7,16 @@ namespace Gert.Validation.Validators;
 
 /// <summary>
 /// Validates the chat message body (testing.md section 5): text max length, no
-/// null/whitespace-only, no control or bidi-override chars; model id a safe token; tools
-/// registered ids. The hot path - the first place untrusted chat content meets the system.
+/// null/whitespace-only, no control or bidi-override chars; model id a safe token allow-listed
+/// against the configured providers; tools registered ids. The hot path - the first place
+/// untrusted chat content meets the system.
 /// </summary>
 public sealed class SendMessageRequestValidator : AbstractValidator<SendMessageRequest>
 {
     public SendMessageRequestValidator(
         ToolTogglesValidator toolsValidator,
-        MessageAttachmentValidator attachmentValidator)
+        MessageAttachmentValidator attachmentValidator,
+        IModelIdCatalog? models = null)
     {
         ArgumentNullException.ThrowIfNull(toolsValidator);
         ArgumentNullException.ThrowIfNull(attachmentValidator);
@@ -53,12 +56,9 @@ public sealed class SendMessageRequestValidator : AbstractValidator<SendMessageR
             .When(r => r.Attachments is not null);
 
         RuleFor(r => r.ModelId!)
-            .Must(ValidationRules.IsSafeIdentifier)
-            .When(r => r.ModelId is not null)
-            .WithMessage("Model id must be a safe identifier token.")
-            .WithErrorCode("model_id.invalid");
+            .ModelId(models)
+            .When(r => r.ModelId is not null);
 
-        // TODO: allowlist model_id against the model catalog when it lands.
         RuleFor(r => r.Tools!).SetValidator(toolsValidator).When(r => r.Tools is not null);
 
         // IANA zone ids are short slash-joined name tokens ("Europe/Amsterdam",

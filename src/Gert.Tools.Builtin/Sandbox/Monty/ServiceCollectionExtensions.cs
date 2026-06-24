@@ -2,7 +2,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
-namespace Gert.Tools.Sandbox.Monty;
+namespace Gert.Tools.Builtin.Sandbox.Monty;
 
 /// <summary>
 /// DI registration for the <c>Monty</c> code-sandbox IMPLEMENTATION plugin (tech-stack.md

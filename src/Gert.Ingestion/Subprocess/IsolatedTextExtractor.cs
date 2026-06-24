@@ -228,7 +228,7 @@ public sealed class IsolatedTextExtractor : ITextExtractor
     /// UTF-8 - a truncated multi-byte tail degrades to a replacement char, which
     /// <see cref="ParseHelperOutput"/> then rejects as invalid JSON (that document fails, the host is fine).
     /// </summary>
-    private static async Task<string> ReadCappedAsync(Stream stream, long maxBytes, CancellationToken cancellationToken)
+    internal static async Task<string> ReadCappedAsync(Stream stream, long maxBytes, CancellationToken cancellationToken)
     {
         var cap = (int)Math.Min(maxBytes, int.MaxValue);
         using var buffer = new MemoryStream();

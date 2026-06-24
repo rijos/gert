@@ -7,18 +7,21 @@ using Gert.Agent.Loop;
 using Gert.Database;
 using Gert.Model;
 using Gert.Model.Chat;
-using Gert.Model.Dtos;
 using Gert.Model.Events;
 using Gert.Model.Rag;
 using Gert.Rag;
 using Gert.Service.Chat;
 using Gert.Service.Chat.Bus;
+using Gert.Storage;
 using Gert.Testing;
 using Gert.Testing.Fakes;
 using Gert.Tools;
 using Gert.Tools.Builtin;
 using Gert.Tools.Hosting;
+using Gert.TurnControl;
+using Gert.TurnControl.Local;
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -42,6 +45,8 @@ public sealed class TurnRunnerTests
     // validates the conversation id's shape (StorageKeys.ValidateConversationId).
     private const string Conv = "11111111-1111-1111-1111-111111111111";
     private const string AssistantId = "assistant-msg-1";
+    private const string Issuer = "https://idp.example";
+    private const string Subject = "sub-123";
 
     private readonly IChatRepository _repo = Substitute.For<IChatRepository>();
     private readonly IRagStore _ragRepo = Substitute.For<IRagStore>();
@@ -49,12 +54,17 @@ public sealed class TurnRunnerTests
     private readonly IRagIndexProvider _ragProvider = Substitute.For<IRagIndexProvider>();
     private readonly IConversationBus _bus = Substitute.For<IConversationBus>();
 
+    // The real in-process control plane: the runner subscribes for the turn's lifetime; the cancel /
+    // ask_user tests publish to TurnScope through this same instance (the single-process host shape).
+    private readonly ITurnControlBus _control = BuildControlBus();
+
     private readonly List<TurnEvent> _published = [];
     private readonly List<TurnEventRecord> _appended = [];
     private readonly List<string> _protocol = []; // ordered "append:N" / "publish:N" markers
     private readonly List<ToolCall> _toolRows = [];
     private readonly List<(string Content, MessageStatus Status, int? TokenCount)> _streamUpdates = [];
     private readonly List<(string Content, MessageStatus Status, int? TokenCount, string? Reasoning, long? DurationMs, int? ContextTokens)> _finalized = [];
+
     private IReadOnlyList<Citation>? _insertedCitations;
     private long _seq = 2; // plan time allocated 1 (user) and 2 (assistant)
 
@@ -136,34 +146,39 @@ public sealed class TurnRunnerTests
 
     private IReadOnlyList<ChatEvent> Events => _published.Select(p => p.Event).ToList();
 
-    // The ask_user registry the runner wires into its ChatToolUi; the round-trip
-    // test answers through this same instance.
-    private readonly TurnQuestions _questions = new();
+    private static ITurnControlBus BuildControlBus() =>
+        new ServiceCollection()
+            .AddSingleton(TimeProvider.System)
+            .AddGertTurnControlLocal()
+            .BuildServiceProvider()
+            .GetRequiredService<ITurnControlBus>();
+
+    // The runner subscribes under (userKey, pid, conversation); the cancel/answer tests address the
+    // same scope (the user key is derived from the job's iss/sub exactly as the runner derives it).
+    private static ControlScope TurnScope =>
+        new(StorageKeys.UserKey(Issuer, Subject), Pid, Conv);
 
     private TurnRunner NewRunner(
         IChatClient model,
         IEnumerable<ITool>? tools = null,
         TurnOptions? options = null,
         TimeProvider? clock = null,
-        ITurnCancellation? cancellation = null,
         ILogger<TurnRunner>? logger = null)
     {
         // The real loop, run inline by the runner, so the chat-shell tests still exercise the tee path.
         var loop = new AgentLoop(clock ?? TimeProvider.System, NullLogger<AgentLoop>.Instance);
         return new TurnRunner(
-            _chatProvider, new FixedChatClientFactory(model), _bus,
+            _chatProvider, new FixedChatClientFactory(model), _bus, _control,
             loop,
             tools ?? [],
             // The runner now builds the project RAG + document resources + sub-agent
             // delegate itself; the RAG index provider, object store, and embedding client
-            // are its own deps.
+            // are its own deps. Cancel/answer ride the ITurnControlBus control plane (_control),
+            // which the runner subscribes to per turn.
             _ragProvider, new FakeObjectStore(), new FakeEmbeddings(),
             Options.Create(options ?? new TurnOptions()),
             Options.Create(new ToolsOptions()),
             clock ?? TimeProvider.System,
-            cancellation ?? new TurnCancellation(
-                Options.Create(options ?? new TurnOptions()), clock ?? TimeProvider.System),
-            _questions,
             logger ?? NullLogger<TurnRunner>.Instance);
     }
 
@@ -173,8 +188,8 @@ public sealed class TurnRunnerTests
         IReadOnlySet<string>? allowed = null,
         DateTimeOffset? plannedAt = null) => new()
     {
-        Iss = "https://idp.example",
-        Sub = "sub-123",
+        Iss = Issuer,
+        Sub = Subject,
         Username = "tester",
         AllowedToolIds = allowed ?? offered?.Select(t => t.Id).ToHashSet(StringComparer.Ordinal) ?? new HashSet<string>(),
         Pid = Pid,
@@ -394,34 +409,34 @@ public sealed class TurnRunnerTests
     [Fact]
     public async Task User_cancel_finalizes_as_cancelled_with_the_partial_content()
     {
-        var registry = new TurnCancellation(Options.Create(new TurnOptions()), TimeProvider.System);
+        // The runner links the control channel's Cancelled token into the turn token (no polling): the
+        // model streams "tok " forever, respecting cancellation between tokens. Once the test publishes
+        // a cancel to the turn's scope, the live subscription trips Cancelled, the combined token
+        // cancels the in-flight stream, and the loop unwinds reactively - the partial content is
+        // whatever streamed before the cancel (it starts with the first token).
         var job = NewJob("hello");
-        var key = TurnKey.From(job);
 
-        // DeltaFlushInterval=0 so the partial text publishes the moment the tee processes it: the
-        // loop runs on a background task now, so the test must synchronise on the delta actually being
-        // teed (acc non-empty) before cancelling, not merely on message_start.
         var turn = NewRunner(
-                new NeverFinishingModel(),
-                cancellation: registry,
+                new StreamingForeverModel(),
                 options: new TurnOptions { DeltaFlushInterval = TimeSpan.Zero })
             .RunAsync(job);
 
-        // Wait until the streamed text has been teed (its delta published), then stop the turn.
+        // Wait until the first token has been teed (its delta published) - the turn is now streaming, so
+        // its control subscription is live - then publish the cancel.
         var deadline = DateTime.UtcNow.AddSeconds(5);
         while (!_published.Any(p => p.Event is DeltaEvent) && DateTime.UtcNow < deadline)
         {
             await Task.Delay(10);
         }
 
-        registry.Cancel(key).Should().BeTrue();
+        await _control.PublishCancelAsync(TurnScope);
         await turn; // a user cancel is a normal outcome - no throw
 
-        // The row finalised cancelled with everything that streamed, and the log
+        // The row finalised cancelled with the partial content that streamed, and the log
         // ends in the terminal `cancelled` event - never an error.
         var final = _streamUpdates.Last();
         final.Status.Should().Be(MessageStatus.Cancelled);
-        final.Content.Should().Be("thinking... ");
+        final.Content.Should().StartWith("tok ");
         Events.Last().Should().BeOfType<CancelledEvent>();
         Events.Should().NotContain(e => e is ErrorEvent);
         Events.Should().NotContain(e => e is MessageEndEvent);
@@ -462,9 +477,9 @@ public sealed class TurnRunnerTests
     {
         // End to end over the shared fixture ("ask me which color"): the REAL
         // AskUserTool through the runner - it drives the runner's ChatToolUi,
-        // so question_asked is emitted and durable, the registry answer resolves
-        // the wait, question_answered + the after_tool reply land, and the
-        // persisted row carries {answered, answer} for the thread GET rebuild.
+        // so question_asked is emitted and durable, the answer submitted to the
+        // control bus resolves the wait, question_answered + the after_tool reply
+        // land, and the persisted row carries {answered, answer} for the thread GET rebuild.
         var tool = new AskUserTool(Gert.Testing.Proof.Validation);
 
         var turn = NewRunner(new FakeChatModel(), [tool])
@@ -482,10 +497,10 @@ public sealed class TurnRunnerTests
         asked.Questions.Single().Question.Should().Be("Which color?");
         asked.Questions.Single().Options.Should().Equal("red", "blue");
 
-        _questions.Answer(
-                new TurnKey("https://idp.example", "sub-123", Pid, Conv),
-                Proof.Of(new AnswerRequest { QuestionId = asked.QuestionId, Answers = ["blue"] }))
-            .Should().Be(AnswerOutcome.Delivered);
+        // Mirror the answer endpoint: submit the answer to the turn's scope under the server-minted id.
+        // The bus validates it against the open question and resolves the waiting ChatToolUi.
+        var outcome = await _control.SubmitAnswerAsync(TurnScope, asked.QuestionId, ["blue"]);
+        outcome.Should().Be(AnswerOutcome.Accepted);
 
         await turn;
 
@@ -869,6 +884,27 @@ public sealed class TurnRunnerTests
         {
             yield return Text("thinking... ");
             await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+        }
+    }
+
+    /// <summary>
+    /// Streams "tok " deltas forever on a short beat (the loop only forwards non-empty text as a
+    /// TextDelta - a silent model would only end on the wall clock), respecting cancellation between
+    /// tokens, so a cancel published to the turn unwinds the loop promptly.
+    /// </summary>
+    private sealed class StreamingForeverModel : ScriptedClient
+    {
+        public override async IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(
+            IEnumerable<ChatMessage> messages,
+            ChatOptions? options = null,
+            [EnumeratorCancellation] CancellationToken cancellationToken = default)
+        {
+            while (true)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                yield return Text("tok ");
+                await Task.Delay(TimeSpan.FromMilliseconds(2), cancellationToken).ConfigureAwait(false);
+            }
         }
     }
 }

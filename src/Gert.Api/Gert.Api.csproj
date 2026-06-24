@@ -22,6 +22,10 @@
          the Gert.Tools contracts). The host wires the impls; the service layer sees only contracts. -->
     <ProjectReference Include="..\Gert.Tools.Builtin\Gert.Tools.Builtin.csproj" />
     <ProjectReference Include="..\Gert.Ingestion\Gert.Ingestion.csproj" />
+    <!-- Turn control plane: the port (MessagesController publishes cancel/answer) + the in-process
+         impl the composition root wires (AddGertTurnControlLocal). A networked bus drops in here. -->
+    <ProjectReference Include="..\Gert.TurnControl\Gert.TurnControl.csproj" />
+    <ProjectReference Include="..\Gert.TurnControl.Local\Gert.TurnControl.Local.csproj" />
   </ItemGroup>
 
   <!-- Serilog NDJSON logging (operations.md section Logging format). Versions pinned

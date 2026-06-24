@@ -3,7 +3,7 @@ using Gert.Tools.Ports;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace Gert.Tools.Sandbox;
+namespace Gert.Tools.Builtin.Sandbox;
 
 /// <summary>
 /// Resolves the single <see cref="IPythonSandbox"/> backend the operator selected via

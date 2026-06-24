@@ -17,9 +17,10 @@ using Gert.Service.Chat;
 using Gert.Service.Ingestion;
 using Gert.Storage.Local;
 using Gert.Tools.Builtin;
-using Gert.Tools.Sandbox.GVisor;
-using Gert.Tools.Sandbox.Monty;
-using Gert.Tools.Search.SearXNG;
+using Gert.Tools.Builtin.Sandbox.GVisor;
+using Gert.Tools.Builtin.Sandbox.Monty;
+using Gert.Tools.Builtin.Search.SearXNG;
+using Gert.TurnControl.Local;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -107,12 +108,18 @@ builder.Services.AddHostedService<IngestionWorker>();
 builder.Services.AddGertServices();
 
 // Turn/agent execution engine (chat-and-tools.md section detached turns): the launcher,
-// the planner/runner, the agent + reusable loop, and the ask_user/cancel registries.
+// the planner/runner, and the agent + reusable loop.
 // Gert.Agent is the layer between the host and the service layer; AddGertAgent registers the
 // TurnLauncher (POST plans + enqueues and responds 202; the launcher runs the turn off-thread
 // under a global concurrency cap, so generation survives client disconnects). The TurnJob carries
 // (iss, sub, entitlement snapshot); the launcher seeds DetachedUserContext per scope.
 builder.Services.AddGertAgent();
+
+// The turn control plane (chat-and-tools.md section detached turns): the runner subscribes for
+// cancel + ask_user answers, the endpoints publish to the scope. Gert.TurnControl.Local is the
+// in-process default - swap it for a networked ITurnControlBus (Kafka/NATS) to split the agent
+// host from the chat API across instances; the engine + endpoints depend only on the port.
+builder.Services.AddGertTurnControlLocal();
 
 // Detached turn pipeline tunables (chat-and-tools.md section detached turns). The service
 // layer registers the defaults; the host binds configuration over them

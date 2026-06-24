@@ -2,7 +2,7 @@ using Gert.Model.Plugins;
 using Gert.Tools;
 using Gert.Tools.Ports;
 
-namespace Gert.Tools.Search;
+namespace Gert.Tools.Builtin.Search;
 
 /// <summary>
 /// A web-search plugin: builds the <see cref="IWebSearch"/> for one search

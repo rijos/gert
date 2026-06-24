@@ -1,6 +1,6 @@
 using System.Text.Json.Serialization;
 
-namespace Gert.Tools.Sandbox.Monty;
+namespace Gert.Tools.Builtin.Sandbox.Monty;
 
 /// <summary>
 /// Wire request to the monty sidecar's <c>/run</c> (snake_case JSON). Carries the code

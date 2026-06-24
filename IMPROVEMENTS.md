@@ -1,9 +1,10 @@
-# Improvements - 2026-06-23
+# Improvements - 2026-06-23 (follow-ups landed 2026-06-24)
 
-Findings and recommendations from a full-codebase sweep of branch `quality/audit-sweep`
-(code quality, doc/site sync, security, architecture). What was actionable and safe was
-applied on this branch; the rest is recommended below, prioritized. Security specifics live
-in [SECURITY-AUDIT.md](SECURITY-AUDIT.md).
+Findings from a full-codebase sweep of branch `quality/audit-sweep` (code quality, doc/site
+sync, security, architecture). Phases 1-4 applied the immediately-actionable fixes; a second
+pass then resolved the prioritized follow-ups (items 1, 3, 4, 5), leaving only item 2 deferred
+by decision. Everything done is listed below. Security specifics cite the findings F1-F12 in
+[docs/design/security.md](docs/design/security.md).
 
 ## Done on this branch
 
@@ -22,25 +23,51 @@ in [SECURITY-AUDIT.md](SECURITY-AUDIT.md).
   documented-but-nonexistent memory REST API.
 - **Security (commit "Phase 3").** Verified F1-F12 intact; fixed two defence-in-depth gaps
   (raw `ex.Message` reaching `document.Error`; the unbounded SearXNG response read).
-- **Architecture guard (this commit).** Added a `PluginArchitectureTests` case asserting each
+- **Architecture guard (commit "Phase 4").** Added a `PluginArchitectureTests` case asserting each
   assembly-split impl leaf never references `Gert.Service`, so the dead-ref class cannot return.
 
-## Recommended next (prioritized)
+The prioritized follow-ups below were then resolved in a second pass (items 1, 3, 4, 5);
+item 2 was deliberately deferred.
 
-### 1. Resolve the in-progress restructure (the README's own "scaffolding" concern)
+- **The control-plane port (item 1).** The "split the noun" refactor's deferred phases 6-7 landed:
+  the in-process `ITurnCancellation`/`ITurnQuestions` registries (plus the tombstones, the dual-CTS,
+  and `TurnKey`) are gone, replaced by **`ITurnControlBus`** (`Gert.TurnControl`) - a pub/sub control
+  plane the runner subscribes to per turn and the cancel/answer endpoints publish to, addressed by a
+  token-derived `ControlScope` (user key + project + conversation). The default `Gert.TurnControl.Local`
+  impl is in-process; a networked impl (Kafka/NATS) drops in behind the same port to split the agent
+  host from the chat API across instances - the port is that seam. Cancellation is reactive (the signal
+  trips the runner's linked token, no polling); a cancel that lands while the turn is queued is caught
+  at subscribe time against the turn's plan instant (the freshness boundary). Answer validation moved
+  into the bus, so the endpoints keep their HTTP contract (cancel is now fire-and-forget 202).
+  An interim `turn_control` `chat.db` table was tried first and then replaced by this port (the db
+  only reaches across instances on a shared filesystem and pays a poll latency). The refactor docs
+  (`refactor.md`/`refactor-meai.md`) had already been removed; the design docs + the design memory
+  are updated to match.
+- **Validation and startup robustness (item 3).** model_id allow-list: a new `IModelIdCatalog` port
+  in `Gert.Model.Chat` (implemented by the chat catalog, injected optionally into the five model_id
+  validators), so an unknown slug now 400s at the boundary instead of silently falling back - the
+  five duplicated TODOs are retired. Fail-closed options validation: `IValidateOptions` for the
+  embeddings and per-provider chat `Parameters` (a parseable absolute http(s) `BaseUrl`,
+  `Dimensions > 0`, non-negative timeout/retry) wired with `ValidateOnStart`, so a typo'd upstream
+  fails at boot with the named knob instead of on the first turn/upload. Unit tests added.
+- **Test-coverage tighteners (item 4).** The ten under-pinned controls now have tests: CSP
+  `script-src` no-`unsafe-inline`, a positive HSTS header, the extractor's bounded `ReadCappedAsync`,
+  an `appsettings.json` no-secret tripwire, `EnsureInlineAttachmentsFit`, `LocalObjectStore`
+  scope-root/rooted-key rejection, `UserProvisioner`, `DeletionRecoveryService`, the `web_fetch`
+  success-path transforms, and the tool-arg null/parse fallback.
+- **Organization and CI (item 5).** (a) The impl namespaces `Gert.Tools.{Fetch,Search,Sandbox}` were
+  renamed to `Gert.Tools.Builtin.*` (mirroring the assembly + folder; the `PluginArchitectureTests`
+  namespace keys were updated to match). (b) `check_links` now also gates the public `site/` HTML
+  (local links + `id`/`name` anchors). (c) The RAG-engine tests moved into a dedicated
+  `Gert.Rag.Sqlite.Tests` project, with the shared `ProviderFixture` relocated into `Gert.Testing`.
 
-The codebase sits on two overlapping refactors. The M.E.AI migration (`refactor-meai.md`) is
-**fully landed** and captured in `decisions.md` #13, yet the file is still tracked at the repo
-root labelled "Status: PLAN, not started." The "split the noun" refactor (`refactor.md`) is
-**half-applied**: the `AgentEvent`/`AgentResult` vocabulary moved to `Gert.Model.Agent`, but the
-structural targets (`IAgent`/`IAgentRun`/`Agent`/`ChannelSink`, the DB back-channel replacing the
-in-memory cancel/question registries, the queue/worker collapse) were never done - leaving a
-hybrid `Turn*`/`Agent*` naming layer in `Gert.Agent`.
-**Recommend:** delete or move `refactor-meai.md` to `.dev/`; for `refactor.md`, either finish the
-structural pass or re-scope the doc to what actually landed (and move it out of the tracked root).
-These are your planning docs, so they were left untouched here - this is a decision for you.
+## Deferred
 
 ### 2. Ship the two stubbed security-critical components
+
+Deferred by decision to a dedicated effort (both are large - a separate hardened helper binary; a
+full OCI runtime-spec writer needing a gVisor host). They fail closed today, so chat works without
+binary-document ingestion and Monty is the only operational sandbox backend.
 
 Both currently fail closed (safe today) but are load-bearing once enabled:
 - **`gert-extract` helper** (`IsolatedTextExtractor`): F7's privilege-drop / rlimits / no-network /
@@ -52,46 +79,13 @@ Both currently fail closed (safe today) but are load-bearing once enabled:
   `Gert:Tools:Sandbox:Type=GVisor` host cannot execute Python (it degrades to a tool error).
   Implement the bundle writer or make `IsAvailable`/`Build` surface "not implemented" explicitly.
 
-### 3. Validation and startup robustness
+## Note: developer environment
 
-- **`model_id` allowlist.** `SendMessageRequestValidator` (and four siblings) carry duplicated
-  TODOs to validate `model_id` against the provider catalog; it is never checked, so an unknown
-  slug silently falls back. Needs `IChatProviderCatalog` reachable from `Gert.Validation` - a
-  layering decision (validation depends only on `Gert.Model` + `Gert.Tools` today). Resolve the
-  layering, add one shared rule, retire the five TODOs.
-- **Fail-closed options validation.** Add `IValidateOptions<EmbeddingsParameters>` (and a
-  per-provider `ChatProviderParameters` validator) asserting a parseable absolute `BaseUrl`,
-  `Dimensions > 0`, and non-negative timeout/retry, wired with `ValidateOnStart`, so a typo'd
-  upstream fails at boot with a named knob instead of on the first turn/upload.
-
-### 4. Test-coverage tighteners
-
-Controls/behaviours below are correct but under-pinned (a regression would pass CI):
-CSP `script-src` negative assertion that `unsafe-inline` is absent; a positive HSTS-header test;
-a unit test for the extractor's bounded `ReadCappedAsync`; an `appsettings.json` no-secret
-tripwire; `EnsureInlineAttachmentsFit` (the inline-attachment budget gate); `LocalObjectStore`
-traversal-rejection (rooted/`..`/scope-root keys); `UserProvisioner` and `DeletionRecoveryService`;
-the `web_fetch` success-path transforms; and the stream parser's malformed-args fallback.
-
-### 5. Organization and CI
-
-- **Namespace vs folder in `Gert.Tools.Builtin`.** Impl types live in `Gert.Tools.*` namespaces
-  that read like the contracts assembly; a rename to `Gert.Tools.Builtin.*` (mirroring the
-  assembly + folder) would make impl namespaces clearly distinct. Mechanical, but verify
-  `PluginArchitectureTests` (which keys Search/Sandbox off `Gert.Tools.Search`/`Gert.Tools.Sandbox`
-  namespaces) stays green.
-- **`site/` is unguarded by CI.** `make check-links` covers tracked markdown but not the public
-  site HTML. Extend it (or add a small HTML link/anchor check) so the site cannot silently drift
-  again - the kind of drift this branch just repaired.
-- **RAG test home.** `Gert.Rag.Sqlite`'s tests live under `Gert.Database.Sqlite.Tests`; consider a
-  dedicated `Gert.Rag.Sqlite.Tests` project (or rename the combined one) for clarity.
-
-### 6. Developer environment (not a code issue)
-
-`make test`'s 4 `RateLimitingTests` failures on this machine are environmental: those tests force
-the Development environment (to enable the limiter), which loads dotnet user-secrets, and a local
-`Gert:Chat:Providers:nebius-cosmos3` entry is missing a `Context` value - so the fail-closed
-provider catalog rejects it at host startup. CI (no user-secrets) is unaffected. Fix locally by
-adding `Context` to that secret (or removing the incomplete provider). Optionally harden the
-tests: `AddGertFakes` overrides `IChatClientFactory` but not `IChatProviderCatalog`, so these
-Development-env tests stay coupled to the host machine's chat config.
+`make test` is fully green on this machine now, but the `RateLimitingTests` remain coupled to local
+chat config and can fail environmentally: they force the Development environment (to enable the
+limiter), which loads dotnet user-secrets, so a local `Gert:Chat:Providers:*` entry missing a
+`Context` value makes the fail-closed provider catalog reject it at host startup. CI (no
+user-secrets) is unaffected. If it recurs, fix locally by adding `Context` to that secret (or
+removing the incomplete provider). Optional hardening: `AddGertFakes` overrides `IChatClientFactory`
+but not `IChatProviderCatalog`, so these Development-env tests stay coupled to the host machine's
+chat config.

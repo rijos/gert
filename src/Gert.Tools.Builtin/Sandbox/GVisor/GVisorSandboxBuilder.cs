@@ -3,7 +3,7 @@ using Gert.Tools.Ports;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
-namespace Gert.Tools.Sandbox.GVisor;
+namespace Gert.Tools.Builtin.Sandbox.GVisor;
 
 /// <summary>
 /// The <c>GVisor</c> code-sandbox plugin (<see cref="IPythonSandboxBuilder"/>): builds a

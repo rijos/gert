@@ -1,4 +1,4 @@
-namespace Gert.Tools.Sandbox.GVisor;
+namespace Gert.Tools.Builtin.Sandbox.GVisor;
 
 /// <summary>
 /// Pure builder for the <c>runsc</c> invocation that runs one ephemeral Python sandbox

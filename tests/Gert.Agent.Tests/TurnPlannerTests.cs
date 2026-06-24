@@ -406,6 +406,70 @@ public sealed class TurnPlannerTests
     }
 
     [Fact]
+    public async Task Small_inline_text_attachment_fits_the_context_budget()
+    {
+        SeedConversation();
+        var catalog = Substitute.For<IChatProviderCatalog>();
+        catalog.SupportsTools(Arg.Any<string>()).Returns(true);
+        catalog.SupportsVision(Arg.Any<string>()).Returns(true);
+        catalog.ContextSize(Arg.Any<string>()).Returns(1000); // cap = 500 tokens
+
+        // ~40 base64 chars -> ~7 estimated tokens, well under the 500 cap.
+        var small = Convert.ToBase64String(new byte[30]);
+        var request = new SendMessageRequest
+        {
+            Content = "format",
+            Attachments = [new MessageAttachment { MimeType = "application/json", Data = small, Name = "tiny.json" }],
+        };
+
+        var act = () => NewPlanner(catalog: catalog).PlanAsync(Pid, Conv, Valid(request));
+        await act.Should().NotThrowAsync();
+    }
+
+    [Fact]
+    public async Task Oversized_inline_text_attachment_carries_the_too_large_code()
+    {
+        var catalog = Substitute.For<IChatProviderCatalog>();
+        catalog.SupportsTools(Arg.Any<string>()).Returns(true);
+        catalog.SupportsVision(Arg.Any<string>()).Returns(true);
+        catalog.ContextSize(Arg.Any<string>()).Returns(1000); // cap = 500 tokens
+
+        var big = Convert.ToBase64String(new byte[3000]); // ~750 tokens, over the cap
+        var request = new SendMessageRequest
+        {
+            Content = "format",
+            Attachments = [new MessageAttachment { MimeType = "application/json", Data = big, Name = "huge.json" }],
+        };
+
+        var act = () => NewPlanner(catalog: catalog).PlanAsync(Pid, Conv, Valid(request));
+
+        var ex = (await act.Should().ThrowAsync<Gert.Validation.ValidationException>()).Which;
+        ex.Result.Errors.Should().Contain(e => e.Code == "attachment.too_large_for_context");
+    }
+
+    [Fact]
+    public async Task An_image_attachment_does_not_count_against_the_inline_text_budget()
+    {
+        SeedConversation();
+        var catalog = Substitute.For<IChatProviderCatalog>();
+        catalog.SupportsTools(Arg.Any<string>()).Returns(true);
+        catalog.SupportsVision(Arg.Any<string>()).Returns(true);
+        catalog.ContextSize(Arg.Any<string>()).Returns(1000); // cap = 500 tokens
+
+        // Same byte budget that trips the text gate, but as an allowlisted image: its
+        // own count/size caps apply, so it is excluded here and the turn proceeds.
+        var big = Convert.ToBase64String(new byte[3000]);
+        var request = new SendMessageRequest
+        {
+            Content = "what is this?",
+            Attachments = [new MessageAttachment { MimeType = "image/png", Data = big }],
+        };
+
+        var act = () => NewPlanner(catalog: catalog).PlanAsync(Pid, Conv, Valid(request));
+        await act.Should().NotThrowAsync();
+    }
+
+    [Fact]
     public async Task Inline_attachment_is_not_gated_when_the_provider_context_is_unknown()
     {
         SeedConversation();

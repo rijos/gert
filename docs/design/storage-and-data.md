@@ -19,7 +19,8 @@ below are **per project** - there is one pair of databases per project, not per 
         │                          #   settings, and the PROJECT REGISTRY (see section user.db)
         └── projects/
             ├── default/           # lazily created; always present (the landing project)
-            │   ├── chat.db        # conversations, messages, tool calls, citations, chat objects
+            │   ├── chat.db        # conversations, messages, tool calls, citations, chat objects,
+            │   │                  #   and the turn-event replay log
             │   ├── rag.db         # sqlite-vec: documents, chunks, embeddings, FTS
             │   └── files/         # original uploaded files (server key files/{doc-id}, no extension)
             └── {project-id}/      # any further project - same shape, fully isolated
@@ -137,9 +138,11 @@ registry are rows in `user.db`, not files ([configuration](configuration.md)).
 > **The migrations are the authoritative DDL** -
 > `src/Gert.Database.Sqlite/Migrations/{user,chat}/*.sql` plus the RAG engine's
 > `src/Gert.Rag.Sqlite/Migrations/rag/*.sql`, applied per database by
-> `PRAGMA user_version`. Shown here is the **effective** schema after all migrations
-> (`user.db`, `chat.db`, and `rag.db` are each at v1: one squashed `001_init.sql` per
-> family is the whole history).
+> `PRAGMA user_version`. Shown here is the **effective** schema after all migrations.
+> `user.db`, `rag.db`, and `chat.db` are each at v1 (one squashed `001_init.sql`
+> per family). Cancel + `ask_user` answers are NOT persisted - they ride the
+> in-process `ITurnControlBus` control plane (chat-and-tools.md section detached
+> turns), not a `chat.db` table.
 
 ### `user.db`
 
@@ -272,6 +275,10 @@ CREATE TABLE turn_events (
     created_at      TEXT NOT NULL,
     PRIMARY KEY (conversation_id, seq)
 ) WITHOUT ROWID;
+
+-- Cancel + ask_user answers are NOT a chat.db table: they ride the in-process
+-- ITurnControlBus control plane (chat-and-tools.md section detached turns), to which
+-- the runner subscribes per turn and the endpoints publish.
 ```
 
 > **Pruning rule (for whenever log compaction is implemented - none exists

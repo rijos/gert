@@ -1,11 +1,11 @@
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
-using Gert.Tools.Search.SearXNG;
+using Gert.Tools.Builtin.Search.SearXNG;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
-namespace Gert.Tools.Fetch;
+namespace Gert.Tools.Builtin.Fetch;
 
 /// <summary>
 /// The SSRF-guarded server-side fetcher (security F5) used by the web-search summarize

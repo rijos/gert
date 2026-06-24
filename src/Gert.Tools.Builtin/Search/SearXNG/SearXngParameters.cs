@@ -1,4 +1,4 @@
-namespace Gert.Tools.Search.SearXNG;
+namespace Gert.Tools.Builtin.Search.SearXNG;
 
 /// <summary>
 /// The SearXNG connection (the <c>Parameters</c> bag of <see cref="SearXngOptions"/>, bound

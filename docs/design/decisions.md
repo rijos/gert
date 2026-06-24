@@ -167,6 +167,24 @@ parallelism? See [chat-and-tools section detached turns](chat-and-tools.md#detac
     `MaxTurnDuration` *remaining* from that instant, so a job that waited behind its lane
     can never outlive the reader-facing orphan/409 horizon and read as `error` while
     healthily running.
+  - **The control plane is a pub/sub port, not in-process registries or a db table (landed).**
+    Cancel and `ask_user` answers no longer ride in-memory registries
+    (`ITurnCancellation`/`ITurnQuestions`, keyed by `TurnKey`, with tombstones + a dual-CTS) -
+    those are deleted. They ride **`ITurnControlBus`** (`Gert.TurnControl`): the runner
+    **subscribes** to its conversation's control channel for the turn's lifetime and links the
+    channel's cancel token into the turn token; the `cancel`/`answer` endpoints **publish** to
+    that scope (addressed by the token-derived user key + project + conversation) without knowing
+    which instance runs the turn. The default impl is in-process (`Gert.TurnControl.Local`); a
+    networked impl (Kafka/NATS) drops in behind the same port to split the agent host from the
+    chat API across instances - the port is that seam. Cancellation is **reactive** (the signal
+    trips the linked token, no polling); a cancel that lands while the turn is still queued is
+    retained and caught at subscribe time, judged against the turn's plan instant (the freshness
+    boundary that replaced the registry tombstone TTL). Answer validation (count + closed-option
+    membership) is the bus's job, so the endpoint keeps its 202/404/400 contract. (This was
+    phases 6+7 of the split-the-noun `Gert.Agent` refactor; an interim `turn_control` `chat.db`
+    table was tried and then replaced by this port - the db only reaches across instances on a
+    shared filesystem and pays a poll latency, where the bus is the transport the host-split
+    future actually needs.)
   - *Rejected:* per-conversation FIFO lanes (the sharded `ChannelTurnQueue` + `TurnWorker` the
     cap superseded) - the gate index already serializes a conversation, so the lanes closed a
     race nobody can hit and only added a `TurnKey`-hash sharding layer; an unbounded `Task.Run`

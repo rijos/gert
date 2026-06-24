@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <!-- POCOs only (AskedQuestion is the answer-validation shape). The control-plane port stays at
+         the bottom of the graph so both the engine (Gert.Agent) and the host (Gert.Api) reference it. -->
+    <ProjectReference Include="..\Gert.Model\Gert.Model.csproj" />
+  </ItemGroup>
+
+</Project>

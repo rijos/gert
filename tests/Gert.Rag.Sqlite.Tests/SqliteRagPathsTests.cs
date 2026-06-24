@@ -5,7 +5,7 @@ using Gert.Testing;
 using Microsoft.Extensions.Options;
 using Xunit;
 
-namespace Gert.Database.Sqlite.Tests;
+namespace Gert.Rag.Sqlite.Tests;
 
 /// <summary>
 /// <see cref="SqliteRagPaths"/> effective-root resolution - the RAG engine's own

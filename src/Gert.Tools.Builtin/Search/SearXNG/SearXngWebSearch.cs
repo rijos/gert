@@ -1,12 +1,12 @@
 using Gert.Model;
 using Gert.Model.Tools;
 using Gert.Tools;
-using Gert.Tools.Fetch;
+using Gert.Tools.Builtin.Fetch;
 using Gert.Tools.Ports;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
-namespace Gert.Tools.Search.SearXNG;
+namespace Gert.Tools.Builtin.Search.SearXNG;
 
 /// <summary>
 /// Real <see cref="IWebSearch"/> over the SearXNG JSON API (chat-and-tools.md section web

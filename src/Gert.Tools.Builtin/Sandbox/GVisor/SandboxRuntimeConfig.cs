@@ -1,4 +1,4 @@
-namespace Gert.Tools.Sandbox.GVisor;
+namespace Gert.Tools.Builtin.Sandbox.GVisor;
 
 /// <summary>
 /// The security-relevant per-run configuration assembled by

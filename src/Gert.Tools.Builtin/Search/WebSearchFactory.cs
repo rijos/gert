@@ -3,7 +3,7 @@ using Gert.Tools.Ports;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace Gert.Tools.Search;
+namespace Gert.Tools.Builtin.Search;
 
 /// <summary>
 /// Resolves the single <see cref="IWebSearch"/> backend selected via <c>Gert:Tools:Search:Type</c>

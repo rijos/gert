@@ -242,6 +242,37 @@ public static class ValidationRules
     }
 
     /// <summary>
+    /// The model-id rule shared by every DTO that carries one (send/create/update conversation,
+    /// project defaults, settings): the safe-token shape <see cref="IsSafeIdentifier"/>, then an
+    /// allow-list against the configured providers (<paramref name="catalog"/>) so an unknown slug
+    /// 400s at the boundary instead of silently falling back to the default at resolve time. The
+    /// caller still gates with <c>.When(value is not null)</c> - a null model_id means "use the
+    /// default" and is always allowed. Permissive when no catalog is wired (zero-config dev).
+    /// </summary>
+    public static IRuleBuilderOptions<T, string> ModelId<T>(
+        this IRuleBuilder<T, string> rule, IModelIdCatalog? catalog)
+    {
+        return rule
+            .Must(IsSafeIdentifier)
+                .WithMessage("Model id must be a safe identifier token.")
+                .WithErrorCode("model_id.invalid")
+            .Must(id => IsKnownModelId(catalog, id))
+                .WithMessage("Model id is not a configured provider.")
+                .WithErrorCode("model_id.unknown");
+    }
+
+    /// <summary>
+    /// True if <paramref name="id"/> is an acceptable model_id: the <c>default</c> sentinel, or a
+    /// configured provider slug. Permissive (true) when <paramref name="catalog"/> is null or empty
+    /// - an unwired/zero-config catalog has nothing to allow-list against.
+    /// </summary>
+    public static bool IsKnownModelId(IModelIdCatalog? catalog, string id) =>
+        catalog is null
+        || catalog.ModelIds.Count == 0
+        || id == ChatProviderInfo.DefaultId
+        || catalog.ModelIds.Contains(id);
+
+    /// <summary>
     /// The lowercase (invariant) extension of <paramref name="filename"/> without the
     /// dot, or the empty string if there is none.
     /// </summary>

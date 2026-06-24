@@ -1,10 +1,10 @@
 using Gert.Tools;
-using Gert.Tools.Fetch;
+using Gert.Tools.Builtin.Fetch;
 using Gert.Tools.Ports;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
-namespace Gert.Tools.Search.SearXNG;
+namespace Gert.Tools.Builtin.Search.SearXNG;
 
 /// <summary>
 /// The <c>SearXNG</c> web-search plugin (<see cref="IWebSearchBuilder"/>): builds a

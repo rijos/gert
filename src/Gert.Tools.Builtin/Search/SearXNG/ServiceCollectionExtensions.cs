@@ -2,7 +2,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Http.Resilience;
 using Microsoft.Extensions.Options;
 
-namespace Gert.Tools.Search.SearXNG;
+namespace Gert.Tools.Builtin.Search.SearXNG;
 
 /// <summary>
 /// DI registration for the <c>SearXNG</c> web-search IMPLEMENTATION plugin (tech-stack.md

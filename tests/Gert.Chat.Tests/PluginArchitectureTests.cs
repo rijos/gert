@@ -6,8 +6,8 @@ using Gert.Database.Sqlite;
 using Gert.Model.Plugins;
 using Gert.Rag;
 using Gert.Rag.Sqlite;
-using Gert.Tools.Sandbox;
-using Gert.Tools.Search;
+using Gert.Tools.Builtin.Sandbox;
+using Gert.Tools.Builtin.Search;
 using Xunit;
 
 namespace Gert.Chat.Tests;
@@ -67,8 +67,8 @@ public sealed class PluginArchitectureTests
         new(
             Name: "Search",
             PluginInterface: typeof(IWebSearchBuilder),
-            IsContracts: t => t.Namespace == "Gert.Tools.Search",
-            IsImplLeaf: t => t.Namespace?.StartsWith("Gert.Tools.Search.", StringComparison.Ordinal) == true,
+            IsContracts: t => t.Namespace == "Gert.Tools.Builtin.Search",
+            IsImplLeaf: t => t.Namespace?.StartsWith("Gert.Tools.Builtin.Search.", StringComparison.Ordinal) == true,
             Registrars: [("AddGertSearchSearXNG", typeof(IWebSearchBuilder).Assembly)],
             AssemblySplit: null),
 
@@ -76,8 +76,8 @@ public sealed class PluginArchitectureTests
         new(
             Name: "Sandbox",
             PluginInterface: typeof(IPythonSandboxBuilder),
-            IsContracts: t => t.Namespace == "Gert.Tools.Sandbox",
-            IsImplLeaf: t => t.Namespace?.StartsWith("Gert.Tools.Sandbox.", StringComparison.Ordinal) == true,
+            IsContracts: t => t.Namespace == "Gert.Tools.Builtin.Sandbox",
+            IsImplLeaf: t => t.Namespace?.StartsWith("Gert.Tools.Builtin.Sandbox.", StringComparison.Ordinal) == true,
             Registrars:
             [
                 ("AddGertSandboxMonty", typeof(IPythonSandboxBuilder).Assembly),

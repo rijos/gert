@@ -7,7 +7,7 @@ using Gert.Tools.Ports;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
-namespace Gert.Tools.Sandbox.GVisor;
+namespace Gert.Tools.Builtin.Sandbox.GVisor;
 
 /// <summary>
 /// Real <see cref="IPythonSandbox"/> running <c>run_python</c> in an ephemeral gVisor

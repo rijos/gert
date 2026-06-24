@@ -57,7 +57,7 @@ public sealed class ModelsApiTests : IClassFixture<GertApiFactory>
                 // surfaced from Parameters:BaseUrl.
                 b.UseSetting("Gert:Chat:Providers:qwen3-27b-fp8-mtp:Name", "Qwen3-27B FP8");
                 b.UseSetting("Gert:Chat:DefaultProvider", "qwen3-27b-fp8-mtp");
-                b.UseSetting("Gert:Chat:Providers:qwen3-27b-fp8-mtp:Parameters:BaseUrl", ":8001");
+                b.UseSetting("Gert:Chat:Providers:qwen3-27b-fp8-mtp:Parameters:BaseUrl", "http://localhost:8001");
                 b.UseSetting("Gert:Chat:Providers:qwen3-27b-fp8-mtp:Capabilities:0", "tools");
                 b.UseSetting("Gert:Chat:Providers:qwen3-27b-fp8-mtp:Capabilities:1", "vision");
                 b.UseSetting("Gert:Chat:Providers:qwen3-27b-fp8-mtp:Context", "131072");
@@ -86,7 +86,7 @@ public sealed class ModelsApiTests : IClassFixture<GertApiFactory>
             Default = true,
             Capabilities = ["tools", "vision"],
             Context = 131072,
-            Endpoint = ":8001",
+            Endpoint = "http://localhost:8001",
         });
         qwen.SupportsTools.Should().BeTrue();
 

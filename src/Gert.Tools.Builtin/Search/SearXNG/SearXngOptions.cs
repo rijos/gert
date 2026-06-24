@@ -1,4 +1,4 @@
-namespace Gert.Tools.Search.SearXNG;
+namespace Gert.Tools.Builtin.Search.SearXNG;
 
 /// <summary>
 /// The web-search tool backend (<c>Gert:Tools:Search</c>): pick an implementation via

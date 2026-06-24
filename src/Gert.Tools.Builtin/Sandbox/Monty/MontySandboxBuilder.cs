@@ -3,7 +3,7 @@ using Gert.Tools.Ports;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
-namespace Gert.Tools.Sandbox.Monty;
+namespace Gert.Tools.Builtin.Sandbox.Monty;
 
 /// <summary>
 /// The <c>Monty</c> code-sandbox plugin (<see cref="IPythonSandboxBuilder"/>): builds a

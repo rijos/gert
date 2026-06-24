@@ -2,7 +2,7 @@ using System.Buffers.Binary;
 using System.Net;
 using System.Net.Sockets;
 
-namespace Gert.Tools.Fetch;
+namespace Gert.Tools.Builtin.Fetch;
 
 /// <summary>
 /// Pure, network-free SSRF policy (security F5). Answers two questions for the fetch path:

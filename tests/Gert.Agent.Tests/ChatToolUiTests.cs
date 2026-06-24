@@ -1,38 +1,30 @@
 using FluentAssertions;
-using Gert.Agent;
 using Gert.Agent.Hosting;
-using Gert.Model.Dtos;
 using Gert.Model.Events;
-using Gert.Testing;
-using Gert.Tools;
 using Gert.Tools.Ui;
+using Gert.TurnControl;
 using Xunit;
 
 namespace Gert.Agent.Tests;
 
 /// <summary>
-/// The chat loop's <see cref="IToolUi"/> (chat-and-tools.md section Ask the user) - the
-/// human-interaction machinery moved out of AskUserTool: question_asked emitted before the wait,
-/// an answer resolving AskAsync and emitting question_answered in order (releasing the key), the
-/// graceful timeout (no question_answered), the deadline-minus-grace wait cap, cancellation
-/// unwinding, and the one-question-per-turn rejection - all against a real TurnQuestions registry.
+/// The chat loop's <see cref="IToolUi"/> (chat-and-tools.md section Ask the user) - now an AWAIT over
+/// the turn's <see cref="ITurnControlSubscription"/>, the in-process control plane that replaced the
+/// poll-the-db back-channel. The contract the tests pin: question_asked emitted before the wait, an
+/// answer resolving AskAsync and emitting question_answered in order, the graceful timeout (no
+/// question_answered), the deadline-minus-grace wait cap, the question sealed on the way out, and
+/// cancellation unwinding with an OperationCanceledException. The fake subscription stands in for the
+/// bus: the test delivers an answer by completing the open question's waiter.
 /// </summary>
 public sealed class ChatToolUiTests
 {
-    private const string Pid = "default";
-    private const string Conv = "conv-1";
     private const string CallId = "call_ask_user_1";
 
-    private static readonly TurnKey Key = new("https://idp.example", "sub-123", Pid, Conv);
-
-    private readonly TurnQuestions _registry = new();
+    private readonly FakeSubscription _control = new();
     private readonly List<ChatEvent> _emitted = [];
 
     private static InteractionRequest OneOpen =>
         new(CallId, [new InteractionPrompt("again?", null, [], AllowFreeText: true)]);
-
-    private static QuestionPayload OneOpenPayload =>
-        new([new QuestionItem("again?", null, [], AllowFreeText: true)]);
 
     private Task EmitAsync(ChatEvent ev, CancellationToken token)
     {
@@ -49,9 +41,8 @@ public sealed class ChatToolUiTests
         TimeProvider? clock = null,
         DateTimeOffset? deadline = null) =>
         new(
-            _registry,
+            _control,
             EmitAsync,
-            Key,
             clock ?? TimeProvider.System,
             askUserTimeout ?? TimeSpan.FromMinutes(5),
             deadline);
@@ -69,14 +60,14 @@ public sealed class ChatToolUiTests
         var deadline = DateTime.UtcNow.AddSeconds(5);
         while (AskedEvent() is null && DateTime.UtcNow < deadline)
         {
-            await Task.Delay(10);
+            await Task.Delay(5);
         }
 
         return AskedEvent() ?? throw new InvalidOperationException("question_asked never emitted");
     }
 
     [Fact]
-    public async Task An_answer_resolves_with_both_events_in_order_and_releases_the_key()
+    public async Task An_answer_resolves_with_both_events_in_order()
     {
         var task = NewUi().AskAsync(new InteractionRequest(
             CallId,
@@ -90,11 +81,13 @@ public sealed class ChatToolUiTests
         only.Options.Should().Equal("red", "blue");
         only.AllowFreeText.Should().BeFalse();
 
+        // The bus learned the asked shape (so it can validate an answer) under the minted id.
+        _control.OpenQuestionId.Should().Be(asked.QuestionId);
+
         // question_answered must NOT precede the answer.
         _emitted.OfType<QuestionAnsweredEvent>().Should().BeEmpty();
 
-        _registry.Answer(Key, Proof.Of(new AnswerRequest { QuestionId = asked.QuestionId, Answers = ["blue"] }))
-            .Should().Be(AnswerOutcome.Delivered);
+        _control.DeliverAnswer("blue");
 
         var result = await task;
         result.Answered.Should().BeTrue();
@@ -108,8 +101,8 @@ public sealed class ChatToolUiTests
         // question_asked precedes question_answered.
         _emitted.IndexOf(asked).Should().BeLessThan(_emitted.IndexOf(answered));
 
-        // The key is released - the conversation's next question can open.
-        using var next = _registry.Open(Key, OneOpenPayload);
+        // The question was sealed on the way out (a late answer would 404).
+        _control.Closed.Should().BeTrue();
     }
 
     [Fact]
@@ -128,11 +121,7 @@ public sealed class ChatToolUiTests
             .Should().Equal("Which color?", "Anything else?", "Ship it?");
         asked.Questions[0].Header.Should().Be("Color");
 
-        _registry.Answer(Key, Proof.Of(new AnswerRequest
-        {
-            QuestionId = asked.QuestionId,
-            Answers = ["blue", "looks good", "later"],
-        })).Should().Be(AnswerOutcome.Delivered);
+        _control.DeliverAnswer("blue", "looks good", "later");
 
         var result = await task;
         result.Answered.Should().BeTrue();
@@ -151,8 +140,8 @@ public sealed class ChatToolUiTests
         result.Error.Should().BeNull();
         _emitted.OfType<QuestionAnsweredEvent>().Should().BeEmpty();
 
-        // The key is released even on timeout.
-        using var next = _registry.Open(Key, OneOpenPayload);
+        // The question is sealed even on timeout.
+        _control.Closed.Should().BeTrue();
     }
 
     [Fact]
@@ -175,7 +164,7 @@ public sealed class ChatToolUiTests
     }
 
     [Fact]
-    public async Task A_turn_cancel_unwinds_the_wait_and_releases_the_key()
+    public async Task A_turn_cancel_unwinds_the_wait_and_seals_the_question()
     {
         using var cts = new CancellationTokenSource();
         var task = NewUi().AskAsync(OneOpen, cts.Token);
@@ -184,24 +173,83 @@ public sealed class ChatToolUiTests
         cts.Cancel();
 
         await task.Invoking(t => t).Should().ThrowAsync<OperationCanceledException>();
-        using var next = _registry.Open(Key, OneOpenPayload);
-    }
 
-    [Fact]
-    public async Task A_second_ask_while_one_pends_returns_a_model_correctable_error()
-    {
-        using var occupied = _registry.Open(Key, OneOpenPayload);
-
-        var result = await NewUi().AskAsync(OneOpen);
-
-        result.Answered.Should().BeFalse();
-        result.Error.Should().Contain("already pending");
-        // The rejection emits nothing - the first question still owns the card.
-        AskedEvent().Should().BeNull();
+        // The cancel path still seals the question (the finally runs on CancellationToken.None).
+        _control.Closed.Should().BeTrue();
+        _emitted.OfType<QuestionAnsweredEvent>().Should().BeEmpty();
     }
 
     private sealed class FixedClock(DateTimeOffset now) : TimeProvider
     {
         public override DateTimeOffset GetUtcNow() => now;
+    }
+
+    /// <summary>
+    /// A fake <see cref="ITurnControlSubscription"/> backing only what the Ui touches: it records the
+    /// open question (id + shape) and hands the waiter a completion the test resolves with
+    /// <see cref="DeliverAnswer"/>, mirroring the bus delivering an accepted answer.
+    /// </summary>
+    private sealed class FakeSubscription : ITurnControlSubscription
+    {
+        private readonly CancellationTokenSource _cancel = new();
+        private readonly Lock _gate = new();
+        private TaskCompletionSource<IReadOnlyList<string>>? _slot;
+
+        public string? OpenQuestionId { get; private set; }
+
+        public bool Closed { get; private set; }
+
+        public CancellationToken Cancelled => _cancel.Token;
+
+        public void DeliverAnswer(params string[] answers)
+        {
+            lock (_gate)
+            {
+                _slot!.TrySetResult(answers);
+            }
+        }
+
+        public Task OpenQuestionAsync(
+            string questionId,
+            IReadOnlyList<AskedQuestion> questions,
+            CancellationToken cancellationToken = default)
+        {
+            lock (_gate)
+            {
+                OpenQuestionId = questionId;
+                _slot = new TaskCompletionSource<IReadOnlyList<string>>(TaskCreationOptions.RunContinuationsAsynchronously);
+            }
+
+            return Task.CompletedTask;
+        }
+
+        public Task<IReadOnlyList<string>> WaitForAnswerAsync(
+            string questionId,
+            CancellationToken cancellationToken = default)
+        {
+            TaskCompletionSource<IReadOnlyList<string>> slot;
+            lock (_gate)
+            {
+                slot = _slot!;
+            }
+
+            return slot.Task.WaitAsync(cancellationToken);
+        }
+
+        public Task CloseQuestionAsync(string questionId, CancellationToken cancellationToken = default)
+        {
+            lock (_gate)
+            {
+                Closed = true;
+            }
+
+            return Task.CompletedTask;
+        }
+
+        public ValueTask DisposeAsync()
+        {
+            _cancel.Dispose();
+            return ValueTask.CompletedTask;
+        }
     }
 }

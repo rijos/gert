@@ -1,6 +1,6 @@
 using FluentAssertions;
-using Gert.Tools.Search;
-using Gert.Tools.Search.SearXNG;
+using Gert.Tools.Builtin.Search;
+using Gert.Tools.Builtin.Search.SearXNG;
 using Xunit;
 
 namespace Gert.Tools.Builtin.Tests;

@@ -1,8 +1,8 @@
 using FluentAssertions;
 using Gert.Tools;
+using Gert.Tools.Builtin.Sandbox;
+using Gert.Tools.Builtin.Sandbox.GVisor;
 using Gert.Tools.Ports;
-using Gert.Tools.Sandbox;
-using Gert.Tools.Sandbox.GVisor;
 using Xunit;
 
 namespace Gert.Tools.Builtin.Tests;

@@ -16,6 +16,9 @@
     <!-- Tool capability contracts: ITool/ToolRegistry/ToolResult + the IToolHost seams the
          agent loop drives (Gert.Tools.Builtin implements them - never referenced here). -->
     <ProjectReference Include="..\Gert.Tools\Gert.Tools.csproj" />
+    <!-- Turn control-plane port: the runner subscribes for cancel + ask_user answers (the
+         Gert.TurnControl.Local impl wires in at the composition root - never referenced here). -->
+    <ProjectReference Include="..\Gert.TurnControl\Gert.TurnControl.csproj" />
     <!-- Fail-closed validation sub-layer: Validated<T>/IValidationProvider the planner consumes. -->
     <ProjectReference Include="..\Gert.Validation\Gert.Validation.csproj" />
   </ItemGroup>

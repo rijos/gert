@@ -1,6 +1,7 @@
 using FluentAssertions;
 using FluentValidation;
 using Gert.Model.Documents;
+using Gert.Model.Dtos;
 using Gert.Service;
 using Gert.Tools.Builtin;
 using Gert.Validation;
@@ -26,10 +27,12 @@ namespace Gert.Validation.Tests;
 ///
 /// <para><b>Discovery strategy.</b> The single, authoritative list of "the services a
 /// host calls" is the <see cref="IGertServices"/> hub. We walk its property types (the
-/// granular service interfaces) plus the two detached chat boundaries
-/// (<see cref="Gert.Agent.ITurnPlanner"/>, <see cref="Gert.Agent.ITurnQuestions"/>),
-/// then every method parameter. Route-param strings (<c>pid</c>, admin <c>{key}</c>)
-/// are not DTOs and are covered by <see cref="RouteParamValidationTests"/>.</para>
+/// granular service interfaces) plus the detached chat planner boundary
+/// (<see cref="Gert.Agent.ITurnPlanner"/>), then every method parameter. The ask_user
+/// answer body (<c>AnswerRequest</c>) is proven inline in the controller (which then submits
+/// to the <c>ITurnControlBus</c>), with no service interface to discover it through, so it is
+/// anchored into the net explicitly. Route-param strings (<c>pid</c>, admin <c>{key}</c>) are not
+/// DTOs and are covered by <see cref="RouteParamValidationTests"/>.</para>
 /// </summary>
 public sealed class FailClosedMetaTest
 {
@@ -194,18 +197,25 @@ public sealed class FailClosedMetaTest
             .ToList();
 
         // Chat is not on the hub (the detached turn pipeline injects its seams
-        // directly - chat-and-tools.md section detached turns), but its planner and the
-        // ask_user answer registry are still host-called boundaries that accept request
-        // DTOs: include them explicitly so SendMessageRequest / AnswerRequest never drop
-        // out of the net.
+        // directly - chat-and-tools.md section detached turns), but its planner is still a
+        // host-called boundary that accepts a request DTO (SendMessageRequest): include it
+        // explicitly so it never drops out of the net.
         serviceInterfaces.Add(typeof(Gert.Agent.ITurnPlanner));
-        serviceInterfaces.Add(typeof(Gert.Agent.ITurnQuestions));
 
-        return serviceInterfaces
+        var parameters = serviceInterfaces
             .SelectMany(svc => svc.GetMethods())
             .SelectMany(method => method.GetParameters())
             .Select(p => p.ParameterType)
             .ToList();
+
+        // The ask_user answer endpoint is no longer a service interface: cancel/answer ride the
+        // ITurnControlBus control plane, so MessagesController.Answer proves the body inline
+        // (_validation.Prove(request)) then submits to the bus, rather than handing a
+        // Validated<AnswerRequest> to a service. The proof + validator obligation is identical, so
+        // anchor AnswerRequest into the net explicitly here (no service-parameter discovers it anymore).
+        parameters.Add(typeof(Validated<AnswerRequest>));
+
+        return parameters;
     }
 
     /// <summary>The inner <c>T</c> of every <c>Validated&lt;T&gt;</c> service parameter.</summary>

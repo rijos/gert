@@ -1,4 +1,4 @@
-namespace Gert.Tools.Fetch;
+namespace Gert.Tools.Builtin.Fetch;
 
 /// <summary>
 /// Thrown when the SSRF guard (security F5) refuses a fetch - a non-http(s) scheme, a

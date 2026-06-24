@@ -266,7 +266,7 @@ stay inline in the bubble; nothing is ever extracted from prose.
 
 ### Detached turns
 
-**Where it lives.** The turn/agent EXECUTION engine - the `TurnLauncher`, the `TurnPlanner`/`TurnRunner`, the reusable `IAgentLoop`, the ask_user/cancel registries, and the chat tool-host wiring - is its own project **`Gert.Agent`**, a layer between the host and the service layer (host -> `Gert.Agent` -> `Gert.Service`, registered by `AddGertAgent`). The **request-facing read side** - the `ConversationBus`, `ConversationReader`, and `ConversationStreamer`, plus the shared turn vocabulary the readers also consume (`TurnOptions`, `MessageStatusRules`, `PromptOptions`, `TurnInProgressException`) - stays in `Gert.Service` (`Gert.Service.Chat`). `Gert.Service` does not reference `Gert.Agent` back; both edges are pinned by architecture tests ([tech-stack.md section Architecture](tech-stack.md#architecture)).
+**Where it lives.** The turn/agent EXECUTION engine - the `TurnLauncher`, the `TurnPlanner`/`TurnRunner`, the reusable `IAgentLoop`, the turn control plane (cancel + `ask_user` over `ITurnControlBus`, below), and the chat tool-host wiring - is its own project **`Gert.Agent`**, a layer between the host and the service layer (host -> `Gert.Agent` -> `Gert.Service`, registered by `AddGertAgent`). The **request-facing read side** - the `ConversationBus`, `ConversationReader`, and `ConversationStreamer`, plus the shared turn vocabulary the readers also consume (`TurnOptions`, `MessageStatusRules`, `PromptOptions`, `TurnInProgressException`) - stays in `Gert.Service` (`Gert.Service.Chat`). `Gert.Service` does not reference `Gert.Agent` back; both edges are pinned by architecture tests ([tech-stack.md section Architecture](tech-stack.md#architecture)).
 
 A turn is **detached from the request that started it**: `POST .../messages` only
 *plans* (validate -> materialize the conversation if new -> persist the user
@@ -358,17 +358,24 @@ against the turn exactly as before. On shutdown the launcher (an
 `IHostedService`) cancels in-flight runners (they error-finalise) and drains them
 within the shutdown window.
 
-**Scale-out.** The bus is per-process (live push is a latency optimization);
-the `turn_events` log + range endpoint are the cross-instance truth, so a
-client on another instance still sees everything - just less live. The
-*back-channel* (cancel, `ask_user` answers) is still in-process: the launcher is
-in-process, so the addressed turn always lives in this process, and the cancel /
-ask_user registries reach it directly (instant, no DB round-trip). A future
-multi-instance deployment would route the back-channel through a `chat.db`
-control table observed on the turn's sync beat - the same persist-then-publish
-substrate as the forward stream, at the cost of eventually-consistent (poll-cadence)
-cancellation; until Gert runs more than one API instance, the in-process path is
-correct and snappier.
+**Scale-out.** The conversation bus is per-process (live push is a latency
+optimization); the `turn_events` log + range endpoint are the cross-instance
+truth, so a client on another instance still sees everything - just less live. The
+*control plane* (cancel, `ask_user` answers) is a separate pub/sub port,
+**`ITurnControlBus`** (`Gert.TurnControl`). The runner **subscribes** to its
+conversation's control channel for the turn's lifetime and links the channel's
+cancel token into the turn token; `POST .../cancel` and `POST .../answer`
+**publish** to that channel without knowing which instance runs the turn ("throw
+it out there" - a live subscription picks it up, or nobody does). The default
+**`Gert.TurnControl.Local`** impl is in-process - publisher and subscriber are the
+same host - and is the degenerate single-process case of the same contract a
+networked impl (Kafka/NATS) would satisfy across instances, which is the seam for
+splitting the agent host from the chat API later. Cancellation is **reactive**:
+the published signal trips the runner's linked token and tears down the in-flight
+upstream stream at once, no polling. A cancel that arrives while the turn is still
+**queued** (no live subscription yet) is retained and caught the moment the runner
+subscribes, judged against the turn's plan instant so a stale cancel from a prior
+turn of the conversation never trips the live one - the freshness boundary.
 
 Only tools that are **(a) granted to the user by the `gert_tools` JWT entitlement, (b) enabled on the conversation, (c) requested in the body, and (d) usable by the model** (a catalog entry without tool capability is never advertised tools, whatever the toggles say) are offered - the entitlement is the hard ceiling (see [Auth -> Tool entitlements](auth.md#tool-entitlements-allowed-tools-in-the-jwt)), enforced at advertise time in the planner and re-checked at execution time against the job's plan-time snapshot. So flipping "Use my docs" off removes `search_documents` for that turn, and a user without the `sandbox` entitlement never gets `run_python` advertised regardless of toggles. The request's toggles ride each send and a changed set persists onto the conversation before the intersection is computed - so flipping a tool ON mid-conversation takes effect that very turn; the conversation set is the *reload-restore* state, not a creation-time ceiling.
 
@@ -629,19 +636,23 @@ machinery sits behind the
 `IToolUi` port (`host.Ui.AskAsync(InteractionRequest) -> InteractionResult`, in
 `Gert.Tools`), so `ask_user` depends on a contract, not the chat layer. The chat
 loop's `ChatToolUi` (constructed per tool call) is the impl that wires the port
-to the question registry and the wire events; an autonomous driver (sub-agent,
-headless) has no `Ui`, where the `RequiresHuman` tool is excluded at advertise
-time and fails its call closed at execution. The wire protocol below is
-unchanged - only the seam moved.
+to the turn's control channel (`ITurnControlSubscription`) and the wire events; an
+autonomous driver (sub-agent, headless) has no `Ui`, where the `RequiresHuman`
+tool is excluded at advertise time and fails its call closed at execution. The
+wire protocol below is unchanged - only the seam moved.
 
-No external world: `ChatToolUi` emits the questions as a single `question_asked`
-event (through the runner's own persist-then-publish emit), and the answers
-arrive through the singleton `ITurnQuestions` registry - the awaitable mirror of
-the cancel registry, keyed by the same tenant-scoped `TurnKey` - from
+No external world: `ChatToolUi` declares the asked questions to the control
+channel (`OpenQuestionAsync`, so an answer can be validated + routed to this turn)
+and emits them as a single `question_asked` event (through the runner's own
+persist-then-publish emit), then **awaits** the answer on the channel - a real
+completion the bus delivers, not a poll. The answer is submitted by
 [`POST .../answer`](rest-api.md#answer-a-question) as an `answers[]` in question
-order. Per question, `allow_free_text` defaults to true for an open question and
-false once `options` (max 8) are offered; a closed question's answer must be one
-of its options (a runtime check in `TurnQuestions`). The successful tool result
+order, and the bus is the validation boundary: `SubmitAnswerAsync` checks the
+answer's count + closed-option membership against the open question before
+delivering it, returning the outcome the endpoint maps to 202/404/400. Per
+question, `allow_free_text` defaults to true for an open
+question and false once `options` (max 8) are offered; a closed question's answer
+must be one of its options. The successful tool result
 pairs each question with its answer (`{answered:true, answers:[{question,
 answer}, ...]}`) so the model knows which reply belongs to which prompt.
 
@@ -655,9 +666,10 @@ turn-budget error finalize. A **timeout is a
 successful tool result** (`{"answered":false,"reason":"timeout"}`, card line
 "The user did not respond."), never a turn fault: on a detached (client-gone)
 turn the question simply expires and the turn continues - the detached-turn
-guarantee is preserved. A user **cancel** (`POST .../cancel`) cancels the
-wait and finalizes the turn `cancelled` like any other; the pending question is
-always released.
+guarantee is preserved. A user **cancel** (`POST .../cancel`) publishes to the
+turn's control channel; the runner's linked cancel token trips reactively -
+including during the otherwise-idle wait - which unwinds the wait and finalizes
+the turn `cancelled` like any other; the pending question is always released.
 
 **Replay.** A pending question lives only in `turn_events` (the `tool_calls`
 row lands when the call returns), so a reconnecting client recovers it through

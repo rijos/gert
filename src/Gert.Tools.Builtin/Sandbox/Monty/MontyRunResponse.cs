@@ -1,6 +1,6 @@
 using System.Text.Json.Serialization;
 
-namespace Gert.Tools.Sandbox.Monty;
+namespace Gert.Tools.Builtin.Sandbox.Monty;
 
 /// <summary>Wire response from the monty sidecar's <c>/run</c> (snake_case JSON).</summary>
 public sealed record MontyRunResponse

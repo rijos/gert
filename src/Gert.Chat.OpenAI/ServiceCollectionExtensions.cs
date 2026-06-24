@@ -47,6 +47,9 @@ public static class ServiceCollectionExtensions
             .ValidateOnStart();
         // Fail-closed Type discriminator: an unknown embeddings Type fails fast at startup.
         services.AddSingleton<IValidateOptions<EmbeddingsOptions>, EmbeddingsTypeValidator>();
+        // Fail-closed connection params: a typo'd BaseUrl, non-positive Dimensions, or a negative
+        // timeout/retry fails at boot with the named knob instead of on the first embedding call.
+        services.AddSingleton<IValidateOptions<EmbeddingsOptions>, EmbeddingsParametersValidator>();
 
         AddChat(services, configuration);
         AddEmbeddings(services);
@@ -70,6 +73,11 @@ public static class ServiceCollectionExtensions
         // Debug, key redacted.
         services.AddTransient<OpenAIWireLogger>();
 
+        // Fail-closed per-provider connection params: a typo'd BaseUrl or negative timeout/retry on
+        // any slug fails fast at startup (each slug's options carry ValidateOnStart below), naming
+        // the offending slug + knob instead of erroring on that provider's first turn.
+        services.AddSingleton<IValidateOptions<ChatProviderParameters>, ChatProviderParametersValidator>();
+
         foreach (var slug in OpenAISlugs(configuration))
         {
             // Each OpenAI provider slug carries its own connection + sampling as NAMED
@@ -77,7 +85,7 @@ public static class ServiceCollectionExtensions
             // its Parameters section; the synthesized zero-config "default" slug (no config
             // section) is configured from the embeddings base URL instead, so a bare boot still
             // has a real connection.
-            var bound = services.AddOptions<ChatProviderParameters>(slug);
+            var bound = services.AddOptions<ChatProviderParameters>(slug).ValidateOnStart();
             if (slug == ChatProviderInfo.DefaultId &&
                 configuration.GetSection($"{ChatProviderOptions.SectionName}:{slug}").Exists() == false)
             {
@@ -229,6 +237,76 @@ public static class ServiceCollectionExtensions
             }
 
             return ValidateOptionsResult.Success;
+        }
+    }
+
+    /// <summary>
+    /// Fail-closed <see cref="EmbeddingsParameters"/> check, run at startup over the registered
+    /// <see cref="EmbeddingsOptions"/> (configuration.md section 3): the connection must be an
+    /// absolute http(s) URL, the embedding dimension positive, and the resilience knobs
+    /// non-negative - a typo surfaces at boot, named, not on the first embedding call.
+    /// </summary>
+    private sealed class EmbeddingsParametersValidator : IValidateOptions<EmbeddingsOptions>
+    {
+        public ValidateOptionsResult Validate(string? name, EmbeddingsOptions options)
+        {
+            ArgumentNullException.ThrowIfNull(options);
+
+            var p = options.Parameters;
+            var label = $"{EmbeddingsOptions.SectionName}:Parameters";
+            var failures = ValidateConnection(label, p.BaseUrl, p.RequestTimeoutSeconds, p.RetryCount).ToList();
+            if (p.Dimensions <= 0)
+            {
+                failures.Add($"{label}:Dimensions must be a positive integer (got {p.Dimensions}).");
+            }
+
+            return failures.Count == 0 ? ValidateOptionsResult.Success : ValidateOptionsResult.Fail(failures);
+        }
+    }
+
+    /// <summary>
+    /// Fail-closed per-provider <see cref="ChatProviderParameters"/> check, run at startup over each
+    /// configured slug (<paramref name="name"/> is the slug): an absolute http(s) <c>BaseUrl</c> and
+    /// non-negative resilience knobs, so a misconfigured provider fails at boot with the slug + knob
+    /// named instead of erroring on its first turn.
+    /// </summary>
+    private sealed class ChatProviderParametersValidator : IValidateOptions<ChatProviderParameters>
+    {
+        public ValidateOptionsResult Validate(string? name, ChatProviderParameters options)
+        {
+            ArgumentNullException.ThrowIfNull(options);
+
+            var label = $"{ChatProviderOptions.SectionName}:{name ?? "?"}:Parameters";
+            var failures = ValidateConnection(
+                label, options.BaseUrl, options.RequestTimeoutSeconds, options.RetryCount).ToList();
+
+            return failures.Count == 0 ? ValidateOptionsResult.Success : ValidateOptionsResult.Fail(failures);
+        }
+    }
+
+    /// <summary>
+    /// The connection-knob checks shared by the embeddings and chat parameter validators: a
+    /// parseable absolute http(s) <c>BaseUrl</c> and non-negative timeout/retry. Each failure names
+    /// its full config key under <paramref name="label"/>.
+    /// </summary>
+    private static IEnumerable<string> ValidateConnection(
+        string label, string baseUrl, int requestTimeoutSeconds, int retryCount)
+    {
+        if (string.IsNullOrWhiteSpace(baseUrl)
+            || !Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri)
+            || (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
+        {
+            yield return $"{label}:BaseUrl must be an absolute http(s) URL (got '{baseUrl}').";
+        }
+
+        if (requestTimeoutSeconds < 0)
+        {
+            yield return $"{label}:RequestTimeoutSeconds must be non-negative (got {requestTimeoutSeconds}).";
+        }
+
+        if (retryCount < 0)
+        {
+            yield return $"{label}:RetryCount must be non-negative (got {retryCount}).";
         }
     }
 }

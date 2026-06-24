@@ -59,7 +59,7 @@ Where a new type goes (full map: [tech-stack section solution layout](tech-stack
   ```
 
   Services are `sealed class` with constructor-injected dependencies. Small identity keys are
-  `readonly record struct` (`TurnKey`, `ObjectScope`) - that is the *only* sanctioned struct use.
+  `readonly record struct` (`ControlScope`, `ObjectScope`) - that is the *only* sanctioned struct use.
 - A deliberate exception gets a justifying comment (`ToolToggles` is a class with hand-written
   equality because it needs dictionary semantics - the comment says so).
 - Public surfaces speak `IReadOnlyList<>` / `IReadOnlySet<>` / `IReadOnlyDictionary<>`, never

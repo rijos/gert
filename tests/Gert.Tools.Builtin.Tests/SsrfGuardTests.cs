@@ -1,7 +1,7 @@
 using System.Net;
 using FluentAssertions;
-using Gert.Tools.Fetch;
-using Gert.Tools.Search;
+using Gert.Tools.Builtin.Fetch;
+using Gert.Tools.Builtin.Search;
 using Xunit;
 
 namespace Gert.Tools.Builtin.Tests;

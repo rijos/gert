@@ -2,7 +2,7 @@ using Gert.Model.Plugins;
 using Gert.Tools;
 using Gert.Tools.Ports;
 
-namespace Gert.Tools.Sandbox;
+namespace Gert.Tools.Builtin.Sandbox;
 
 /// <summary>
 /// A code-sandbox plugin: builds the <see cref="IPythonSandbox"/> for one backend

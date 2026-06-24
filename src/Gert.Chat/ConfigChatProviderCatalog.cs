@@ -21,6 +21,7 @@ namespace Gert.Chat;
 public sealed class ConfigChatProviderCatalog : IChatProviderCatalog
 {
     private readonly IReadOnlyList<ChatProviderInfo> _infos;
+    private readonly IReadOnlySet<string> _modelIds;
 
     public ConfigChatProviderCatalog(IConfiguration configuration, IDefaultChatProvider? defaultProvider = null)
     {
@@ -67,7 +68,14 @@ public sealed class ConfigChatProviderCatalog : IChatProviderCatalog
         }
 
         _infos = ApplyDefaultSelection(entries, configuration[ChatProviderOptions.DefaultProviderKey]);
+
+        // The allow-list the validation layer (via IModelIdCatalog) checks model_id against.
+        // Ordinal to match Get's case-sensitive lookup, so the validator and the resolver agree.
+        _modelIds = _infos.Select(i => i.Id).ToHashSet(StringComparer.Ordinal);
     }
+
+    /// <inheritdoc />
+    public IReadOnlySet<string> ModelIds => _modelIds;
 
     // Mark exactly one entry as the cascade default, selected by Gert:Chat:DefaultProvider (a
     // provider slug). Unset -> the first entry (document order) wins via Default(). A name that

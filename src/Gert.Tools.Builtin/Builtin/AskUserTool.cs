@@ -14,7 +14,7 @@ namespace Gert.Tools.Builtin;
 /// cancelled. The typed-args base (<see cref="ToolCallModal{TArgs, TResult}"/>) parses and
 /// validates the <see cref="AskUserArgs"/> (the caps + the model-correctable errors live in
 /// <c>AskUserArgsValidator</c>); the tool owns only the answered/timeout result shape. The
-/// human-interaction machinery (the question registry, the wire events, the deadline budget)
+/// human-interaction machinery (the control channel, the wire events, the deadline budget)
 /// lives behind <see cref="IToolHost.Ui"/> (the chat loop's <c>ChatToolUi</c>), so the tool
 /// depends on the <see cref="IToolUi"/> contract, not the chat impl.
 /// <para>

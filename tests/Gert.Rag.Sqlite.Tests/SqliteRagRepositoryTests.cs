@@ -9,7 +9,7 @@ using Gert.Testing.Fakes;
 using Microsoft.Data.Sqlite;
 using Xunit;
 
-namespace Gert.Database.Sqlite.Tests;
+namespace Gert.Rag.Sqlite.Tests;
 
 /// <summary>
 /// Real temp <c>rag.db</c> with the real vendored <c>vec0</c> extension and FTS5.

@@ -6,12 +6,13 @@ namespace Gert.Validation.Validators;
 
 /// <summary>
 /// Validates <see cref="AnswerRequest"/> (rest-api.md section answer a question):
-/// the question id must be GUID-shaped - the registry mints ids with
+/// the question id must be GUID-shaped - the runner mints ids with
 /// <c>Guid.NewGuid().ToString("D")</c>, so anything else can only be noise - and
 /// the answers are human-authored text (one per asked question, 1..4) each held
 /// to the common safe-text bar with its own cap (they are echoed into the model
-/// prompt and the event log). Per-question option membership is a runtime check
-/// in <c>TurnQuestions</c> - the validator has no access to the pending payload.
+/// prompt and the event log). Per-question option membership is checked by the
+/// control bus (<c>AnswerValidation.Fits</c>) against the turn's open question - the
+/// validator has no access to it.
 /// </summary>
 public sealed class AnswerRequestValidator : AbstractValidator<AnswerRequest>
 {

@@ -1,4 +1,4 @@
-namespace Gert.Tools.Sandbox.GVisor;
+namespace Gert.Tools.Builtin.Sandbox.GVisor;
 
 /// <summary>
 /// The gVisor-specific knobs for the <c>run_python</c> sandbox - the <c>Parameters</c> bag of

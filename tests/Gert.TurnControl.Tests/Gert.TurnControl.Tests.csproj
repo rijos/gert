@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="$(TestSdkVersion)" />
+    <PackageReference Include="xunit.v3" Version="$(XunitV3Version)" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="$(XunitRunnerVersion)" />
+    <PackageReference Include="FluentAssertions" Version="$(FluentAssertionsVersion)" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The control-plane port (AnswerValidation, ControlScope, outcomes) + the in-process impl
+         under test (InProcessTurnControlBus is internal; the Local csproj grants this project IVT). -->
+    <ProjectReference Include="..\..\src\Gert.TurnControl\Gert.TurnControl.csproj" />
+    <ProjectReference Include="..\..\src\Gert.TurnControl.Local\Gert.TurnControl.Local.csproj" />
+  </ItemGroup>
+
+</Project>

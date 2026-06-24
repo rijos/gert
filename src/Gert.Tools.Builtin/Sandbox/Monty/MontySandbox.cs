@@ -7,7 +7,7 @@ using Gert.Tools.Ports;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
-namespace Gert.Tools.Sandbox.Monty;
+namespace Gert.Tools.Builtin.Sandbox.Monty;
 
 /// <summary>
 /// Real <see cref="IPythonSandbox"/> backed by the <b>monty</b> sidecar - Pydantic's minimal

@@ -33,14 +33,18 @@ code comments cite docs by section, so keep both ends accurate.
   ask-user contracts), `Gert.Tools.Hosting` (the `IToolHost`/`IToolDelegate`/`ToolLimits` seams),
   and `Gert.Tools.Ports` (the `IWebSearch`/`IWebFetcher`/`IPythonSandbox` external ports)) with
   impl `Gert.Tools.Builtin` (web search + sandbox backends, the built-in `ITool` implementations
-  under `Builtin/`, and the id-only `ToolRegistry` derived from them). The remaining adapters:
-  `Gert.Ingestion` (the md/txt + isolated pdf/docx text extractors), `Gert.Authentication`.
+  under `Builtin/`, and the id-only `ToolRegistry` derived from them); and `Gert.TurnControl` (the
+  turn control-plane port `ITurnControlBus`/`ITurnControlSubscription` + `ControlScope`/`AnswerValidation`,
+  the cancel + ask_user pub/sub seam) with impl `Gert.TurnControl.Local` (the in-process broker;
+  a networked Kafka/NATS impl is the seam for splitting the agent host from the chat API). The
+  remaining adapters: `Gert.Ingestion` (the md/txt + isolated pdf/docx text extractors), `Gert.Authentication`.
 - `Gert.Agent` - the turn/agent EXECUTION engine, a layer between the host and `Gert.Service`
   (host -> `Gert.Agent` -> `Gert.Service`): the `TurnLauncher` (an `IHostedService` that launches
   each planned turn on a detached task, bounds concurrency at `Gert:Turn:MaxConcurrentTurns`, and
   cancels/drains in-flight runners on shutdown), the
-  `TurnPlanner`/`TurnRunner`, the reusable `IAgentLoop`, the ask_user/cancel registries
-  (`ITurnQuestions`/`ITurnCancellation`), the worker-scope `DetachedUserContext`, and the chat
+  `TurnPlanner`/`TurnRunner`, the reusable `IAgentLoop`, the turn control plane (cancel + ask_user
+  over the `ITurnControlBus` port the runner subscribes to per turn), the worker-scope
+  `DetachedUserContext`, and the chat
   tool-host wiring (`Gert.Agent.Hosting`: `ChatToolHost`, `ProjectRagResource`, `ChatToolDelegate`
   over the shared loop). Registered by `AddGertAgent` (the host calls it right after
   `AddGertServices`). It drives `ITool` through the `Gert.Tools` contracts, not the impls.

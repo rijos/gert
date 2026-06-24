@@ -9,8 +9,10 @@ namespace Gert.Agent;
 
 /// <summary>
 /// DI wiring for the turn/agent execution engine (chat-and-tools.md section the tool loop):
-/// the worker + queue, the planner/runner, the reusable <see cref="IAgentLoop"/>, the
-/// ask_user/cancel registries, and the worker-scope <see cref="DetachedUserContext"/>.
+/// the worker + queue, the planner/runner, the reusable <see cref="IAgentLoop"/>, and the
+/// worker-scope <see cref="DetachedUserContext"/>. The turn control plane (cancel + ask_user
+/// answers) is an <c>ITurnControlBus</c> the host wires in at the composition root (like
+/// <c>ITurnQueue</c>), not registered here.
 /// Gert.Agent is the layer between the host and the service layer (host -> Gert.Agent ->
 /// Gert.Service); the request-facing read side (the bus + conversation reader/streamer) stays
 /// in <c>Gert.Service.Chat</c>. The host calls this right after <c>AddGertServices</c>; ports
@@ -22,8 +24,7 @@ public static class ServiceCollectionExtensions
     /// <summary>
     /// Register the Gert turn/agent engine. The planner + runner are caller-bound scoped
     /// consumers of <see cref="IUserContext"/> (they read/write the requester's per-user store,
-    /// so they must never outlive a scope); the loop + the cancel/question registries are
-    /// process-wide singletons (the in-process queue means the addressed turn always lives here).
+    /// so they must never outlive a scope); the loop is a process-wide singleton.
     /// </summary>
     public static IServiceCollection AddGertAgent(this IServiceCollection services)
     {
@@ -33,13 +34,10 @@ public static class ServiceCollectionExtensions
         // is self-contained; a host that can read the user.db project registry overrides it.
         services.TryAddScoped<IProjectInstructionsReader, NullProjectInstructionsReader>();
 
-        // The cancel registry is process-wide: the in-process queue means the
-        // addressed turn always lives here, so the cancel endpoint can reach it.
-        services.TryAddSingleton<ITurnCancellation, TurnCancellation>();
-        // The ask_user question registry mirrors the cancel registry: the
-        // waiting turn always lives in this process, so the answer endpoint
-        // can reach it here (chat-and-tools.md section Ask the user).
-        services.TryAddSingleton<ITurnQuestions, TurnQuestions>();
+        // Cancel + ask_user answers ride the ITurnControlBus control plane: the runner subscribes for
+        // the turn's lifetime, the endpoints publish to the scope. The bus impl (Gert.TurnControl.Local
+        // in-process by default) is host-wired at the composition root, so there is nothing to register
+        // here (chat-and-tools.md section detached turns).
 
         // The planner + runner are caller-bound (they read/write the requester's per-user store
         // via IUserContext), so they must be scoped - a singleton would capture one caller's

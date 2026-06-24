@@ -3,7 +3,7 @@ using Gert.Model;
 using Gert.Model.Tools;
 using Gert.Tools;
 
-namespace Gert.Tools.Search.SearXNG;
+namespace Gert.Tools.Builtin.Search.SearXNG;
 
 /// <summary>
 /// Pure parser for the SearXNG JSON search API response (<c>format=json</c>). Reads the

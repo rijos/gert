@@ -1,6 +1,6 @@
 using Gert.Chat.OpenAI;
-using Gert.Tools.Search;
-using Gert.Tools.Search.SearXNG;
+using Gert.Tools.Builtin.Search;
+using Gert.Tools.Builtin.Search.SearXNG;
 
 namespace Gert.Api.Logging;
 

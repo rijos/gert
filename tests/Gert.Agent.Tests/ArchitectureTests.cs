@@ -37,7 +37,8 @@ public class ArchitectureTests
                 "Gert.Storage.Local",
                 "Gert.Database.Sqlite",
                 "Gert.Database.Postgres",
-                "Gert.Rag.Sqlite")
+                "Gert.Rag.Sqlite",
+                "Gert.TurnControl.Local")
             .GetResult();
 
         Assert.True(

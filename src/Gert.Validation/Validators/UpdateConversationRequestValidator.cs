@@ -1,4 +1,5 @@
 using FluentValidation;
+using Gert.Model.Chat;
 using Gert.Model.Dtos;
 using Gert.Validation.Rules;
 
@@ -12,19 +13,16 @@ namespace Gert.Validation.Validators;
 /// </summary>
 public sealed class UpdateConversationRequestValidator : AbstractValidator<UpdateConversationRequest>
 {
-    public UpdateConversationRequestValidator(ToolTogglesValidator toolsValidator)
+    public UpdateConversationRequestValidator(ToolTogglesValidator toolsValidator, IModelIdCatalog? models = null)
     {
         ArgumentNullException.ThrowIfNull(toolsValidator);
 
         RuleFor(r => r.Title).OptionalSafeText(ValidationRules.ShortTextMax);
 
         RuleFor(r => r.ModelId!)
-            .Must(ValidationRules.IsSafeIdentifier)
-            .When(r => r.ModelId is not null)
-            .WithMessage("Model id must be a safe identifier token.")
-            .WithErrorCode("model_id.invalid");
+            .ModelId(models)
+            .When(r => r.ModelId is not null);
 
-        // TODO: allowlist model_id against the provider catalog when it lands.
         RuleFor(r => r.Tools!).SetValidator(toolsValidator).When(r => r.Tools is not null);
     }
 }

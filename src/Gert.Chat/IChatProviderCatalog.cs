@@ -9,9 +9,11 @@ namespace Gert.Chat;
 /// (<c>Gert:Chat:Providers</c>) in <c>Gert.Chat</c>; hosts without one fall back to
 /// <see cref="NullChatProviderCatalog"/> (empty, permissive). Returns only the
 /// secret-free <see cref="ChatProviderInfo"/>; the connection + sampling (and the F8
-/// api-key secret) stay host-side, reached by the chat-client factory.
+/// api-key secret) stay host-side, reached by the chat-client factory. Extends
+/// <see cref="IModelIdCatalog"/> so the validation layer can allow-list a request's model_id
+/// against the configured slugs through a Gert.Model port (no inward edge to Gert.Chat).
 /// </summary>
-public interface IChatProviderCatalog
+public interface IChatProviderCatalog : IModelIdCatalog
 {
     /// <summary>The catalog entries, in configured order.</summary>
     IReadOnlyList<ChatProviderInfo> List();
@@ -52,6 +54,9 @@ public interface IChatProviderCatalog
 /// <summary>Empty, permissive catalog - the default when no host wires a real one.</summary>
 public sealed class NullChatProviderCatalog : IChatProviderCatalog
 {
+    /// <inheritdoc />
+    public IReadOnlySet<string> ModelIds { get; } = new HashSet<string>();
+
     /// <inheritdoc />
     public IReadOnlyList<ChatProviderInfo> List() => [];
 

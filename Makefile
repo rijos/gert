@@ -68,7 +68,7 @@ lint-fix: ## Auto-fix ruff lint + format on the Python harness
 	cd $(SMOKE_DIR) && uv run ruff check --fix . && uv run ruff format .
 
 .PHONY: check-links
-check-links: ## Verify every relative link/anchor in tracked markdown resolves (CI gate)
+check-links: ## Verify every relative link/anchor in tracked markdown + site/ HTML resolves (CI gate)
 	python3 tools/check_links.py
 
 .PHONY: smoke-unit

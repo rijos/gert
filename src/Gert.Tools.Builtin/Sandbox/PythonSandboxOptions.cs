@@ -1,6 +1,6 @@
-using Gert.Tools.Sandbox.GVisor;
-using Gert.Tools.Sandbox.Monty;
-namespace Gert.Tools.Sandbox;
+using Gert.Tools.Builtin.Sandbox.GVisor;
+using Gert.Tools.Builtin.Sandbox.Monty;
+namespace Gert.Tools.Builtin.Sandbox;
 
 /// <summary>
 /// The <c>run_python</c> sandbox backend, behind the one
