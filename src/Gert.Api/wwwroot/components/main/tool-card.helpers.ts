@@ -2,17 +2,27 @@
 // values, so they carry no reactivity.
 import type { ToolCard as ToolCardRow } from "../../state/chat.js";
 import type { ToolKind } from "../../services/wire.js";
+import { availableTools } from "../../state/tools.js";
 
-// QuestionCard's reactive payload, folded onto an ask_user card by
-// services/chat.js. The card mutates `posting`/`expired` in place, so the fields
-// stay writable.
-export interface Question {
-  questionId: string;
+// One question (one tab) in a QuestionCard payload. `value` is the per-tab
+// answer collected before submit.
+export interface QuestionItem {
   text: string;
+  header: string;
   options: string[];
   allowFreeText: boolean;
+  value: string;
+}
+
+// QuestionCard's reactive payload, folded onto an ask_user card by
+// services/chat.js: one to four questions rendered as tabs, answered together.
+// The card mutates per-tab `value` plus `posting`/`answered`/`expired` in place,
+// so the fields stay writable.
+export interface Question {
+  questionId: string;
+  items: QuestionItem[];
   answered: boolean;
-  answer: string;
+  answers: string[];
   expired: boolean;
   posting: boolean;
 }
@@ -34,27 +44,33 @@ export interface Hit {
   score?: number;
 }
 
+// The card's icon comes from the server catalog descriptor (state/tools), keyed by tool id - the
+// same curated icons.ts key the menu uses, so cards and menu stay in lockstep with no hardcoded
+// kind->icon map. Cards only render for entitled tools (which are in the catalog); a kind not in
+// the catalog falls back to a neutral existing glyph.
 export const iconFor = (kind: ToolKind): string =>
-  ({
-    rag: "search",
-    search: "globe",
-    sandbox: "file",
-    todo: "checklist",
-    clock: "clock",
-    make_artifact: "file",
-    edit_artifact: "file",
-    read_artifact: "file",
-    ask_user: "user",
-    fetch: "globe",
-    memory: "brain",
-    sub_agent: "user",
-  } satisfies Record<ToolKind, string>)[kind];
+  availableTools.find((tool) => tool.id === kind)?.icon ?? "gear";
 
 // done/total over a card's todos ([] for non-todo cards).
 export const progress = (card: Card) => {
   const ts = card.todos || [];
   const done = ts.filter((t) => t.status === "done").length;
   return { ts, done, all: ts.length > 0 && done === ts.length };
+};
+
+// Whether the collapsible body would render anything - mirrors the body's render
+// conditions in tool-card.ts one-for-one. A still-running card whose arguments
+// haven't arrived yet has nothing to show, so the header click is a no-op (and
+// the cursor stops inviting it).
+export const hasContent = (card: Card): boolean => {
+  const q = card.question;
+  if (q && (q.answered || q.expired)) return true;
+  if (card.query && !q) return true;
+  if (((card.hits ?? []) as Hit[]).length) return true;
+  if (card.todos && card.todos.length) return true;
+  if (card.stdout) return true;
+  if (card.error) return true;
+  return false;
 };
 
 // The todo card's live header label: the current step while the list is being

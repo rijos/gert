@@ -440,7 +440,7 @@ The pieces:
   "the previous response is still finishing").
 - **The `pid()` helper.** Project-scoped services derive the project id from the store
   - `const pid = () => chat.activeProjectId.val;` - at the top of the module
-  (`conversations.js`, `documents.js`, `memory.js`). Components never assemble
+  (`conversations.js`, `documents.js`). Components never assemble
   `/projects/{pid}/...` paths.
 - **Services may call sibling services** (`projects.select` -> `conversations.list`);
   they never import a component.

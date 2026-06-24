@@ -1,7 +1,7 @@
 # Per-user storage & data model
 
 Data is owned by the filesystem at **two** levels of isolation: each **user** is a folder, and
-within it each **project** is a folder with its own `chat.db` + `rag.db` + memory, fully isolated
+within it each **project** is a folder with its own `chat.db` + `rag.db`, fully isolated
 from other projects ([configuration -> projects](configuration.md#2-projects)). The same
 "a connection only opens *this* folder's files" argument that isolates users
 ([principle #2](principles.md)) therefore isolates projects too. The conversation/RAG schemas
@@ -19,10 +19,10 @@ below are **per project** - there is one pair of databases per project, not per 
         │                          #   settings, and the PROJECT REGISTRY (see section user.db)
         └── projects/
             ├── default/           # lazily created; always present (the landing project)
-            │   ├── chat.db        # conversations, messages, tool calls, citations, artifacts
+            │   ├── chat.db        # conversations, messages, tool calls, citations, chat objects,
+            │   │                  #   and the turn-event replay log
             │   ├── rag.db         # sqlite-vec: documents, chunks, embeddings, FTS
-            │   ├── files/         # original uploaded files (server key files/{doc-id}, no extension)
-            │   └── memory/        # memory entries (markdown) -> embedded into this project's rag.db
+            │   └── files/         # original uploaded files (server key files/{doc-id}, no extension)
             └── {project-id}/      # any further project - same shape, fully isolated
 ```
 
@@ -62,7 +62,7 @@ public sealed class SqliteDatabasePaths(IOptions<StorageOptions> storage, IOptio
 
 // The RAG engine's SqliteRagPaths resolves rag.db the same way under ITS root (Gert:Rag:Parameters:
 // DataRoot, else Storage:DataRoot):  {ragRoot}/users/{key}/projects/{pid}/rag.db. The uploaded
-// files/ and memory/ directories are the object store's, under Storage:DataRoot.
+// files/ directory is the object store's, under Storage:DataRoot.
 ```
 
 > `(iss, sub)` come **only** from the validated token, never the request, and the fail-closed
@@ -115,7 +115,7 @@ separate provisioning ceremony:
    path stays read-only - no per-request write/WAL churn; `(iss, sub)` never changes) and seeds
    the **`default` project row** in the registry so the user always has a landing project.
 2. **Open project DBs lazily** (`IChatDatabaseProvider` / `IRagIndexProvider`) - a project's
-   `chat.db`/`rag.db` (and `files/`, `memory/`) materialise on first use, each applying its own
+   `chat.db`/`rag.db` (and `files/`) materialise on first use, each applying its own
    `Migrations/{chat,rag}/*.sql` by `PRAGMA user_version`.
 
 Past the gate the validated JWT is trusted: the folder key derives from the token and nothing
@@ -138,9 +138,11 @@ registry are rows in `user.db`, not files ([configuration](configuration.md)).
 > **The migrations are the authoritative DDL** -
 > `src/Gert.Database.Sqlite/Migrations/{user,chat}/*.sql` plus the RAG engine's
 > `src/Gert.Rag.Sqlite/Migrations/rag/*.sql`, applied per database by
-> `PRAGMA user_version`. Shown here is the **effective** schema after all migrations
-> (`user.db`, `chat.db`, and `rag.db` are each at v1: one squashed `001_init.sql` per
-> family is the whole history).
+> `PRAGMA user_version`. Shown here is the **effective** schema after all migrations.
+> `user.db`, `rag.db`, and `chat.db` are each at v1 (one squashed `001_init.sql`
+> per family). Cancel + `ask_user` answers are NOT persisted - they ride the
+> in-process `ITurnControlBus` control plane (chat-and-tools.md section detached
+> turns), not a `chat.db` table.
 
 ### `user.db`
 
@@ -160,7 +162,7 @@ CREATE TABLE user_meta (
 
 -- Single-row user settings (id pinned to 1); one JSON blob so the column set never
 -- has to track the UserSettings shape field-by-field (configuration.md section 3 - theme,
--- languages, default provider/tools, memory mode). Sampling is not here - it rides
+-- languages, default provider/tools). Sampling is not here - it rides
 -- the selected provider (configuration.md section providers), not user settings.
 CREATE TABLE settings (
     id            INTEGER PRIMARY KEY CHECK (id = 1),
@@ -246,16 +248,19 @@ CREATE TABLE citations (
     tool_call_id TEXT REFERENCES tool_calls(id) ON DELETE SET NULL  -- provenance (NULL = model-inline)
 );
 
-CREATE TABLE artifacts (
+-- Conversation-scoped stored objects (the canvas artifacts): create-or-overwrite by
+-- name, versioned on overwrite. The artifact tools (make/edit/read) reach these only
+-- through the tool host's IObjectResource (ResourceScope.Chat) - never a raw key.
+CREATE TABLE chat_objects (
     id              TEXT PRIMARY KEY,
     conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
-    message_id      TEXT REFERENCES messages(id) ON DELETE SET NULL,
     kind            TEXT NOT NULL,          -- md | html | svg | py | cs | cpp | js | rs  (the canvas tabs)
     name            TEXT NOT NULL,          -- decision.md, status.html...
-    language        TEXT,                   -- for code artifacts
     content         TEXT NOT NULL,
     version         INTEGER NOT NULL DEFAULT 1,
-    created_at      TEXT NOT NULL
+    created_at      TEXT NOT NULL,
+    updated_at      TEXT NOT NULL,
+    UNIQUE(conversation_id, name)           -- a name is the create-or-overwrite key
 );
 
 -- The durable streaming replay log (chat-and-tools.md section detached turns): the runner
@@ -270,6 +275,10 @@ CREATE TABLE turn_events (
     created_at      TEXT NOT NULL,
     PRIMARY KEY (conversation_id, seq)
 ) WITHOUT ROWID;
+
+-- Cancel + ask_user answers are NOT a chat.db table: they ride the in-process
+-- ITurnControlBus control plane (chat-and-tools.md section detached turns), to which
+-- the runner subscribes per turn and the endpoints publish.
 ```
 
 > **Pruning rule (for whenever log compaction is implemented - none exists
@@ -292,8 +301,6 @@ CREATE TABLE documents (
     status      TEXT NOT NULL,              -- processing | ready | failed  (the pills)
     chunk_count INTEGER NOT NULL DEFAULT 0,
     error       TEXT,                       -- "no extractable text" (old-scan.pdf)
-    kind        TEXT NOT NULL DEFAULT 'document', -- document | memory   (configuration.md section 2.3)
-    pinned      INTEGER NOT NULL DEFAULT 0,       -- memory entries: always injected, not just retrieved
     created_at  TEXT NOT NULL
 );
 

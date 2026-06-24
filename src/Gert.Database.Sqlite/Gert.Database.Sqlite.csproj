@@ -2,10 +2,11 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Gert.Database\Gert.Database.csproj" />
-    <ProjectReference Include="..\Gert.Service\Gert.Service.csproj" />
     <ProjectReference Include="..\Gert.Model\Gert.Model.csproj" />
-    <!-- AddGertSqliteStorage registers the whole storage/database seam in one call
-         (dotnet-style-guide.md section 4), including the local object/user stores. -->
+    <!-- Gert.Storage: the shared StorageKeys / StorageOptions key + path policy the engine resolves
+         user/project db paths from (this assembly does NOT register the object store - that is the
+         separate Gert.Storage.Local concern). AddGertDatabaseSqlite registers the database engine
+         plugin in one call (dotnet-style-guide.md section 4). -->
     <ProjectReference Include="..\Gert.Storage\Gert.Storage.csproj" />
   </ItemGroup>
 
@@ -16,7 +17,7 @@
     <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="$(SQLitePCLRawBundleVersion)" />
     <PackageReference Include="Dapper" Version="$(DapperVersion)" />
     <PackageReference Include="Microsoft.Extensions.Options" Version="$(MicrosoftExtensionsOptionsVersion)" />
-    <!-- AddOptions<T>().Bind(section) for AddGertSqliteStorage (dotnet-style-guide.md section 4). -->
+    <!-- AddOptions<T>().Bind(section) for AddGertDatabaseSqlite (dotnet-style-guide.md section 4). -->
     <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="$(MicrosoftExtensionsOptionsVersion)" />
     <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" Version="$(MicrosoftExtensionsConfigVersion)" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="$(MicrosoftExtensionsLoggingVersion)" />

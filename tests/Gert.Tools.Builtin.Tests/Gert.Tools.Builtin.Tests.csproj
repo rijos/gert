@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="$(TestSdkVersion)" />
+    <PackageReference Include="xunit.v3" Version="$(XunitV3Version)" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="$(XunitRunnerVersion)" />
+    <PackageReference Include="NSubstitute" Version="$(NSubstituteVersion)" />
+    <PackageReference Include="FluentAssertions" Version="$(FluentAssertionsVersion)" />
+    <!-- ToolRegistrationTests resolves the IValidator<ToolToggles> from the
+         production wiring to prove the moved tool ids are accepted by the toggle
+         validator. -->
+    <PackageReference Include="FluentValidation" Version="$(FluentValidationVersion)" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Gert.Tools.Builtin\Gert.Tools.Builtin.csproj" />
+    <ProjectReference Include="..\..\src\Gert.Service\Gert.Service.csproj" />
+    <ProjectReference Include="..\Gert.Testing\Gert.Testing.csproj" />
+  </ItemGroup>
+
+</Project>

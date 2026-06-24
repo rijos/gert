@@ -92,8 +92,8 @@ def test_code_artifact_shows_only_the_numbered_preview(
 def test_ask_user_question_card_renders_options_and_answered_state(
     page: Page, base_url: str
 ) -> None:
-    """The ask list: question text + one button per option + the free-text
-    input while pending; flipping to answered highlights the chosen option and
+    """The single-question card: question text + one button per option + the
+    free-text input while pending; flipping to answered echoes the answer and
     retires the inputs (the wire driving that flip is the question_answered
     event - covered by the LLM-tools E2E; this pins the visual contract)."""
     page.goto(f"{base_url}/tests/harness.html")
@@ -103,27 +103,81 @@ def test_ask_user_question_card_renders_options_and_answered_state(
             const { reactive } = await import('/lib/van-x.js');
             window.__q = reactive({
                 questionId: 'q-harness-1',
-                text: 'Which database do you prefer?',
-                options: ['sqlite-vec', 'qdrant', 'pgvector'],
-                allowFreeText: true,
-                answered: false, answer: null, expired: false, posting: false,
+                items: [{
+                    text: 'Which database do you prefer?',
+                    header: '',
+                    options: ['sqlite-vec', 'qdrant', 'pgvector'],
+                    allowFreeText: true,
+                    value: '',
+                }],
+                answered: false, answers: [], expired: false, posting: false,
             });
             window.__mount(QuestionCard(window.__q));
         }"""
     )
     card = page.locator(".qcard")
     expect(card).to_be_visible()
+    # A single question shows no tab strip - just the one prompt.
+    expect(card.locator(".qtab")).to_have_count(0)
     expect(card.locator(".qtext")).to_contain_text("Which database")
     expect(card.locator(".qopt")).to_have_count(3)
     expect(card.locator(".qinput")).to_be_visible()
+    expect(card.locator(".qsend")).to_have_text("Answer")
 
-    # The answered state: chosen option highlighted, inputs retired.
+    # The answered state: the answer echoed, inputs retired.
     page.evaluate(
-        "() => { window.__q.answered = true; window.__q.answer = 'sqlite-vec'; }"
+        "() => { window.__q.answered = true; window.__q.answers = ['sqlite-vec']; }"
     )
-    expect(card.locator(".qopt.chosen")).to_have_text("sqlite-vec")
+    expect(card.locator(".qanswer")).to_contain_text("sqlite-vec")
     expect(card.locator(".qinput")).not_to_be_visible()
-    expect(card.locator(".qopt").first).to_be_disabled()
+    expect(card.locator(".qsend")).to_have_count(0)
+
+
+def test_ask_user_question_card_renders_tabs_for_multiple_questions(
+    page: Page, base_url: str
+) -> None:
+    """The multi-question card: one tab per question (its header, or
+    "Question N"), the active tab's prompt + inputs, and one Submit for all.
+    Switching tabs shows the other question; answering both echoes each."""
+    page.goto(f"{base_url}/tests/harness.html")
+    page.evaluate(
+        """async () => {
+            const { QuestionCard } = await import('/components/main/question-card.js');
+            const { reactive } = await import('/lib/van-x.js');
+            window.__q = reactive({
+                questionId: 'q-harness-2',
+                items: [
+                    { text: 'Which database?', header: 'DB',
+                      options: ['sqlite-vec', 'qdrant'], allowFreeText: false, value: '' },
+                    { text: 'Anything else?', header: 'Notes',
+                      options: [], allowFreeText: true, value: '' },
+                ],
+                answered: false, answers: [], expired: false, posting: false,
+            });
+            window.__mount(QuestionCard(window.__q));
+        }"""
+    )
+    card = page.locator(".qcard")
+    expect(card.locator(".qtab")).to_have_count(2)
+    expect(card.locator(".qtab.active")).to_have_text("DB*")
+    expect(card.locator(".qtext")).to_contain_text("Which database")
+    # The first tab is closed (no free-text input); submit blocked until both answered.
+    expect(card.locator(".qinput")).to_have_count(0)
+    expect(card.locator(".qsend")).to_be_disabled()
+
+    # The second tab shows the open question's text input.
+    card.locator(".qtab").nth(1).click()
+    expect(card.locator(".qtext")).to_contain_text("Anything else")
+    expect(card.locator(".qinput")).to_be_visible()
+
+    # Answered: each question's answer is echoed with its tab label.
+    page.evaluate(
+        "() => { window.__q.answered = true; window.__q.answers = ['qdrant', 'looks good']; }"
+    )
+    expect(card.locator(".qanswer")).to_have_count(2)
+    expect(card.locator(".qanswer").first).to_contain_text("qdrant")
+    expect(card.locator(".qanswer").nth(1)).to_contain_text("looks good")
+    expect(card.locator(".qtab")).to_have_count(0)
 
 
 def test_design_tokens_resolve_to_real_values(page: Page, base_url: str) -> None:

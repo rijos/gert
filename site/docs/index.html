@@ -61,7 +61,7 @@
     <ul>
       <li><strong>No central database</strong> - there is no <code>users</code> table. Per-user data lives in per-user folders holding per-project SQLite files. See <a href="storage.html">Storage &amp; Isolation</a>.</li>
       <li><strong>Hybrid RAG</strong> - vector KNN (<code>sqlite-vec</code>) fused with BM25 (<code>FTS5</code>) via Reciprocal Rank Fusion, with citations back to file and page. See <a href="chat-and-tools.html">Chat, RAG &amp; Tools</a>.</li>
-      <li><strong>Five built-in tools</strong> - document search, web search (SearXNG), sandboxed Python (gVisor), a model-managed todo list, and a clock - gated per user by a JWT entitlement.</li>
+      <li><strong>Thirteen built-in tools</strong> - document search and full-text read, web search (SearXNG) and page fetch, sandboxed Python (Monty by default, gVisor opt-in), the artifact canvas suite (create, edit, read, list), a model-managed todo list, a clock, clarifying questions back to the user, and task delegation to a sub-agent - each gated per user by a JWT entitlement.</li>
       <li><strong>Artifacts canvas</strong> - named code fences become persistent canvas tabs with live HTML preview.</li>
       <li><strong>Projects &amp; memory</strong> - isolated workspaces, each with its own chats, documents, and memory notes.</li>
       <li><strong>Detached turns</strong> - generation runs on a background worker and survives client disconnects; resume over SSE or polling from an exact event cursor.</li>

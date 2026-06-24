@@ -6,6 +6,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="Gert.Ingestion.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- Options binding, configuration, DI, logging abstractions. -->
     <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions"
                       Version="$(MicrosoftExtensionsOptionsVersion)" />

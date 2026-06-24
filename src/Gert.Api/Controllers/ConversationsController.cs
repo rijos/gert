@@ -4,7 +4,7 @@ using Gert.Model.Chat;
 using Gert.Model.Dtos;
 using Gert.Service.Chat;
 using Gert.Service.Conversations;
-using Gert.Service.Validation;
+using Gert.Validation;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Gert.Api.Controllers;

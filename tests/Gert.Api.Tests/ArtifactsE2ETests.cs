@@ -103,8 +103,10 @@ public sealed class ArtifactsE2ETests : IClassFixture<GertApiFactory>
         row.Id.Should().Be(artifactEvent.Id);
         row.Kind.Should().Be(kind);
         row.Name.Should().Be(name);
-        row.Language.Should().Be(language);
-        row.MessageId.Should().Be(accepted.AssistantMessageId);
+        // chat_objects-backed artifacts carry no language/message_id (kept on the
+        // wire record only for compatibility - the kind tag is the language hint).
+        row.Language.Should().BeNull();
+        row.MessageId.Should().BeNull();
 
         // Artifact-by-id API: full content round-trips.
         var fetched = await client.GetFromJsonAsync<Artifact>(

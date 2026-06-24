@@ -1,18 +1,20 @@
 using System.Text;
 using FluentAssertions;
-using Gert.Chat;
 using Gert.Ingestion.PlainText;
 using Gert.Model;
+using Gert.Model.Documents;
 using Gert.Model.Rag;
 using Gert.Service.Documents;
-using Gert.Service.External;
 using Gert.Service.Ingestion;
 using Gert.Service.Storage;
-using Gert.Service.Validation;
 using Gert.Storage;
 using Gert.Storage.Local;
 using Gert.Testing;
 using Gert.Testing.Fakes;
+using Gert.Tools;
+using Gert.Validation;
+using Gert.Validation.Rules;
+using Microsoft.Extensions.AI;
 using Xunit;
 
 namespace Gert.Database.Sqlite.Tests;
@@ -20,10 +22,10 @@ namespace Gert.Database.Sqlite.Tests;
 /// <summary>
 /// End-to-end ingestion tests over a real temp <c>rag.db</c> (with the vendored
 /// <c>vec0</c> + FTS5) and a real <see cref="LocalObjectStore"/>: the ingestion
-/// pipeline (extract -> chunk -> embed -> write), the document upload/delete path, and
-/// memory upsert/delete. All embeddings come from <see cref="FakeEmbeddings"/> so
-/// retrieval order is deterministic. Every file byte flows through
-/// <see cref="IObjectStore"/> - these tests assert the blob lifecycle there.
+/// pipeline (extract -> chunk -> embed -> write) and the document upload/delete path.
+/// All embeddings come from <see cref="FakeEmbeddings"/> so retrieval order is
+/// deterministic. Every file byte flows through <see cref="IObjectStore"/> - these
+/// tests assert the blob lifecycle there.
 /// </summary>
 public class IngestionPipelineTests
 {
@@ -261,98 +263,11 @@ public class IngestionPipelineTests
         hits.Should().NotContain(h => h.Document.Id == doc.Id);
     }
 
-    [Fact]
-    public async Task Memory_upsert_stores_the_body_embeds_as_kind_memory_and_is_retrievable()
-    {
-        await using var root = new TempDataRoot();
-        var harness = await HarnessAsync(root);
-
-        var entry = await harness.Memory.UpsertAsync(Pid, Proof.Of(new Gert.Model.Dtos.CreateMemoryRequest
-        {
-            Title = "Preferences",
-            Content = "Remember the user prefers concise answers about widgets.",
-            Pinned = true,
-        }));
-
-        // Body blob exists under memory/{id}.md (via the object store).
-        var scope = ObjectScope.Project(Iss, Sub, Pid);
-        (await harness.Objects.ExistsAsync(scope, $"memory/{entry.Id}.md")).Should().BeTrue();
-
-        var listed = await harness.Memory.ListAsync(Pid);
-        listed.Should().ContainSingle();
-        listed[0].Title.Should().Be("Preferences");
-        listed[0].Pinned.Should().BeTrue();
-
-        // Retrievable as kind='memory' alongside documents.
-        await using var repo = await harness.Provider.OpenRagAsync(Iss, Sub, Pid);
-        var hits = await repo.HybridSearchAsync("widgets", FakeEmbeddings.Embed("widgets concise"), k: 5);
-        hits.Should().Contain(h => h.Document.Id == entry.Id && h.Document.Kind == DocumentKind.Memory);
-    }
-
-    [Fact]
-    public async Task Memory_delete_removes_the_file_and_the_rows()
-    {
-        await using var root = new TempDataRoot();
-        var harness = await HarnessAsync(root);
-
-        var entry = await harness.Memory.UpsertAsync(Pid, Proof.Of(new Gert.Model.Dtos.CreateMemoryRequest
-        {
-            Title = "Throwaway",
-            Content = "ephemeral memory body",
-        }));
-        var scope = ObjectScope.Project(Iss, Sub, Pid);
-        (await harness.Objects.ExistsAsync(scope, $"memory/{entry.Id}.md")).Should().BeTrue();
-
-        (await harness.Memory.DeleteAsync(Pid, entry.Id)).Should().BeTrue();
-
-        (await harness.Memory.ListAsync(Pid)).Should().BeEmpty();
-        (await harness.Objects.ExistsAsync(scope, $"memory/{entry.Id}.md")).Should().BeFalse();
-    }
-
-    [Fact]
-    public async Task Memory_upsert_embed_failure_leaves_no_row_and_no_blob()
-    {
-        await using var root = new TempDataRoot();
-        // Embedding fails on the very first call: UpsertAsync embeds BEFORE any
-        // disk touch, so the failure must leave no document row (no Ready-but-
-        // unsearchable entry) and no memory/{id}.md blob behind.
-        var harness = await HarnessAsync(root, embeddings: new FailingEmbeddings(succeedCalls: 0));
-
-        var act = async () => await harness.Memory.UpsertAsync(Pid, Proof.Of(new Gert.Model.Dtos.CreateMemoryRequest
-        {
-            Title = "Doomed",
-            Content = "this body never gets persisted",
-        }));
-
-        await act.Should().ThrowAsync<InvalidOperationException>();
-
-        (await harness.Memory.ListAsync(Pid)).Should().BeEmpty("no Ready-but-unsearchable row may survive");
-        var scope = ObjectScope.Project(Iss, Sub, Pid);
-        (await harness.Objects.ListAsync(scope, "memory/")).Should().BeEmpty("no orphan body blob may survive");
-    }
-
-    [Fact]
-    public async Task Memory_does_not_appear_in_the_document_list_and_vice_versa()
-    {
-        await using var root = new TempDataRoot();
-        var harness = await HarnessAsync(root);
-
-        var doc = await harness.Documents.UploadAsync(Pid, Upload("d.txt", "text/plain", "a document"));
-        var mem = await harness.Memory.UpsertAsync(Pid, Proof.Of(new Gert.Model.Dtos.CreateMemoryRequest
-        {
-            Title = "m",
-            Content = "a memory",
-        }));
-
-        (await harness.Documents.ListAsync(Pid)).Should().ContainSingle().Which.Id.Should().Be(doc.Id);
-        (await harness.Memory.ListAsync(Pid)).Should().ContainSingle().Which.Id.Should().Be(mem.Id);
-    }
-
     private async Task<Harness> HarnessAsync(
         TempDataRoot root,
         ChunkingOptions? chunking = null,
         IIngestionQueue? queue = null,
-        IEmbeddingClient? embeddings = null)
+        IEmbeddingGenerator<string, Embedding<float>>? embeddings = null)
     {
         var provider = ProviderFixture.ProviderFor(root);
         await provider.EnsureProvisionedAsync(Iss, Sub);
@@ -364,9 +279,8 @@ public class IngestionPipelineTests
         var ingestionQueue = queue ?? new InlineIngestionQueue(ingestion);
 
         var documents = new DocumentService(provider.Rag, objects, ingestionQueue, _user, TimeProvider.System);
-        var memory = new MemoryService(provider.Rag, objects, embeddings, _user, TimeProvider.System);
 
-        return new Harness(provider, objects, ingestion, documents, memory);
+        return new Harness(provider, objects, ingestion, documents);
     }
 
     private static Validated<DocumentUpload> Upload(string filename, string mime, string content)
@@ -393,8 +307,7 @@ public class IngestionPipelineTests
         ProviderFixture.TestDatabases Provider,
         LocalObjectStore Objects,
         IngestionService Ingestion,
-        DocumentService Documents,
-        MemoryService Memory);
+        DocumentService Documents);
 
     private sealed class RecordingQueue : IIngestionQueue
     {
@@ -408,17 +321,18 @@ public class IngestionPipelineTests
     }
 
     /// <summary>
-    /// Failure-injecting <see cref="IEmbeddingClient"/>: delegates the first
+    /// Failure-injecting <see cref="IEmbeddingGenerator{TInput,TEmbedding}"/>: delegates the first
     /// <paramref name="succeedCalls"/> calls to <see cref="FakeEmbeddings"/> (so committed
     /// batches are real, searchable vectors) and throws afterwards.
     /// </summary>
-    private sealed class FailingEmbeddings(int succeedCalls) : IEmbeddingClient
+    private sealed class FailingEmbeddings(int succeedCalls) : IEmbeddingGenerator<string, Embedding<float>>
     {
         private readonly FakeEmbeddings _inner = new();
         private int _calls;
 
-        public Task<IReadOnlyList<float[]>> EmbedAsync(
-            IReadOnlyList<string> texts,
+        public Task<GeneratedEmbeddings<Embedding<float>>> GenerateAsync(
+            IEnumerable<string> values,
+            EmbeddingGenerationOptions? options = null,
             CancellationToken cancellationToken = default)
         {
             if (_calls++ >= succeedCalls)
@@ -426,7 +340,13 @@ public class IngestionPipelineTests
                 throw new InvalidOperationException("embedding backend unavailable (injected test failure)");
             }
 
-            return _inner.EmbedAsync(texts, cancellationToken);
+            return _inner.GenerateAsync(values, options, cancellationToken);
+        }
+
+        public object? GetService(Type serviceType, object? serviceKey = null) => null;
+
+        public void Dispose()
+        {
         }
     }
 

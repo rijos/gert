@@ -53,6 +53,11 @@ public sealed class SqliteRagConnectionFactory
             // must be loaded on this connection before the migrations run.
             connection.EnableExtensions(true);
             connection.LoadExtension(ResolveVecExtensionPath());
+            // Re-close the extension-loading door on the returned connection: vec0 is already loaded
+            // and no query ever needs to load another, so disabling it shrinks the blast radius
+            // (defence-in-depth; all SQL on this connection is parameterized, so there is no concrete
+            // injection path today - this just removes the latent load_extension capability).
+            connection.EnableExtensions(false);
 
             await SqliteRagMigrationRunner.ApplyAsync(connection, "rag", cancellationToken).ConfigureAwait(false);
 

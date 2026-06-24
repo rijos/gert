@@ -132,7 +132,7 @@ Three independent things decide access:
 | `GET /api/settings` - `.../api/projects*` (list - create - read - update - delete) | no | yes own | yes own |
 | `.../api/projects/{pid}/conversations*` (list - create - read - update - delete) | no | yes own | yes own |
 | `POST /api/projects/{pid}/conversations/{id}/messages` (stream) | no | yes own - tools gated by entitlement | yes own - entitlement |
-| `.../api/projects/{pid}/documents*` - `.../memory*` (list - upload - poll - delete) | no | yes own | yes own |
+| `.../api/projects/{pid}/documents*` (list - upload - poll - delete) | no | yes own | yes own |
 | `.../api/projects/{pid}/.../artifacts` - `.../export` - `DELETE /api/account` | no | yes own | yes own |
 | `GET /api/admin/users` | no | no | yes |
 | `DELETE /api/admin/users/{key}` | no | no | yes |
@@ -163,7 +163,7 @@ capability comes from the token or not at all. (The claim is a **scope string**;
 JSON-array value like `["rag","search"]` is not parsed - its tokens match no registered
 id and yield nothing.)
 
-> **Pocket ID setup.** Define `gert_tools` as a custom claim and attach it to users or to a group (e.g. a `gert-tools` group granting `rag search todo clock make_artifact edit_artifact read_artifact ask_user fetch memory sub_agent`, and a separate `gert-sandbox` group adding `sandbox`). Make sure it is emitted into the **access token** the API validates. If your Pocket ID build only places custom claims in the ID token / userinfo, have the API read it from the userinfo endpoint once per session - the rest of the logic is unchanged.
+> **Pocket ID setup.** Define `gert_tools` as a custom claim and attach it to users or to a group (e.g. a `gert-tools` group granting `rag search todo clock make_artifact edit_artifact read_artifact list_artifacts ask_user fetch sub_agent`, and a separate `gert-sandbox` group adding `sandbox`). Make sure it is emitted into the **access token** the API validates. If your Pocket ID build only places custom claims in the ID token / userinfo, have the API read it from the userinfo endpoint once per session - the rest of the logic is unchanged.
 
 ### Tool registry
 
@@ -174,19 +174,22 @@ The Notes column records why a grant is more or less sensitive:
 | Tool (model function) | Capability id | Notes |
 |---|---|---|
 | RAG - `search_documents` | `rag` | reads **this** user's `rag.db` only |
+| Read document - `read_document` | `read_document` | reads this project's stored document blobs full-text; no external world |
 | Web search - `web_search` | `search` | SearXNG; outbound egress |
 | Sandbox - `run_python` | `sandbox` | gVisor; **executes arbitrary code** - the most sensitive grant, hand it out deliberately |
 | Todos - `set_todos` | `todo` | renders the chat checklist; no external world |
 | Clock - `get_datetime` | `clock` | reads the host clock via `TimeProvider`; no external world |
-| Canvas create - `make_artifact` | `make_artifact` | writes this conversation's `artifacts` rows; no external world ([chat-and-tools](chat-and-tools.md#artifacts-the-canvas-tool-suite)) |
+| Canvas create - `make_artifact` | `make_artifact` | writes this conversation's `chat_objects` rows; no external world ([chat-and-tools](chat-and-tools.md#artifacts-the-canvas-tool-suite)) |
 | Canvas edit - `edit_artifact` | `edit_artifact` | exact-substring replace on an existing artifact |
 | Canvas read - `read_artifact` | `read_artifact` | read-only; returns numbered lines |
+| Canvas list - `list_artifacts` | `list_artifacts` | read-only; lists this conversation's artifacts (name, format, version) |
 | Ask the user - `ask_user` | `ask_user` | blocks the turn awaiting the user's answer (own timeout budget); no external world ([chat-and-tools](chat-and-tools.md#ask-the-user-ask_user)) |
 | Web fetch - `web_fetch` | `fetch` | outbound egress to a **model-named URL**; SSRF-guarded - the same hardened fetcher as web search's page pulls ([chat-and-tools](chat-and-tools.md#web-fetch-web_fetch)) |
-| Save memory - `save_memory` | `memory` | writes a new memory entry into this project's `rag.db` + object store; immediately retrievable by `search_documents` ([chat-and-tools](chat-and-tools.md#save-memory-save_memory)) |
+| Sub-agent - `run_sub_agent` | `sub_agent` | delegates to a nested loop bounded by the parent entitlement ceiling; no external world of its own |
 
-The SPA exposes the canvas trio (`make_artifact` / `edit_artifact` / `read_artifact`) as
-**one "Canvas" switch**, so a token granting the canvas should grant all three. An id in the
+The SPA exposes the canvas suite (`make_artifact` / `edit_artifact` / `read_artifact` /
+`list_artifacts`) as **one "Canvas" switch**, so a token granting the canvas should grant all
+four. An id in the
 claim that names no registered tool is silently dropped (intersected with the registry), so a
 typo fails closed rather than erroring the login.
 

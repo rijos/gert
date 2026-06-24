@@ -1,0 +1,35 @@
+using Gert.Tools.Resources;
+using Gert.Tools.Ui;
+
+namespace Gert.Tools.Hosting;
+
+/// <summary>
+/// The capability surface a tool is HANDED at invocation (chat-and-tools.md section tool host).
+/// Built per-call at the composition root, pre-scoped to the active (user, project[, conversation]):
+/// a tool reads/writes objects, searches RAG, asks the user, and delegates nested work WITHOUT ever
+/// seeing iss/sub - identity is the host's, never the tool's. This is the seam MCP also leaves open.
+/// </summary>
+public interface IToolHost
+{
+    /// <summary>Stored-object + RAG resources, pre-scoped to the active project/conversation.</summary>
+    IToolResources Resources { get; }
+
+    /// <summary>
+    /// Human interaction (ask_user). Null on an autonomous driver (sub-agent, headless), where a
+    /// <see cref="ITool.RequiresHuman"/> tool is neither advertised nor executed.
+    /// </summary>
+    IToolUi? Ui { get; }
+
+    /// <summary>Delegation to a nested agent loop (run_sub_agent).</summary>
+    IToolDelegate Delegate { get; }
+
+    /// <summary>
+    /// The output seam: where a tool reports its side-effects (citations, artifacts, stdout, todos)
+    /// instead of returning them in <see cref="ToolResult"/>. Per-call on the loop's host; a no-op
+    /// (<see cref="NullToolCard"/>) on an autonomous driver.
+    /// </summary>
+    IToolCard Card { get; }
+
+    /// <summary>The per-invocation budget (deadline, token allowance) the tool honours.</summary>
+    ToolLimits Limits { get; }
+}

@@ -14,6 +14,13 @@ namespace Gert.Chat;
 public interface IDefaultChatProvider
 {
     /// <summary>
+    /// The plugin's <see cref="ChatProviderInfo.Type"/> token (e.g. <c>openai</c>). The generic
+    /// catalog bakes in no implementation token, so it fills any configured provider that omits a
+    /// <c>Type</c> from this - the default plugin owns its own name.
+    /// </summary>
+    string DefaultType { get; }
+
+    /// <summary>
     /// The synthesized default provider's secret-free catalog entry (its <c>Default</c> flag set),
     /// or <c>null</c> for none. The matching connection + sampling are wired by the same plugin,
     /// keyed by <see cref="ChatProviderInfo.DefaultId"/>, so the catalog and the factory agree.

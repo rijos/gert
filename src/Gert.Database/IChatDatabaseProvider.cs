@@ -25,7 +25,7 @@ public interface IChatDatabaseProvider
     /// Destroy one project's chat database - the DB half of a project delete/empty, owned by
     /// the engine: a file-backed engine drops pooled handles and removes <c>chat.db</c>; a
     /// server-backed engine (e.g. Postgres) deletes the project's rows. The artifact half
-    /// (file/memory blobs) is the <c>IObjectStore</c>'s; the service calls this <b>before</b>
+    /// (file blobs) is the <c>IObjectStore</c>'s; the service calls this <b>before</b>
     /// the blob delete so a local whole-tree wipe never races an open handle. Idempotent:
     /// returns <see langword="true"/> if any state existed. Identity is trusted here.
     /// </summary>

@@ -58,7 +58,7 @@ to unwrap X's DEK, and gets it only on proof of a live, valid token for X (§3).
 How it lands on Gert's seams, which are already the right chokepoints:
 
 - **Object store:** an **encrypting `IObjectStore` decorator** in front of the `Local` / S3 backend
-  envelope-encrypts each blob (`files/`, `memory/`) under the scope's DEK before `PutAsync` and
+  envelope-encrypts each blob (`files/`) under the scope's DEK before `PutAsync` and
   decrypts after `OpenReadAsync`. The backend only ever sees ciphertext; an attacker with the bucket
   or the disk gets nothing. `ObjectScope.UserKey` is the natural DEK label.
 - **Databases:** the providers (`IUserDatabaseProvider` / `IChatDatabaseProvider` /
@@ -189,8 +189,7 @@ Prompt injection is an accepted, self-scoped residual ([security section 4](secu
 - Treat retrieved / web / prior-turn text as **data with provenance**, not instructions - delimited
   and labelled untrusted in the prompt.
 - Keep the JWT entitlement ceiling ([F11](security.md#3-findings--remediations)) and add per-turn
-  capability scoping (§9); cap sub-agent depth and fan-out; gate self-writing memory (the `manual`
-  default is already this).
+  capability scoping (§9); cap sub-agent depth and fan-out.
 - Human-in-the-loop (`ask_user`) before irreversible or high-impact actions.
 - The egress brake (§6) is the hard backstop for when injection wins anyway.
 

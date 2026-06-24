@@ -1,6 +1,7 @@
 using Gert.Model;
 using Gert.Model.Tools;
-using Gert.Service.External;
+using Gert.Tools;
+using Gert.Tools.Ports;
 
 namespace Gert.Testing.Fakes;
 

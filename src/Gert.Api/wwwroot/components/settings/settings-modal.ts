@@ -1,5 +1,5 @@
 // components/settings/settings-modal.js - user settings popup (theme, send chord,
-// reply language, default model, memory mode, build line) over the shared Modal
+// reply language, default model, build line) over the shared Modal
 // scaffold. Sampling rides the selected chat provider (the picker lists provider
 // presets), not a per-user dial, so there is no per-model settings modal here.
 import van from "/lib/van.js";
@@ -8,7 +8,7 @@ import { Dropdown } from "../ui/dropdown.js";
 import { SegToggle } from "../ui/seg-toggle.js";
 import { toast } from "../ui/toast.js";
 import * as settingsSvc from "../../services/settings.js";
-import type { MemoryMode, Theme, WireSettings } from "../../services/wire.js";
+import type { Theme, WireSettings } from "../../services/wire.js";
 import * as models from "../../state/models.js";
 import * as ui from "../../state/ui.js";
 import { t, lang, setLang, AVAILABLE } from "../../lib/i18n.js";
@@ -30,12 +30,6 @@ const THEMES = [
   { value: "ember", label: t("Ember (dark)") },
 ];
 
-const MEMORY_MODES = [
-  { value: "off", label: t("Off - never store memories") },
-  { value: "manual", label: t("Manual - only when I ask") },
-  { value: "auto", label: t("Automatic - the model decides") },
-];
-
 export const openSettings = () => {
   const loaded = van.state<WireSettings | null>(null);
   const themeVal = van.state(ui.theme.val || "system");
@@ -43,7 +37,6 @@ export const openSettings = () => {
   // widened to string: the seg-toggle hands back the clicked option's value as a
   // bare string, and ui.setSubmitKey re-narrows it to the SubmitKey union.
   const submitVal = van.state<string>(ui.submitKey.val);
-  const memoryVal = van.state("manual");
   // derived from the browser on first load (lib/i18n.js); explicit choice wins
   const langVal = van.state(lang());
 
@@ -53,7 +46,6 @@ export const openSettings = () => {
       const data = s || {};
       loaded.val = data;
       modelVal.val = data.default_model_id || models.selectedId.val || "";
-      memoryVal.val = data.memory_mode || "manual";
     })
     .catch(() => (loaded.val = {}));
 
@@ -110,11 +102,6 @@ export const openSettings = () => {
         ),
         div(
           { class: "field" },
-          label(t("Memories")),
-          Dropdown({ items: MEMORY_MODES, value: memoryVal, ariaLabel: t("Memories") }),
-        ),
-        div(
-          { class: "field" },
           label(t("Default model")),
           Dropdown({
             items: () => models.models.map((m) => ({ value: m.id, label: m.name })),
@@ -148,8 +135,6 @@ export const openSettings = () => {
           // no-op, and exactOptionalPropertyTypes forbids an explicit `undefined` on the field).
           ...(replyLangEl?.value ? { reply_language: replyLangEl.value } : {}),
           ...(modelVal.val ? { default_model_id: modelVal.val } : {}),
-          // option-constrained by MEMORY_MODES (off|manual|auto) - assert onto the wire enum.
-          memory_mode: memoryVal.val as MemoryMode,
           ui_language: langVal.val,
           // wire enum is light | dark | auto (configuration.md section 3.1), not the
           // theme names - map back from manila/ember. The `?? ""` makes a null theme

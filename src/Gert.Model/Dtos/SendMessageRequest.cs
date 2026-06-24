@@ -12,9 +12,11 @@ public sealed record SendMessageRequest
     public required string Content { get; init; }
 
     /// <summary>
-    /// Inline image attachments (pasted into the composer), sent upstream to
-    /// vision-capable models. With attachments present, <see cref="Content"/>
-    /// may be empty - an image alone is a valid message.
+    /// Inline attachments (image or text-file) pasted or dropped into the
+    /// composer; null/empty when none. See <see cref="MessageAttachment"/> /
+    /// <see cref="AttachmentKinds"/> for the per-attachment kind discrimination.
+    /// With attachments present, <see cref="Content"/> may be empty - an
+    /// attachment alone is a valid message.
     /// </summary>
     public IReadOnlyList<MessageAttachment>? Attachments { get; init; }
 

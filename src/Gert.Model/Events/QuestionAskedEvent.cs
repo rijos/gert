@@ -21,13 +21,11 @@ public sealed record QuestionAskedEvent : ChatEvent
     /// </summary>
     public required string QuestionId { get; init; }
 
-    public required string Question { get; init; }
-
-    /// <summary>Closed answer choices rendered as buttons (empty = free text only).</summary>
-    public IReadOnlyList<string> Options { get; init; } = [];
-
-    /// <summary>Whether a typed answer is accepted in addition to <see cref="Options"/>.</summary>
-    public required bool AllowFreeText { get; init; }
+    /// <summary>
+    /// The questions to ask together (1..4), rendered as tabs; the answer carries
+    /// one entry per question, in this order.
+    /// </summary>
+    public required IReadOnlyList<AskedQuestion> Questions { get; init; }
 
     public override ChatEventType Type => ChatEventType.QuestionAsked;
 }

@@ -1,5 +1,6 @@
 using Gert.Service.Chat;
-using Gert.Service.Tools;
+using Gert.Tools;
+using Microsoft.Extensions.Options;
 
 namespace Gert.Service.Admin;
 
@@ -17,17 +18,19 @@ public interface ISystemPromptInspector
 public sealed class SystemPromptInspector : ISystemPromptInspector
 {
     private readonly IReadOnlyList<ITool> _tools;
+    private readonly PromptOptions _prompts;
 
-    public SystemPromptInspector(IEnumerable<ITool> tools)
+    public SystemPromptInspector(IEnumerable<ITool> tools, IOptions<PromptOptions> prompts)
     {
         ArgumentNullException.ThrowIfNull(tools);
         _tools = tools.ToList();
+        _prompts = prompts?.Value ?? throw new ArgumentNullException(nameof(prompts));
     }
 
     /// <inheritdoc />
     public SystemPromptSnapshot GetSnapshot() => new()
     {
-        SystemPrompt = SystemPrompts.Canvas,
+        SystemPrompt = _prompts.Canvas,
         Tools = _tools
             .Select(t => new ToolSpecView
             {

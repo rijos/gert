@@ -3,7 +3,7 @@ namespace Gert.Storage;
 /// <summary>
 /// The addressed root for an <see cref="IObjectStore"/> operation - either a
 /// <b>user root</b> or one <b>project root</b> under it (holding the genuine blobs:
-/// <c>files/...</c> uploads and <c>memory/...</c> bodies). Mirrors how the database seam threads identity:
+/// <c>files/...</c> uploads). Mirrors how the database seam threads identity:
 /// <c>(iss, sub)</c> come only from the validated token (hashed to the opaque
 /// <see cref="UserKey"/> here, never stored raw), and <c>pid</c> is validated to a
 /// UUID or the literal <c>default</c> - so a scope can never select another user's

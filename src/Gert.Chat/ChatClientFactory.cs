@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Gert.Chat;
@@ -8,13 +9,14 @@ namespace Gert.Chat;
 /// <see cref="ConfigChatProviderCatalog"/>, then dispatches to the registered
 /// <see cref="IChatModelClientBuilder"/> plugin for that provider's <c>Type</c> (keyed DI -
 /// no central <c>switch</c> over Type). Clients are cached per resolved provider id (the built
-/// client is reusable and thread-safe), so a hot conversation does not rebuild one per turn.
+/// <see cref="IChatClient"/> is reusable and thread-safe), so a hot conversation does not rebuild
+/// one per turn.
 /// </summary>
 public sealed class ChatClientFactory : IChatClientFactory
 {
     private readonly IServiceProvider _services;
     private readonly ConfigChatProviderCatalog _catalog;
-    private readonly ConcurrentDictionary<string, IChatModelClient> _cache = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, IChatClient> _cache = new(StringComparer.Ordinal);
 
     public ChatClientFactory(IServiceProvider services, ConfigChatProviderCatalog catalog)
     {
@@ -30,7 +32,7 @@ public sealed class ChatClientFactory : IChatClientFactory
     public static string NormalizeType(string? type) => (type ?? string.Empty).Trim().ToLowerInvariant();
 
     /// <inheritdoc />
-    public IChatModelClient ForProvider(string? providerId)
+    public IChatClient ForProvider(string? providerId)
     {
         var info = _catalog.Resolve(providerId);
         return _cache.GetOrAdd(info.Id, _ => BuilderFor(info.Type).Build(info.Id));

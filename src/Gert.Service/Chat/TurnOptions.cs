@@ -11,19 +11,18 @@ public sealed class TurnOptions
     /// horizon: a <c>streaming</c> row older than this is REPORTED as error by
     /// readers - the in-memory queue is not durable, so a crashed worker never
     /// finalises its row (chat-and-tools.md section detached turns). Both uses measure
-    /// from the plan instant (<see cref="TurnJob.PlannedAt"/> = the placeholder's
+    /// from the plan instant (<c>Gert.Agent.TurnJob.PlannedAt</c> = the placeholder's
     /// <c>CreatedAt</c>): the runner budgets only what REMAINS of this cap after
     /// queue wait, so it can never outlive the readers' horizon.
     /// </summary>
     public TimeSpan MaxTurnDuration { get; set; } = TimeSpan.FromMinutes(5);
 
     /// <summary>
-    /// Number of parallel turn lanes the host worker drains. Turns are sharded
-    /// by TurnKey hash: one conversation's turns always ride one lane (strictly
-    /// ordered); different conversations may run concurrently. 1 = the old
-    /// global serial worker. The per-conversation streaming gate
-    /// (ux_messages_streaming) is the correctness control; this is only
-    /// throughput (decisions section 11).
+    /// How many turns the host launcher runs concurrently - a global
+    /// <c>SemaphoreSlim</c> cap, not per-conversation lanes. The per-conversation
+    /// streaming gate (ux_messages_streaming) already serializes a conversation
+    /// (a second turn is 409'd at plan time), so this is purely a global
+    /// throughput ceiling; 1 = a global serial worker (decisions section 11).
     /// </summary>
     public int MaxConcurrentTurns { get; set; } = 4;
 
@@ -52,32 +51,12 @@ public sealed class TurnOptions
     public int MaxTokensPerRound { get; set; } = 16384;
 
     /// <summary>
-    /// Per-turn cap on <c>web_search</c> calls - searches dominate tool-loop
-    /// runaway (each one costs an upstream SearXNG round-trip and floods the
-    /// prompt with results), so they get a budget tighter than
-    /// <see cref="MaxToolRounds"/>. Past the cap, further searches fail with a
-    /// synthetic "budget exhausted" result the model can read - visible on the
-    /// tool card; the turn continues. <c>0</c> or negative disables the cap.
-    /// </summary>
-    public int MaxSearchCallsPerTurn { get; set; } = 5;
-
-    /// <summary>
-    /// Generic wall-clock backstop on ONE tool execution. Individual tools keep
-    /// their own tighter limits (the sandbox wall clock, the search timeouts);
-    /// this catches the ones that hang outside them - a wedged database open, a
-    /// stuck embedding call's retry chain. A timed-out call fails with a
-    /// visible card error and the turn continues; it never kills the turn.
-    /// <see cref="TimeSpan.Zero"/> disables the backstop.
-    /// </summary>
-    public TimeSpan ToolCallTimeout { get; set; } = TimeSpan.FromSeconds(60);
-
-    /// <summary>
     /// How long one <c>ask_user</c> question waits for the user before the tool
     /// returns its graceful "user did not respond" result. The effective wait
     /// is min(this, remaining turn budget - a small grace slice) so the
     /// graceful path always beats the <see cref="MaxTurnDuration"/> error
-    /// finalize; the wait is exempt from <see cref="ToolCallTimeout"/>
-    /// (<c>IInteractiveTool</c>) or it could never exceed that backstop
+    /// finalize; the wait is exempt from the per-tool <c>ToolBounds.CallTimeout</c>
+    /// backstop (<c>ToolType.Modal</c>) or it could never exceed that backstop
     /// (chat-and-tools.md section Ask the user).
     /// </summary>
     public TimeSpan AskUserTimeout { get; set; } = TimeSpan.FromMinutes(5);
@@ -97,4 +76,14 @@ public sealed class TurnOptions
     /// can't grow unbounded delta events.
     /// </summary>
     public int DeltaFlushMaxChars { get; set; } = 512;
+
+    /// <summary>
+    /// The largest share of the selected provider's context window (tokens) an inline
+    /// <b>text-file</b> attachment may consume - the rest is reserved for the system prompt,
+    /// history, and the model's reply. A drop that estimates over this is refused at plan time with
+    /// a 400 steering the user to the Knowledge panel (RAG) instead (chat-and-tools.md section
+    /// attachments). Gated only when the provider declares a context (configured providers must;
+    /// the zero-config default does not, so it is not gated). Default 0.5.
+    /// </summary>
+    public double MaxInlineAttachmentContextFraction { get; set; } = 0.5;
 }

@@ -152,6 +152,7 @@ public class SqliteChatRepositoryTests
             Name = "decision.md",
             Content = "# Decision",
             CreatedAt = now,
+            UpdatedAt = now,
         });
 
         var thread = await repo.GetThreadAsync(conversation.Id);
@@ -222,12 +223,79 @@ public class SqliteChatRepositoryTests
                 Name = $"a.{kind}",
                 Content = "body",
                 CreatedAt = now,
+                UpdatedAt = now,
             });
         }
 
         var artifacts = await repo.ListArtifactsAsync(conversation.Id);
 
         artifacts.Select(a => a.Kind).Should().BeEquivalentTo(Enum.GetValues<ArtifactKind>());
+    }
+
+    [Fact]
+    public async Task Artifact_insert_update_and_delete_by_name_round_trip()
+    {
+        await using var root = new TempDataRoot();
+        var provider = ProviderFixture.ProviderFor(root);
+        await provider.EnsureProvisionedAsync(ProviderFixture.ExpectedIssuer, Sub);
+
+        var conversation = NewConversation();
+        var created = DateTimeOffset.UtcNow;
+        var updated = created.AddMinutes(5);
+
+        await using var repo = await provider.OpenChatAsync(ProviderFixture.ExpectedIssuer, Sub, "default");
+        await repo.InsertConversationAsync(conversation);
+
+        var artifact = new Artifact
+        {
+            Id = Guid.NewGuid().ToString("D"),
+            ConversationId = conversation.Id,
+            MessageId = null,
+            Kind = ArtifactKind.Md,
+            Name = "notes.md",
+            Content = "v1",
+            Version = 1,
+            CreatedAt = created,
+            UpdatedAt = created,
+        };
+        await repo.InsertArtifactAsync(artifact);
+
+        // updated_at round-trips; an overwrite bumps version + updated_at, keeps created_at.
+        await repo.UpdateArtifactAsync(artifact with { Content = "v2", Version = 2, UpdatedAt = updated });
+
+        var byName = await repo.GetArtifactByNameAsync(conversation.Id, "notes.md");
+        byName.Should().NotBeNull();
+        byName!.Content.Should().Be("v2");
+        byName.Version.Should().Be(2);
+        byName.CreatedAt.Should().BeCloseTo(created, TimeSpan.FromSeconds(1));
+        byName.UpdatedAt.Should().BeCloseTo(updated, TimeSpan.FromSeconds(1));
+        // chat_objects drops message_id/language: they are null off the persisted row.
+        byName.MessageId.Should().BeNull();
+        byName.Language.Should().BeNull();
+
+        // Delete by name removes it (and is a no-op the second time).
+        (await repo.DeleteArtifactByNameAsync(conversation.Id, "notes.md")).Should().BeTrue();
+        (await repo.DeleteArtifactByNameAsync(conversation.Id, "notes.md")).Should().BeFalse();
+        (await repo.GetArtifactByNameAsync(conversation.Id, "notes.md")).Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Two_artifacts_with_the_same_name_in_a_conversation_violate_the_unique_index()
+    {
+        await using var root = new TempDataRoot();
+        var provider = ProviderFixture.ProviderFor(root);
+        await provider.EnsureProvisionedAsync(ProviderFixture.ExpectedIssuer, Sub);
+
+        var conversation = NewConversation();
+        var now = DateTimeOffset.UtcNow;
+
+        await using var repo = await provider.OpenChatAsync(ProviderFixture.ExpectedIssuer, Sub, "default");
+        await repo.InsertConversationAsync(conversation);
+        await repo.InsertArtifactAsync(NewArtifact(conversation.Id, "dup.md", now));
+
+        // UNIQUE(conversation_id, name): a second row with the same name is rejected.
+        var second = () => repo.InsertArtifactAsync(NewArtifact(conversation.Id, "dup.md", now));
+        await second.Should().ThrowAsync<SqliteException>();
     }
 
     [Fact]
@@ -261,6 +329,7 @@ public class SqliteChatRepositoryTests
             Name = "x.py",
             Content = "print(1)",
             CreatedAt = now,
+            UpdatedAt = now,
         });
 
         var deleted = await repo.DeleteConversationAsync(conversation.Id);
@@ -658,5 +727,6 @@ public class SqliteChatRepositoryTests
         Name = name,
         Content = "# " + name,
         CreatedAt = at,
+        UpdatedAt = at,
     };
 }

@@ -12,9 +12,9 @@ namespace Gert.Service;
 /// which walks its properties to prove every DTO has a validator (dotnet-style-guide.md
 /// section 4: API controllers inject the granular interface they need, never this hub).
 /// Chat is NOT here: the detached turn pipeline (chat-and-tools.md section detached
-/// turns) splits it into <see cref="Chat.ITurnPlanner"/> / <see cref="Chat.ITurnQueue"/> /
-/// <see cref="Chat.IConversationReader"/> / <see cref="Chat.IConversationStreamer"/>,
-/// injected directly where needed.
+/// turns) splits it into the turn engine's <c>Gert.Agent.ITurnPlanner</c> /
+/// <c>Gert.Agent.ITurnQueue</c> plus the read side <see cref="Chat.IConversationReader"/> /
+/// <see cref="Chat.IConversationStreamer"/>, injected directly where needed.
 /// </summary>
 public interface IGertServices
 {
@@ -23,8 +23,6 @@ public interface IGertServices
     IDocumentService Documents { get; }
 
     IArtifactService Artifacts { get; }
-
-    IMemoryService Memory { get; }
 
     IProjectService Projects { get; }
 

@@ -4,9 +4,9 @@ namespace Gert.Service.Documents;
 
 /// <summary>
 /// The one codec for the <c>documents.filename</c> column (storage-and-data.md
-/// section rag.db): the original upload filename (or a memory entry's title) is stored
-/// as base64(UTF-8) <b>display metadata</b>, never a storage path. Decode falls back to
-/// the stored value on bad base64 - one odd row must never 500 a list or throw a delete.
+/// section rag.db): the original upload filename is stored as base64(UTF-8)
+/// <b>display metadata</b>, never a storage path. Decode falls back to the stored
+/// value on bad base64 - one odd row must never 500 a list or throw a delete.
 /// </summary>
 public static class StoredFilenames
 {

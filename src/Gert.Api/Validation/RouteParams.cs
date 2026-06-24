@@ -1,4 +1,5 @@
-using Gert.Service.Validation;
+using Gert.Validation;
+using Gert.Validation.Rules;
 
 namespace Gert.Api.Validation;
 

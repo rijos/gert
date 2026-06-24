@@ -3,7 +3,7 @@ namespace Gert.Service.Ingestion;
 /// <summary>
 /// Token-window settings for ingestion step 3 (chat-and-tools.md section ingestion:
 /// "token-aware windows w/ overlap"). Tokens are approximated by whitespace-split
-/// words -- deterministic and dependency-free; a later change may swap in the model tokenizer
+/// words - deterministic and dependency-free; a later change may swap in the model tokenizer
 /// without changing the pipeline. A window of <see cref="MaxTokens"/> words slides
 /// forward by <c>MaxTokens - OverlapTokens</c>, so consecutive chunks share
 /// <see cref="OverlapTokens"/> words of context for retrieval continuity.

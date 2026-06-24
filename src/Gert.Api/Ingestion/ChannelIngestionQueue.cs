@@ -4,7 +4,7 @@ using Gert.Service.Ingestion;
 namespace Gert.Api.Ingestion;
 
 /// <summary>
-/// The production <see cref="IIngestionQueue"/> -- a
+/// The production <see cref="IIngestionQueue"/> - a
 /// <c>System.Threading.Channels</c>-backed queue drained by
 /// <see cref="IngestionWorker"/>. <see cref="EnqueueAsync"/> returns as soon as the
 /// job is accepted (it is unbounded, so it never blocks the request), so an upload

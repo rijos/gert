@@ -1,4 +1,4 @@
-using Gert.Api.Chat;
+using Gert.Agent;
 using Gert.Api.Errors;
 using Gert.Api.Ingestion;
 using Gert.Api.Logging;
@@ -9,17 +9,18 @@ using Gert.Chat.OpenAI;
 using Gert.Database;
 using Gert.Database.Sqlite;
 using Gert.Ingestion;
+using Gert.Model.Documents;
 using Gert.Rag;
 using Gert.Rag.Sqlite;
 using Gert.Service;
 using Gert.Service.Chat;
 using Gert.Service.Ingestion;
-using Gert.Service.Observability;
 using Gert.Storage.Local;
-using Gert.Tools;
-using Gert.Tools.Sandbox.GVisor;
-using Gert.Tools.Sandbox.Monty;
-using Gert.Tools.Search.SearXNG;
+using Gert.Tools.Builtin;
+using Gert.Tools.Builtin.Sandbox.GVisor;
+using Gert.Tools.Builtin.Sandbox.Monty;
+using Gert.Tools.Builtin.Search.SearXNG;
+using Gert.TurnControl.Local;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -52,7 +53,7 @@ builder.Host.UseDefaultServiceProvider(options =>
 // uploads get the authoritative, branded 400 - not a bare Kestrel 413.
 builder.WebHost.ConfigureKestrel(kestrel =>
     kestrel.Limits.MaxRequestBodySize =
-        Gert.Service.Validation.UploadConstraints.MaxSizeBytes + 1_048_576);
+        Gert.Validation.Rules.UploadConstraints.MaxSizeBytes + 1_048_576);
 
 // Bounded shutdown.
 // Open SSE streams end themselves on ApplicationStopping (the stream endpoint
@@ -104,15 +105,21 @@ builder.Services.AddSingleton<ChannelIngestionQueue>();
 builder.Services.AddSingleton<IIngestionQueue>(sp => sp.GetRequiredService<ChannelIngestionQueue>());
 builder.Services.AddHostedService<IngestionWorker>();
 
-// Turn worker (chat-and-tools.md section detached turns): same shape as ingestion -
-// POST plans + enqueues and responds 202; the worker drives the tool loop
-// off-thread, so generation survives client disconnects. The TurnJob carries
-// (iss, sub, entitlement snapshot); TurnWorker seeds DetachedUserContext per scope.
-builder.Services.AddSingleton<ChannelTurnQueue>();
-builder.Services.AddSingleton<ITurnQueue>(sp => sp.GetRequiredService<ChannelTurnQueue>());
-builder.Services.AddHostedService<TurnWorker>();
-
 builder.Services.AddGertServices();
+
+// Turn/agent execution engine (chat-and-tools.md section detached turns): the launcher,
+// the planner/runner, and the agent + reusable loop.
+// Gert.Agent is the layer between the host and the service layer; AddGertAgent registers the
+// TurnLauncher (POST plans + enqueues and responds 202; the launcher runs the turn off-thread
+// under a global concurrency cap, so generation survives client disconnects). The TurnJob carries
+// (iss, sub, entitlement snapshot); the launcher seeds DetachedUserContext per scope.
+builder.Services.AddGertAgent();
+
+// The turn control plane (chat-and-tools.md section detached turns): the runner subscribes for
+// cancel + ask_user answers, the endpoints publish to the scope. Gert.TurnControl.Local is the
+// in-process default - swap it for a networked ITurnControlBus (Kafka/NATS) to split the agent
+// host from the chat API across instances; the engine + endpoints depend only on the port.
+builder.Services.AddGertTurnControlLocal();
 
 // Detached turn pipeline tunables (chat-and-tools.md section detached turns). The service
 // layer registers the defaults; the host binds configuration over them
@@ -123,12 +130,40 @@ builder.Services.AddOptions<Gert.Service.Chat.TurnOptions>()
     .Validate(o => o.MaxConcurrentTurns >= 1, "Gert:Turn:MaxConcurrentTurns must be >= 1")
     .ValidateOnStart();
 
-// AddGertServices registers the id-only ToolRegistry singleton the auth + validation
-// layers use for entitlement/toggle id checks (auth.md section tool entitlements). The
-// built-in tool implementations (rag/search/sandbox/...) are registered as scoped ITool
-// by the Gert.Tools adapter's AddBuiltinTools (called from AddGertTools below); the
+// Per-tool budget overrides (turn-budgets.md section 1): for each registered tool id, bind any
+// "Gert:Tools:<id>:Limits" section into a PARTIAL ToolBoundsOverride - absent fields leave the tool's
+// intrinsic ToolBounds untouched. The id-only ToolRegistry (a singleton) is the id source: resolving
+// the scoped ITool instances from the root options provider would trip ValidateScopes. The configure
+// action runs lazily, when IOptions<ToolsOptions> is first materialised (a turn), not at build time.
+builder.Services.AddOptions<Gert.Service.Chat.ToolsOptions>()
+    .Configure<IServiceProvider>((options, sp) =>
+    {
+        var toolsSection = builder.Configuration.GetSection("Gert:Tools");
+        foreach (var id in sp.GetRequiredService<Gert.Tools.ToolRegistry>().AllIds)
+        {
+            var limits = toolsSection.GetSection($"{id}:Limits");
+            if (!limits.Exists())
+            {
+                continue;
+            }
+
+            var ov = new Gert.Service.Chat.ToolBoundsOverride();
+            limits.Bind(ov);
+            options.PerTool[id] = ov;
+        }
+    });
+
+// Operator-configurable system-prompt fragments (the canvas/artifact nudge). The
+// service layer registers empty defaults; the host binds the real text over them.
+builder.Services.AddOptions<Gert.Service.Chat.PromptOptions>()
+    .BindConfiguration("Gert:Prompts");
+
+// The Gert.Tools.Builtin adapter's AddBuiltinTools (called from AddGertTools below) registers
+// both the id-only ToolRegistry singleton the auth + validation layers use for entitlement/toggle
+// id checks (auth.md section tool entitlements) AND the built-in tool implementations
+// (rag/search/sandbox/...) as scoped ITool; the
 // orchestrator resolves the tool instances via IEnumerable<ITool>. The external ports
-// each tool needs (IChatModelClient / IEmbeddingClient / IWebSearch / IPythonSandbox)
+// each tool needs (IChatClient / IEmbeddingGenerator / IWebSearch / IPythonSandbox)
 // are registered by the Gert.Chat/Tools/Ingestion adapters (or a Testing host's fakes).
 
 // Auth (auth.md section ASP.NET Core wiring).
@@ -136,14 +171,14 @@ builder.Services.AddOptions<Gert.Service.Chat.TurnOptions>()
 builder.Services.AddGertJwtAuth(builder.Configuration);
 builder.Services.AddGertAuthorization();
 
-// IUserContext routing: requests resolve the JWT-backed HttpUserContext; worker
-// scopes (no HttpContext) resolve the DetachedUserContext that TurnWorker seeds
+// IUserContext routing: requests resolve the JWT-backed HttpUserContext; launcher
+// scopes (no HttpContext) resolve the DetachedUserContext that TurnLauncher seeds
 // from the job's plan-time identity + entitlement snapshot. Without this, the
 // scoped tools (rag) would throw "no HTTP context" off-thread.
 builder.Services.Replace(ServiceDescriptor.Scoped<IUserContext>(sp =>
     sp.GetRequiredService<IHttpContextAccessor>().HttpContext is not null
         ? ActivatorUtilities.CreateInstance<HttpUserContext>(sp)
-        : sp.GetRequiredService<DetachedUserContext>()));
+        : sp.GetRequiredService<Gert.Agent.DetachedUserContext>()));
 
 // DEV/TEST ONLY: trust a static dev JWKS file (testing.md section 4.3).
 // The E2E harness (tools/smoke) mints RS256 tokens with a git-ignored dev key and
@@ -266,16 +301,12 @@ builder.Services.AddGertRag(builder.Configuration);
 builder.Services.AddGertRagSqlite(builder.Configuration);
 builder.Services.AddGertStorageLocal(builder.Configuration);
 
-// Forward-recovery for the deletion saga: on startup, finish any account deletion a previous
-// run left interrupted (the deletion journal + the idempotent eraser are wired above).
-builder.Services.AddHostedService<Gert.Api.Lifecycle.DeletionRecoveryService>();
-
 // External-world ports.
 // One AddGert* per functionality (dotnet-style-guide.md section 4). Chat is split into the
 // GENERIC layer (AddGertChat: the impl-agnostic provider catalog + keyed-plugin chat-client
 // factory + IChatProviderCatalog) and the IMPLEMENTATION plugins the composition root makes
 // available (AddGertChatOpenAI: the OpenAI chat-client builder + per-provider transports +
-// IEmbeddingClient). Configuration selects which registered plugin builds each provider
+// IEmbeddingGenerator). Configuration selects which registered plugin builds each provider
 // (Gert:Chat:Providers:<slug>:Type). Search and the run_python sandbox follow the same keyed
 // capability-plugin pattern: AddGertTools registers the GENERIC selectors over the IWebSearch /
 // IWebFetcher / IPythonSandbox ports, and the composition root makes the shipped plugins

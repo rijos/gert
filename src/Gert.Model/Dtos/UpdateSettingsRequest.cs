@@ -1,4 +1,3 @@
-using Gert.Model.Rag;
 using Gert.Model.UI;
 
 namespace Gert.Model.Dtos;
@@ -19,6 +18,4 @@ public sealed record UpdateSettingsRequest
     public string? DefaultModelId { get; init; }
 
     public ToolToggles? DefaultTools { get; init; }
-
-    public MemoryMode? MemoryMode { get; init; }
 }

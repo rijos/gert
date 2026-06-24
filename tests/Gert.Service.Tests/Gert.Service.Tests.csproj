@@ -17,6 +17,10 @@
     <!-- The TurnPlanner / TurnRunner orchestration tests drive the real built-in
          tools (now in the Gert.Tools adapter) through the turn pipeline. -->
     <ProjectReference Include="..\..\src\Gert.Tools\Gert.Tools.csproj" />
+    <!-- The tool impl leaf, for the Phase 6 acceptance gate (ArchitectureTests:
+         Gert.Tools.Builtin must NOT depend on Gert.Service) and the ChatToolDelegate
+         tests that drive the real RagTool/SubAgentTool through the nested loop. -->
+    <ProjectReference Include="..\..\src\Gert.Tools.Builtin\Gert.Tools.Builtin.csproj" />
     <ProjectReference Include="..\Gert.Testing\Gert.Testing.csproj" />
   </ItemGroup>
 

@@ -73,17 +73,14 @@ ENDPOINTS: list[tuple[str, str]] = [
     ("POST", f"/api/projects/{PID}/documents"),
     ("GET", f"/api/projects/{PID}/documents/{GUID}"),
     ("DELETE", f"/api/projects/{PID}/documents/{GUID}"),
-    # MemoryController
-    ("GET", f"/api/projects/{PID}/memory"),
-    ("POST", f"/api/projects/{PID}/memory"),
-    ("DELETE", f"/api/projects/{PID}/memory/{GUID}"),
     # AccountController
     ("POST", f"/api/projects/{PID}/forget-documents"),
     ("GET", f"/api/projects/{PID}/export"),
     ("GET", "/api/account/export"),
     ("DELETE", "/api/account"),
-    # ModelsController / SettingsController
+    # ModelsController / ToolsController / SettingsController
     ("GET", "/api/models"),
+    ("GET", "/api/tools"),
     ("GET", "/api/settings"),
     ("PUT", "/api/settings"),
     # AdminController (admin policy on top of the fallback - still 401 anonymous)

@@ -1,0 +1,40 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <!-- Tool CONTRACTS (ITool/ToolRegistry/ToolResult + the IWebSearch/IWebFetcher/IPythonSandbox
+         ports + the IToolHost/IRagResource/IToolDelegate seams): this impl leaf implements them.
+         Mirrors Gert.Chat.OpenAI -> Gert.Chat. RagTool/SubAgentTool reach RAG + delegation through
+         the host at call time, so this leaf no longer references Gert.Service, Gert.Database,
+         Gert.Rag, or Gert.Chat (the architecture test enforces the Service edge is gone). -->
+    <ProjectReference Include="..\Gert.Tools\Gert.Tools.csproj" />
+    <ProjectReference Include="..\Gert.Validation\Gert.Validation.csproj" />
+    <ProjectReference Include="..\Gert.Model\Gert.Model.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- F5 test seam: SafeHttpFetcherRedirectTests constructs SafeHttpFetcher via its
+         internal ctor to inject the DNS resolver / IP-check delegates (loopback
+         listeners stand in for "public" hosts). Internal-only by design - a public or
+         options-based override would ship an SSRF bypass. The assembly name MUST match. -->
+    <InternalsVisibleTo Include="Gert.Tools.Builtin.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- IHttpClientFactory + typed-client wiring, options binding, configuration,
+         DI, logging abstractions. -->
+    <PackageReference Include="Microsoft.Extensions.Http"
+                      Version="$(MicrosoftExtensionsHttpVersion)" />
+    <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions"
+                      Version="$(MicrosoftExtensionsOptionsVersion)" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions"
+                      Version="$(MicrosoftExtensionsConfigVersion)" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions"
+                      Version="$(MicrosoftExtensionsLoggingVersion)" />
+
+    <!-- Resilience: timeout + retry around the SearXNG HTTP calls (tech-stack section HTTP).
+         Microsoft.Extensions.Http.Resilience layers Polly v8 pipelines onto the typed client. -->
+    <PackageReference Include="Microsoft.Extensions.Http.Resilience"
+                      Version="$(MicrosoftExtensionsHttpResilienceVersion)" />
+  </ItemGroup>
+
+</Project>

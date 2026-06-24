@@ -32,8 +32,8 @@ public static class ServiceCollectionExtensions
             .Bind(configuration.GetSection(StorageOptions.SectionName))
             .ValidateOnStart();
 
-        // The storage-backend seam: every non-database byte under a user tree (uploads,
-        // memory bodies) flows through IObjectStore. The local backend writes under
+        // The storage-backend seam: every non-database byte under a user tree (uploads)
+        // flows through IObjectStore. The local backend writes under
         // {DataRoot}/users. The user/project DELETE orchestration (DB half + blob half)
         // lives in the service layer, not here.
         services.TryAddSingleton<IObjectStore, LocalObjectStore>();

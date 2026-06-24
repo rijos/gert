@@ -85,9 +85,9 @@ public interface IChatRepository : IAsyncDisposable
     /// (<c>UPDATE conversations SET next_seq = next_seq + 1 ... RETURNING</c>).
     /// The single source of <c>seq</c> - single-writer per conversation by
     /// construction: the <c>ux_messages_streaming</c> gate index admits at most
-    /// one live turn per conversation, and the keyed worker lanes run one
-    /// conversation's turns strictly in order on one lane (decisions section 11). A
-    /// losing planner's allocations leave gaps in <c>next_seq</c> - harmless:
+    /// one live turn per conversation (a second is 409'd at plan time), so a
+    /// conversation never has two turns allocating seq at once (decisions section 11).
+    /// A losing planner's allocations leave gaps in <c>next_seq</c> - harmless:
     /// seq is an ordering cursor, not dense.
     /// </summary>
     Task<long> AllocateSeqAsync(string conversationId, CancellationToken cancellationToken = default);
@@ -138,9 +138,15 @@ public interface IChatRepository : IAsyncDisposable
     Task InsertArtifactAsync(Artifact artifact, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Overwrite an existing artifact's mutable fields (kind/name/language/content/
-    /// version) by <c>Id</c> - the <c>edit_artifact</c> / <c>make_artifact</c>
+    /// Overwrite an existing artifact's mutable fields (kind/name/content/version/
+    /// updated_at) by <c>Id</c> - the <c>edit_artifact</c> / <c>make_artifact</c>
     /// (overwrite) path. Identity and conversation binding are immutable.
     /// </summary>
     Task UpdateArtifactAsync(Artifact artifact, CancellationToken cancellationToken = default);
+
+    /// <summary>Delete the artifact carrying <paramref name="name"/> in the conversation; false if absent.</summary>
+    Task<bool> DeleteArtifactByNameAsync(
+        string conversationId,
+        string name,
+        CancellationToken cancellationToken = default);
 }

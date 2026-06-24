@@ -8,7 +8,7 @@ Erasing a user's *data* drops each of their stores in turn:
 
 - the **structured databases** (`user.db` + every project's `chat.db`) - the database engine unlinks its files / drops its rows;
 - the **RAG index** (every project's `rag.db`) - the RAG engine does the same;
-- the **artifact blobs** (uploads, memory bodies) - the object store removes its tree.
+- the **artifact blobs** (uploads) - the object store removes its tree.
 
 This works cleanly because **nothing outside those stores references the user** - no rows in a shared DB, no foreign keys, no orphaned blobs. In the default single-root deployment all three live under one directory (`/data/users/{key}`, `key = sha256(iss + sub)`), so the net effect is removing that folder; point a database engine at its own `DataRoot` and the removal simply spans each root.
 
@@ -122,7 +122,7 @@ logs line up with folders and the admin API without leaking identity.
 
 > **The one deliberate exception - the `Debug` wire trace.** At `Debug`, `OpenAIWireLogger`
 > traces the actual `/v1/chat/completions` request body Gert sends upstream - so sampling params
-> and the tools block can be tuned ([installation/configuration.md section 14](../installation/configuration.md#14-logging---verbosity)).
+> and the tools block can be tuned ([installation/configuration.md section 15](../installation/configuration.md#15-logging---verbosity)).
 > That body carries message **content**. The api-key bearer is still redacted; content is not. So
 > production runs at `Information`, where the trace is silent - `Debug` is a local tuning mode only.
 

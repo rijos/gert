@@ -82,7 +82,7 @@ export const ArtifactChips = component({
     if (!chips.length) return div();
     return div({ class: "artifact-strip" },
       ...chips.map((a) =>
-        button({ class: "artifact-chip", title: "Open " + (a.name || "artifact") + " in the canvas", onclick: () => ui.openArtifact(a.id) },
+        button({ class: "artifact-chip", title: "Open " + (a.name || "artifact") + " in the canvas", onclick: () => ui.openArtifact(a.id, true) },
           Icon("file", { size: 15, strokeWidth: 2 }),
           span({ class: "ac-name" }, a.name || "untitled"),
           span({ class: "ac-hint" }, "Open"),

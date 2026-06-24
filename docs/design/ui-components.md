@@ -69,6 +69,7 @@ wwwroot/
     auth.js                  #   displayable identity (user chip, admin flag) - the token is NOT here (F2)
     chat.js                  #   conversations, active thread, message stream, streaming flag, tools, context tokens
     models.js                #   model catalog + current selection
+    tools.js                 #   entitled-tool catalog (GET /api/tools) - the popup's rows
     knowledge.js             #   documents + per-doc ingest status
     artifacts.js             #   artifacts open in the canvas for the active thread
 
@@ -79,8 +80,8 @@ wwwroot/
     conversations.js         #   list / open / rename / delete
     projects.js              #   list / create / switch / delete projects
     documents.js             #   upload, poll status, delete
-    memory.js                #   project memory entries
     models.js                #   GET /api/models
+    tools.js                 #   GET /api/tools (the entitled-tool catalog)
     settings.js              #   GET/PUT /api/settings
     admin.js                 #   GET/DELETE /api/admin/users (key -> user), GET /api/admin/system-prompt
 
@@ -105,8 +106,10 @@ wwwroot/
     main/
       top-bar.js             # collapse btn - title - theme - model picker - panel toggle
       conv-title.js          # editable conversation title
-      tools-menu.js          # composer dropdown of tool toggles (RAG/Search/Sandbox/Todos/Clock
-      │                      #   + Canvas - one switch for the make/edit/read artifact trio) + "Use my docs"
+      tools-menu.js          # composer "Tools" button -> centered Modal of tool toggles, rendered
+      │                      #   PURELY from GET /api/tools (each row's title/icon/group/source descriptor);
+      │                      #   Canvas (group==="canvas", one switch) + "Use my docs" (group==="docs")
+      │                      #   sections; sectioned by source; rows scroll inside the modal
       theme-toggle.js        # sun/moon - glyph swap driven by tokens, not JS theme checks
       model-picker.js        # dropdown menu + model items + capability badges
       message-stream.js      # the scrolling thread
@@ -489,7 +492,7 @@ Every interactive piece of the app, and where it lives.
 | User chip (avatar, auth line, settings) | `components/sidebar/user-chip.js` |
 | Top bar shell | `components/main/top-bar.js` |
 | Editable conversation title | `components/main/conv-title.js` |
-| Tool toggles (RAG / Search / Fetch / Sandbox / Todos / Clock / Ask me / Memories / Sub-agents + the Canvas trio as one switch) | `components/main/tools-menu.js` (composer dropdown) |
+| Tool toggles - a **descriptor-driven modal** (the composer "Tools" button opens a centered, scrollable `Modal` - not an anchored dropdown - so a long tool list scrolls): rows come from `GET /api/tools` (the tools this user's `gert_tools` claim entitles, the same ceiling the turn planner applies) and render **purely from each row's descriptor** - `title` (label), `icon` (a key into the curated `icons.ts` vocabulary), `group`, `source`, `requires_human` - so the SPA holds no per-tool-id knowledge. The Canvas group (`group==="canvas"`) collapses to one switch, the docs group (`group==="docs"`) is the "Use my docs" section, and the modal sections by `source` (only `builtin` today; a future `mcp` source becomes its own section for free). Toggles apply live (the modal has only a "Done" action) and persist per-conversation via the `ToolToggles` map | `components/main/tools-menu.js` (composer "Tools" button + modal), `components/ui/modal.js`, `services/tools.js`, `state/tools.js` |
 | Theme toggle | `components/main/theme-toggle.js` + `state/ui.js` |
 | Model (provider) picker dropdown + capability badges | `components/main/model-picker.js`, `components/ui/dropdown.js`, `badge.js` |
 | User settings (theme, reply language, default provider) | `components/settings/settings-modal.js` |

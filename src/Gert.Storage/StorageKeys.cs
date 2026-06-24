@@ -45,6 +45,23 @@ public static class StorageKeys
     }
 
     /// <summary>
+    /// Reject any <paramref name="conversationId"/> that is not a UUID (8-4-4-4-12).
+    /// Conversation ids are <c>Guid.NewGuid().ToString("D")</c>; rejecting the shape
+    /// up front means a malformed id never reaches a path/key join (defence in depth).
+    /// </summary>
+    public static void ValidateConversationId(string conversationId)
+    {
+        ArgumentNullException.ThrowIfNull(conversationId);
+
+        if (!Guid.TryParseExact(conversationId, "D", out _))
+        {
+            throw new ArgumentException(
+                $"Invalid conversation id '{conversationId}'; must be a UUID (8-4-4-4-12).",
+                nameof(conversationId));
+        }
+    }
+
+    /// <summary>
     /// Reject any admin-supplied user <paramref name="key"/> that is not exactly a
     /// lowercase sha256 hex string (security F6) - so a key can never name a path,
     /// a prefix, or anything but one user's storage root.

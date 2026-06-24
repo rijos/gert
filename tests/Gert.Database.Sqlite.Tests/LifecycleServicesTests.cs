@@ -101,7 +101,6 @@ public class LifecycleServicesTests
         got!.Name.Should().Be("Research");
         got.ConversationCount.Should().Be(0);
         got.DocumentCount.Should().Be(0);
-        got.MemoryCount.Should().Be(0);
     }
 
     [Fact]

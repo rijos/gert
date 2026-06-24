@@ -35,9 +35,11 @@ public sealed record ChatProviderInfo
 
     /// <summary>
     /// Provider type - selects the chat-client implementation behind the abstraction
-    /// (e.g. <c>openai</c> for an OpenAI-compatible/vLLM endpoint). Display-only here.
+    /// (e.g. <c>openai</c> for an OpenAI-compatible/vLLM endpoint). Display-only here. No baked-in
+    /// default: a POCO knows no implementation; the catalog fills an omitted type from the
+    /// registered default plugin.
     /// </summary>
-    public string Type { get; init; } = "openai";
+    public string Type { get; init; } = string.Empty;
 
     /// <summary>The catalog's flagged default (the picker's initial selection).</summary>
     public bool Default { get; init; }

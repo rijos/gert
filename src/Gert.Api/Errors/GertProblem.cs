@@ -29,10 +29,11 @@ public static class GertProblem
     public static void Stamp(ProblemDetails problem, HttpContext httpContext)
     {
         ArgumentNullException.ThrowIfNull(problem);
+        ArgumentNullException.ThrowIfNull(httpContext);
 
         problem.Extensions["service"] = ServiceName;
         problem.Extensions["traceId"] =
-            Activity.Current?.Id ?? httpContext?.TraceIdentifier;
+            Activity.Current?.Id ?? httpContext.TraceIdentifier;
     }
 
     /// <summary>

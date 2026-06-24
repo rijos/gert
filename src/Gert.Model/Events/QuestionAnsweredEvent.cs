@@ -15,7 +15,8 @@ public sealed record QuestionAnsweredEvent : ChatEvent
     /// <summary>The server-minted question id that was answered.</summary>
     public required string QuestionId { get; init; }
 
-    public required string Answer { get; init; }
+    /// <summary>One answer per asked question, in the order they were asked.</summary>
+    public required IReadOnlyList<string> Answers { get; init; }
 
     public override ChatEventType Type => ChatEventType.QuestionAnswered;
 }

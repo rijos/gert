@@ -2,7 +2,9 @@ using Gert.Database;
 using Gert.Model;
 using Gert.Model.Chat;
 using Gert.Model.Dtos;
-using Gert.Service.Validation;
+using Gert.Service.Chat;
+using Gert.Validation;
+using Microsoft.Extensions.Options;
 
 namespace Gert.Service.Conversations;
 
@@ -20,15 +22,18 @@ public sealed class ConversationService : IConversationService
     private readonly IChatDatabaseProvider _databases;
     private readonly IUserContext _user;
     private readonly TimeProvider _time;
+    private readonly TurnOptions _options;
 
     public ConversationService(
         IChatDatabaseProvider databases,
         IUserContext user,
-        TimeProvider time)
+        TimeProvider time,
+        IOptions<TurnOptions> options)
     {
         _databases = databases ?? throw new ArgumentNullException(nameof(databases));
         _user = user ?? throw new ArgumentNullException(nameof(user));
         _time = time ?? throw new ArgumentNullException(nameof(time));
+        _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
     }
 
     /// <summary>Page-size ceiling for the search overlay (defensive clamp).</summary>
@@ -175,9 +180,12 @@ public sealed class ConversationService : IConversationService
             return thread.Conversation;
         }
 
-        // A streaming turn owns the conversation: its runner finalizes rows in
-        // the SOURCE database - moving underneath it would strand the write-back.
-        if (thread.Messages.Any(m => m.Status == MessageStatus.Streaming))
+        // A streaming turn owns the conversation: its runner finalizes rows in the SOURCE database -
+        // moving underneath it would strand the write-back. Go through the orphan rule
+        // (MessageStatusRules), not raw Status: a crashed worker's stale streaming row ages out to
+        // error past MaxTurnDuration, so a long-dead turn never permanently blocks a move.
+        if (thread.Messages.Any(m =>
+                MessageStatusRules.IsTurnInProgress(m, _time.GetUtcNow(), _options.MaxTurnDuration)))
         {
             throw new Chat.TurnInProgressException(conversationId);
         }

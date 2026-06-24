@@ -6,8 +6,8 @@ using Gert.Database.Sqlite;
 using Gert.Model.Plugins;
 using Gert.Rag;
 using Gert.Rag.Sqlite;
-using Gert.Tools.Sandbox;
-using Gert.Tools.Search;
+using Gert.Tools.Builtin.Sandbox;
+using Gert.Tools.Builtin.Search;
 using Xunit;
 
 namespace Gert.Chat.Tests;
@@ -19,9 +19,10 @@ namespace Gert.Chat.Tests;
 /// each <see cref="ICapabilityPlugin"/> lives in its per-impl leaf; and every capability-impl DI
 /// registrar follows <c>AddGert&lt;Capability&gt;&lt;Impl&gt;</c>. A capability may be split by
 /// ASSEMBLY (chat: <c>Gert.Chat</c> contracts vs <c>Gert.Chat.OpenAI</c> impl) or, when the ports
-/// already live upstream in <c>Gert.Service.External</c> and the adapter is a single multi-backend
-/// bag, by NAMESPACE leaf within one assembly (search/sandbox in <c>Gert.Tools</c>); both shapes
-/// are enforced here. As capabilities split, add a row to <see cref="Capabilities"/>.
+/// live in the shared contracts assembly (<c>Gert.Tools</c>) and the impl adapter is a single
+/// multi-backend bag, by NAMESPACE leaf within one assembly (search/sandbox in
+/// <c>Gert.Tools.Builtin</c>); both shapes are enforced here. As capabilities split, add a row to
+/// <see cref="Capabilities"/>.
 /// </summary>
 public sealed class PluginArchitectureTests
 {
@@ -61,22 +62,22 @@ public sealed class PluginArchitectureTests
             Registrars: [("AddGertRagSqlite", typeof(SqliteRagEngineBuilder).Assembly)],
             AssemblySplit: (typeof(IRagEngineBuilder).Assembly, typeof(SqliteRagEngineBuilder).Assembly)),
 
-        // Search: split by NAMESPACE leaf inside Gert.Tools (the ports live upstream in
-        // Gert.Service.External, so Gert.Tools is a single impl-adapter bag).
+        // Search: split by NAMESPACE leaf inside Gert.Tools.Builtin (the ports live in the
+        // Gert.Tools contracts assembly, so the impl leaf is a single multi-backend bag).
         new(
             Name: "Search",
             PluginInterface: typeof(IWebSearchBuilder),
-            IsContracts: t => t.Namespace == "Gert.Tools.Search",
-            IsImplLeaf: t => t.Namespace?.StartsWith("Gert.Tools.Search.", StringComparison.Ordinal) == true,
+            IsContracts: t => t.Namespace == "Gert.Tools.Builtin.Search",
+            IsImplLeaf: t => t.Namespace?.StartsWith("Gert.Tools.Builtin.Search.", StringComparison.Ordinal) == true,
             Registrars: [("AddGertSearchSearXNG", typeof(IWebSearchBuilder).Assembly)],
             AssemblySplit: null),
 
-        // Sandbox: split by NAMESPACE leaf inside Gert.Tools, two impls (Monty, GVisor).
+        // Sandbox: split by NAMESPACE leaf inside Gert.Tools.Builtin, two impls (Monty, GVisor).
         new(
             Name: "Sandbox",
             PluginInterface: typeof(IPythonSandboxBuilder),
-            IsContracts: t => t.Namespace == "Gert.Tools.Sandbox",
-            IsImplLeaf: t => t.Namespace?.StartsWith("Gert.Tools.Sandbox.", StringComparison.Ordinal) == true,
+            IsContracts: t => t.Namespace == "Gert.Tools.Builtin.Sandbox",
+            IsImplLeaf: t => t.Namespace?.StartsWith("Gert.Tools.Builtin.Sandbox.", StringComparison.Ordinal) == true,
             Registrars:
             [
                 ("AddGertSandboxMonty", typeof(IPythonSandboxBuilder).Assembly),
@@ -148,6 +149,24 @@ public sealed class PluginArchitectureTests
                     implName,
                     $"{contracts.GetName().Name} is a capability contracts assembly and must not " +
                     $"reference its implementation '{implName}'");
+        }
+    }
+
+    [Fact]
+    public void Assembly_split_impl_leaves_do_not_depend_on_the_service_layer()
+    {
+        // An impl leaf reaches the world through its contracts ports, never the business-logic
+        // layer (tech-stack.md section Architecture): it references only its contracts + Gert.Model
+        // (+ Gert.Storage for the file-backed engines). This guards against re-introducing an
+        // outward edge like the removed Gert.Database.Sqlite -> Gert.Service reference.
+        foreach (var capability in Capabilities.Where(c => c.AssemblySplit is not null))
+        {
+            var impl = capability.AssemblySplit!.Value.Impl;
+            impl.GetReferencedAssemblies().Select(a => a.Name)
+                .Should().NotContain(
+                    "Gert.Service",
+                    $"the {capability.Name} impl leaf '{impl.GetName().Name}' must not reference the " +
+                    "service layer");
         }
     }
 

@@ -2,7 +2,7 @@ using Gert.Model.Dtos;
 using Gert.Model.Projects;
 using Gert.Service;
 using Gert.Service.Projects;
-using Gert.Service.Validation;
+using Gert.Validation;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Gert.Api.Controllers;

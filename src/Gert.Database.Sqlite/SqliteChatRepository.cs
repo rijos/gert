@@ -167,7 +167,7 @@ public sealed class SqliteChatRepository(SqliteConnection connection) : IChatRep
     {
         ArgumentNullException.ThrowIfNull(conversationId);
 
-        // ON DELETE CASCADE removes messages/tool_calls/citations/artifacts; the
+        // ON DELETE CASCADE removes messages/tool_calls/citations/chat_objects; the
         // provider enables PRAGMA foreign_keys=ON on every connection.
         const string sql = "DELETE FROM conversations WHERE id = @id;";
         var affected = await _connection.ExecuteAsync(
@@ -507,8 +507,8 @@ public sealed class SqliteChatRepository(SqliteConnection connection) : IChatRep
         ArgumentNullException.ThrowIfNull(conversationId);
 
         const string sql =
-            "SELECT id, conversation_id, message_id, kind, name, language, content, version, created_at " +
-            "FROM artifacts WHERE conversation_id = @cid ORDER BY created_at ASC, id ASC;";
+            "SELECT id, conversation_id, kind, name, content, version, created_at, updated_at " +
+            "FROM chat_objects WHERE conversation_id = @cid ORDER BY created_at ASC, id ASC;";
 
         var rows = await _connection.QueryAsync<ArtifactRow>(
             new CommandDefinition(sql, new { cid = conversationId }, cancellationToken: cancellationToken))
@@ -525,8 +525,8 @@ public sealed class SqliteChatRepository(SqliteConnection connection) : IChatRep
         ArgumentNullException.ThrowIfNull(artifactId);
 
         const string sql =
-            "SELECT id, conversation_id, message_id, kind, name, language, content, version, created_at " +
-            "FROM artifacts WHERE id = @id;";
+            "SELECT id, conversation_id, kind, name, content, version, created_at, updated_at " +
+            "FROM chat_objects WHERE id = @id;";
 
         var row = await _connection.QuerySingleOrDefaultAsync<ArtifactRow>(
             new CommandDefinition(sql, new { id = artifactId }, cancellationToken: cancellationToken))
@@ -545,8 +545,8 @@ public sealed class SqliteChatRepository(SqliteConnection connection) : IChatRep
         ArgumentNullException.ThrowIfNull(name);
 
         const string sql =
-            "SELECT id, conversation_id, message_id, kind, name, language, content, version, created_at " +
-            "FROM artifacts WHERE conversation_id = @cid AND name = @name " +
+            "SELECT id, conversation_id, kind, name, content, version, created_at, updated_at " +
+            "FROM chat_objects WHERE conversation_id = @cid AND name = @name " +
             "ORDER BY created_at DESC, id DESC LIMIT 1;";
 
         var row = await _connection.QuerySingleOrDefaultAsync<ArtifactRow>(
@@ -562,20 +562,19 @@ public sealed class SqliteChatRepository(SqliteConnection connection) : IChatRep
         ArgumentNullException.ThrowIfNull(artifact);
 
         const string sql =
-            "INSERT INTO artifacts (id, conversation_id, message_id, kind, name, language, content, version, created_at) " +
-            "VALUES (@Id, @ConversationId, @MessageId, @Kind, @Name, @Language, @Content, @Version, @CreatedAt);";
+            "INSERT INTO chat_objects (id, conversation_id, kind, name, content, version, created_at, updated_at) " +
+            "VALUES (@Id, @ConversationId, @Kind, @Name, @Content, @Version, @CreatedAt, @UpdatedAt);";
 
         await _connection.ExecuteAsync(new CommandDefinition(sql, new
         {
             artifact.Id,
             artifact.ConversationId,
-            artifact.MessageId,
-            Kind = ArtifactKindToString(artifact.Kind),
+            Kind = ArtifactKinds.ToToken(artifact.Kind),
             artifact.Name,
-            artifact.Language,
             artifact.Content,
             artifact.Version,
             CreatedAt = FormatTime(artifact.CreatedAt),
+            UpdatedAt = FormatTime(artifact.UpdatedAt),
         }, cancellationToken: cancellationToken)).ConfigureAwait(false);
     }
 
@@ -585,18 +584,36 @@ public sealed class SqliteChatRepository(SqliteConnection connection) : IChatRep
         ArgumentNullException.ThrowIfNull(artifact);
 
         const string sql =
-            "UPDATE artifacts SET kind = @Kind, name = @Name, language = @Language, " +
-            "content = @Content, version = @Version WHERE id = @Id;";
+            "UPDATE chat_objects SET kind = @Kind, name = @Name, " +
+            "content = @Content, version = @Version, updated_at = @UpdatedAt WHERE id = @Id;";
 
         await _connection.ExecuteAsync(new CommandDefinition(sql, new
         {
             artifact.Id,
-            Kind = ArtifactKindToString(artifact.Kind),
+            Kind = ArtifactKinds.ToToken(artifact.Kind),
             artifact.Name,
-            artifact.Language,
             artifact.Content,
             artifact.Version,
+            UpdatedAt = FormatTime(artifact.UpdatedAt),
         }, cancellationToken: cancellationToken)).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
+    public async Task<bool> DeleteArtifactByNameAsync(
+        string conversationId,
+        string name,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(conversationId);
+        ArgumentNullException.ThrowIfNull(name);
+
+        const string sql = "DELETE FROM chat_objects WHERE conversation_id = @cid AND name = @name;";
+
+        var affected = await _connection.ExecuteAsync(
+            new CommandDefinition(sql, new { cid = conversationId, name }, cancellationToken: cancellationToken))
+            .ConfigureAwait(false);
+
+        return affected > 0;
     }
 
     /// <inheritdoc />
@@ -671,13 +688,14 @@ public sealed class SqliteChatRepository(SqliteConnection connection) : IChatRep
     {
         Id = row.Id,
         ConversationId = row.ConversationId,
-        MessageId = row.MessageId,
-        Kind = ArtifactKindFromString(row.Kind),
+        MessageId = null,
+        Kind = ArtifactKinds.FromToken(row.Kind),
         Name = row.Name,
-        Language = row.Language,
+        Language = null,
         Content = row.Content,
         Version = row.Version,
         CreatedAt = ParseTime(row.CreatedAt),
+        UpdatedAt = ParseTime(row.UpdatedAt),
     };
 
     private static T? Deserialize<T>(string? json)
@@ -758,32 +776,6 @@ public sealed class SqliteChatRepository(SqliteConnection connection) : IChatRep
         _ => throw new InvalidOperationException($"Unknown citation source '{value}'."),
     };
 
-    private static string ArtifactKindToString(ArtifactKind kind) => kind switch
-    {
-        ArtifactKind.Md => "md",
-        ArtifactKind.Html => "html",
-        ArtifactKind.Svg => "svg",
-        ArtifactKind.Py => "py",
-        ArtifactKind.Cs => "cs",
-        ArtifactKind.Cpp => "cpp",
-        ArtifactKind.Js => "js",
-        ArtifactKind.Rs => "rs",
-        _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, null),
-    };
-
-    private static ArtifactKind ArtifactKindFromString(string value) => value switch
-    {
-        "md" => ArtifactKind.Md,
-        "html" => ArtifactKind.Html,
-        "svg" => ArtifactKind.Svg,
-        "py" => ArtifactKind.Py,
-        "cs" => ArtifactKind.Cs,
-        "cpp" => ArtifactKind.Cpp,
-        "js" => ArtifactKind.Js,
-        "rs" => ArtifactKind.Rs,
-        _ => throw new InvalidOperationException($"Unknown artifact kind '{value}'."),
-    };
-
     // PascalCase properties; Dapper binds snake_case columns via
     // MatchNamesWithUnderscores (DapperBootstrap, via the static ctor) and narrows SQLite's
     // Int64 to each property's declared type - no `long` widening, no casts.
@@ -854,12 +846,11 @@ public sealed class SqliteChatRepository(SqliteConnection connection) : IChatRep
     {
         public required string Id { get; init; }
         public required string ConversationId { get; init; }
-        public string? MessageId { get; init; }
         public required string Kind { get; init; }
         public required string Name { get; init; }
-        public string? Language { get; init; }
         public required string Content { get; init; }
         public int Version { get; init; }
         public required string CreatedAt { get; init; }
+        public required string UpdatedAt { get; init; }
     }
 }

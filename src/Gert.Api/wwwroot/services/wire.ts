@@ -32,7 +32,6 @@ export type ToolKind =
   | "read_artifact"
   | "ask_user"
   | "fetch"
-  | "memory"
   | "sub_agent";
 // turn-event `$type` discriminator (Gert.Model/Events/ChatEvent.cs).
 export type WireEventType =
@@ -49,7 +48,6 @@ export type WireEventType =
   | "cancelled"
   | "error";
 export type Theme = "light" | "dark" | "auto";
-export type MemoryMode = "off" | "manual" | "auto";
 
 // The per-conversation tool on/off map: { tool_id: boolean }. The set of ids is open (server
 // owns it), so this is an open record rather than a fixed key list.
@@ -72,7 +70,6 @@ export interface WireProject {
   // present on the list (ProjectSummary), absent on the create/patch echo (ProjectMeta)
   conversation_count?: number;
   document_count?: number;
-  memory_count?: number;
 }
 
 // POST /api/projects, PATCH /api/projects/{pid}
@@ -103,6 +100,8 @@ export interface WireThread extends WireConversation {
 export interface WireAttachment {
   mime_type: string;
   data: string;
+  // Filename for a dropped text-file attachment (null/absent for a pasted image).
+  name?: string | null;
 }
 
 export interface WireCitation {
@@ -186,6 +185,13 @@ export interface WireMessageInput {
   timezone?: string;
 }
 
+// POST .../answer request body: the server-minted question id + one answer per asked question,
+// in question order (mirrors the C# AnswerRequest DTO).
+export interface WireAnswerInput {
+  question_id: string;
+  answers: string[];
+}
+
 // 202 response to a message POST: the row ids + the seq the consumer's cursor starts from.
 export interface WireTurnAccepted {
   conversation_id: string;
@@ -201,10 +207,19 @@ export interface WireEventPage {
   has_more?: boolean;
 }
 
+// One asked question inside a `question_asked` event (one tab in the SPA). Mirrors the C#
+// AskedQuestion record (Gert.Model/Events/AskedQuestion.cs).
+export interface WireAskedQuestion {
+  question: string;
+  header?: string | null;
+  options: string[];
+  allow_free_text: boolean;
+}
+
 // One streamed turn event (the SSE `data:` object / a persisted turn_events row). A single wide
 // bag keyed by `$type`; every field is optional because each event populates only its own. This
 // is the one genuinely dynamic boundary - values are applied after a `$type` switch, and `hits`
-// arrives as raw rows. POST .../answer carries { question_id, answer }.
+// arrives as raw rows. POST .../answer carries { question_id, answers }.
 export interface WireChatEvent {
   $type?: WireEventType;
   message_id?: string;
@@ -215,10 +230,10 @@ export interface WireChatEvent {
   status?: ToolCallStatus;
   request?: { query?: string; name?: string; code?: string };
   question_id?: string;
-  question?: string;
-  options?: string[];
-  allow_free_text?: boolean;
-  answer?: string;
+  // question_asked carries the full tabbed payload; question_answered carries the answers in
+  // question order.
+  questions?: WireAskedQuestion[];
+  answers?: string[];
   hits?: unknown;
   stdout?: string;
   error?: string;
@@ -251,20 +266,6 @@ export interface WireDocument {
   created_at?: string;
 }
 
-export interface WireMemoryEntry {
-  id: string;
-  title: string;
-  content?: string | null;
-  pinned?: boolean;
-  updated_at?: string;
-}
-
-export interface WireMemoryInput {
-  title: string;
-  content: string;
-  pinned?: boolean;
-}
-
 export interface WireModel {
   id: string;
   name: string;
@@ -283,7 +284,6 @@ export interface WireSettings {
   reply_language?: string | null;
   default_model_id?: string | null;
   default_tools?: WireToolToggles | null;
-  memory_mode?: MemoryMode;
 }
 
 // An artifact download ticket, served outside the turn stream.
@@ -304,6 +304,28 @@ export interface WireToolSpec {
   name: string;
   description: string;
   parameters_schema: string;
+}
+
+// A tool's execution flow (Gert.Tools/ToolType.cs). The popup groups on it - a modal tool
+// (ask_user) renders the same as a standard one, but the axis stays on the wire for parity.
+export type WireToolType = "standard" | "modal";
+
+// One entitled tool in GET /api/tools (the composer's tools popup catalog). The popup renders
+// PURELY from this descriptor - `title`/`icon`/`group`/`source` carry every label, glyph, and
+// sectioning, so no per-tool knowledge lives in the SPA. `id` is the gert_tools entitlement
+// name; `name` is the model-facing function name. `icon` is a key into the curated icons.ts
+// vocabulary (the server degrades an unknown key to a shipped fallback, so it always renders).
+// Only tools the caller is entitled to come back.
+export interface WireToolInfo {
+  id: string;
+  name: string;
+  description: string;
+  tool_type: WireToolType;
+  title: string;
+  icon: string;
+  group: string;
+  source: string;
+  requires_human: boolean;
 }
 
 export interface WireSystemPrompt {

@@ -1,0 +1,806 @@
+using FluentAssertions;
+using Gert.Agent;
+using Gert.Chat;
+using Gert.Database;
+using Gert.Model;
+using Gert.Model.Chat;
+using Gert.Model.Dtos;
+using Gert.Service.Chat;
+using Gert.Testing.Fakes;
+using Gert.Tools;
+using Gert.Tools.Builtin;
+using Gert.Tools.Hosting;
+using Gert.Validation;
+using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Options;
+using NSubstitute;
+using Xunit;
+
+namespace Gert.Agent.Tests;
+
+/// <summary>
+/// Phase 1 in the request scope: validation fail-closed, conversation
+/// materialization, the seq-stamped user row + streaming assistant placeholder,
+/// the history/entitlement snapshot captured into the <see cref="TurnJob"/>, and
+/// the 409 rule with its orphan-rule escape hatch.
+/// </summary>
+public sealed class TurnPlannerTests
+{
+    private const string Pid = "default";
+    private const string Conv = "conv-1";
+
+    // The tests give the planner their OWN canvas fragment (the production text now
+    // lives in appsettings, bound by the host) and assert against this value - it
+    // must mention make_artifact so the canvas-convention tests can prove it carries.
+    private const string TestCanvas = "TEST CANVAS: call make_artifact for whole files.";
+
+    private readonly IChatRepository _repo = Substitute.For<IChatRepository>();
+    private readonly IChatDatabaseProvider _provider = Substitute.For<IChatDatabaseProvider>();
+    private readonly IValidationProvider _validation = Substitute.For<IValidationProvider>();
+    private readonly TurnOptions _options = new();
+    private readonly List<Message> _persisted = [];
+    private readonly List<Message> _existing = [];
+    private long _seq;
+
+    public TurnPlannerTests()
+    {
+        _validation.Validate(Arg.Any<SendMessageRequest>()).Returns(ValidationResult.Success);
+
+        _provider
+            .OpenAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(_repo);
+
+        _repo.AllocateSeqAsync(Conv, Arg.Any<CancellationToken>())
+            .Returns(_ => Interlocked.Increment(ref _seq));
+        _repo.InsertMessageAsync(Arg.Any<Message>(), Arg.Any<CancellationToken>())
+            .Returns(Task.CompletedTask)
+            .AndDoes(ci => _persisted.Add(ci.Arg<Message>()));
+        // The gated turn insert (ux_messages_streaming): defaults to winning the
+        // gate, persisting user row then placeholder - order matters to the
+        // _persisted assertions.
+        _repo.TryInsertTurnMessagesAsync(Arg.Any<Message>(), Arg.Any<Message>(), Arg.Any<CancellationToken>())
+            .Returns(true)
+            .AndDoes(ci =>
+            {
+                _persisted.Add(ci.ArgAt<Message>(0));
+                _persisted.Add(ci.ArgAt<Message>(1));
+            });
+        _repo.TryExpireStreamingMessageAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(true);
+        _repo.ListMessagesAsync(Conv, Arg.Any<CancellationToken>())
+            .Returns(_ => (IReadOnlyList<Message>)_existing.ToArray());
+    }
+
+    private TurnPlanner NewPlanner(
+        TestUserContext? user = null,
+        IEnumerable<ITool>? tools = null,
+        IProjectInstructionsReader? instructions = null,
+        IChatProviderCatalog? catalog = null,
+        string canvas = TestCanvas) =>
+        new(
+            _provider,
+            user ?? new TestUserContext(),
+            tools ?? [],
+            Options.Create(_options),
+            Options.Create(new PromptOptions { Canvas = canvas }),
+            TimeProvider.System,
+            instructions,
+            catalog);
+
+    // Mint the proof through the substitute provider (Success by default) so these
+    // planning tests stay isolated from the real validators - a fake tool id the
+    // production validator would reject still flows through.
+    private Validated<SendMessageRequest> Valid(SendMessageRequest request) =>
+        Validated<SendMessageRequest>.From(request, _validation);
+
+    private void SeedConversation(params (string Id, bool On)[] toggles)
+    {
+        var map = toggles.ToDictionary(t => t.Id, t => t.On, StringComparer.Ordinal);
+        SeedConversation(new Conversation
+        {
+            Id = Conv,
+            Title = "t",
+            ModelId = "default",
+            Tools = new ToolToggles(map),
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow,
+        });
+    }
+
+    private void SeedConversation(Conversation conversation) =>
+        _repo.GetConversationAsync(Conv, Arg.Any<CancellationToken>())
+            .Returns(conversation);
+
+    private void SeedExisting(
+        MessageStatus status,
+        DateTimeOffset createdAt,
+        MessageRole role = MessageRole.Assistant,
+        string content = "prior",
+        string? reasoning = null) =>
+        _existing.Add(new Message
+        {
+            Id = Guid.NewGuid().ToString("D"),
+            ConversationId = Conv,
+            Role = role,
+            Content = content,
+            Reasoning = reasoning,
+            Status = status,
+            CreatedAt = createdAt,
+        });
+
+    [Fact]
+    public void An_invalid_request_cannot_produce_a_proof()
+    {
+        _validation.Validate(Arg.Any<SendMessageRequest>())
+            .Returns(ValidationResult.Failure([new ValidationError { Property = "content", Message = "required" }]));
+
+        var act = () => Valid(new SendMessageRequest { Content = string.Empty });
+
+        act.Should().Throw<ValidationException>();
+    }
+
+    [Fact]
+    public async Task New_conversation_is_materialised_with_a_derived_title()
+    {
+        var job = await NewPlanner().PlanAsync(Pid, Conv, Valid(new SendMessageRequest { Content = "hello world" }));
+
+        await _repo.Received(1).InsertConversationAsync(
+            Arg.Is<Conversation>(c => c.Id == Conv && c.Title == "hello world"),
+            Arg.Any<CancellationToken>());
+        job.ConversationId.Should().Be(Conv);
+    }
+
+    [Fact]
+    public async Task Title_cap_cuts_on_a_grapheme_boundary_and_never_splits_a_surrogate_pair()
+    {
+        Conversation? inserted = null;
+        await _repo.InsertConversationAsync(
+            Arg.Do<Conversation>(c => inserted = c), Arg.Any<CancellationToken>());
+        _repo.ClearReceivedCalls();
+
+        // 59 ASCII chars, then an emoji (a surrogate PAIR straddling indexes 59-60):
+        // a naive text[..60] would end on the lone high surrogate - invalid UTF-16.
+        var content = new string('a', 59) + "\U0001F600 and more text well beyond the sixty-char cap";
+
+        await NewPlanner().PlanAsync(Pid, Conv, Valid(new SendMessageRequest { Content = content }));
+
+        inserted.Should().NotBeNull();
+        inserted!.Title.Length.Should().BeLessThanOrEqualTo(60);
+        // The cut lands BEFORE the emoji (the whole grapheme is dropped, not torn).
+        inserted.Title.Should().Be(new string('a', 59));
+        inserted.Title.ToCharArray().Should().OnlyContain(c => !char.IsSurrogate(c), "no lone surrogate may survive the cut");
+    }
+
+    [Fact]
+    public async Task Persists_a_complete_user_row_and_a_streaming_assistant_placeholder_with_seqs()
+    {
+        var job = await NewPlanner().PlanAsync(Pid, Conv, Valid(new SendMessageRequest { Content = "hello" }));
+
+        _persisted.Should().HaveCount(2);
+
+        var user = _persisted[0];
+        user.Role.Should().Be(MessageRole.User);
+        user.Content.Should().Be("hello");
+        user.Status.Should().Be(MessageStatus.Complete);
+        user.Seq.Should().Be(1);
+
+        var assistant = _persisted[1];
+        assistant.Role.Should().Be(MessageRole.Assistant);
+        assistant.Content.Should().BeEmpty();
+        assistant.Status.Should().Be(MessageStatus.Streaming);
+        assistant.Seq.Should().Be(2);
+
+        job.UserMessageId.Should().Be(user.Id);
+        job.AssistantMessageId.Should().Be(assistant.Id);
+        job.AssistantSeq.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task PlannedAt_is_the_exact_instant_stamped_on_the_placeholder_row()
+    {
+        var job = await NewPlanner().PlanAsync(Pid, Conv, Valid(new SendMessageRequest { Content = "hello" }));
+
+        // One clock read, not two: the job's anchor IS the placeholder's
+        // CreatedAt, so the runner's remaining-budget cap and the readers'
+        // orphan/409 horizon measure from the identical instant
+        // (chat-and-tools.md section detached turns - the shared-anchor invariant).
+        var assistant = _persisted.Single(m => m.Role == MessageRole.Assistant);
+        job.PlannedAt.Should().Be(assistant.CreatedAt);
+        job.PlannedAt.Should().Be(_persisted.Single(m => m.Role == MessageRole.User).CreatedAt);
+    }
+
+    // ---- history projections (the M.E.AI ChatMessage shape the planner builds) ----
+    private static string? Reasoning(ChatMessage m) =>
+        m.Contents.OfType<TextReasoningContent>().FirstOrDefault()?.Text;
+
+    private static IReadOnlyList<DataContent> Images(ChatMessage m) =>
+        m.Contents.OfType<DataContent>().ToList();
+
+    private static string Base64(DataContent image) => Convert.ToBase64String(image.Data.ToArray());
+
+    [Fact]
+    public async Task History_carries_prior_complete_turns_plus_the_new_user_message_only()
+    {
+        SeedConversation();
+        var now = DateTimeOffset.UtcNow;
+        SeedExisting(MessageStatus.Complete, now.AddMinutes(-10), MessageRole.User, "earlier question");
+        SeedExisting(MessageStatus.Complete, now.AddMinutes(-9), MessageRole.Assistant, "earlier answer");
+        // An old failed turn: its partial content must never re-enter the prompt.
+        SeedExisting(MessageStatus.Error, now.AddMinutes(-5), MessageRole.Assistant, "partial garbage");
+        // A user-stopped turn: same rule - the partial is UI context only.
+        SeedExisting(MessageStatus.Cancelled, now.AddMinutes(-3), MessageRole.Assistant, "stopped partial");
+
+        var job = await NewPlanner().PlanAsync(Pid, Conv, Valid(new SendMessageRequest { Content = "follow-up" }));
+
+        job.History.Select(m => m.Text)
+            .Should().Equal("earlier question", "earlier answer", "follow-up");
+        job.History.Last().Role.Should().Be(ChatRole.User);
+    }
+
+    [Fact]
+    public async Task Tools_request_overrides_conversation_and_persists_onto_it()
+    {
+        // Regression: the conversation materialised with sandbox OFF; the user
+        // flips it ON mid-conversation. Without the Tools write-back the stale
+        // conversation set vetoed the request forever (requested AND enabled).
+        var user = new TestUserContext { AllowedTools = new HashSet<string>(["sandbox"], StringComparer.Ordinal) };
+        var sandbox = new PythonSandboxTool(Gert.Testing.Proof.Validation, new StubPythonSandbox());
+        SeedConversation(("sandbox", false));
+
+        var request = new SendMessageRequest
+        {
+            Content = "run python",
+            Tools = new ToolToggles(new Dictionary<string, bool> { ["sandbox"] = true }),
+        };
+
+        var job = await NewPlanner(user, [sandbox]).PlanAsync(Pid, Conv, Valid(request));
+
+        // The flip applies to THIS turn...
+        job.ToolIds.Should().Contain("sandbox");
+        // ...and persists onto the conversation so a reload restores it.
+        await _repo.Received(1).UpdateConversationAsync(
+            Arg.Is<Conversation>(c => c.Tools.IsEnabled("sandbox")),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task History_carries_prior_assistant_reasoning_for_the_adapter_to_gate()
+    {
+        // The planner ALWAYS carries persisted reasoning into history; the adapter
+        // forwards it upstream only for a provider with preserve_thinking on (so the
+        // per-conversation toggle is gone). User rows never carry reasoning.
+        SeedConversation();
+        var now = DateTimeOffset.UtcNow;
+        SeedExisting(MessageStatus.Complete, now.AddMinutes(-2), MessageRole.User, "q");
+        SeedExisting(MessageStatus.Complete, now.AddMinutes(-1), MessageRole.Assistant, "391", reasoning: "17*23 = 391.");
+
+        var job = await NewPlanner().PlanAsync(Pid, Conv, Valid(new SendMessageRequest { Content = "next" }));
+
+        Reasoning(job.History.Single(m => m.Role == ChatRole.Assistant)).Should().Be("17*23 = 391.");
+        Reasoning(job.History.Single(m => m.Text == "q")).Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Attachments_persist_on_the_user_row_and_ride_history_as_images()
+    {
+        SeedConversation();
+        var now = DateTimeOffset.UtcNow;
+        // A prior user turn with an image: its attachment must re-enter history
+        // so the model keeps seeing earlier images.
+        _existing.Add(new Message
+        {
+            Id = Guid.NewGuid().ToString("D"),
+            ConversationId = Conv,
+            Role = MessageRole.User,
+            Content = "earlier image",
+            Attachments = [new MessageAttachment { MimeType = "image/jpeg", Data = "b2xk" }],
+            Status = MessageStatus.Complete,
+            CreatedAt = now.AddMinutes(-1),
+        });
+
+        var request = new SendMessageRequest
+        {
+            Content = "what is this?",
+            Attachments = [new MessageAttachment { MimeType = "image/png", Data = "aGVsbG8=" }],
+        };
+
+        // Default catalog (NullModelCatalog) is vision-permissive.
+        var job = await NewPlanner().PlanAsync(Pid, Conv, Valid(request));
+
+        var userRow = _persisted.Single(m => m.Role == MessageRole.User);
+        userRow.Attachments.Should().ContainSingle()
+            .Which.MimeType.Should().Be("image/png");
+
+        var prior = job.History.Single(m => m.Text == "earlier image");
+        Images(prior).Should().ContainSingle();
+        Base64(Images(prior)[0]).Should().Be("b2xk");
+
+        var tail = job.History[^1];
+        Images(tail).Should().ContainSingle();
+        Images(tail)[0].MediaType.Should().Be("image/png");
+        Base64(Images(tail)[0]).Should().Be("aGVsbG8=");
+    }
+
+    [Fact]
+    public async Task Images_are_dropped_from_history_for_a_catalog_gated_non_vision_model()
+    {
+        var catalog = Substitute.For<IChatProviderCatalog>();
+        catalog.SupportsTools(Arg.Any<string>()).Returns(true);
+        catalog.SupportsVision(Arg.Any<string>()).Returns(false);
+
+        var request = new SendMessageRequest
+        {
+            Content = "what is this?",
+            Attachments = [new MessageAttachment { MimeType = "image/png", Data = "aGVsbG8=" }],
+        };
+
+        var job = await NewPlanner(catalog: catalog).PlanAsync(Pid, Conv, Valid(request));
+
+        // The row keeps the attachment (UI truth) but the prompt degrades to
+        // text-only rather than erroring the turn - mirror of the tools gate.
+        _persisted.Single(m => m.Role == MessageRole.User).Attachments.Should().NotBeNull();
+        Images(job.History[^1]).Should().BeEmpty();
+        job.History[^1].Text.Should().Be("what is this?");
+    }
+
+    [Fact]
+    public async Task Text_file_attachment_is_injected_into_the_prompt_as_a_fenced_block()
+    {
+        SeedConversation();
+        var data = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes("{\"hello\":\"world\"}"));
+        var request = new SendMessageRequest
+        {
+            Content = "pretty format this",
+            Attachments = [new MessageAttachment { MimeType = "application/json", Data = data, Name = "data.json" }],
+        };
+
+        var job = await NewPlanner().PlanAsync(Pid, Conv, Valid(request));
+
+        var tail = job.History[^1];
+        Images(tail).Should().BeEmpty(); // a text file is not a vision part
+        tail.Text.Should().Contain("pretty format this");
+        tail.Text.Should().Contain("data.json");
+        tail.Text.Should().Contain("{\"hello\":\"world\"}");
+    }
+
+    [Fact]
+    public async Task Text_file_attachment_rides_even_a_non_vision_model()
+    {
+        var catalog = Substitute.For<IChatProviderCatalog>();
+        catalog.SupportsTools(Arg.Any<string>()).Returns(true);
+        catalog.SupportsVision(Arg.Any<string>()).Returns(false);
+
+        var data = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes("col1,col2\n1,2"));
+        var request = new SendMessageRequest
+        {
+            Content = "summarise",
+            Attachments = [new MessageAttachment { MimeType = "text/csv", Data = data, Name = "rows.csv" }],
+        };
+
+        var job = await NewPlanner(catalog: catalog).PlanAsync(Pid, Conv, Valid(request));
+
+        job.History[^1].Text.Should().Contain("rows.csv");
+        job.History[^1].Text.Should().Contain("col1,col2");
+    }
+
+    [Fact]
+    public async Task Oversized_inline_text_attachment_is_refused_with_a_validation_error()
+    {
+        var catalog = Substitute.For<IChatProviderCatalog>();
+        catalog.SupportsTools(Arg.Any<string>()).Returns(true);
+        catalog.SupportsVision(Arg.Any<string>()).Returns(true);
+        catalog.ContextSize(Arg.Any<string>()).Returns(1000); // cap = 1000 * 0.5 = 500 tokens
+
+        // ~4000 base64 chars -> ~750 estimated tokens, over the 500 cap.
+        var big = Convert.ToBase64String(new byte[3000]);
+        var request = new SendMessageRequest
+        {
+            Content = "format",
+            Attachments = [new MessageAttachment { MimeType = "application/json", Data = big, Name = "huge.json" }],
+        };
+
+        var act = () => NewPlanner(catalog: catalog).PlanAsync(Pid, Conv, Valid(request));
+
+        (await act.Should().ThrowAsync<Gert.Validation.ValidationException>())
+            .WithMessage("*Knowledge panel*");
+    }
+
+    [Fact]
+    public async Task Small_inline_text_attachment_fits_the_context_budget()
+    {
+        SeedConversation();
+        var catalog = Substitute.For<IChatProviderCatalog>();
+        catalog.SupportsTools(Arg.Any<string>()).Returns(true);
+        catalog.SupportsVision(Arg.Any<string>()).Returns(true);
+        catalog.ContextSize(Arg.Any<string>()).Returns(1000); // cap = 500 tokens
+
+        // ~40 base64 chars -> ~7 estimated tokens, well under the 500 cap.
+        var small = Convert.ToBase64String(new byte[30]);
+        var request = new SendMessageRequest
+        {
+            Content = "format",
+            Attachments = [new MessageAttachment { MimeType = "application/json", Data = small, Name = "tiny.json" }],
+        };
+
+        var act = () => NewPlanner(catalog: catalog).PlanAsync(Pid, Conv, Valid(request));
+        await act.Should().NotThrowAsync();
+    }
+
+    [Fact]
+    public async Task Oversized_inline_text_attachment_carries_the_too_large_code()
+    {
+        var catalog = Substitute.For<IChatProviderCatalog>();
+        catalog.SupportsTools(Arg.Any<string>()).Returns(true);
+        catalog.SupportsVision(Arg.Any<string>()).Returns(true);
+        catalog.ContextSize(Arg.Any<string>()).Returns(1000); // cap = 500 tokens
+
+        var big = Convert.ToBase64String(new byte[3000]); // ~750 tokens, over the cap
+        var request = new SendMessageRequest
+        {
+            Content = "format",
+            Attachments = [new MessageAttachment { MimeType = "application/json", Data = big, Name = "huge.json" }],
+        };
+
+        var act = () => NewPlanner(catalog: catalog).PlanAsync(Pid, Conv, Valid(request));
+
+        var ex = (await act.Should().ThrowAsync<Gert.Validation.ValidationException>()).Which;
+        ex.Result.Errors.Should().Contain(e => e.Code == "attachment.too_large_for_context");
+    }
+
+    [Fact]
+    public async Task An_image_attachment_does_not_count_against_the_inline_text_budget()
+    {
+        SeedConversation();
+        var catalog = Substitute.For<IChatProviderCatalog>();
+        catalog.SupportsTools(Arg.Any<string>()).Returns(true);
+        catalog.SupportsVision(Arg.Any<string>()).Returns(true);
+        catalog.ContextSize(Arg.Any<string>()).Returns(1000); // cap = 500 tokens
+
+        // Same byte budget that trips the text gate, but as an allowlisted image: its
+        // own count/size caps apply, so it is excluded here and the turn proceeds.
+        var big = Convert.ToBase64String(new byte[3000]);
+        var request = new SendMessageRequest
+        {
+            Content = "what is this?",
+            Attachments = [new MessageAttachment { MimeType = "image/png", Data = big }],
+        };
+
+        var act = () => NewPlanner(catalog: catalog).PlanAsync(Pid, Conv, Valid(request));
+        await act.Should().NotThrowAsync();
+    }
+
+    [Fact]
+    public async Task Inline_attachment_is_not_gated_when_the_provider_context_is_unknown()
+    {
+        SeedConversation();
+        // Default catalog reports no context -> the gate cannot enforce, so even a large file passes.
+        var big = Convert.ToBase64String(new byte[3000]);
+        var request = new SendMessageRequest
+        {
+            Content = "format",
+            Attachments = [new MessageAttachment { MimeType = "application/json", Data = big, Name = "huge.json" }],
+        };
+
+        var act = () => NewPlanner().PlanAsync(Pid, Conv, Valid(request));
+        await act.Should().NotThrowAsync();
+    }
+
+    [Fact]
+    public async Task A_cancelled_turn_does_not_block_new_turns()
+    {
+        SeedConversation();
+        // Just stopped seconds ago: cancelled is terminal, never in-progress.
+        SeedExisting(MessageStatus.Cancelled, DateTimeOffset.UtcNow.AddSeconds(-2));
+
+        var job = await NewPlanner().PlanAsync(Pid, Conv, Valid(new SendMessageRequest { Content = "again" }));
+
+        job.AssistantMessageId.Should().NotBeNullOrEmpty();
+    }
+
+    [Fact]
+    public async Task Second_turn_while_one_is_streaming_throws_TurnInProgress()
+    {
+        SeedConversation();
+        SeedExisting(MessageStatus.Streaming, DateTimeOffset.UtcNow.AddSeconds(-5));
+
+        var act = () => NewPlanner().PlanAsync(Pid, Conv, Valid(new SendMessageRequest { Content = "again" }));
+
+        await act.Should().ThrowAsync<TurnInProgressException>();
+        _persisted.Should().BeEmpty("the 409 must reject before any write");
+    }
+
+    [Fact]
+    public async Task An_orphaned_streaming_row_does_not_block_new_turns_and_is_written_back()
+    {
+        SeedConversation();
+        // Older than MaxTurnDuration: the worker that owned it is gone (crash /
+        // lost queue) - the orphan rule treats it as error, so new turns proceed.
+        SeedExisting(MessageStatus.Streaming, DateTimeOffset.UtcNow - _options.MaxTurnDuration - TimeSpan.FromMinutes(1));
+        var expiredRowId = _existing.Single().Id;
+
+        var job = await NewPlanner().PlanAsync(Pid, Conv, Valid(new SendMessageRequest { Content = "retry" }));
+
+        job.AssistantMessageId.Should().NotBeNullOrEmpty();
+        // The lazy orphan mapping became a durable write: the dead row must free
+        // the gate index, not just read as error.
+        await _repo.Received(1).TryExpireStreamingMessageAsync(expiredRowId, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task A_live_streaming_row_is_not_written_back()
+    {
+        SeedConversation();
+        SeedExisting(MessageStatus.Streaming, DateTimeOffset.UtcNow.AddSeconds(-5));
+
+        var act = () => NewPlanner().PlanAsync(Pid, Conv, Valid(new SendMessageRequest { Content = "again" }));
+
+        await act.Should().ThrowAsync<TurnInProgressException>();
+        // The 409 path rejects before the write-back: a healthy turn's row is
+        // never touched.
+        await _repo.DidNotReceive().TryExpireStreamingMessageAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task Losing_the_gate_after_the_fast_path_throws_TurnInProgress()
+    {
+        SeedConversation();
+        // The fast path saw a clean conversation, but another plan grabbed the
+        // gate index between the read and the insert (the closed TOCTOU).
+        _repo.TryInsertTurnMessagesAsync(Arg.Any<Message>(), Arg.Any<Message>(), Arg.Any<CancellationToken>())
+            .Returns(false);
+
+        var act = () => NewPlanner().PlanAsync(Pid, Conv, Valid(new SendMessageRequest { Content = "raced" }));
+
+        await act.Should().ThrowAsync<TurnInProgressException>();
+    }
+
+    private void SeedTodoSnapshot(string responseJson) =>
+        _repo.GetLatestToolCallAsync(Conv, "todo", Arg.Any<CancellationToken>())
+            .Returns(new ToolCall
+            {
+                Id = Guid.NewGuid().ToString("D"),
+                MessageId = Guid.NewGuid().ToString("D"),
+                Kind = "todo",
+                Status = ToolCallStatus.Done,
+                ResponseJson = responseJson,
+                CreatedAt = DateTimeOffset.UtcNow,
+            });
+
+    [Fact]
+    public async Task Open_todo_snapshot_appends_the_reminder_to_the_rendered_user_message_only()
+    {
+        var user = new TestUserContext { AllowedTools = new HashSet<string>(["todo"], StringComparer.Ordinal) };
+        SeedConversation(("todo", true));
+        SeedExisting(MessageStatus.Complete, DateTimeOffset.UtcNow.AddMinutes(-1), content: "earlier turn");
+        const string snapshot = """{"todos":[{"text":"step 2","status":"pending"}]}""";
+        SeedTodoSnapshot(snapshot);
+
+        var request = new SendMessageRequest
+        {
+            Content = "continue",
+            Tools = new ToolToggles(new Dictionary<string, bool> { ["todo"] = true }),
+        };
+
+        var job = await NewPlanner(user, [new TodoTool(Gert.Testing.Proof.Validation)]).PlanAsync(Pid, Conv, Valid(request));
+
+        // The reminder rides at the TAIL of the rendered prompt; prior history
+        // keeps its exact bytes (prefix cache) and the persisted user row keeps
+        // the user's actual words (UI truth).
+        job.History[^1].Text.Should().Be("continue\n\n" + TodoTool.CrossTurnReminder(snapshot));
+        job.History[0].Text.Should().Be("earlier turn");
+        _persisted.Single(m => m.Role == MessageRole.User).Content.Should().Be("continue");
+    }
+
+    [Fact]
+    public async Task Finished_todo_snapshot_appends_no_reminder()
+    {
+        var user = new TestUserContext { AllowedTools = new HashSet<string>(["todo"], StringComparer.Ordinal) };
+        SeedConversation(("todo", true));
+        SeedTodoSnapshot("""{"todos":[{"text":"step 1","status":"done"}]}""");
+
+        var request = new SendMessageRequest
+        {
+            Content = "thanks!",
+            Tools = new ToolToggles(new Dictionary<string, bool> { ["todo"] = true }),
+        };
+
+        var job = await NewPlanner(user, [new TodoTool(Gert.Testing.Proof.Validation)]).PlanAsync(Pid, Conv, Valid(request));
+
+        // A finished list needs no revival - no prompt tokens spent on it.
+        job.History[^1].Text.Should().Be("thanks!");
+    }
+
+    [Fact]
+    public async Task No_reminder_when_the_todo_tool_is_not_offered()
+    {
+        // Snapshot exists, but the request toggles the tool off for this turn
+        // (the request set wins and persists - see Tools_request_overrides...) -
+        // the model could not update statuses, so the reminder would only mislead.
+        var user = new TestUserContext { AllowedTools = new HashSet<string>(["todo"], StringComparer.Ordinal) };
+        SeedConversation(("todo", true));
+        SeedTodoSnapshot("""{"todos":[{"text":"step 2","status":"active"}]}""");
+
+        var request = new SendMessageRequest
+        {
+            Content = "continue",
+            Tools = new ToolToggles(new Dictionary<string, bool> { ["todo"] = false }),
+        };
+
+        var job = await NewPlanner(user, [new TodoTool(Gert.Testing.Proof.Validation)]).PlanAsync(Pid, Conv, Valid(request));
+
+        job.History[^1].Text.Should().Be("continue");
+    }
+
+    [Fact]
+    public async Task Broken_todo_snapshot_read_never_fails_the_turn()
+    {
+        var user = new TestUserContext { AllowedTools = new HashSet<string>(["todo"], StringComparer.Ordinal) };
+        SeedConversation(("todo", true));
+        _repo.GetLatestToolCallAsync(Conv, "todo", Arg.Any<CancellationToken>())
+            .Returns<ToolCall?>(_ => throw new InvalidOperationException("disk on fire"));
+
+        var request = new SendMessageRequest
+        {
+            Content = "continue",
+            Tools = new ToolToggles(new Dictionary<string, bool> { ["todo"] = true }),
+        };
+
+        var job = await NewPlanner(user, [new TodoTool(Gert.Testing.Proof.Validation)]).PlanAsync(Pid, Conv, Valid(request));
+
+        // Best-effort: the reminder is a nicety, never a turn-blocker.
+        job.History[^1].Text.Should().Be("continue");
+    }
+
+    [Fact]
+    public async Task Any_offered_IToolReminder_tool_is_revived_not_just_todo()
+    {
+        // The mechanism is generic: a non-todo tool that implements IToolReminder
+        // gets its snapshot and its reminder appended at the tail, exactly like the
+        // todo list - the planner has no per-tool branch.
+        var user = new TestUserContext { AllowedTools = new HashSet<string>(["stub"], StringComparer.Ordinal) };
+        SeedConversation(("stub", true));
+        _repo.GetLatestToolCallAsync(Conv, "stub", Arg.Any<CancellationToken>())
+            .Returns(new ToolCall
+            {
+                Id = Guid.NewGuid().ToString("D"),
+                MessageId = Guid.NewGuid().ToString("D"),
+                Kind = "stub",
+                Status = ToolCallStatus.Done,
+                ResponseJson = "STATE",
+                CreatedAt = DateTimeOffset.UtcNow,
+            });
+
+        var request = new SendMessageRequest
+        {
+            Content = "go",
+            Tools = new ToolToggles(new Dictionary<string, bool> { ["stub"] = true }),
+        };
+
+        var job = await NewPlanner(user, [new StubRevivableTool()]).PlanAsync(Pid, Conv, Valid(request));
+
+        job.History[^1].Text.Should().Be("go\n\n<revived>STATE</revived>");
+    }
+
+    /// <summary>
+    /// A non-todo tool that opts into cross-turn revival - proof the reminder path
+    /// keys off the <see cref="IToolReminder"/> interface, not a hard-coded tool id.
+    /// Echoes its snapshot verbatim so the test can assert exact tail placement.
+    /// </summary>
+    private sealed class StubRevivableTool : ITool, IToolReminder
+    {
+        public string Id => "stub";
+
+        public string Name => "stub";
+
+        public string Description => string.Empty;
+
+        public string ParametersSchema => "{}";
+
+        public Task<ToolResult> ExecuteAsync(
+            ToolInvocation invocation,
+            IToolHost host,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(new ToolResult { Success = true });
+
+        public string? BuildTailReminder(string? latestResultJson) =>
+            string.IsNullOrEmpty(latestResultJson) ? null : $"<revived>{latestResultJson}</revived>";
+    }
+
+    [Fact]
+    public async Task Entitlement_ceiling_filters_unentitled_tools_and_snapshots_the_claim()
+    {
+        var user = new TestUserContext { AllowedTools = new HashSet<string>(["rag"], StringComparer.Ordinal) };
+        var rag = new RagTool(Gert.Testing.Proof.Validation);
+        var sandbox = new PythonSandboxTool(Gert.Testing.Proof.Validation, new StubPythonSandbox());
+        SeedConversation(("rag", true), ("sandbox", true));
+
+        var request = new SendMessageRequest
+        {
+            Content = "run python to add two and two",
+            Tools = new ToolToggles(new Dictionary<string, bool> { ["rag"] = true, ["sandbox"] = true }),
+        };
+
+        var job = await NewPlanner(user, [rag, sandbox]).PlanAsync(Pid, Conv, Valid(request));
+
+        // Offered = requested AND enabled AND entitlement AND registry.
+        job.ToolIds.Should().Contain("rag").And.NotContain("sandbox");
+
+        // The snapshot is the claim, captured for the off-thread re-check.
+        job.AllowedToolIds.Should().BeEquivalentTo(["rag"]);
+        job.Iss.Should().Be(user.Iss);
+        job.Sub.Should().Be(user.Sub);
+    }
+
+    [Fact]
+    public async Task Model_without_tool_capability_is_offered_no_tools()
+    {
+        var user = new TestUserContext { AllowedTools = new HashSet<string>(["rag"], StringComparer.Ordinal) };
+        var rag = new RagTool(Gert.Testing.Proof.Validation);
+        SeedConversation(("rag", true));
+
+        var catalog = Substitute.For<IChatProviderCatalog>();
+        catalog.SupportsTools("default").Returns(false);
+
+        var request = new SendMessageRequest
+        {
+            Content = "search my documents",
+            Tools = new ToolToggles(new Dictionary<string, bool> { ["rag"] = true }),
+        };
+
+        var job = await NewPlanner(user, [rag], catalog: catalog).PlanAsync(Pid, Conv, Valid(request));
+
+        // Requested + enabled + entitled - but the model can't call tools, so
+        // nothing is advertised upstream.
+        job.ToolIds.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Instructions_append_after_the_configured_canvas_prompt()
+    {
+        var reader = Substitute.For<IProjectInstructionsReader>();
+        reader.GetInstructionsAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns("Always answer in haiku.");
+
+        var job = await NewPlanner(instructions: reader)
+            .PlanAsync(Pid, Conv, Valid(new SendMessageRequest { Content = "hello" }));
+
+        job.SystemPrompt.Should().Be(TestCanvas + "\n\nAlways answer in haiku.");
+    }
+
+    [Fact]
+    public async Task The_canvas_convention_rides_every_turn_even_without_instructions()
+    {
+        // No instructions reader at all: real models still must learn to put
+        // complete files in the canvas via the make_artifact tool.
+        var job = await NewPlanner().PlanAsync(Pid, Conv, Valid(new SendMessageRequest { Content = "hello" }));
+
+        job.SystemPrompt.Should().Be(TestCanvas);
+        job.SystemPrompt.Should().Contain("make_artifact");
+    }
+
+    [Fact]
+    public async Task An_empty_canvas_with_no_instructions_yields_a_null_system_prompt()
+    {
+        // Gert:Prompts:Canvas empty AND no project instructions -> nothing to send;
+        // the runner skips a null/empty system prompt.
+        var job = await NewPlanner(canvas: string.Empty)
+            .PlanAsync(Pid, Conv, Valid(new SendMessageRequest { Content = "hello" }));
+
+        job.SystemPrompt.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task An_empty_canvas_falls_back_to_project_instructions_alone()
+    {
+        // Empty canvas but real instructions -> the system prompt is just the
+        // instructions, with no leading blank line.
+        var reader = Substitute.For<IProjectInstructionsReader>();
+        reader.GetInstructionsAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns("Always answer in haiku.");
+
+        var job = await NewPlanner(instructions: reader, canvas: string.Empty)
+            .PlanAsync(Pid, Conv, Valid(new SendMessageRequest { Content = "hello" }));
+
+        job.SystemPrompt.Should().Be("Always answer in haiku.");
+    }
+}
