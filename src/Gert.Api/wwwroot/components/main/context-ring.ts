@@ -48,6 +48,7 @@ export const ContextRing = component({
     }
     .ctx-ring.open .menu {
       opacity: 1;
+      visibility: visible;
       transform: none;
       pointer-events: auto;
     }
