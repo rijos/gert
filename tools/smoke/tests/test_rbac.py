@@ -30,9 +30,7 @@ def test_user_denied_admin(user_page: Page, base_url: str) -> None:
     expect(user_page.locator(".utable")).to_have_count(0)
 
 
-def test_admin_sees_button_and_can_open_panel(
-    admin_page: Page, base_url: str
-) -> None:
+def test_admin_sees_button_and_can_open_panel(admin_page: Page, base_url: str) -> None:
     """The UI-discovery half of admin RBAC: an admin sees the shield button in the
     user chip, and clicking it lands on the admin panel (the user-list table
     renders). The server is the real gate (test_admin_sees_user_list); the button
