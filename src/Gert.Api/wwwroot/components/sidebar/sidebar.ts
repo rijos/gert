@@ -13,7 +13,6 @@ import { t } from "../../lib/i18n.js";
 import * as ui from "../../state/ui.js";
 import * as chat from "../../state/chat.js";
 import * as chatSvc from "../../services/chat.js";
-import * as artifacts from "../../state/artifacts.js";
 import { navigate } from "../../lib/router.js";
 
 const { nav, div, h1, button } = van.tags;
@@ -34,8 +33,7 @@ const NewChat = () =>
       class: "newchat",
       onclick: () => {
         chatSvc.detach(); // leaving a mid-stream thread - unpin the composer
-        chat.newConversation();
-        artifacts.clear();
+        chat.newConversation(); // clears messages + artifacts
         navigate("/");
       },
     },

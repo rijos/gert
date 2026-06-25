@@ -3,6 +3,7 @@
 // tool-card update re-renders just that node. No DOM, no fetch - services/* mutate this.
 import van from "/lib/van.js";
 import { reactive } from "/lib/van-x.js";
+import * as artifacts from "./artifacts.js";
 import type { MessageRole, ToolKind, WireConversation, WireMessage, WireThread } from "../services/wire.js";
 
 export interface Project {
@@ -121,11 +122,15 @@ export type ConversationSeed = Omit<WireThread, "messages" | "artifacts"> & {
   messages?: MessageSeed[];
 };
 
+// Blank slate. Artifacts belong to the active thread (like messages), so they clear
+// here too - every caller that resets to "no conversation" (the new-chat button, a
+// project switch, deleting/moving the open conversation) is covered in one place.
 export const newConversation = () => {
   activeId.val = null;
   title.val = "New conversation";
   messages.length = 0;
   contextTokens.val = null;
+  artifacts.clear();
 };
 
 export const setConversation = (conv: ConversationSeed) => {

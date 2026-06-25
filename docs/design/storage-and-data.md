@@ -161,9 +161,10 @@ CREATE TABLE user_meta (
 );
 
 -- Single-row user settings (id pinned to 1); one JSON blob so the column set never
--- has to track the UserSettings shape field-by-field (configuration.md section 3 - theme,
--- languages, default provider/tools). Sampling is not here - it rides
--- the selected provider (configuration.md section providers), not user settings.
+-- has to track the UserSettings shape field-by-field (configuration.md section 3 -
+-- languages, default model/tools). Theme is device-local (localStorage), not here.
+-- Sampling is not here either - it rides the selected provider (configuration.md
+-- section providers), not user settings.
 CREATE TABLE settings (
     id            INTEGER PRIMARY KEY CHECK (id = 1),
     settings_json TEXT NOT NULL

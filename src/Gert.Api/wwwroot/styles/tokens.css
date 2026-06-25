@@ -1,13 +1,25 @@
-/* tokens.css - design tokens for the two themes: "Ember" (refined dark) and
-   "Manila" (paper / editorial). MUST load first so variables exist before any
+/* tokens.css - design tokens. MUST load first so variables exist before any
    rule references them.
 
-   Theme switching rides `color-scheme` + `light-dark()`: every COLOR token is
-   defined exactly once as light-dark(manila, ember). The default :root follows
-   the OS (`color-scheme: light dark`); the explicit [data-theme] scopes - what
-   the toggle in state/ui.js flips - just pin the scheme. Only non-color tokens
-   (shadow geometry, grain level, icon display swap) can't ride light-dark()
-   and keep small per-theme blocks at the bottom.
+   The two CANONICAL themes - "Manila" (paper / editorial light) and "Ember"
+   (refined dark) - ride `color-scheme` + `light-dark()`: every COLOR token is
+   defined exactly once below as light-dark(manila, ember). The default :root
+   follows the OS (`color-scheme: light dark`); the explicit
+   [data-theme="manila"|"ember"] scopes - what the toggle in state/ui.js flips
+   between - just pin the scheme. Only non-color tokens (shadow geometry, grain
+   level, icon display swap) can't ride light-dark() and keep small per-theme
+   blocks at the bottom.
+
+   The six EXTRA themes (settings-only, never reached by the toggle) - Slate,
+   Midnight, Nord, Forest, Onyx (dark) and Frost (light) - can't ride light-dark()
+   (it only holds the canonical pair), so each is one self-contained [data-theme]
+   block further down that re-states every color + non-color token explicitly.
+   Unlike the canonical pair, each EXTRA theme overrides the accent family
+   (--coral / --coral-2 / --coral-soft / --coral-line / --coral-deep / --chat-on /
+   --on-accent) to its own hue - cool blue (Slate), indigo (Midnight), frost blue
+   (Nord), gold (Forest), Spotify green (Onyx), blue (Frost) - while keeping the
+   same WCAG-AA intent for the ink trio / code tokens. Only Manila/Ember keep the
+   warm coral accent.
 
    The "Gert" logo/wordmark is NOT themed here - --display + the brand rules
    are untouched in both themes (hard rule in docs). */
@@ -136,6 +148,154 @@
 /* ---- the toggle (state/ui.js) pins the scheme; light-dark() does the rest ---- */
 [data-theme="manila"]{ color-scheme:light; }
 [data-theme="ember"]{ color-scheme:dark; }
+
+/* ============================================================================
+   EXTRA themes (settings dropdown only). light-dark() can't reach these, so each
+   block re-states EVERY token. Ordering/grouping mirrors :root for review. The
+   coral accent family stays (one warm accent - spa-style-guide); --tok-kw/-str,
+   --grain-img and the theme-invariant block (--brand, shadows, --type-*, etc.)
+   inherit from :root and are intentionally NOT repeated.
+   ============================================================================ */
+
+/* ---- Slate: cool blue-grey dark, cool-blue accent ---- */
+[data-theme="slate"]{
+  color-scheme:dark;
+  --bg:#111722; --side-bg:#0d121b; --surface:#1a2230; --surface-2:#222c3d;
+  --card:#1c2532; --bubble:#232f42; --canvas-bg:#0d121b;
+  --line:rgba(255,255,255,.08); --line-soft:rgba(255,255,255,.05); --track:rgba(255,255,255,.08);
+  --ink:#e6ecf5; --ink-2:#aab6c7; --ink-3:#8d9bb0;
+  --coral:#5b9dff; --coral-2:#8bbcff;
+  --coral-soft:rgba(91,157,255,.14); --coral-line:rgba(91,157,255,.42);
+  --green:#62c281; --green-soft:rgba(98,194,129,.16);
+  --chat-on:rgba(91,157,255,.12);
+  --code-tag:var(--coral); --code-attr:#62c281; --coral-deep:var(--coral-2);
+  --amber:#d8a44d; --amber-soft:#322a1a; --brick:#df5b41;
+  --proc-bg:#322a1a; --proc-fg:#d8a44d; --fail-bg:#3a2220; --fail-fg:#df5b41;
+  --code-bg:#1b2230; --code-fg:#dce4f0;
+  --tok-num:#d9b86a; --tok-com:#8d9bb0; --tok-key:#9fc1e0; --tok-dec:#c79bd6;
+  --scrim:rgba(0,0,0,.6);
+  --scroll-thumb:rgba(230,236,245,.16); --scroll-thumb-hover:rgba(230,236,245,.3);
+  --on-accent:#0b1626;
+  --lift:0 1px 0 rgba(255,255,255,.03), 0 6px 14px -10px rgba(0,0,0,.6);
+  --grain:.5; --sun-display:block; --moon-display:none;
+}
+
+/* ---- Midnight: near-black, high contrast, indigo-violet accent ---- */
+[data-theme="midnight"]{
+  color-scheme:dark;
+  --bg:#0a0a0c; --side-bg:#060608; --surface:#16161a; --surface-2:#1f1f24;
+  --card:#161619; --bubble:#1d1d22; --canvas-bg:#060608;
+  --line:rgba(255,255,255,.09); --line-soft:rgba(255,255,255,.05); --track:rgba(255,255,255,.09);
+  --ink:#f4f4f6; --ink-2:#b6b6bd; --ink-3:#8b8b93;
+  --coral:#9d8bff; --coral-2:#bcb0ff;
+  --coral-soft:rgba(157,139,255,.16); --coral-line:rgba(157,139,255,.44);
+  --green:#62c281; --green-soft:rgba(98,194,129,.16);
+  --chat-on:rgba(157,139,255,.13);
+  --code-tag:var(--coral); --code-attr:#62c281; --coral-deep:var(--coral-2);
+  --amber:#d8a44d; --amber-soft:#332a18; --brick:#df5b41;
+  --proc-bg:#2c2418; --proc-fg:#d8a44d; --fail-bg:#321d19; --fail-fg:#df5b41;
+  --code-bg:#141417; --code-fg:#e9e9ee;
+  --tok-num:#d9b86a; --tok-com:#8b8b93; --tok-key:#9fc1e0; --tok-dec:#c79bd6;
+  --scrim:rgba(0,0,0,.7);
+  --scroll-thumb:rgba(244,244,246,.16); --scroll-thumb-hover:rgba(244,244,246,.3);
+  --on-accent:#15101f;
+  --lift:0 1px 0 rgba(255,255,255,.03), 0 6px 14px -10px rgba(0,0,0,.7);
+  --grain:.4; --sun-display:block; --moon-display:none;
+}
+
+/* ---- Nord: muted blue-grey dark (Nord palette), frost-blue accent ---- */
+[data-theme="nord"]{
+  color-scheme:dark;
+  --bg:#2e3440; --side-bg:#292e38; --surface:#3b4252; --surface-2:#434c5e;
+  --card:#3b4252; --bubble:#434c5e; --canvas-bg:#292e38;
+  --line:rgba(236,239,244,.08); --line-soft:rgba(236,239,244,.05); --track:rgba(236,239,244,.08);
+  --ink:#eceff4; --ink-2:#c4ccd9; --ink-3:#a3adbd;
+  --coral:#88c0d0; --coral-2:#a7d2de;
+  --coral-soft:rgba(136,192,208,.16); --coral-line:rgba(136,192,208,.42);
+  --green:#a3be8c; --green-soft:rgba(163,190,140,.16);
+  --chat-on:rgba(136,192,208,.13);
+  /* code tag uses Nord's orange (not the accent) so syntax doesn't go blue-on-blue */
+  --code-tag:#d08770; --code-attr:#a3be8c; --coral-deep:var(--coral-2);
+  --amber:#ebcb8b; --amber-soft:#3a3520; --brick:#bf616a;
+  --proc-bg:#3a3520; --proc-fg:#ebcb8b; --fail-bg:#3a2a2d; --fail-fg:#bf616a;
+  --code-bg:#353b49; --code-fg:#e5e9f0;
+  --tok-num:#d08770; --tok-com:#a3adbd; --tok-key:#81a1c1; --tok-dec:#b48ead;
+  --scrim:rgba(0,0,0,.6);
+  --scroll-thumb:rgba(236,239,244,.16); --scroll-thumb-hover:rgba(236,239,244,.3);
+  --on-accent:#16242a;
+  --lift:0 1px 0 rgba(255,255,255,.03), 0 6px 14px -10px rgba(0,0,0,.55);
+  --grain:.35; --sun-display:block; --moon-display:none;
+}
+
+/* ---- Frost: cool white / blue paper (light), blue accent ---- */
+[data-theme="frost"]{
+  color-scheme:light;
+  --bg:#eef2f7; --side-bg:#e5ebf3; --surface:#f7fafd; --surface-2:#e9eff6;
+  --card:#f7fafd; --bubble:#e2ecf7; --canvas-bg:#f8fbfe;
+  --line:rgba(40,55,75,.13); --line-soft:rgba(40,55,75,.07); --track:rgba(40,55,75,.10);
+  --ink:#24303d; --ink-2:#4f6173; --ink-3:#5a6c7d;
+  --coral:#2f6fd6; --coral-2:#5a8ee0;
+  --coral-soft:rgba(47,111,214,.10); --coral-line:rgba(47,111,214,.30);
+  --green:#286e43; --green-soft:rgba(63,155,99,.13);
+  --chat-on:rgba(47,111,214,.10);
+  --code-tag:#1f5fa8; --code-attr:#286e43; --coral-deep:#2862bf;
+  --amber:#bb8526; --amber-soft:#e7ddc9; --brick:#a02f1c;
+  --proc-bg:#e8e6d2; --proc-fg:#83611f; --fail-bg:#f0d8d1; --fail-fg:#8a2917;
+  --code-bg:#e9eef5; --code-fg:#24303d;
+  --tok-num:#7d5e15; --tok-com:#5a6c7d; --tok-key:#2f6285; --tok-dec:#7c4d92;
+  --scrim:rgba(26,36,46,.42);
+  --scroll-thumb:rgba(40,55,75,.18); --scroll-thumb-hover:rgba(40,55,75,.34);
+  --on-accent:#fff;
+  --lift:0 1px 2px rgba(40,55,75,.09), 0 10px 22px -12px rgba(40,55,75,.28);
+  --grain:.25; --sun-display:none; --moon-display:block;
+}
+
+/* ---- Onyx: Spotify-like neutral near-black dark, vivid green accent ---- */
+[data-theme="onyx"]{
+  color-scheme:dark;
+  --bg:#121212; --side-bg:#0a0a0a; --surface:#1c1c1c; --surface-2:#282828;
+  --card:#1c1c1c; --bubble:#252525; --canvas-bg:#0a0a0a;
+  --line:rgba(255,255,255,.09); --line-soft:rgba(255,255,255,.05); --track:rgba(255,255,255,.09);
+  --ink:#ffffff; --ink-2:#b3b3b3; --ink-3:#8a8a8a;
+  --coral:#1db954; --coral-2:#1ed760;
+  --coral-soft:rgba(29,185,84,.15); --coral-line:rgba(29,185,84,.42);
+  /* status green nudged off the accent so the online dot still reads as separate */
+  --green:#3be477; --green-soft:rgba(59,228,119,.16);
+  --chat-on:rgba(29,185,84,.13);
+  --code-tag:var(--coral); --code-attr:#7fd0a0; --coral-deep:var(--coral-2);
+  --amber:#d8a44d; --amber-soft:#2e2a18; --brick:#df5b41;
+  --proc-bg:#2a2418; --proc-fg:#d8a44d; --fail-bg:#311d19; --fail-fg:#df5b41;
+  --code-bg:#181818; --code-fg:#e8e8e8;
+  --tok-num:#d9b86a; --tok-com:#8a8a8a; --tok-key:#7fb2e0; --tok-dec:#c79bd6;
+  --scrim:rgba(0,0,0,.7);
+  --scroll-thumb:rgba(255,255,255,.16); --scroll-thumb-hover:rgba(255,255,255,.3);
+  --on-accent:#06140a;
+  --lift:0 1px 0 rgba(255,255,255,.03), 0 6px 14px -10px rgba(0,0,0,.7);
+  --grain:.3; --sun-display:block; --moon-display:none;
+}
+
+/* ---- Forest: deep green-tinted dark, warm amber/gold accent ---- */
+[data-theme="forest"]{
+  color-scheme:dark;
+  --bg:#0f1611; --side-bg:#0b110d; --surface:#16201a; --surface-2:#1e2a22;
+  --card:#18221b; --bubble:#1f2c24; --canvas-bg:#0b110d;
+  --line:rgba(220,235,225,.08); --line-soft:rgba(220,235,225,.05); --track:rgba(220,235,225,.08);
+  --ink:#dfe8df; --ink-2:#a6b6a8; --ink-3:#88997f;
+  --coral:#e0a13c; --coral-2:#edbc6b;
+  --coral-soft:rgba(224,161,60,.15); --coral-line:rgba(224,161,60,.42);
+  --green:#6fae7d; --green-soft:rgba(111,174,125,.16);
+  --chat-on:rgba(224,161,60,.13);
+  --code-tag:var(--coral); --code-attr:#7ec48d; --coral-deep:var(--coral-2);
+  --amber:#cfa256; --amber-soft:#2e2a18; --brick:#df5b41;
+  --proc-bg:#2e2a18; --proc-fg:#cfa256; --fail-bg:#31211c; --fail-fg:#df5b41;
+  --code-bg:#141e18; --code-fg:#e2eae0;
+  --tok-num:#cfa256; --tok-com:#88997f; --tok-key:#88c0a0; --tok-dec:#c79bd6;
+  --scrim:rgba(0,0,0,.62);
+  --scroll-thumb:rgba(223,232,223,.16); --scroll-thumb-hover:rgba(223,232,223,.3);
+  --on-accent:#1c1405;
+  --lift:0 1px 0 rgba(255,255,255,.03), 0 6px 14px -10px rgba(0,0,0,.6);
+  --grain:.4; --sun-display:block; --moon-display:none;
+}
 
 /* ---- non-color tokens light-dark() can't express (shadow geometry, numbers,
    display keywords) - the one place the per-theme dance remains ---- */

@@ -145,7 +145,7 @@ wwwroot/
       users.js               # /admin/users - admin-only user list + model-prompt inspector
 
   styles/                    # the global cascade - only rules no single component owns (style guide section 2)
-    tokens.css               # design tokens - light-dark(Manila, Ember), [data-theme] scheme pins; loads first
+    tokens.css               # design tokens - light-dark(Manila, Ember) + extra [data-theme] palette blocks; loads first
     base.css                 # reset, body, focus ring, scrollbars, keyframes, reduced-motion guard
     layout.css               # .app grid, collapse states, responsive drawers + ALL @media
     primitives.css           # shared bare-class utilities (.btn, .ghost, .trash, .field ...)
@@ -214,7 +214,7 @@ The global cascade is only what no single component owns
 
 | File | Holds |
 |------|-------|
-| `tokens.css` | every design token, defined once with `light-dark(manila, ember)`; the `[data-theme]` scheme pins; **must load first** |
+| `tokens.css` | every design token: the canonical pair defined once with `light-dark(manila, ember)` + a `[data-theme]` scheme pin each; the extra palettes get one full `[data-theme]` block each; **must load first** |
 | `base.css` | reset, `body`, the global `:focus-visible` ring, scrollbars, `@keyframes`, the `prefers-reduced-motion` guard |
 | `layout.css` | the `.app` grid, collapse/wide states, responsive drawers, scrim - and **all `@media`** |
 | `primitives.css` | shared bare-class utilities (`.btn`, `.ghost`, `.trash`, `.field` ...) applied by class string across many components |
@@ -230,13 +230,17 @@ shipped `app.js` carries verbose CSS. Author with the `css` tagged template (the
 does) or a plain string - `adoptStyles` minifies either.
 
 ### Theme
-Two themes - **Manila** (paper light) and **Ember** (refined dark). Color tokens are
-defined once with `light-dark()`; the default `:root` follows the OS via
-`color-scheme: light dark`, and the explicit `[data-theme="manila"|"ember"]` scopes
-just pin the scheme. `state/ui.js` owns the toggle: it sets
-`documentElement[data-theme]` and persists to `localStorage` as a first-paint cache -
-the server-side setting is the cross-device truth
-([configuration section 3.1](configuration.md#31-theme)).
+Two **canonical** themes - **Manila** (paper light) and **Ember** (refined dark) - whose
+color tokens are defined once with `light-dark()`; the default `:root` follows the OS via
+`color-scheme: light dark`, and the explicit `[data-theme="manila"|"ember"]` scopes just
+pin the scheme. Six **extra** themes - Slate, Midnight, Nord, Forest, Onyx (dark) and Frost
+(light) - can't ride `light-dark()` (it only holds the canonical pair), so each is one
+self-contained `[data-theme]` block re-stating every token, including its own accent hue
+(only Manila/Ember keep the coral accent). The extras are reachable only from the settings
+dropdown; the sun/moon toggle only ever flips between Manila and Ember. Theme is a
+**device-local** preference: `state/ui.js` owns the single writer, which sets
+`documentElement[data-theme]` and persists to `localStorage` (`gert.theme`) - there is no
+server-side theme setting ([configuration section 3.1](configuration.md#31-theme)).
 
 ### Icons
 `icons/icons.js` exposes every SVG glyph once as a named factory -

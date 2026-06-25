@@ -3,8 +3,21 @@
 // (Theme persists to localStorage - the token never does; see services/auth.js.)
 import van from "/lib/van.js";
 
-// theme: null = follow OS, "manila" (paper) | "ember" (dark) = explicit.
-export type Theme = "manila" | "ember" | null;
+// theme: null = follow OS, else an explicit [data-theme] palette. "manila"/"ember"
+// are the canonical pair the sun/moon toggle flips between; the rest are settings-only.
+export const THEME_NAMES = [
+  "manila",
+  "ember",
+  "slate",
+  "frost",
+  "midnight",
+  "nord",
+  "onyx",
+  "forest",
+] as const;
+export type Theme = (typeof THEME_NAMES)[number] | null;
+const isTheme = (v: unknown): v is Exclude<Theme, null> =>
+  THEME_NAMES.includes(v as (typeof THEME_NAMES)[number]);
 // composer send chord (per-device input preference).
 export type SubmitKey = "enter" | "mod_enter";
 
@@ -56,7 +69,7 @@ export const adminRoute = van.state(false);
 export const activeArtifact = van.state<string | null>(null);
 export const showKnowledge = van.state(false);
 
-// theme: null = follow OS, "manila" (paper) | "ember" (dark) = explicit.
+// theme: null = follow OS, else a THEME_NAMES palette.
 export const theme = van.state<Theme>(null);
 
 // composer send chord: "enter" (default - Enter sends, Shift+Enter newlines)
@@ -74,15 +87,18 @@ export const setSubmitKey = (mode: string) => {
 export const isMobile = () =>
   window.matchMedia("(max-width:1079px)").matches;
 
-// Pre-rename saves ("light"/"dark") migrate to the theme names they meant.
-// Also maps the wire enum (configuration.md section 3.1: light | dark | auto) in
-// applyServerTheme below.
+// Theme is a DEVICE-LOCAL preference: localStorage is the single source of truth
+// (no server round-trip - configuration.md section 3.1). Pre-rename saves ("light"/
+// "dark", the old wire enum) migrate to the names they meant.
 const MIGRATE: Record<string, string> = { light: "manila", dark: "ember" };
 
+// Which palettes pin a dark scheme (drives the toggle's light<->dark decision).
+const DARK_THEMES = new Set(["ember", "slate", "midnight", "nord", "forest", "onyx"]);
+
 // The single writer of documentElement[data-theme] and the gert.theme key
-// (spa-style-guide section 7). name: "manila" | "ember" | null (null = follow OS).
+// (spa-style-guide section 7). name: a THEME_NAMES value, or null = follow OS.
 export const setTheme = (name: string | null) => {
-  const next = name === "manila" || name === "ember" ? name : null;
+  const next = isTheme(name) ? name : null;
   if (next) {
     document.documentElement.setAttribute("data-theme", next);
     localStorage.setItem(THEME_KEY, next);
@@ -93,21 +109,19 @@ export const setTheme = (name: string | null) => {
   theme.val = next;
 };
 
-// Server settings -> theme. localStorage is only a first-paint cache; the
-// server-side setting is the cross-device truth (configuration.md section 3.1).
-export const applyServerTheme = (wire: string) => setTheme(MIGRATE[wire] || null);
-
 export const restoreTheme = () => {
   const saved = localStorage.getItem(THEME_KEY);
-  // saved may be null (key never set); the migration lookup then falls through to null.
+  // saved may be null (key never set); migrate old wire saves, else use as-is.
   const name = (saved !== null && MIGRATE[saved]) || saved;
-  if (name === "manila" || name === "ember") setTheme(name);
+  if (isTheme(name)) setTheme(name);
 };
 
+// Sun/moon toggle: only ever flips between the canonical Manila/Ember pair. From an
+// extra dark palette (or OS-dark) it lands on Manila; otherwise on Ember.
 export const toggleTheme = () => {
   const current = document.documentElement.getAttribute("data-theme");
   const dark =
-    current === "ember" ||
+    (current && DARK_THEMES.has(current)) ||
     (!current && window.matchMedia("(prefers-color-scheme: dark)").matches);
   setTheme(dark ? "manila" : "ember");
 };

@@ -1,17 +1,15 @@
 using Gert.Model.Dtos;
-using Gert.Model.UI;
 
 namespace Gert.Model.Projects;
 
 /// <summary>
 /// User preferences, persisted as the <c>settings_json</c> blob in <c>user.db</c>'s
-/// single settings row: theme, UI language, default reply language, default model,
-/// default tools (configuration.md section 3; rest-api.md section settings).
+/// single settings row: UI language, default reply language, default model,
+/// default tools (configuration.md section 3; rest-api.md section settings). Theme is a
+/// device-local preference (localStorage only), so it is deliberately NOT a field here.
 /// </summary>
 public sealed record UserSettings
 {
-    public Theme Theme { get; init; } = Theme.Auto;
-
     /// <summary>UI language (BCP-47 tag), e.g. "en".</summary>
     public string? UiLanguage { get; init; }
 

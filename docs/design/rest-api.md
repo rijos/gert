@@ -74,7 +74,7 @@ writes them through the conversation's `tools` map (the `ToolToggles` DTO on
 
 | Method | Path | Notes |
 |--------|------|-------|
-| `GET` | `/api/settings` | The user's preferences from `user.db` ([storage-and-data section user.db](storage-and-data.md#userdb)): theme, UI language, default reply language, default provider, default tools ([configuration section 3](configuration.md#3-user-settings)). Sampling is not a user setting - it rides the selected provider. |
+| `GET` | `/api/settings` | The user's preferences from `user.db` ([storage-and-data section user.db](storage-and-data.md#userdb)): UI language, default reply language, default provider, default tools ([configuration section 3](configuration.md#3-user-settings)). Theme is device-local (localStorage), not a server setting. Sampling is not a user setting - it rides the selected provider. |
 | `PUT` | `/api/settings` | Update any subset (merge: absent fields stay, each supplied field overrides). |
 
 ## Projects

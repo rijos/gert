@@ -2,7 +2,6 @@
 import * as http from "./http.js";
 import * as models from "../state/models.js";
 import type { WireModel } from "./wire.js";
-import * as ui from "../state/ui.js";
 import * as settings from "./settings.js";
 import { applyServerLanguage } from "../lib/i18n.js";
 
@@ -21,10 +20,8 @@ export const loadWithUserDefault = async () => {
   ]);
   const id = prefs?.default_model_id;
   if (id && list.some((m) => m.id === id)) models.select(id);
-  // The server-side theme is the cross-device truth (configuration.md section 3.1);
-  // the localStorage copy restoreTheme() applied was only a first-paint cache.
-  if (prefs) ui.applyServerTheme(prefs.theme ?? "");
-  // same cascade for the UI language (ui_language) - cached for the next load
+  // Theme is device-local (localStorage); restoreTheme() at boot is the only source - no
+  // server reconciliation. UI language still cascades from server settings.
   if (prefs) applyServerLanguage(prefs.ui_language);
   return list;
 };

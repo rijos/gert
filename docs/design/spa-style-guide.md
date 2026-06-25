@@ -201,9 +201,9 @@ The non-color token families at a glance (all in `styles/tokens.css`):
 > as `--shadow-*`, `--scrim-*`, and `--brand`. Reach for those tokens - don't embed
 > literals in components.
 
-The two themes are **Manila** (paper / editorial light) and **Ember** (refined dark).
-Every color token is defined **once** with `light-dark()`, and the document rides
-`color-scheme`:
+The two **canonical** themes are **Manila** (paper / editorial light) and **Ember** (refined
+dark). For these, every color token is defined **once** with `light-dark()`, and the document
+rides `color-scheme`:
 
 ```css
 /* styles/tokens.css - every color token defined exactly once */
@@ -223,19 +223,24 @@ Every color token is defined **once** with `light-dark()`, and the document ride
 [data-theme="ember"] { color-scheme: dark; }
 ```
 
-**One warm accent.** Every highlight - active states, toggles, counts, done-marks,
-selection - rides the coral family (`--coral`, `--coral-deep`, `--coral-soft`,
-`--coral-line`) in both themes. Green (`--green`) is *status only* (the model-online
-dot); don't reintroduce it for interactive or "success" states, and reserve
-`--brick`/`--fail-*` for errors. Filled accent surfaces always pair with
-`--on-accent` (AA in both themes, see `primitives.css` `.btn`).
+The **extra** palettes (Slate, Midnight, Nord, Forest, Onyx, Frost - settings dropdown only)
+can't ride `light-dark()`, which holds only the canonical pair, so each is one self-contained
+`[data-theme]` block that re-states every token. They keep the same WCAG-AA intent for the ink
+trio / code tokens, but each redefines the accent family to its own hue (see below).
 
-Toggling the theme is owned by `state/ui.js` - it is the **only** module that may touch
-`documentElement[data-theme]` or the `gert.theme` localStorage key (its `setTheme` /
-`applyServerTheme` are the only mutators). It persists the choice to `localStorage` as a
-first-paint cache; the server-side setting is the cross-device truth
-([configuration section 3.1](configuration.md#31-theme)) and is applied at boot via
-`ui.applyServerTheme` when the initial prefs load lands. Components never know which
+**One warm accent - in Manila/Ember.** Every highlight - active states, toggles, counts,
+done-marks, selection - rides the coral family (`--coral`, `--coral-deep`, `--coral-soft`,
+`--coral-line`) in the two canonical themes. Green (`--green`) is *status only* (the
+model-online dot); don't reintroduce it for interactive or "success" states, and reserve
+`--brick`/`--fail-*` for errors. The accent is still **one token family** everywhere - the
+extra palettes simply repoint that family to a different hue inside their `[data-theme]`
+block, so components stay theme-blind (they read `--coral*`, never a literal). Filled accent
+surfaces always pair with `--on-accent` (AA in every theme, see `primitives.css` `.btn`).
+
+Theme is a **device-local** preference. `state/ui.js` is the **only** module that may touch
+`documentElement[data-theme]` or the `gert.theme` localStorage key (its `setTheme` is the
+only mutator). It persists the choice to `localStorage`; there is no server-side theme
+setting ([configuration section 3.1](configuration.md#31-theme)). Components never know which
 theme is active - they read tokens.
 
 > Even *conditional rendering* by theme is done with tokens where possible: the

@@ -8,7 +8,7 @@ import { Dropdown } from "../ui/dropdown.js";
 import { SegToggle } from "../ui/seg-toggle.js";
 import { toast } from "../ui/toast.js";
 import * as settingsSvc from "../../services/settings.js";
-import type { Theme, WireSettings } from "../../services/wire.js";
+import type { WireSettings } from "../../services/wire.js";
 import * as models from "../../state/models.js";
 import * as ui from "../../state/ui.js";
 import { t, lang, setLang, AVAILABLE } from "../../lib/i18n.js";
@@ -28,6 +28,12 @@ const THEMES = [
   { value: "system", label: t("Follow system") },
   { value: "manila", label: t("Manila (paper)") },
   { value: "ember", label: t("Ember (dark)") },
+  { value: "frost", label: t("Frost (cool light)") },
+  { value: "slate", label: t("Slate (cool dark)") },
+  { value: "midnight", label: t("Midnight (dark)") },
+  { value: "nord", label: t("Nord (dark)") },
+  { value: "onyx", label: t("Onyx (dark)") },
+  { value: "forest", label: t("Forest (dark)") },
 ];
 
 export const openSettings = () => {
@@ -136,12 +142,6 @@ export const openSettings = () => {
           ...(replyLangEl?.value ? { reply_language: replyLangEl.value } : {}),
           ...(modelVal.val ? { default_model_id: modelVal.val } : {}),
           ui_language: langVal.val,
-          // wire enum is light | dark | auto (configuration.md section 3.1), not the
-          // theme names - map back from manila/ember. The `?? ""` makes a null theme
-          // (follow-system) miss the map and fall to "auto".
-          theme: (({ manila: "light", ember: "dark" } as Record<string, string>)[
-            ui.theme.val ?? ""
-          ] || "auto") as Theme,
         })
         .then(() => {
           toast(t("Settings saved"), "ok");

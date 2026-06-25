@@ -47,8 +47,6 @@ export type WireEventType =
   | "message_end"
   | "cancelled"
   | "error";
-export type Theme = "light" | "dark" | "auto";
-
 // The per-conversation tool on/off map: { tool_id: boolean }. The set of ids is open (server
 // owns it), so this is an open record rather than a fixed key list.
 export type WireToolToggles = Record<string, boolean>;
@@ -279,7 +277,7 @@ export interface WireModel {
 }
 
 export interface WireSettings {
-  theme?: Theme;
+  // Theme is a device-local preference (localStorage, see state/ui.ts) - not a server setting.
   ui_language?: string | null;
   reply_language?: string | null;
   default_model_id?: string | null;

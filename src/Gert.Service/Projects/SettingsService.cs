@@ -49,7 +49,6 @@ public sealed class SettingsService : ISettingsService
         // Merge: each request field overrides only when present (null = leave unchanged).
         var merged = current with
         {
-            Theme = dto.Theme ?? current.Theme,
             UiLanguage = dto.UiLanguage ?? current.UiLanguage,
             ReplyLanguage = dto.ReplyLanguage ?? current.ReplyLanguage,
             DefaultModelId = dto.DefaultModelId ?? current.DefaultModelId,

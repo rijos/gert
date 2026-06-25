@@ -64,8 +64,9 @@ why**; the code in [`src/`](../../src/) implements them.
   (pages -> components -> state/services -> lib), cross-cutting concerns (theme, streaming,
   token handling), and the no-npm dev/release pipeline.
 - [spa-style-guide.md](spa-style-guide.md) - how to write a component: the
-  `component({name, css, view})` factory, tokens-only theming (Manila/Ember via
-  `light-dark()`), no local `@media`, VanX lists, routing, formatting.
+  `component({name, css, view})` factory, tokens-only theming (canonical Manila/Ember
+  via `light-dark()` + extra `[data-theme]` palettes), no local `@media`, VanX lists,
+  routing, formatting.
 
 ### Cross-cutting
 - [security.md](security.md) - trust boundaries, the asset -> threat -> control table, findings

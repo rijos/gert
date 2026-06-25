@@ -134,12 +134,14 @@ Stored as the single settings row in the user's `user.db`
 `GET`/`PUT /api/settings` (`PUT` merges - each supplied field overrides, absent fields stay).
 
 ### 3.1 Theme
-`light - dark - auto` - the two palettes are **Manila** (paper light) and **Ember** (refined
-dark); `auto` follows the OS via `color-scheme`. Persisted **server-side** so it follows the
-user across devices; the SPA still writes `localStorage` as a first-paint cache before settings
-load, so there's no flash ([ui-components](ui-components.md#5-cross-cutting-concerns)). The
-palettes themselves are fixed for v1 (a custom accent is a possible later addition -
-[section 9](#9-open-decisions)).
+Theme selection is stored in `localStorage` (`gert.theme`) - and that's it. It is **not** a
+server setting, so it never touches the `user.db` settings row or the `/api/settings` contract
+below; `state/ui.js` is its single writer ([ui-components](ui-components.md#5-cross-cutting-concerns)).
+No saved value means follow the OS; otherwise the value names a fixed palette. **Manila** (paper
+light) and **Ember** (refined dark) are the canonical pair the sun/moon toggle flips between; the
+extra palettes - `slate`, `midnight`, `nord`, `forest`, `onyx` (dark) and `frost` (light) - are
+settings-dropdown only. Manila/Ember keep the warm coral accent; every extra palette overrides it
+with its own hue (a custom user-defined accent is a possible later addition - [section 9](#9-open-decisions)).
 
 ### 3.2 Language
 - **UI language** - the SPA's own strings, from a small per-locale JSON dictionary loaded by
@@ -284,7 +286,9 @@ Where this lands in the SPA (`Gert.Api/wwwroot`, [ui-components](ui-components.m
 
 ## 9. Open decisions
 
-- **Custom accent / theming beyond Manila/Ember** - fixed palettes for v1; revisit if asked.
+- **Custom accent / user-defined palettes** - the shipped palettes (Manila, Ember + the six
+  extra ones, each with its own fixed accent) are not user-editable; a user-defined accent is a
+  later addition.
 - **Per-user BYO provider keys** - non-feature for now (security + keeps everything on-box);
   reconsider only if a user genuinely needs an off-box model.
 - **Export format** - JSON + original files is the floor; Markdown transcripts are a nice-to-have.

@@ -1,7 +1,6 @@
 using FluentAssertions;
 using Gert.Model;
 using Gert.Model.Projects;
-using Gert.Model.UI;
 using Gert.Testing;
 using Xunit;
 
@@ -44,11 +43,11 @@ public class SqliteUserRepositoryTests
         await using var repo = await users.OpenAsync(Iss, Sub);
         (await repo.GetSettingsAsync()).Should().BeEquivalentTo(new UserSettings());
 
-        await repo.SaveSettingsAsync(new UserSettings { ReplyLanguage = "nl", Theme = Theme.Dark });
+        await repo.SaveSettingsAsync(new UserSettings { ReplyLanguage = "nl", UiLanguage = "en" });
 
         var reloaded = await repo.GetSettingsAsync();
         reloaded.ReplyLanguage.Should().Be("nl");
-        reloaded.Theme.Should().Be(Theme.Dark);
+        reloaded.UiLanguage.Should().Be("en");
     }
 
     [Fact]
