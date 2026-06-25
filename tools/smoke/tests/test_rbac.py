@@ -30,6 +30,30 @@ def test_user_denied_admin(user_page: Page, base_url: str) -> None:
     expect(user_page.locator(".utable")).to_have_count(0)
 
 
+def test_admin_sees_button_and_can_open_panel(
+    admin_page: Page, base_url: str
+) -> None:
+    """The UI-discovery half of admin RBAC: an admin sees the shield button in the
+    user chip, and clicking it lands on the admin panel (the user-list table
+    renders). The server is the real gate (test_admin_sees_user_list); the button
+    is only the discoverable entry point that gate backs."""
+    app = AppPage(admin_page, base_url)
+    app.goto(base_url, "/")
+    app.wait_ready()
+    expect(app.sidebar.admin_button).to_be_visible()
+    app.sidebar.admin_button.click()
+    expect(admin_page.locator(".utable")).to_be_visible(timeout=10000)
+
+
+def test_user_has_no_admin_button(user_page: Page, base_url: str) -> None:
+    """A non-admin never sees the admin shield - the entry point is hidden as well
+    as gated (the API 403 is covered by test_user_denied_admin)."""
+    app = AppPage(user_page, base_url)
+    app.goto(base_url, "/")
+    app.wait_ready()
+    expect(app.sidebar.admin_button).to_have_count(0)
+
+
 def test_ssrf_private_ip_result_refused(page: Page, base_url: str) -> None:
     """F5: the metadata URL from the adversarial fixture must never be fetched.
 

@@ -46,6 +46,12 @@ class Sidebar:
     def user_auth_line(self) -> Locator:
         return self.root.locator(".userchip .auth")
 
+    @property
+    def admin_button(self) -> Locator:
+        # The shield into the admin panel; rendered in the user chip only when the
+        # token's claims mark the viewer an admin (auth.isAdmin).
+        return self.root.locator('.userchip [aria-label="Open the admin panel"]')
+
 
 class Composer:
     """The message composer: textarea, attach, tools dropdown, send."""
@@ -76,8 +82,14 @@ class Composer:
 
     @property
     def use_docs_toggle(self) -> Locator:
-        """The "Use my docs" row inside the tools dropdown; carries `on` when active."""
-        return self.root.locator(".tools-menu .t-row.t-docs")
+        """The "Use my docs" row inside the tools dropdown; carries `on` when active.
+
+        The dropdown opens as a modal portaled to ``<body>`` (a ``.modal-scrim``),
+        NOT inside ``.composer`` - so scope to the modal. The docs group renders a
+        row per docs-tool (rag + read_document share the section); the "Use my
+        docs" row is the rag toggle the knowledge use-in switch mirrors.
+        """
+        return self.page.locator(".modal .t-row.t-docs", has_text="Use my docs")
 
     @property
     def file_input(self) -> Locator:
@@ -178,7 +190,14 @@ class Knowledge:
         self.root = page.locator(".kb-view")
 
     def open(self) -> None:
-        """Show the knowledge view (click the canvas bar's KB button)."""
+        """Show the knowledge view.
+
+        The canvas panel starts collapsed (``ui.panelCollapsed`` defaults on), so
+        the in-panel KB button is off-screen until the panel is opened - reveal it
+        via the topbar toggle first, then click the canvas bar's KB button.
+        """
+        if self.page.locator(".app.panel-collapsed").count():
+            self.page.locator('.topbar button[title="Toggle knowledge panel"]').click()
         self.page.locator('.kbtn[title="Knowledge base"]').click()
         self.root.wait_for(state="visible")
 
@@ -192,9 +211,10 @@ class Knowledge:
 
     @property
     def file_input(self) -> Locator:
-        # Two hidden file inputs exist (composer + knowledge drop-zone); uploads
-        # route through the composer's, so scope to it to stay unambiguous.
-        return self.page.locator(".composer input[type=file]")
+        # Knowledge-base ingestion routes through the canvas drop-zone's hidden
+        # input. (The composer's input queues files as INLINE attachments for the
+        # next message, not knowledge docs.) Needs the knowledge view open.
+        return self.root.locator(".dropzone input[type=file]")
 
     def doc(self, name: str) -> Locator:
         return self.root.locator(".doc", has_text=name)

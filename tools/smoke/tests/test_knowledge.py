@@ -21,7 +21,9 @@ def _open(page: Page, base_url: str) -> AppPage:
     return app
 
 
-def test_upload_shows_status_pill_and_reaches_ready(page: Page, base_url: str) -> None:
+def test_upload_shows_status_pill_and_reaches_ready(
+    page: Page, base_url: str, clean_documents: Page
+) -> None:
     app = _open(page, base_url)
     app.knowledge.open()  # reveal the knowledge view (doc list lives there)
     # Upload via the hidden composer file input (the SPA routes uploads through it).
@@ -47,8 +49,12 @@ def test_use_in_chat_toggle(page: Page, base_url: str) -> None:
     switch = app.knowledge.use_in_chat_switch
     expect(switch).to_be_visible()
     # Default-on: the "Use my docs" row in the composer's tools dropdown is active.
+    # The dropdown is a modal whose scrim covers the knowledge switch, so close it
+    # (Esc) before reaching back to the switch.
     app.composer.open_tools()
     expect(app.composer.use_docs_toggle).to_have_class(re.compile(r"\bon\b"))
-    # Toggling the knowledge switch flips the dropdown row off too (shared state).
+    page.keyboard.press("Escape")
+    # Toggling the knowledge switch flips the dropdown row off too (shared rag state).
     switch.click()
+    app.composer.open_tools()
     expect(app.composer.use_docs_toggle).not_to_have_class(re.compile(r"\bon\b"))

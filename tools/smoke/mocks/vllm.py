@@ -34,10 +34,32 @@ from . import specs
 MODEL_ID = "default"
 
 
+def _content_text(content: Any) -> str:
+    """Flatten an OpenAI message ``content`` to plain text.
+
+    ``content`` is either a bare string or an array of content parts
+    (``{"type": "text", "text": ...}``) - the real adapter sends the parts shape
+    whenever a message carries more than the bare prompt (e.g. an attached file's
+    text alongside the user's question). Concatenate the text parts; ignore any
+    non-text part the mock has no fixture for.
+    """
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts: list[str] = []
+        for part in content:
+            if isinstance(part, dict) and part.get("type") == "text":
+                text = part.get("text", "")
+                if isinstance(text, str):
+                    parts.append(text)
+        return "".join(parts)
+    return ""
+
+
 def _last_user_message(messages: list[dict[str, Any]]) -> str:
     for m in reversed(messages):
         if m.get("role") == "user":
-            return m.get("content") or ""
+            return _content_text(m.get("content"))
     return ""
 
 

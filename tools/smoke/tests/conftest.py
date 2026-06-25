@@ -94,3 +94,23 @@ def untooled_page(browser: Browser, base_url: str) -> Iterator[Page]:
 def page(admin_page: Page) -> Page:
     """Default page: an admin context (the common case for most scenarios)."""
     return admin_page
+
+
+@pytest.fixture
+def clean_documents(page: Page) -> Iterator[Page]:
+    """Delete any knowledge-base docs a test ingests, restoring the empty project.
+
+    The host boots one shared per-user project and only wipes it at startup, so a
+    doc a test uploads otherwise persists for every later test (across browsers).
+    Once the project holds docs the SPA prepends a "Documents in this project: ..."
+    line to each turn, which breaks the prompt-exact echo assertions elsewhere.
+    Teardown clears the docs via the documents service so each doc test is hermetic.
+    """
+    yield page
+    page.evaluate(
+        """async () => {
+            const svc = await import('/services/documents.js');
+            const docs = await svc.list();
+            for (const d of docs || []) await svc.remove(d.id);
+        }"""
+    )

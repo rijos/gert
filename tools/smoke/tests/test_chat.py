@@ -177,7 +177,9 @@ def test_tool_call_renders_tool_card(page: Page, base_url: str) -> None:
     expect(app.thread.last_bot_body).to_contain_text("sqlite-vec wins", timeout=15000)
 
 
-def test_citations_render_as_chips(page: Page, base_url: str) -> None:
+def test_citations_render_as_chips(
+    page: Page, base_url: str, clean_documents: Page
+) -> None:
     app = _open(page, base_url)
     # Precondition: a retrievable document. The rag tool only emits a citation
     # when its hybrid search returns a hit - without an ingested doc the canned
@@ -189,9 +191,10 @@ def test_citations_render_as_chips(page: Page, base_url: str) -> None:
         "mimeType": "text/plain",
         "buffer": b"Qdrant vs sqlite-vec: for a homelab, sqlite-vec wins on simplicity.",
     }
+    app.knowledge.open()  # KB ingestion routes through the canvas drop-zone
     app.knowledge.file_input.set_input_files(files=[payload])
-    # Wait for ingestion to finish (status pill / poll is driven by the SPA's
-    # documents service; the panel itself may be closed, so poll the service).
+    # Wait for ingestion to finish (the SPA's documents service drives the status
+    # pill); poll the service rather than the pill so this is panel-state-agnostic.
     page.wait_for_function(
         """async () => {
             const svc = await import('/services/documents.js');
