@@ -79,12 +79,7 @@ export const ModelPicker = component({
     .model-picker.open .chev {
       transform: rotate(180deg);
     }
-    .model-picker.open .menu {
-      opacity: 1;
-      visibility: visible;
-      transform: none;
-      pointer-events: auto;
-    }
+
     .m-item {
       display: block;
       width: 100%;

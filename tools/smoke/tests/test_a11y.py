@@ -72,11 +72,12 @@ def test_modal_is_a_dialog_with_focus_moved_in(page: Page, base_url: str) -> Non
 
     dlg = page.get_by_role("dialog", name="Settings")
     expect(dlg).to_be_visible()
-    expect(dlg).to_have_attribute("aria-modal", "true")
+    # showModal() puts the dialog in the top layer with an inert background - it matches :modal.
+    assert dlg.evaluate("el => el.matches(':modal')"), "modal dialog must match :modal"
 
     # focus moved into the dialog (its first control), not stranded on <body>.
     assert page.evaluate(
-        "() => !!document.activeElement && document.activeElement.closest('.modal') !== null"
+        "() => !!document.activeElement && document.activeElement.closest('dialog') !== null"
     ), "focus must move into the open dialog"
 
     page.keyboard.press("Escape")

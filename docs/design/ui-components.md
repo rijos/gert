@@ -283,16 +283,17 @@ shared primitives - fix it once, every call site inherits it:
 - **Everything operable has an accessible name.** Icon-only buttons set `aria-label`
   (icons themselves are hidden, above); the composer textarea and the custom dropdowns
   take a label/`ariaLabel`; native form inputs use `<label for>`.
-- **Overlays are dialogs.** `Modal` and the search overlay set `role="dialog"` +
-  `aria-modal`, move focus inside on open, **trap** Tab within, and **restore** focus to
-  the opener on close; Escape closes.
+- **Overlays are dialogs.** `Modal` is a native `<dialog>` opened with `showModal()` - the top
+  layer, inert background, focus trap, focus restore, and Escape come from the platform; it is
+  named via `aria-labelledby`/`aria-label`. The search overlay hand-rolls the same
+  `role="dialog"` + `aria-modal` contract.
 - **Landmarks + bypass.** `app.js` mounts the page into a `<main id="main">`; the sidebar
   is a `<nav>`, the canvas an `<aside>`; `index.html` ships a focus-revealed skip link to
   `#main`; `document.title` and `<html lang>` track the view/language.
 - **Status is announced.** The toast host, the connection banner, upload-status text and
   search states are `aria-live` regions (`role="status"`/`"alert"`).
-- **Menus don't leak focus.** A closed `Menu` is `visibility:hidden`, so its items stay
-  out of the tab order until it opens.
+- **Menus don't leak focus.** `Menu` is a native `popover`; while closed it isn't rendered, so
+  its items stay out of the tab order until it opens.
 These are tripwired by `tools/smoke/tests/test_a11y.py` (and the global focus ring +
 reduced-motion guard live in `base.css`).
 

@@ -268,7 +268,7 @@ owned by any one component:
   before any `Button` does, so the rule can't co-locate without a flash.
 
 Everything else co-locates. When a parent styles into a child it composes
-(`.model-picker.open .menu`), that rule lives with the **parent** - it owns that
+(`.model-picker.open .chev`), that rule lives with the **parent** - it owns that
 relationship, and the higher specificity makes it order-independent of the child's
 base rule.
 
@@ -596,21 +596,21 @@ themselves up, and return control to the caller - the sanctioned exception to
 "components return a DOM node":
 
 - **`Modal({ title, body, onConfirm, actions, ... })`** (`components/ui/modal.js`)
-  appends its scrim to `document.body` and **returns `close`**. The default footer is
-  Cancel + a primary button; `actions(close)` is the escape hatch for custom layouts.
-  `close()` removes the node *and* its document keydown (Esc) listener - the model
-  citizen for section 12.
+  appends a native `<dialog>` to `document.body`, opens it with `showModal()`, and **returns
+  `close`**. The default footer is Cancel + a primary button (Enter in a field confirms);
+  `actions(close)` is the escape hatch for custom layouts. Every close path funnels through the
+  dialog's `close` event, which removes the node - so an Esc dismiss can't leak it.
 - **Feature modals are camelCase openers** - `openSettings()`,
   `openModelSettings(model)` in `components/settings/` - thin functions that build a
   body and call `Modal`. Settings is a modal, not a route (section 5).
 - **`toast(message, kind)`** (`components/ui/toast.js`) appends into a lazily-created
   fixed host and auto-dismisses. Imperative modules that never go through
   `component()` adopt their CSS with `adoptStyles(CSS)` directly - same CSP-clean path.
-- **Menus**: `Menu({ trigger, open, wrapClass, children })` - `open` is a
-  **caller-owned `van.state`**; the wrapper renders `wrapClass + " open"` and the
-  *caller's* CSS owns the `.open .menu` reveal (positioning per call site). The
-  trigger toggles with `stopPropagation()`; a document click closes - the listener
-  exists only while the menu is open (the section 12 pattern).
+- **Menus**: `Menu({ trigger, open, wrapClass, children, align })` - `open` is a
+  **caller-owned `van.state`** and the single source of truth: a `van.derive` drives a native
+  `popover` open/closed, and its `toggle` event mirrors light-dismiss/Esc back into `open`.
+  `align` places the popover - CSS anchor positioning where supported, a measured fallback
+  otherwise. The wrapper still renders `wrapClass + " open"` for the caller's trigger styling.
 - **Snapshot primitives**: `ProgressBar({ value, max })` and `Pill` render a
   **snapshot** and stay binding-free - the *caller's* reactive binding re-renders them
   with fresh props. This is the house pattern for generic leaves (`progress-bar.js`'s
@@ -684,11 +684,13 @@ VanJS garbage-collects bindings whose DOM is disconnected - but only what it kno
 about. Everything else is yours to release:
 
 - **A listener on `document`/`window` must be removed** when its component leaves the
-  DOM. `Modal` is the model: `close()` removes its Esc keydown. The failure mode: a
-  document click listener registered per render and never removed leaks a listener
-  per conversation switch, each pinning its dead subtree forever. The shipped pattern is
-  **listen only while open**: register when the thing opens, remove when it closes -
-  a closed menu's handler shouldn't run at all.
+  DOM. The search overlay is the model: it adds a `document` keydown on open and removes it in
+  `close()`. (`Modal` and `Menu` no longer need this - native `<dialog>`/`popover` own Esc and
+  light-dismiss; reaching for the platform is the better fix when it's there.) The failure mode:
+  a listener registered per render and never removed leaks one per conversation switch, each
+  pinning its dead subtree forever. The shipped pattern is **listen only while active**:
+  `canvas-panel.js`'s resize registers `pointermove`/`pointerup` on pointer-down and removes
+  them on pointer-up.
 - **`van.derive` outside a returned binding lives forever.** A derive created at
   `view` top level (not inside the tag tree you return) is registered against an
   always-connected sentinel and is never pruned - re-rendering the component stacks

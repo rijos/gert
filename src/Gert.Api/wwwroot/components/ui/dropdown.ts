@@ -91,19 +91,7 @@ export const Dropdown = component({
       transform: rotate(180deg);
     }
 
-    .dd .menu {
-      left: 0;
-      right: auto;
-      width: 100%;
-      min-width: 200px;
-      transform-origin: top left;
-    }
-    .dd.open .menu {
-      opacity: 1;
-      visibility: visible;
-      transform: none;
-      pointer-events: auto;
-    }
+
 
     /* border tint on focus is a bonus - the global :focus-visible ring stays */
     .dd-search {
@@ -199,13 +187,12 @@ export const Dropdown = component({
           class: "dd-search",
           placeholder: "Search...",
           oninput: (e: Event) => (query.val = (e.target as HTMLInputElement).value),
-          onkeydown: (e: KeyboardEvent) => {
-            if (e.key === "Escape") close();
-            if (e.key === "Enter") {
-              const first = filtered()[0];
-              if (first) pick(first);
-            }
-          },
+        onkeydown: (e: KeyboardEvent) => {
+          if (e.key === "Enter") {
+            const first = filtered()[0];
+            if (first) pick(first);
+          }
+        },
         })
       : null;
     if (search)
@@ -255,6 +242,7 @@ export const Dropdown = component({
     return Menu({
       wrapClass: ("dd " + wrapClass).trim(),
       open,
+      align: "bottom-left",
       trigger,
       children: [
         header ? div({ class: "menu-h" }, header) : null,

@@ -36,22 +36,7 @@ export const ContextRing = component({
     .ctx-ring {
       position: relative;
     }
-    /* the composer sits at the viewport bottom - open the stats upward */
-    .ctx-ring .menu {
-      top: auto;
-      bottom: calc(100% + 10px);
-      left: auto;
-      right: -44px;
-      width: 232px;
-      transform-origin: bottom right;
-      transform: translateY(6px) scale(.98);
-    }
-    .ctx-ring.open .menu {
-      opacity: 1;
-      visibility: visible;
-      transform: none;
-      pointer-events: auto;
-    }
+
     .ctx-btn {
       display: grid;
       place-items: center;
@@ -148,16 +133,12 @@ export const ContextRing = component({
       wrapClass: "ctx-ring",
       open,
       trigger,
+      align: "top-right",
       children: [
         () => {
           const u = usage();
           if (!u) return div();
 
-          // Last completed reply's stats ride the popover too.
-          // findLast is ES2023; the tsconfig lib is ES2022 (browsers ship it), so
-          // this boundary cast supplies its signature without widening to any
-          // (mirrors state/chat.ts setConversation). The predicate guarantees a
-          // numeric tokenCount on the result.
           const last = (
             chat.messages as Message[] & {
               findLast(
@@ -170,8 +151,6 @@ export const ContextRing = component({
               ? Math.round(last.tokenCount / (last.durationMs / 1000))
               : null;
 
-          // `u` is non-null only when the selected model carries a `context`, so
-          // a model is selected here; guard for the type checker regardless.
           const model = models.selected.val;
           if (!model) return div();
           return div(

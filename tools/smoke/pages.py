@@ -82,14 +82,14 @@ class Composer:
 
     @property
     def use_docs_toggle(self) -> Locator:
-        """The "Use my docs" row inside the tools dropdown; carries `on` when active.
+        """The "Use my docs" row inside the tools dialog; carries `on` when active.
 
-        The dropdown opens as a modal portaled to ``<body>`` (a ``.modal-scrim``),
-        NOT inside ``.composer`` - so scope to the modal. The docs group renders a
+        The tools dropdown opens as a native ``<dialog>`` appended to ``<body>``,
+        NOT inside ``.composer`` - so scope to the dialog. The docs group renders a
         row per docs-tool (rag + read_document share the section); the "Use my
         docs" row is the rag toggle the knowledge use-in switch mirrors.
         """
-        return self.page.locator(".modal .t-row.t-docs", has_text="Use my docs")
+        return self.page.locator("dialog .t-row.t-docs", has_text="Use my docs")
 
     @property
     def file_input(self) -> Locator:

@@ -149,12 +149,6 @@ export const ArtifactTabs = component({
       overflow-y: auto;
     }
 
-    .ctabs-wrap.open .menu {
-      opacity: 1;
-      visibility: visible;
-      transform: none;
-      pointer-events: auto;
-    }
 
     .ca-item {
       display: flex;
